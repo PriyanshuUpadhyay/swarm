@@ -31,6 +31,24 @@ fn overlapping_log_windows_keep_one_record_per_source_event() {
 }
 
 #[test]
+fn an_empty_thought_is_one_row_and_a_repeated_window_adds_no_second() {
+    let events = [
+        json!({"type":"agent_thought_chunk","text":"","meta":{"uuid":"think"}}),
+        json!({"type":"agent_message_chunk","text":"done","meta":{"uuid":"answer"}}),
+    ];
+    let mut state = LiveRows::empty(0, false);
+    state.ingest(0, 10, &events);
+    state.ingest(0, 10, &events);
+    let thoughts = state
+        .rows_full()
+        .into_iter()
+        .filter(|row| row.kind == view::RowKind::Thought)
+        .collect::<Vec<_>>();
+    assert_eq!(thoughts.len(), 1);
+    assert_eq!(thoughts[0].text, "");
+}
+
+#[test]
 fn source_positions_skip_fragments_and_preserve_identical_lines() {
     let fixture = Fixture::new();
     let line = format!("{}\r\n", "x".repeat(5000));

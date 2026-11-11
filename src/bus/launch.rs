@@ -74,7 +74,7 @@ pub fn argv(
             hooks.insert("SessionStart".into(), start.into());
             args.extend([
                 "--settings".into(),
-                serde_json::json!({ "hooks": hooks }).to_string(),
+                owner_choice::claude_json(hooks, swarm_home, cwd),
             ]);
             Ok(args)
         }
@@ -252,6 +252,7 @@ pub fn argv(
                     ),
                 ]);
             }
+            args.extend(owner_choice::codex_args(swarm_home));
             Ok(args)
         }
         Provider::Agy => {
