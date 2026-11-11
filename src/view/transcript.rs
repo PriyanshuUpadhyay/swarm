@@ -10,7 +10,8 @@ mod shell;
 mod state;
 
 pub use checklist::TodoItem;
-pub use events::row;
+pub(super) use events::subagent_labels;
+pub use events::{is_subagent_call, row};
 pub use records::Record;
 pub(super) use shell::shell_row;
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run};
@@ -38,6 +39,7 @@ pub enum RowKind {
     Queued,
     TodoList,
     ProposedPlan,
+    Subagent,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CommandChip {
@@ -47,6 +49,17 @@ pub struct CommandChip {
     pub skill_body: Option<TextPreview>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<TextPreview>,
+}
+/// A subagent call: who it is, what it was asked, how far it got, and what it returned.
+/// `call_id` names the child log to the server (ADR 0140).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SubagentRun {
+    pub call_id: String,
+    pub agent_type: String,
+    pub description: String,
+    pub state: super::ToolState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<TextPreview>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ShellRun {
@@ -82,6 +95,8 @@ pub struct Row {
     pub shell: Option<ShellRun>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<CommandChip>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagent: Option<SubagentRun>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub source_ids: Vec<String>,
     #[serde(skip)]
@@ -126,6 +141,7 @@ impl Row {
             system_kind: None,
             shell: None,
             command: None,
+            subagent: None,
             source_ids: Vec::new(),
             anchor_source_id: String::new(),
             ends_turn: false,
@@ -170,6 +186,7 @@ impl Row {
             RowKind::Queued => "Queued".into(),
             RowKind::TodoList => "To-do".into(),
             RowKind::ProposedPlan => "Plan".into(),
+            RowKind::Subagent => "Subagent".into(),
         }
     }
     pub fn search_text(&self) -> String {
@@ -197,6 +214,13 @@ impl Row {
             }
             if let Some(body) = &tool.skill_body {
                 parts.push(&body.text);
+            }
+        }
+        if let Some(run) = &self.subagent {
+            parts.push(&run.agent_type);
+            parts.push(&run.description);
+            if let Some(result) = &run.result {
+                parts.push(&result.text);
             }
         }
         if let Some(command) = &self.command {

@@ -1,7 +1,8 @@
 use super::tool;
 use super::transcript::checklist;
 use super::transcript::{
-    RECORD, Record, Row, RowKind, TodoItem, UNMAPPED, chip, meta, row, shell_row, string,
+    RECORD, Record, Row, RowKind, SubagentRun, TodoItem, UNMAPPED, chip, meta, row, shell_row,
+    string, subagent_labels,
 };
 use super::{TextPreview, ToolActivity, ToolState};
 use serde_json::Value;
@@ -231,30 +232,41 @@ pub(super) fn rows_with_context(
             } else {
                 state
             };
-            row.tool = Some(ToolActivity {
-                name: name.into(),
-                header_title: tool::title(&input, command.as_deref(), path.as_deref()),
-                input,
-                output: last_update.and_then(|record| record.text_preview.clone()),
-                diffs: diffs
-                    .get(&index)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|index| records[*index].diff_preview.clone())
-                    .collect(),
-                state,
-                exit_code: if command.is_some() {
-                    last_update.and_then(|record| record.output_exit_code)
-                } else {
-                    None
-                },
-                command,
-                path,
-                duration_seconds: last_update.and_then(|record| {
-                    tool::duration(meta(event, "timestamp"), meta(&record.event, "timestamp"))
-                }),
-                skill_body: None,
-            });
+            if row.kind == RowKind::Subagent {
+                let (agent_type, description) = subagent_labels(&input, name);
+                row.subagent = Some(SubagentRun {
+                    call_id: string(event, "tool_call_id").into(),
+                    agent_type,
+                    description,
+                    state,
+                    result: last_update.and_then(|record| record.text_preview.clone()),
+                });
+            } else {
+                row.tool = Some(ToolActivity {
+                    name: name.into(),
+                    header_title: tool::title(&input, command.as_deref(), path.as_deref()),
+                    input,
+                    output: last_update.and_then(|record| record.text_preview.clone()),
+                    diffs: diffs
+                        .get(&index)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|index| records[*index].diff_preview.clone())
+                        .collect(),
+                    state,
+                    exit_code: if command.is_some() {
+                        last_update.and_then(|record| record.output_exit_code)
+                    } else {
+                        None
+                    },
+                    command,
+                    path,
+                    duration_seconds: last_update.and_then(|record| {
+                        tool::duration(meta(event, "timestamp"), meta(&record.event, "timestamp"))
+                    }),
+                    skill_body: None,
+                });
+            }
         }
         for source in attached.get(&index).into_iter().flatten() {
             let child = &records[*source];
