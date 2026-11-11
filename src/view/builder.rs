@@ -213,6 +213,17 @@ pub(super) fn rows_with_context(
         let Some(mut row) = row(record) else {
             continue;
         };
+        if string(event, "type") == "image"
+            && string(event, "text").is_empty()
+            && let Some(text) = mirror_parts
+                .get(&index)
+                .into_iter()
+                .flatten()
+                .map(|index| string(&records[*index].event, "text"))
+                .find(|text| !text.is_empty())
+        {
+            row.text = text.into();
+        }
         let last_update = updates
             .get(&index)
             .and_then(|updates| updates.last())

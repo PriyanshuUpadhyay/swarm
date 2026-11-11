@@ -148,7 +148,8 @@ pub(super) fn append(
                 json!({"kind":"hook_prompt","text":text.join("\n")}),
             );
         }
-        "ImageGeneration" | "ImageView" => {
+        "ImageGeneration" => super::codex_facts::image_generation(fact, &item, "id", true),
+        "ImageView" => {
             let text = item
                 .optional_text("saved_path")
                 .or_else(|| item.optional_text("path"))

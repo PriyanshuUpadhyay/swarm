@@ -166,6 +166,7 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
             "ghost_snapshot" | "additional_tools" => fact.push_ignored(&kind),
             "message" => message(&mut fact, &payload, work)?,
             "reasoning" => reasoning(&mut fact, &payload, work)?,
+            "image_generation_call" => image_generation(&mut fact, &payload, "id", false),
             "agent_message" => {
                 for raw in payload.array("content").unwrap_or_default() {
                     work.check()?;
@@ -249,6 +250,7 @@ fn event_message(
         "item_completed" => super::codex_items::append(fact, payload, work)?,
         "patch_apply_end" => super::codex_changes::append(fact, payload, "call_id", work)?,
         "sub_agent_activity" => subagent_activity(fact, payload),
+        "image_generation_end" => image_generation(fact, payload, "call_id", true),
         "user_message"
         | "agent_message"
         | "exec_command_end"
@@ -265,6 +267,23 @@ pub(super) fn subagent_activity(fact: &mut Fact<'_>, payload: &Object<'_>) {
         "agent_thread_id":payload.text("agent_thread_id"), "agent_path":payload.text("agent_path"),
         "kind":payload.text("kind"),
     }));
+}
+
+pub(super) fn image_generation(
+    fact: &mut Fact<'_>,
+    payload: &Object<'_>,
+    id_field: &str,
+    mirror: bool,
+) {
+    fact.meta["uuid"] = json!(payload.text(id_field));
+    let start = fact.actions.len();
+    fact.push(
+        "image",
+        json!({"role":"agent", "media_type":"image", "text":payload.text("saved_path")}),
+    );
+    if mirror {
+        fact.mark_mirrors(start);
+    }
 }
 
 fn message(

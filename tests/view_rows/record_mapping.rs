@@ -181,3 +181,26 @@ fn codex_completed_notices_are_visible_and_unknown_items_are_counted() {
         2
     );
 }
+
+#[test]
+fn codex_image_generation_copies_make_one_image_row() {
+    for reverse in [false, true] {
+        let mut lines = vec![
+            response(
+                json!({"type":"image_generation_call","id":"image","status":"completed","result":"base64"}),
+            ),
+            event(
+                json!({"type":"image_generation_end","call_id":"image","status":"completed","saved_path":"/tmp/image.png"}),
+            ),
+            completed(
+                json!({"type":"ImageGeneration","id":"image","status":"completed","result":"base64","saved_path":"/tmp/image.png"}),
+            ),
+        ];
+        if reverse {
+            lines.reverse();
+        }
+        let rows = codex_rows(lines);
+        assert_eq!(kinds(&rows), [RowKind::Notice]);
+        assert!(!rows[0].collapsed);
+    }
+}
