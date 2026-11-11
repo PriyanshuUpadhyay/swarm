@@ -1,6 +1,6 @@
 ---
 name: engineering-standards
-description: "Supply scoped engineering rules for API contracts, data models, queries, retries, deadlines, quotas, and entitlement failures, marked as protocol, project rule, or advice. Use when design, coding, or review starts."
+description: "Supply scoped engineering rules for API contracts, data models, queries, retries, deadlines, quotas, and entitlement failures, marked as protocol, project rule, or advice. Use when a change touches an API payload, a data model or query, a retry or deadline, a quota or limit counter, or an authorization or entitlement read."
 license: MIT
 metadata:
   kind: rule
@@ -21,12 +21,6 @@ calling workflow keeps its edit authority and approval steps; this block supplie
 
 **How to read a row.**
 
-A row earns its place by stating a principle that stays true across engines and products. An
-engine or product name may appear in `Scope` or `Check` to say where a check runs, as SQLite does
-for D1. It may not appear in the rule text as the reason the rule holds. An incident belongs in
-`Source`, as evidence. A rule that is true only inside one product belongs in that product's
-repository instead of here.
-
 `Status` — **MUST** is a protocol requirement. **PROJECT** is a rule this repository adopted.
 **ADVICE** is vendor or community guidance. MUST beats PROJECT beats ADVICE. A citation alone does
 not prove a rule applies; apply a row only inside its `Scope`.
@@ -43,29 +37,23 @@ known-bad case before trusting it; a green tool result does not prove a `judgmen
    repository. Keep them in the existing plan or task record, not a second document.
 2. Read the sections of `references/standards.md` in this block's folder that contain those rows, and check their scope.
 3. Run each `Check` that fits the actual engine. Report what you could not run.
-4. When a `Scope` forks, two rows conflict, or the question is contested, stop and emit the
-   trade-off form below. Do not rule.
+4. When a `Scope` forks, two rows conflict, or the question is contested, stop and explain the
+   trade-off as the kit block `blocks/decision-with-default/SKILL.md` says. Do not rule.
 5. End with `pass N / fail N / judgment M / not checked K`. A fail quotes the row
    and the output that failed it.
-
-**Framing a trade-off.**
-
-This section has no table, because no rule and no checker decides a trade-off. When a `Scope`
-forks, two rows conflict, or an item is contested, emit the trade-off form of the kit block
-`blocks/decision-with-default/SKILL.md` and stop. This block does not write an ADR.
 
 **Refusals.**
 
 - No `APPROVE` or `REQUEST CHANGES` verdict, and no coverage claim. The review check preset owns those.
 - No ADR, no decision record.
-- No security rules. Out of scope by the user's instruction.
+- No general security review; the global agent instructions own trust boundaries. Rows A2 and R4 stay, because they are protocol and entitlement rules.
 - This block supplies no implementation workflow, migrations, or installs; the caller owns them.
 - No answer outside these tables. Say "no applicable rule in this block" instead of improvising.
 - No rule without a citation, a runnable check, or a named local incident.
 
 ## Example
 Initial state: a change adds an API field `limit` where unlimited is `-1`.
-Action: rows A9 (variants under `oneOf`) and J2 (stored-to-wire mapping) apply. A9 is ADVICE and the repo has no variant shape, so it goes to the trade-off form; J2 is PROJECT, and its judgment fails because no mapping is written.
+Action: rows A9 (variants under `oneOf`) and J2 (stored-to-wire mapping) apply. A9 is ADVICE and the repo has no variant shape, so it is an open trade-off for the owner; J2 is PROJECT, and its judgment fails because no mapping is written.
 Result: `pass 0 / fail 1 / judgment 1 / not checked 0`, and the fail quotes J2 and the missing mapping.
 
 ## Check (script)

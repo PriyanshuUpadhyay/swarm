@@ -43,7 +43,7 @@ Result: the user answers "kept as proposed". The builder draws one static diagra
 - none: the decisions live only in the step file, which holds this block's own Example decision.
 
 ## Check (judge)
-- Are there 5 claim decisions or fewer, and does each have exactly one `(x)` option? A trade-off form is not a claim decision. Quote each question with its options, or write "no fork".
+- Are there 5 claim decisions or fewer, and does each have exactly one `(x)` option? An open trade-off is not a claim decision. Quote each question with its options, or write "no fork".
 - Does each claim decision sit on the claim it changes, after that claim's exhibit and before its child claims? Quote the decision and the claim.
 - Does each open direction-changing choice state the relevant trade-off and recommendation, leave the decision with the human owner, and stop dependent work? Quote the choice and the stopped work.
 - Does each "not opened" answer on an important claim decision have a follow-up question in chat, or a line that says why none was needed? Quote both.
