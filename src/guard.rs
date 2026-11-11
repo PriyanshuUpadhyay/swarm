@@ -39,6 +39,7 @@ struct Rule {
 #[derive(Debug, PartialEq)]
 pub enum Verdict {
     Allow,
+    Warn(String),
     Deny(String),
 }
 

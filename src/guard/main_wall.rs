@@ -1,6 +1,6 @@
-//! ADR 0135: in a worktree hub, the main worktree is read-only for agents. This wall denies an
-//! edit tool call whose file is in main, and a shell call that writes main's files or moves the
-//! default branch. Shell text is read best effort: a path the command builds at run time passes.
+//! ADR 0143 amends ADR 0135: this wall denies an edit tool call whose file is in main, and warns
+//! on a shell call that writes main's files or moves the default branch. Shell text is read best
+//! effort: a path the command builds at run time passes.
 //! Main's `tmp/` stays writable (`task::SCRATCH`).
 
 use super::*;
@@ -13,6 +13,7 @@ mod shell;
 use shell::{Token, commands};
 
 pub const MAIN_READ_ONLY: &str = "swarm guard: main is read-only for agents. Run `swarm task start <name>`, edit and commit in the worktree it prints, then run `swarm task land <name>`; so the call is blocked";
+const MAIN_WARNING: &str = "swarm guard warning: main is read-only for agents. Run `swarm task start <name>` and edit in the worktree it prints.";
 
 /// Git subcommands that change a worktree, its index, or its branch.
 /// `update-ref` is not here: it writes no worktree, and the match below checks the ref it moves.
@@ -70,13 +71,14 @@ pub fn main_wall(provider: Provider, event: &str, payload: &str) -> Option<Verdi
         cwd = task::resolve(&cwd, Path::new(dir));
     }
     let hubs = Hubs::default();
-    let denied = if ["write", "edit", "replace", "patch"]
+    if ["write", "edit", "replace", "patch"]
         .iter()
         .any(|word| tool.contains(word))
     {
         edit_paths(input)
             .iter()
             .any(|path| hubs.main_target(&cwd, path))
+            .then(|| Verdict::Deny(MAIN_READ_ONLY.into()))
     } else if ["bash", "shell", "command", "exec"]
         .iter()
         .any(|word| tool.contains(word))
@@ -98,11 +100,10 @@ pub fn main_wall(provider: Provider, event: &str, payload: &str) -> Option<Verdi
                 None => strings(&input[key], &mut text),
             }
         }
-        shell_writes_main(&hubs, &cwd, &text)
+        shell_writes_main(&hubs, &cwd, &text).then(|| Verdict::Warn(MAIN_WARNING.into()))
     } else {
-        false
-    };
-    denied.then(|| Verdict::Deny(MAIN_READ_ONLY.into()))
+        None
+    }
 }
 
 /// Hub lookups for one call, by folder, because each costs several git runs and a call can name
@@ -309,7 +310,7 @@ fn shell_writes_main(hubs: &Hubs, cwd: &Path, text: &str) -> bool {
 }
 
 /// A Worktrunk command that lands into main, writes in it, or removes it. An agent lands with
-/// `swarm task land`, so `wt merge` is denied anywhere in a hub.
+/// `swarm task land`, so `wt merge` warns anywhere in a hub.
 fn wt_writes_main(hubs: &Hubs, cwd: &Path, args: &[&str]) -> bool {
     let mut dir = cwd.to_path_buf();
     let mut plain = Vec::new();

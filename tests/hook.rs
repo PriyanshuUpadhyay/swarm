@@ -199,6 +199,8 @@ mod focus;
 mod guards;
 #[path = "hook/hook_setup.rs"]
 mod hook_setup;
+#[path = "hook/main_wall.rs"]
+mod main_wall;
 #[path = "hook/notices.rs"]
 mod notices;
 #[path = "hook/setup_trust.rs"]
