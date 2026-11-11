@@ -79,3 +79,13 @@ Round 2026-11-11, prompt audit. The skill side is `f63f8338`, the baseline is `9
 Verdict 2026-11-11: keep, with a fix. Both Claude losses are claims that the page did not support,
 and the cut had moved the number check into the link check, for numbers only. `5e3d8590` makes the
 link check also compare each quoted passage and its version. The fix is not rerun yet.
+
+Rerun 2026-11-11 of recent-compliance on `98498f8e`, which has `5e3d8590`, same baseline.
+
+| date | skill commit | baseline | case | provider | grader | result | grader note |
+|---|---|---|---|---|---|---|---|
+| 2026-11-11 | 98498f8e | 9d924cfd | recent-compliance | claude | checker codex | win (narrow) | 2/4 each; link script passed vs 3 dead; both had a wrong author and one number with the wrong scope |
+| 2026-11-11 | 98498f8e | 9d924cfd | recent-compliance | codex | checker claude | loss (narrow) | 4/4 each, script 0 each; the baseline added exact quotes and a contested section |
+
+Verdict after rerun: keep. The Claude loss turned into a win, and the Codex loss is on quality only.
+The fix did not stop every unsupported claim, and the graders differed on whether to read notes.md.

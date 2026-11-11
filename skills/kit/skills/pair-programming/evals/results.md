@@ -38,3 +38,15 @@ and owner replies are as in round 1; the upstream commit was made again with the
 Verdict 2026-11-11: keep, with a watch. Both stale-base losses pass every expectation and differ in
 how the behavior list split the flag from its output. No expectation tests that split, so the next
 case should.
+
+Rerun 2026-11-11 of stale-base, same baseline. Codex ran on `98498f8e`; Claude ran on `98498f8e`
+and then on `3dda4775`, which keeps a behavior's usage text and test inside that behavior.
+
+| date | skill commit | baseline | case | provider | result | grader note |
+|---|---|---|---|---|---|---|
+| 2026-11-11 | 98498f8e | 9d924cfd | stale-base | codex | win (narrow) | 2/2 each; the skill side's diff changed the usage line its behavior list promised |
+| 2026-11-11 | 98498f8e | 9d924cfd | stale-base | claude | loss (narrow) | 2/2 each; the usage line again went to a second behavior that was not applied |
+| 2026-11-11 | 3dda4775 | 9d924cfd | stale-base | claude | win (narrow) | 2/2 each; one chunk with the usage line and full JSON checks for small and raise |
+
+Verdict after rerun: keep with `3dda4775`. The eval brief keeps the pane from reading other blocks,
+so `Standards:` is always `none` and this case does not test that step.
