@@ -1,5 +1,6 @@
-//! A chat's background tasks: the shells and subagents its live Claude agents started, and the
-//! background terminals its live Codex agents started (ADR 0104).
+//! A chat's background tasks: the shells and subagents its live Claude agents started, the
+//! background terminals its live Codex agents started, and the background tasks its live AGY
+//! agents started (ADR 0104).
 //!
 //! Claude Code runs them inside its own process, so nothing outside can stop them or type into
 //! them. Its log names each one: a tool result with `toolUseResult.backgroundTaskId` (a shell) or
@@ -165,7 +166,7 @@ pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
                 let Some(text) = payload["output"].as_str() else {
                     continue;
                 };
-                let header = text.split("Output:").next().unwrap_or(text);
+                let header = text.split_once("Output:").map_or(text, |(head, _)| head);
 
                 if let Some(id) = number_after(header, "Process running with session ID ") {
                     if let Some((cmd, started_at)) = commands.get(call)
@@ -190,6 +191,61 @@ pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
                 }
             }
             _ => {}
+        }
+    }
+
+    found
+}
+
+/// Every background task one live AGY agent's log names, oldest first. A `GENERIC` step with status
+/// `RUNNING` says `Tool is running as a background task with task id: <conv>/task-<n>` and holds a
+/// `Task Description:` line; a later `SYSTEM_MESSAGE` step with `sender=<that id>` ends it. The
+/// task's log file lies outside the folder that the panel's read-only view opens (ADR 0104), so the
+/// row has no log.
+pub(super) fn agy_tasks(agent: &str, log: &str) -> Vec<Task> {
+    const START: &str = "Tool is running as a background task with task id: ";
+    let mut found: Vec<Task> = Vec::new();
+
+    for line in log.lines() {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let Some(text) = record["content"].as_str() else {
+            continue;
+        };
+
+        if record["type"] == "GENERIC" && record["status"] == "RUNNING" {
+            let Some(id) = text
+                .split_once(START)
+                .and_then(|(_, rest)| rest.lines().next())
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && !found.iter().any(|task| task.id == *id))
+            else {
+                continue;
+            };
+            let described = text
+                .split_once("Task Description: ")
+                .map_or("", |(_, rest)| rest);
+
+            found.push(Task {
+                id: id.into(),
+                agent: agent.into(),
+                kind: TaskKind::Shell,
+                title: title_of(described),
+                status: "running".into(),
+                summary: None,
+                started_at: record["created_at"].as_str().map(str::to_string),
+                output: None,
+            });
+        } else if record["type"] == "SYSTEM_MESSAGE"
+            && let Some((_, rest)) = text.split_once("sender=")
+            && let Some(sender) = rest.split_whitespace().next()
+            && let Some(task) = found.iter_mut().find(|task| task.id == sender)
+        {
+            // A timer (`schedule`) ends with its prompt and no exit code.
+            let failed =
+                number_after(text, "Command exited with code ").is_some_and(|code| code != "0");
+            task.status = if failed { "failed" } else { "completed" }.into();
         }
     }
 
@@ -265,38 +321,42 @@ pub(super) fn live_agents(agents: &Value) -> impl Iterator<Item = &Value> {
         .filter(|agent| agent["alive"] == true)
 }
 
-/// The live Claude and Codex agents of a session, as (agent id, provider, log path). A provider with
-/// no background reader is left out; the match makes a new provider show here.
-fn agent_logs(app: &Server, session: &str) -> Vec<(String, Provider, PathBuf)> {
+/// A reader of one provider's log: the agent id and the log text give its background tasks.
+type Reader = fn(&str, &str) -> Vec<Task>;
+
+/// The background reader of a provider, or `None` when it has no background work. The match is
+/// exhaustive, so a new provider shows here.
+fn reader(provider: Provider) -> Option<Reader> {
+    match provider {
+        Provider::Claude => Some(tasks),
+        Provider::Codex => Some(codex_tasks),
+        Provider::Agy => Some(agy_tasks),
+        Provider::Pi => None,
+    }
+}
+
+/// The live agents of a session that have a background reader, as (agent id, reader, log path).
+fn agent_logs(app: &Server, session: &str) -> Vec<(String, Reader, PathBuf)> {
     let hub = app.hub.lock().unwrap();
+
     live_agents(&hub.agents[session])
         .filter_map(|agent| {
-            let provider = Provider::parse(agent["provider"].as_str()?)?;
-            match provider {
-                Provider::Claude | Provider::Codex => {}
-                Provider::Agy | Provider::Pi => return None,
-            }
+            let read = reader(Provider::parse(agent["provider"].as_str()?)?)?;
             let log = agent["log"].as_str().filter(|log| !log.is_empty())?;
-            Some((
-                agent["id"].as_str()?.to_string(),
-                provider,
-                PathBuf::from(log),
-            ))
+
+            Some((agent["id"].as_str()?.to_string(), read, PathBuf::from(log)))
         })
         .collect()
 }
 
-/// Every background task of the session's live Claude and Codex agents.
+/// Every background task of the session's live agents.
 pub(super) fn session_tasks(app: &Server, session: &str) -> Vec<Task> {
     agent_logs(app, session)
         .into_iter()
-        .flat_map(|(agent, provider, log)| {
+        .flat_map(|(agent, read, log)| {
             // ponytail: reads each whole log per call; keep an offset per log if a long chat lags.
             let text = std::fs::read_to_string(log).unwrap_or_default();
-            match provider {
-                Provider::Codex => codex_tasks(&agent, &text),
-                _ => tasks(&agent, &text),
-            }
+            read(&agent, &text)
         })
         .collect()
 }
@@ -322,148 +382,5 @@ pub(super) async fn background(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn line(value: Value) -> String {
-        format!("{value}\n")
-    }
-
-    fn launch(call: &str, result: Value, text: &str) -> String {
-        line(json!({
-            "type": "user",
-            "message": {"role": "user", "content": [{"tool_use_id": call, "type": "tool_result", "content": text}]},
-            "toolUseResult": result,
-        }))
-    }
-
-    fn call(id: &str, name: &str, input: Value) -> String {
-        line(json!({
-            "type": "assistant",
-            "message": {"content": [{"type": "tool_use", "id": id, "name": name, "input": input}]},
-        }))
-    }
-
-    fn notification(id: &str, status: &str) -> String {
-        line(json!({
-            "type": "queue-operation",
-            "content": format!("<task-notification>\n<task-id>{id}</task-id>\n<status>{status}</status>\n<summary>Background command \"x\" {status}</summary>\n</task-notification>"),
-        }))
-    }
-
-    #[test]
-    fn a_log_names_shells_and_subagents_with_their_end_state() {
-        let dir = std::env::temp_dir().join(format!("swarm-bg-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let live_file = dir.join("b2.output");
-        std::fs::write(&live_file, "still going\n").unwrap();
-        let log = [
-            call("t1", "Bash", json!({"command": "sleep 30", "description": "Sleep for 30 seconds", "run_in_background": true})),
-            launch("t1", json!({"backgroundTaskId": "b1"}), "Command running in background with ID: b1. Output is being written to: /tmp/claude-1/x/s/tasks/b1.output. You will be notified when it completes."),
-            // Moved to the background by Ctrl+B or a timeout: no run_in_background in the input.
-            call("t2", "Bash", json!({"command": "cargo test"})),
-            launch("t2", json!({"backgroundTaskId": "b2"}), &format!("Command running in background with ID: b2. Output is being written to: {}. You will be notified.", live_file.display())),
-            call("t3", "Agent", json!({"description": "ignored", "run_in_background": true})),
-            launch("t3", json!({"isAsync": true, "agentId": "a3", "description": "Research speakers"}), "Async agent launched successfully.\nagentId: a3\noutput_file: /tmp/claude-1/x/s/tasks/a3.output\nDo NOT Read"),
-            "not json\n".into(),
-            launch("t0", json!({"backgroundTaskId": ""}), "Output is being written to: /tmp/claude-1/x/s/tasks/.output."),
-            // A Read of a file that quotes a notice is not an end record.
-            line(json!({
-                "type": "user",
-                "message": {"role": "user", "content": [{"tool_use_id": "t9", "type": "tool_result", "content": "<task-notification>\n<task-id>b2</task-id>\n<status>killed</status>\n</task-notification>"}]},
-            })),
-            notification("b1", "completed"),
-        ]
-        .concat();
-
-        let found = tasks("orchestrator", &log);
-        let brief: Vec<_> = found
-            .iter()
-            .map(|t| (t.id.as_str(), t.kind, t.title.as_str(), t.status.as_str()))
-            .collect();
-        assert_eq!(
-            brief,
-            [
-                ("b1", TaskKind::Shell, "Sleep for 30 seconds", "completed"),
-                ("b2", TaskKind::Shell, "cargo test", "running"),
-                ("a3", TaskKind::Agent, "Research speakers", "unknown"),
-            ]
-        );
-        assert_eq!(
-            found[0].summary.as_deref(),
-            Some("Background command \"x\" completed")
-        );
-        assert_eq!(
-            found[0].output.as_deref(),
-            Some(Path::new("/tmp/claude-1/x/s/tasks/b1.output"))
-        );
-        assert_eq!(
-            found[2].output.as_deref(),
-            Some(Path::new("/tmp/claude-1/x/s/tasks/a3.output"))
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_codex_log_names_a_running_background_terminal() {
-        let record = |at: &str, payload: Value| {
-            line(json!({"timestamp": at, "type": "response_item", "payload": payload}))
-        };
-        let call = |at: &str, id: &str, name: &str, args: Value| {
-            record(
-                at,
-                json!({"type": "function_call", "name": name, "arguments": args.to_string(), "call_id": id}),
-            )
-        };
-        let output = |at: &str, id: &str, text: &str| {
-            record(
-                at,
-                json!({"type": "function_call_output", "call_id": id, "output": text}),
-            )
-        };
-
-        let log = [
-            // The answer comes after the wait, so the task starts at the call's time.
-            call("2026-11-11T10:00:00Z", "c1", "exec_command", json!({"cmd": "npm run dev"})),
-            output("2026-11-11T10:00:10Z", "c1", "Chunk ID: 1\nWall time: 10.0 seconds\nProcess running with session ID 1001\nOutput:\nready"),
-            call("2026-11-11T10:01:00Z", "c2", "exec_command", json!({"cmd": "make build"})),
-            output("2026-11-11T10:01:10Z", "c2", "Wall time: 10.0 seconds\nProcess running with session ID 1002\nOutput:\n"),
-            call("2026-11-11T10:02:00Z", "c3", "write_stdin", json!({"session_id": 1002, "chars": ""})),
-            output("2026-11-11T10:02:05Z", "c3", "Wall time: 5.0 seconds\nProcess exited with code 0\nOutput:\ndone"),
-            // A command that exited, whose own output prints the running phrase, is no task.
-            call("2026-11-11T10:03:00Z", "c4", "exec_command", json!({"cmd": "rg session src"})),
-            output("2026-11-11T10:03:01Z", "c4", "Wall time: 0.1 seconds\nProcess exited with code 0\nOutput:\nProcess running with session ID 1003"),
-        ]
-        .concat();
-
-        let found = codex_tasks("chair", &log);
-        let brief: Vec<_> = found
-            .iter()
-            .map(|t| {
-                (
-                    t.id.as_str(),
-                    t.title.as_str(),
-                    t.status.as_str(),
-                    t.started_at.as_deref(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            brief,
-            [
-                (
-                    "1001",
-                    "npm run dev",
-                    "running",
-                    Some("2026-11-11T10:00:00Z")
-                ),
-                (
-                    "1002",
-                    "make build",
-                    "completed",
-                    Some("2026-11-11T10:01:00Z")
-                ),
-            ]
-        );
-    }
-}
+#[path = "background/tests.rs"]
+mod tests;

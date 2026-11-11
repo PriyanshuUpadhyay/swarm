@@ -64,7 +64,15 @@ line of text, not a terminal, so ADR 0099 holds; the output stays in the panel. 
   shows as running while its agent lives. This replaces "Codex background work is out of v1" above.
   The record shape comes from Codex's public behavior, not a repo fixture, so a change to that
   wording hides the rows.
-- pi draws nothing: its core has no background command or agent, only community extensions.
-- AGY draws nothing: no record of its background commands is verified.
+- AGY background tasks are listed. A `GENERIC` step with status `RUNNING` and the line `Tool is
+  running as a background task with task id: <conv>/task-<n>` starts a task; its label is the
+  `Task Description:` line (`sleep 40`, or `Timer: 8s, Prompt: ...` for a `schedule` timer). A later
+  `SYSTEM_MESSAGE` step with `sender=<that id>` ends it: `Command exited with code <c>` gives
+  completed or failed, and a timer's message, which has no exit code, gives completed. The row has no
+  log, because the task's `.log` file is under AGY's own folder and the panel's read-only view opens
+  only a file under `/tmp/claude-<uid>/`. The record shape was read from real AGY logs on
+  2026-10-23, so a change to that wording hides the rows.
+- pi draws nothing: 212 local pi sessions use only `bash`, `read`, `edit`, and `write`, so its log
+  holds no background record, and its core has no background command or agent.
 - There is no Stop button. Claude stops a task only through `/tasks`, and Codex has only a stop-all
   API, so the contract has no per-task stop.
