@@ -371,6 +371,39 @@ fn with_no_file_the_built_in_profiles_show_and_nothing_is_written() {
     assert!(listing.get("imported").is_none());
     assert!(!profiles_file(&home).exists());
 
+    let profiles = listing["profiles"].as_array().unwrap();
+    for profile in profiles {
+        for runner in profile["runners"].as_array().unwrap() {
+            assert_ne!(runner["provider"], "agy", "{}", profile["name"]);
+            assert_ne!(runner["model"], "gpt-6-luna", "{}", profile["name"]);
+            assert!(
+                !runner["model"].as_str().unwrap().contains("gemini"),
+                "{runner}"
+            );
+        }
+    }
+
+    let bin = clis(&home, &["codex", "claude", "agy"]);
+    for (role, model) in [
+        ("search.web", "gpt-6.1-sol"),
+        ("code.small", "gpt-6.1-sol"),
+        ("council.gemini", "gpt-6.1-sol"),
+    ] {
+        let profile = profiles.iter().find(|p| p["name"] == role).unwrap();
+        assert_eq!(profile["runners"][0]["provider"], "codex", "{role}");
+        assert_eq!(profile["runners"][0]["model"], model, "{role}");
+        assert_eq!(profile["runners"][0]["effort"], "high", "{role}");
+        assert_eq!(profile["runners"][0]["sandbox"], "workspace-write");
+        assert_eq!(profile["runners"][0]["approval"], "never");
+
+        for _ in 0..2 {
+            let selected = json(&swarm(&home, &[("PATH", &bin)], &["roles", "get", role]));
+            assert_eq!(selected["provider"], "codex", "{role}");
+            assert_eq!(selected["model"], model, "{role}");
+            assert_eq!(selected["effort"], "high", "{role}");
+        }
+    }
+
     // The first save writes the defaults plus the change.
     let revision = listing["revision"].as_str().unwrap();
     let chat = r#"{"name": "chat", "runners": [{"provider": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"}]}"#;
