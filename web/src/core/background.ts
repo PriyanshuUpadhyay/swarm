@@ -13,6 +13,10 @@ export type BackgroundTask = {
   /** `running`, `unknown`, or the end state Claude Code reported; new values may appear. */
   status: string;
   summary?: string;
+  /** The CLI that owns the task. */
+  provider?: "claude" | "codex";
+  /** The log's timestamp for the launch. */
+  started_at?: string;
   /** True when the task has an output file to show. */
   output: boolean;
 };
@@ -32,6 +36,32 @@ export function taskStatus(status: string): PaneStatus {
   if (status === "completed") return "done";
   if (status === "failed" || status === "killed") return "failed";
   return "ended";
+}
+
+/** The chat-end line for the running tasks (ADR 0104): the newest task's label, how many run, when
+ *  the newest started, and the Cmd+J row key that Open picks. `null` when none runs. */
+export function runningLine(tasks: readonly BackgroundTask[]) {
+  const running = tasks.filter((t) => t.status === "running");
+  const newest = running[running.length - 1];
+  if (!newest) return null;
+  const started = newest.started_at ? Date.parse(newest.started_at) : NaN;
+  return {
+    label: running.length > 1 ? `${running.length} tasks` : newest.title || newest.id,
+    count: running.length,
+    startedAt: Number.isNaN(started) ? null : started,
+    key: `task:${newest.agent}:${newest.id}`,
+  };
+}
+
+/** The line's Open asks the open chat to show the Cmd+J panel on this row key. */
+export const OPEN_BACKGROUND = "swarm:open-background";
+
+/** `m:ss`, or `h:mm:ss` from an hour. */
+export function elapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}` : `${Math.floor(total / 60)}:${pad(total % 60)}`;
 }
 
 /** The chair, then the live children oldest first, each followed by its tasks, running ones first,

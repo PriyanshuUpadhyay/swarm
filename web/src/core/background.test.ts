@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Agent, Session } from "./api";
-import { backgroundRows, poll, taskStatus, type BackgroundTask } from "./background";
+import { backgroundRows, elapsed, poll, runningLine, taskStatus, type BackgroundTask } from "./background";
 
 const session: Session = { id: "chat", cwd: "/work/app", created_at: 0, chair_provider: "claude", adapter: "tmux-swarm", project: null, workspace: "/work/app" };
 const agent = (id: string, extra: Partial<Agent> = {}): Agent => ({ id, role: "code.small", state: null, alive: true, pane: `%${id}`, provider: "claude", ...extra });
@@ -76,5 +76,16 @@ describe("poll", () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(calls).toBe(3);
     stop();
+  });
+});
+
+describe("runningLine", () => {
+  it("names one running task, counts several, and is null with none", () => {
+    const at = { started_at: "2026-11-11T10:00:00Z" };
+    expect(runningLine([task("b1", "chat", "completed")])).toBeNull();
+    expect(runningLine([{ ...task("b1", "chat", "running"), title: "npm run dev", ...at }])).toEqual({ label: "npm run dev", count: 1, startedAt: Date.parse(at.started_at), key: "task:chat:b1" });
+    const two = runningLine([task("b1", "chat", "running"), task("b2", "worker", "running")]);
+    expect(two).toMatchObject({ label: "2 tasks", count: 2, startedAt: null, key: "task:worker:b2" });
+    expect(elapsed(75_000)).toBe("1:15");
   });
 });
