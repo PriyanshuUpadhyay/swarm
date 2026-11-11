@@ -1,5 +1,5 @@
 """Auto approval cases for start_plan.py --auto; test_start_plan.py runs them."""
-import subprocess, sys, tempfile
+import hashlib, json, subprocess, sys, tempfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("start_plan.py")
@@ -34,9 +34,13 @@ def test_auto_approval(plan):
     assert out.returncode == 1 and "run plan-chart first" in out.stderr, "a page drawn from an older plan.md refuses"
     draw(run, signed)
     out = auto(run, note)
-    assert out.returncode == 0 and "round 1: approved by the owner's words" in out.stdout, out
+    assert out.returncode == 0, out
     assert (run / "01-reply.md").read_text().startswith("Status: open\n"), out
-    assert WORDS in (run / "plan-review" / "1.json").read_text()
+    approval = json.loads((run / "plan-review" / "1.json").read_text())["result"]
+    assert approval["decision"] == "approved", approval
+    assert approval["auto"]["words"] == WORDS, approval
+    assert approval["auto"]["file"] == str(note.resolve()), approval
+    assert approval["auto"]["plan_sha256"] == hashlib.sha256(signed.encode("utf-8")).hexdigest(), approval
     (run / "plan.md").write_text(signed.replace("it |", "it now |"), encoding="utf-8")
     out = subprocess.run([sys.executable, "-I", SCRIPT, run], capture_output=True, text=True)
     assert out.returncode == 1 and "plan.md changed after the owner approved plan.html" in out.stderr, out
@@ -52,4 +56,8 @@ def test_auto_approval(plan):
     draw(crlf, signed)
     (crlf / "plan.md").write_bytes(signed.replace("\n", "\r\n").encode("utf-8"))
     out = auto(crlf, note)
-    assert out.returncode == 0 and "round 1: approved" in out.stdout, out
+    assert out.returncode == 0, out
+    assert (crlf / "01-reply.md").read_text().startswith("Status: open\n"), out
+    approval = json.loads((crlf / "plan-review" / "1.json").read_text())["result"]
+    assert approval["decision"] == "approved", approval
+    assert approval["auto"]["plan_sha256"] == hashlib.sha256(signed.encode("utf-8")).hexdigest(), approval
