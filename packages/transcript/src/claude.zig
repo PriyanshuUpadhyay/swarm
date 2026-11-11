@@ -297,6 +297,7 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
                 .tool_call_id = str(block.object, "tool_use_id"),
                 .status = if (is_error) .failed else .completed,
                 .content = result_text,
+                .task_id = createdTaskId(rec),
             } });
             const result = rec.get("toolUseResult") orelse .null;
             if (!is_error and result == .object and result.object.contains("structuredPatch")) {
@@ -320,6 +321,16 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
         }
     }
     return events.items;
+}
+
+/// The id in a `TaskCreate` result's structured output, `toolUseResult.task.id`.
+fn createdTaskId(rec: std.json.ObjectMap) ?[]const u8 {
+    const result = rec.get("toolUseResult") orelse return null;
+    if (result != .object) return null;
+    const task = result.object.get("task") orelse return null;
+    if (task != .object) return null;
+    const id = task.object.get("id") orelse return null;
+    return if (id == .string) id.string else null;
 }
 
 /// A Claude `api_error` record's text, with its retry count when Claude retries the call, so a

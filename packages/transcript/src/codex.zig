@@ -96,6 +96,8 @@ pub fn parseLineState(arena: std.mem.Allocator, line: []const u8, state: ?*q.Sta
                 try std.fmt.allocPrint(arena, "Entered review mode: {s}", .{hint})
             else if (entered) "Entered review mode" else "Exited review mode";
             try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "review_mode", .text = text } });
+        } else if (std.mem.eql(u8, payload_type, "item_completed") and planText(payload) != null) {
+            try events.append(arena, .{ .proposed_plan = .{ .meta = meta, .text = planText(payload).? } });
         } else if (root.oneOf(payload_type, &.{
             "agent_message",           "exec_command_end",   "patch_apply_end",
             "mcp_tool_call_end",       "web_search_end",     "item_completed",
@@ -296,4 +298,12 @@ pub fn parseLineState(arena: std.mem.Allocator, line: []const u8, state: ?*q.Sta
 
     try events.append(arena, try root.unknownEvent(arena, meta, line));
     return events.items;
+}
+
+/// The text of a completed `Plan` turn item (Codex plan mode), else null.
+fn planText(payload: std.json.ObjectMap) ?[]const u8 {
+    const item = payload.get("item") orelse return null;
+    if (item != .object or !std.mem.eql(u8, root.str(item.object, "type"), "Plan")) return null;
+    const text = item.object.get("text") orelse return null;
+    return if (text == .string) text.string else null;
 }

@@ -57,6 +57,8 @@ pub const ToolCallUpdate = struct {
     tool_call_id: []const u8,
     status: ToolStatus,
     content: []const u8,
+    /// The id Claude gave a task that `TaskCreate` made, from the result's `task.id`.
+    task_id: ?[]const u8 = null,
 };
 
 pub const DiffHunk = struct {
@@ -103,6 +105,9 @@ pub const ElicitationResult = struct {
     answers: []Answer,
 };
 
+/// A plan the agent proposes for the owner's approval (a Codex plan item).
+pub const ProposedPlan = struct { meta: Meta, text: []const u8 };
+
 pub const HookResult = struct {
     meta: Meta,
     kind: []const u8,
@@ -144,6 +149,7 @@ pub const Event = union(enum) {
     tool_diff: ToolDiff,
     elicitation: Elicitation,
     elicitation_result: ElicitationResult,
+    proposed_plan: ProposedPlan,
     hook_result: HookResult,
     permission_decision: PermissionDecision,
     queue_operation: QueueOperation,

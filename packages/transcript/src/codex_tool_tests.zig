@@ -270,3 +270,14 @@ test "Codex context uses last total and does not add cached input twice" {
     );
     try std.testing.expect(missing[0] == .ignored);
 }
+
+test "a completed plan item becomes a proposed plan" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"event_msg","timestamp":"t","payload":{"type":"item_completed","item":{"type":"Plan","id":"plan-1","text":"# Plan\n\n1. Add the row"}}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("# Plan\n\n1. Add the row", events[0].proposed_plan.text);
+}

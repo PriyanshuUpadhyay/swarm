@@ -157,3 +157,14 @@ test "unknown attachment type becomes unknown" {
     try std.testing.expectEqual(1, events.len);
     try std.testing.expectEqualStrings(line, events[0].unknown.raw);
 }
+
+test "a TaskCreate result carries the new task id" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const line =
+        \\{"type":"user","sessionId":"s1","uuid":"u6","timestamp":"t","message":{"content":[{"type":"tool_result","tool_use_id":"create-1","content":"Task created"}]},"toolUseResult":{"task":{"id":"7","subject":"Write tests"}}}
+    ;
+    const events = try parseLine(arena_state.allocator(), line);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("7", events[0].tool_call_update.task_id.?);
+}
