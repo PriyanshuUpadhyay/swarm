@@ -72,6 +72,7 @@ pub fn argv(
                 start.insert(0, handler(chair_hook_command(provider.id())?));
             }
             hooks.insert("SessionStart".into(), start.into());
+
             args.extend(["--settings".into(), owner_choice::claude_json(hooks, cwd)]);
             Ok(args)
         }
