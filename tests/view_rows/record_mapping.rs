@@ -219,3 +219,39 @@ fn codex_local_shell_calls_show_the_command_and_output() {
     assert_eq!(tool.output.as_ref().unwrap().text, "main.rs");
     assert_eq!(tool.state, ToolState::Finished);
 }
+
+#[test]
+fn codex_rollback_removes_the_last_turns_before_replay_continues() {
+    let prompt = |id, text| {
+        response(
+            json!({"type":"message","id":id,"role":"user","content":[{"type":"input_text","text":text}]}),
+        )
+    };
+    let rows = codex_rows(vec![
+        event(json!({"type":"task_started"})),
+        prompt("keep", "Keep this turn"),
+        event(json!({"type":"task_complete"})),
+        event(json!({"type":"task_started"})),
+        prompt("gone1", "Remove this turn"),
+        event(json!({"type":"task_complete"})),
+        event(json!({"type":"task_started"})),
+        prompt("gone2", "Remove this unfinished turn"),
+        event(json!({"type":"thread_rolled_back","num_turns":2})),
+        event(json!({"type":"thread_rolled_back","num_turns":0})),
+        event(json!({"type":"task_started"})),
+        prompt("new", "Continue here"),
+    ]);
+    let visible: Vec<_> = rows.iter().filter(|row| !row.collapsed).collect();
+    assert_eq!(
+        visible
+            .iter()
+            .map(|row| row.text.as_str())
+            .collect::<Vec<_>>(),
+        ["Keep this turn", "completed", "Continue here"]
+    );
+    assert!(
+        !rows
+            .iter()
+            .any(|row| row.system_kind.as_deref() == Some("unmapped"))
+    );
+}

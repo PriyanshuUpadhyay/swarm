@@ -43,6 +43,17 @@ pub(super) fn rows_with_context(
     is_codex: bool,
     context: Option<(bool, bool)>,
 ) -> Vec<Row> {
+    let replay;
+    let records = if is_codex
+        && records
+            .iter()
+            .any(|record| string(&record.event, "type") == "thread_rolled_back")
+    {
+        replay = codex::rolled_back(records);
+        replay.as_slice()
+    } else {
+        records
+    };
     let mirror_parts = if is_codex {
         codex::mirror_parts(records)
     } else {

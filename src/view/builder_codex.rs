@@ -3,6 +3,76 @@
 use super::super::transcript::{Record, meta, string};
 use std::collections::HashMap;
 
+pub(super) fn rolled_back(records: &[Record]) -> Vec<Record> {
+    let mut turns: Vec<Vec<usize>> = Vec::new();
+    let mut current = Vec::new();
+    let mut explicit = false;
+    let mut visible = false;
+    let mut removed = std::collections::HashSet::new();
+    for (index, record) in records.iter().enumerate() {
+        let event = &record.event;
+        let kind = string(event, "type");
+        if kind == "thread_rolled_back" {
+            if visible || explicit {
+                turns.push(std::mem::take(&mut current));
+            }
+            current.clear();
+            let count = event["num_turns"]
+                .as_u64()
+                .and_then(|count| usize::try_from(count).ok())
+                .unwrap_or(usize::MAX);
+            let keep = turns.len().saturating_sub(count);
+            removed.extend(turns.drain(keep..).flatten());
+            visible = false;
+            explicit = false;
+            continue;
+        }
+        if kind == "turn_started"
+            || kind == "page"
+            || kind == "user_message_chunk" && !explicit && visible && event["codex_mirror"] != true
+        {
+            if visible || explicit {
+                turns.push(std::mem::take(&mut current));
+            }
+            current.clear();
+            explicit = kind == "turn_started";
+            visible = false;
+        }
+        current.push(index);
+        visible |= matches!(
+            kind,
+            "user_message_chunk"
+                | "agent_message_chunk"
+                | "agent_thought_chunk"
+                | "tool_call"
+                | "tool_call_update"
+                | "tool_diff"
+                | "image"
+                | "proposed_plan"
+                | "subagent_activity"
+                | "error"
+        ) || kind == "system_message"
+            && !matches!(
+                string(event, "kind"),
+                "developer" | "context" | "injected" | "system"
+            );
+        if kind == "turn_ended" {
+            if visible || explicit {
+                turns.push(std::mem::take(&mut current));
+            }
+            current.clear();
+            explicit = false;
+            visible = false;
+        }
+    }
+    records
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !removed.contains(index))
+        .map(|(_, record)| record.clone())
+        .collect()
+}
+
 pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
     let mut parts = HashMap::<usize, Vec<usize>>::new();
     let mut scopes = Vec::with_capacity(records.len());

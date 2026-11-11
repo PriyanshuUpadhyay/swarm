@@ -254,7 +254,7 @@ impl Row {
 fn is_record(event: &Value) -> bool {
     matches!(
         string(event, "type"),
-        "ignored" | "unknown" | "usage" | "queue_operation" | "turn_started"
+        "ignored" | "unknown" | "usage" | "queue_operation" | "turn_started" | "thread_rolled_back"
     ) || (string(event, "type") == "session_info" && string(event, "kind") == "agent_name")
 }
 /// The whole record: the source line of an ignored or unknown event, else the event itself.

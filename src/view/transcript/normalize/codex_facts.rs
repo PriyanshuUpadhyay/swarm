@@ -251,6 +251,13 @@ fn event_message(
         "patch_apply_end" => super::codex_changes::append(fact, payload, "call_id", work)?,
         "sub_agent_activity" => subagent_activity(fact, payload),
         "image_generation_end" => image_generation(fact, payload, "call_id", true),
+        "thread_rolled_back" => {
+            if let Some(turns) = payload.token("num_turns") {
+                fact.push("thread_rolled_back", json!({"num_turns":turns}));
+            } else {
+                fact.push_unknown();
+            }
+        }
         "user_message"
         | "agent_message"
         | "exec_command_end"
