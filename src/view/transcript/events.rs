@@ -180,7 +180,15 @@ pub fn row(record: &Record) -> Option<Row> {
                 // Its own id form: a uuid-less queue edit also makes a queued row under `key`.
                 format!("record-{}", record.source_id),
             );
-            row.system_kind = Some("record".into());
+            // `ignored` is a decision; `unknown` is a line no parser maps, which the chat counts.
+            row.system_kind = Some(
+                if event_type == "unknown" {
+                    "unmapped"
+                } else {
+                    "record"
+                }
+                .into(),
+            );
             row.output = record.text_preview.clone();
             row
         }
@@ -224,7 +232,7 @@ pub fn row(record: &Record) -> Option<Row> {
                 event_type.into(),
                 format!("record-{}", record.source_id),
             );
-            row.system_kind = Some("record".into());
+            row.system_kind = Some("unmapped".into());
             let mut preview = TextPreview::new(&record_text(event), 120);
             preview.id = format!("{}:output", record.source_id);
             row.output = Some(preview);

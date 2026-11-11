@@ -349,6 +349,6 @@ pub fn is_collapsed(row: &Row) -> bool {
                 // Codex writes its setup prompt and AGENTS.md as developer and context messages.
                 || matches!(
                     row.system_kind.as_deref(),
-                    Some("injected" | "developer" | "context" | "record")
+                    Some("injected" | "developer" | "context" | "record" | "unmapped")
                 )))
 }

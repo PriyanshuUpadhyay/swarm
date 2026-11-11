@@ -379,3 +379,14 @@ fn open_codex_async_question_hides_its_accepted_output() {
             .collect();
     assert_eq!(texts(&rows), vec!["Sign in now?"]);
 }
+#[test]
+fn unknown_record_is_unmapped_and_ignored_is_not() {
+    let rows = build(vec![
+        json!({"type":"ignored","kind":"mode","raw":"{\"type\":\"mode\"}"}),
+        json!({"type":"unknown","raw":"{\"type\":\"brand-new\"}"}),
+    ]);
+    let kinds: Vec<_> = rows.iter().map(|row| row.system_kind.as_deref()).collect();
+    assert_eq!(kinds, [Some("record"), Some("unmapped")]);
+    assert!(rows.iter().all(|row| row.collapsed));
+    assert!(rows[1].output.as_ref().unwrap().text.contains("brand-new"));
+}
