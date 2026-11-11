@@ -144,21 +144,6 @@ pub(crate) fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     };
     let home = std::path::PathBuf::from(env_var("HOME")?);
     let mut items = setup_rows(&home, &HookFiles::of(&home)?)?;
-    items.push(doctor_row(
-        "transcript",
-        "Transcript tool",
-        if env::var_os("SWARM_TRANSCRIPT_TOOL").is_some()
-            || swarm::paths::bundled("transcript").is_some()
-        {
-            ("ok", "Chats can show their rows".into())
-        } else {
-            (
-                "broken",
-                "This build ships no transcript tool, so chats show no rows".into(),
-            )
-        },
-        None,
-    ));
     items.push(doctor_row("notices", "Notices", notices_state(), None));
     #[cfg(feature = "serve")]
     items.push(doctor_row("ui", "UI server", serve::ui_state(), None));

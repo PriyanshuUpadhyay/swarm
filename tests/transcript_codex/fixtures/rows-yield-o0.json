@@ -1,0 +1,172 @@
+[
+ {
+  "default_open": true,
+  "fold": {
+   "commands": 3,
+   "duration_seconds": 6.0,
+   "failed": 2,
+   "interrupted": 0,
+   "latest_title": "",
+   "other_tools": [
+    {
+     "count": 1,
+     "name": "write_stdin"
+    }
+   ],
+   "rings": 0,
+   "state": "failed",
+   "text": "3 commands \u00b7 write_stdin \u00b7 2 failed",
+   "unreported": 0,
+   "waits": 0
+  },
+  "id": "fold:call-y1:call@raw-0-0",
+  "kind": "fold",
+  "order": [
+   0,
+   0
+  ],
+  "source_ids": [
+   "raw-0-0",
+   "raw-204-0",
+   "raw-480-0",
+   "raw-675-0",
+   "raw-931-0",
+   "raw-1143-0",
+   "raw-1405-0",
+   "raw-1636-0",
+   "raw-1887-0"
+  ],
+  "steps": [
+   {
+    "detail": "{\"cmd\":\"sleep 5; exit 3\"}",
+    "id": "call-y1:call@raw-0-0",
+    "kind": "toolUse",
+    "order": [
+     0,
+     0
+    ],
+    "source_ids": [
+     "raw-0-0",
+     "raw-204-0"
+    ],
+    "text": "exec_command \u00b7 sleep 5; exit 3",
+    "tool": {
+     "command": "sleep 5; exit 3",
+     "duration_seconds": 1.0,
+     "header_title": "sleep 5; exit 3",
+     "input": {
+      "cmd": "sleep 5; exit 3"
+     },
+     "name": "exec_command",
+     "output": {
+      "full_bytes": 114,
+      "full_lines": 6,
+      "hidden_lines": 0,
+      "id": "raw-204-0:output",
+      "text": "Chunk ID: y1\nWall time: 1.0 seconds\nProcess running with session ID 4242\nOriginal token count: 5\nOutput:\nstarting\n"
+     },
+     "state": "finished"
+    },
+    "tool_status": "pending"
+   },
+   {
+    "detail": "{\"cmd\":\"exit 3\"}",
+    "id": "call-x1:call@raw-480-0",
+    "kind": "toolUse",
+    "order": [
+     480,
+     0
+    ],
+    "source_ids": [
+     "raw-480-0",
+     "raw-675-0"
+    ],
+    "text": "exec_command \u00b7 exit 3",
+    "tool": {
+     "command": "exit 3",
+     "duration_seconds": 1.0,
+     "exit_code": 3,
+     "header_title": "exit 3",
+     "input": {
+      "cmd": "exit 3"
+     },
+     "name": "exec_command",
+     "output": {
+      "full_bytes": 95,
+      "full_lines": 5,
+      "hidden_lines": 0,
+      "id": "raw-675-0:output",
+      "text": "Chunk ID: x1\nWall time: 0.0 seconds\nProcess exited with code 3\nOriginal token count: 0\nOutput:\n"
+     },
+     "state": "failed"
+    },
+    "tool_status": "pending"
+   },
+   {
+    "detail": "{\"session_id\":4242,\"chars\":\"\"}",
+    "id": "call-y2:call@raw-931-0",
+    "kind": "toolUse",
+    "order": [
+     931,
+     0
+    ],
+    "source_ids": [
+     "raw-931-0",
+     "raw-1143-0"
+    ],
+    "text": "write_stdin",
+    "tool": {
+     "duration_seconds": 1.0,
+     "header_title": "",
+     "input": {
+      "chars": "",
+      "session_id": 4242
+     },
+     "name": "write_stdin",
+     "output": {
+      "full_bytes": 100,
+      "full_lines": 6,
+      "hidden_lines": 0,
+      "id": "raw-1143-0:output",
+      "text": "Chunk ID: y2\nWall time: 4.0 seconds\nProcess exited with code 3\nOriginal token count: 2\nOutput:\ndone\n"
+     },
+     "state": "finished"
+    },
+    "tool_status": "pending"
+   },
+   {
+    "detail": "\"text(await tools.exec_command({cmd:\\\"exit 3\\\"}));\"",
+    "id": "call-c1:call@raw-1405-0",
+    "kind": "toolUse",
+    "order": [
+     1405,
+     0
+    ],
+    "source_ids": [
+     "raw-1405-0",
+     "raw-1636-0",
+     "raw-1887-0"
+    ],
+    "text": "exec \u00b7 exit 3",
+    "tool": {
+     "command": "exit 3",
+     "duration_seconds": 3.0,
+     "exit_code": 3,
+     "header_title": "exit 3",
+     "input": "text(await tools.exec_command({cmd:\"exit 3\"}));",
+     "name": "exec",
+     "output": {
+      "full_bytes": 79,
+      "full_lines": 4,
+      "hidden_lines": 0,
+      "id": "raw-1887-0:output",
+      "text": "Script completed\nWall time 2.0 seconds\nOutput:\n{\"exit_code\":3,\"output\":\"bad\\n\"}"
+     },
+     "state": "failed"
+    },
+    "tool_status": "pending"
+   }
+  ],
+  "text": "3 commands \u00b7 write_stdin \u00b7 2 failed"
+ }
+]

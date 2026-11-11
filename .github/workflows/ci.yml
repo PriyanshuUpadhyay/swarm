@@ -13,12 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The row tests run the transcript tool from packages/transcript/zig-out.
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.16.0
-      - run: zig build -Doptimize=ReleaseSafe
-        working-directory: packages/transcript
       # Tag runs read the cache that main saves, so a release compiles only the changed crates.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo fmt --check
@@ -44,20 +38,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
-
-  zig:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/transcript
-    steps:
-      - uses: actions/checkout@v4
-      # Zig asks CI not to download from ziglang.org; this action uses the signed community mirrors.
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.16.0
-      - run: zig fmt --check .
-      - run: zig build test
 
   public-safety:
     runs-on: ubuntu-latest

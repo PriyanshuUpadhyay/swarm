@@ -6,6 +6,14 @@ mod cases {
     use super::*;
     use crate::cli::test_support::*;
 
+    struct OpenGateOnDrop(std::path::PathBuf);
+
+    impl Drop for OpenGateOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::write(&self.0, "");
+        }
+    }
+
     #[test]
     fn batch_keeps_a_listing_after_a_late_rering() {
         let root =
@@ -14,9 +22,12 @@ mod cases {
         let ring_log = root.join("ring");
         let ring_path = swarm::adapter::shell_line(&[ring_log.to_string_lossy().into_owned()]);
         let gate = root.join("gate");
+        let _open_gate = OpenGateOnDrop(gate.clone());
         let gate_path = swarm::adapter::shell_line(&[gate.to_string_lossy().into_owned()]);
+        let root_path = swarm::adapter::shell_line(&[root.to_string_lossy().into_owned()]);
+        let owner = std::process::id();
         std::fs::write(root.join("adapters/fake.conf"),
-            format!("self = true\nspawn = true\nring = while [ ! -e {gate_path} ]; do sleep 0.01; done; printf rung > {ring_path}\nlist = printf pane\nclose = true\ncapture = true\nscreen = printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"idle\"}}}}}}'\n")
+            format!("self = true\nspawn = true\nring = while [ ! -e {gate_path} ]; do [ -d {root_path} ] && kill -0 {owner} 2>/dev/null || exit 0; sleep 0.01; done; printf rung > {ring_path}\nlist = printf pane\nclose = true\ncapture = true\nscreen = printf '{{\"result\":{{\"agent\":{{\"agent_status\":\"idle\"}}}}}}'\n")
         ).unwrap();
         let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
         let session =
@@ -62,9 +73,12 @@ mod cases {
         std::fs::create_dir_all(root.join("adapters")).unwrap();
         let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
         let gate = root.join("gate");
+        let _open_gate = OpenGateOnDrop(gate.clone());
+        let gate_path = swarm::adapter::shell_line(&[gate.to_string_lossy().into_owned()]);
+        let root_path = swarm::adapter::shell_line(&[root.to_string_lossy().into_owned()]);
+        let owner = std::process::id();
         let slow_list = format!(
-            "while [ ! -e {} ]; do sleep 0.01; done; printf pane",
-            swarm::adapter::shell_line(&[gate.to_string_lossy().into_owned()])
+            "while [ ! -e {gate_path} ]; do [ -d {root_path} ] && kill -0 {owner} 2>/dev/null || exit 0; sleep 0.01; done; printf pane"
         );
         let mut ids = Vec::new();
         for (index, (name, list, screen)) in [

@@ -1,0 +1,22 @@
+{
+ "1887-2196": {
+  "end_byte": 2196,
+  "events": [
+   {
+    "content": "Script completed\nWall time 2.0 seconds\nOutput:\n{\"exit_code\":3,\"output\":\"bad\\n\"}",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T10:00:09.000Z",
+     "uuid": "ctco-c1b"
+    },
+    "status": "completed",
+    "tool_call_id": "call-c1",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 1887,
+  "terminated": true
+ }
+}

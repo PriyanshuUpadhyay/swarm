@@ -3,7 +3,7 @@ import { type Agent, type Api, type RowFrame, type RowPage, type Snapshot } from
 import { App } from "./app";
 import { chair, session } from "./chat-fixtures";
 import { harness, settle, user } from "./composer-harness";
-import { agentInput, canBranch, MISSING_ADAPTER, queueRows, sends, submission, usageLabel } from "./composer";
+import { agentInput, canBranch, MISSING_ADAPTER, sends, submission, usageLabel } from "./composer";
 
 const waitingPrompt = { id: "prompt-hash", question: "Do you want to proceed?", choices: ["Yes", "No"] };
 
@@ -32,19 +32,6 @@ describe("submission", () => {
     expect(submission("note:")).toBe("note: ");
     expect(submission("a path\\")).toBe("a path\\ ");
     expect(submission("plain words")).toBe("plain words");
-  });
-});
-
-describe("queue rows", () => {
-  it("show each held message with the CLI's own word for when it joins", () => {
-    const rows = queueRows([
-      { mode: "steering", text: "first" },
-      { mode: "follow-up", text: "second" },
-    ]);
-    expect(rows.map((r) => [r.kind, r.text, r.detail])).toEqual([
-      ["queued", "first", "Steering"],
-      ["queued", "second", "Follow-up"],
-    ]);
   });
 });
 
@@ -261,7 +248,7 @@ describe("chat actions", () => {
       ["user", "hello", undefined],
       ["notice", "Working…", undefined],
     ]);
-    pi({ state: "working", queue: [{ mode: "steering", text: "note typed during compaction" }] });
+    pi({ state: "working", queue: [{ mode: "steering", text: "note typed during compaction", id: "queue-0", detail: "Steering", images: [] }] });
     app.openChat("chat");
     expect(lines()).toEqual([
       ["user", "hello", undefined],

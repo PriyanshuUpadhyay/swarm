@@ -1,0 +1,180 @@
+[
+  {
+    "id": "no-display",
+    "display": null,
+    "live_body": {
+      "kind": "plain"
+    }
+  },
+  {
+    "id": "no-later",
+    "display": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "value": [
+            {
+              "type": "text",
+              "value": "ab"
+            }
+          ]
+        }
+      ]
+    },
+    "live_body": {
+      "kind": "tree"
+    }
+  },
+  {
+    "id": "original-later-between",
+    "display": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "value": [
+            {
+              "type": "text",
+              "value": "ab"
+            }
+          ]
+        },
+        {
+          "type": "later",
+          "value": "block"
+        },
+        {
+          "type": "paragraph",
+          "value": [
+            {
+              "type": "text",
+              "value": "c"
+            }
+          ]
+        }
+      ]
+    },
+    "live_body": {
+      "kind": "plain_from",
+      "shown_utf16": 3
+    }
+  },
+  {
+    "id": "trailing-later",
+    "display": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "value": [
+            {
+              "type": "text",
+              "value": "ab"
+            }
+          ]
+        },
+        {
+          "type": "later",
+          "value": "block"
+        }
+      ]
+    },
+    "live_body": {
+      "kind": "plain_from",
+      "shown_utf16": 2
+    }
+  },
+  {
+    "id": "later-first",
+    "display": {
+      "blocks": [
+        {
+          "type": "later",
+          "value": "block"
+        },
+        {
+          "type": "paragraph",
+          "value": [
+            {
+              "type": "text",
+              "value": "c"
+            }
+          ]
+        }
+      ]
+    },
+    "live_body": {
+      "kind": "plain_from",
+      "shown_utf16": 1
+    }
+  },
+  {
+    "id": "utf16-before-later",
+    "display": {
+      "blocks": [
+        {
+          "type": "paragraph",
+          "value": [
+            {
+              "type": "text",
+              "value": "\ud83d\ude00"
+            }
+          ]
+        },
+        {
+          "type": "later",
+          "value": "block"
+        },
+        {
+          "type": "paragraph",
+          "value": [
+            {
+              "type": "text",
+              "value": "c"
+            }
+          ]
+        }
+      ]
+    },
+    "live_body": {
+      "kind": "plain_from",
+      "shown_utf16": 3
+    }
+  },
+  {
+    "id": "nested-inline-later",
+    "display": {
+      "blocks": [
+        {
+          "type": "blockquote",
+          "value": [
+            {
+              "type": "paragraph",
+              "value": [
+                {
+                  "type": "strong",
+                  "value": [
+                    {
+                      "type": "text",
+                      "value": "ab"
+                    },
+                    {
+                      "type": "later",
+                      "value": "inline"
+                    },
+                    {
+                      "type": "text",
+                      "value": "c"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "live_body": {
+      "kind": "plain_from",
+      "shown_utf16": 3
+    }
+  }
+]

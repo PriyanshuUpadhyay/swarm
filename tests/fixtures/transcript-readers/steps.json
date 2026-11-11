@@ -1,0 +1,262 @@
+{
+ "binding": {
+  "generation": 1,
+  "source_id": "readers"
+ },
+ "decoy_line": "{\"type\":\"user\",\"uuid\":\"decoy\",\"message\":{\"content\":\"decoy line\"}}\n",
+ "source": "claude-chair-run.jsonl",
+ "steps": [
+  {
+   "expect": [
+    {
+     "complete_end_byte": 792,
+     "lines": [
+      "0-245",
+      "245-485",
+      "485-792"
+     ],
+     "next_complete_byte": 792,
+     "origin_byte": 0,
+     "read_end_byte": 792,
+     "reader": [
+      1,
+      0
+     ],
+     "rows": "origin0_at792",
+     "start_byte": 0
+    }
+   ],
+   "from_byte": 0,
+   "name": "bind-a-origin-0",
+   "op": "bind_reader",
+   "reader": [
+    1,
+    0
+   ]
+  },
+  {
+   "expect": [
+    {
+     "complete_end_byte": 792,
+     "lines": [
+      "245-485",
+      "485-792"
+     ],
+     "next_complete_byte": 792,
+     "origin_byte": 245,
+     "read_end_byte": 792,
+     "reader": [
+      2,
+      0
+     ],
+     "rows": "origin245_at792",
+     "start_byte": 245
+    }
+   ],
+   "from_byte": 245,
+   "name": "bind-b-origin-245",
+   "op": "bind_reader",
+   "reader": [
+    2,
+    0
+   ]
+  },
+  {
+   "append": [
+    792,
+    892
+   ],
+   "expect": [
+    {
+     "complete_end_byte": 792,
+     "lines": [],
+     "next_complete_byte": 792,
+     "origin_byte": 0,
+     "read_end_byte": 892,
+     "reader": [
+      1,
+      0
+     ],
+     "rows": "origin0_at792",
+     "start_byte": 0
+    },
+    {
+     "complete_end_byte": 792,
+     "lines": [],
+     "next_complete_byte": 792,
+     "origin_byte": 245,
+     "read_end_byte": 892,
+     "reader": [
+      2,
+      0
+     ],
+     "rows": "origin245_at792",
+     "start_byte": 245
+    }
+   ],
+   "name": "partial-result-append",
+   "op": "advance"
+  },
+  {
+   "append": [
+    892,
+    1050
+   ],
+   "expect": [
+    {
+     "complete_end_byte": 1050,
+     "lines": [
+      "792-1050"
+     ],
+     "next_complete_byte": 1050,
+     "origin_byte": 0,
+     "read_end_byte": 1050,
+     "reader": [
+      1,
+      0
+     ],
+     "rows": "origin0_at1050",
+     "start_byte": 0
+    },
+    {
+     "complete_end_byte": 1050,
+     "lines": [
+      "792-1050"
+     ],
+     "next_complete_byte": 1050,
+     "origin_byte": 245,
+     "read_end_byte": 1050,
+     "reader": [
+      2,
+      0
+     ],
+     "rows": "origin245_at1050",
+     "start_byte": 245
+    }
+   ],
+   "name": "result-completes",
+   "op": "advance"
+  },
+  {
+   "end_byte": 245,
+   "expect": [
+    {
+     "complete_end_byte": 245,
+     "lines": [
+      "0-245"
+     ],
+     "next_complete_byte": 1050,
+     "origin_byte": 245,
+     "read_end_byte": 245,
+     "reader": [
+      2,
+      0
+     ],
+     "rows": "origin0_at1050",
+     "start_byte": 0
+    }
+   ],
+   "name": "replay-older-range-for-b",
+   "op": "replay_reader",
+   "reader": [
+    2,
+    0
+   ],
+   "start_byte": 0
+  },
+  {
+   "expect": [
+    {
+     "complete_end_byte": 1050,
+     "lines": [],
+     "next_complete_byte": 1050,
+     "origin_byte": 0,
+     "read_end_byte": 1050,
+     "reader": [
+      1,
+      0
+     ],
+     "rows": "origin0_at1050",
+     "start_byte": 0
+    },
+    {
+     "complete_end_byte": 1050,
+     "lines": [],
+     "next_complete_byte": 1050,
+     "origin_byte": 245,
+     "read_end_byte": 1050,
+     "reader": [
+      2,
+      0
+     ],
+     "rows": "origin0_at1050",
+     "start_byte": 0
+    }
+   ],
+   "name": "advance-with-no-change",
+   "op": "advance"
+  },
+  {
+   "expect": [
+    {
+     "complete_end_byte": 1050,
+     "lines": [
+      "485-792",
+      "792-1050"
+     ],
+     "next_complete_byte": 1050,
+     "origin_byte": 485,
+     "read_end_byte": 1050,
+     "reader": [
+      1,
+      1
+     ],
+     "rows": "origin485_at1050",
+     "start_byte": 485
+    }
+   ],
+   "from_byte": 485,
+   "name": "higher-epoch-rebinds-a",
+   "op": "bind_reader",
+   "reader": [
+    1,
+    1
+   ]
+  },
+  {
+   "expect": [],
+   "name": "close-b",
+   "op": "close_reader",
+   "reader": [
+    2,
+    0
+   ]
+  },
+  {
+   "append": [
+    1050,
+    1353
+   ],
+   "decoy_replace": true,
+   "expect": [
+    {
+     "complete_end_byte": 1353,
+     "lines": [
+      "1050-1353"
+     ],
+     "next_complete_byte": 1353,
+     "origin_byte": 485,
+     "read_end_byte": 1353,
+     "reader": [
+      1,
+      1
+     ],
+     "rows": "origin485_at1353",
+     "start_byte": 485
+    }
+   ],
+   "name": "append-to-held-file-after-decoy-replaces-path",
+   "op": "advance"
+  }
+ ]
+}

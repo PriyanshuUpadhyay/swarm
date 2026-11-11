@@ -2,88 +2,33 @@
 
 use super::*;
 
-// Source positions come from the existing follower's per-line page markers, not provider JSON.
+pub(super) const ROWS_FIND_LIMIT: usize = 16 * 1024 * 1024;
+
+pub(super) async fn find_rows(
+    body: Result<axum::body::Bytes, axum::extract::rejection::BytesRejection>,
+) -> Result<Json<view::find_matches::Reply>, ApiError> {
+    let bytes = body.map_err(|rejection| error(rejection.status(), &rejection.body_text()))?;
+    tokio::task::spawn_blocking(move || {
+        let request: view::find_matches::Request = serde_json::from_slice(&bytes)
+            .map_err(|_| error(StatusCode::BAD_REQUEST, "invalid find snapshot"))?;
+        if request.version != 1 {
+            return Err(error(StatusCode::BAD_REQUEST, "unsupported find version"));
+        }
+        Ok(Json(view::find_matches::find(request)))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "find task failed"))?
+}
+
+// Source positions come from the held log's Rust worker.
 pub(super) async fn read_row_window(
-    tool: &Path,
+    app: &App,
+    key: &str,
     log: &Log,
     start: u64,
     end: u64,
 ) -> Result<LiveRows, ApiError> {
-    let mut state = LiveRows::empty(start, log.format == "codex");
-    if start == end {
-        return Ok(state);
-    }
-    let source = std::fs::File::open(&log.path)
-        .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
-    let mut child = tokio::process::Command::new(tool)
-        .args([
-            "--follow",
-            "--from",
-            &start.to_string(),
-            "--format",
-            &log.format,
-        ])
-        .arg(&log.path)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "transcript tool unavailable",
-            )
-        })?;
-    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-    let read = tokio::time::timeout(Duration::from_secs(10), async {
-        let mut first = true;
-        let mut cursor = start;
-        let mut events = Vec::new();
-        loop {
-            let line = lines
-                .next_line()
-                .await
-                .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript read failed"))?
-                .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "transcript tool ended"))?;
-            let value: Value = serde_json::from_str(&line).map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "invalid transcript output",
-                )
-            })?;
-            if value["type"] == "page" {
-                if first {
-                    first = false;
-                    continue;
-                }
-                let next = value["end_offset"].as_u64().ok_or_else(|| {
-                    error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "transcript offset missing",
-                    )
-                })?;
-                if next > end {
-                    return Err(error(
-                        StatusCode::CONFLICT,
-                        "history file changed; reopen this chat",
-                    ));
-                }
-                state.ingest_log_line(&source, cursor, next, &events);
-                events.clear();
-                cursor = next;
-                if next == end {
-                    return Ok(state);
-                }
-            } else {
-                events.push(value);
-            }
-        }
-    })
-    .await
-    .map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "transcript read timed out"));
-    let _ = child.kill().await;
-    let _ = child.wait().await;
-    read?
+    source_backend::window(app, key, log, start, end).await
 }
 
 pub(super) fn row_offsets(
@@ -151,7 +96,7 @@ pub(super) async fn transcript_rows(
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"))??;
     let key = format!("{}:{}", query.session, query.agent);
-    if query.before.is_none() {
+    let cached_page = if query.before.is_none() {
         let hub = app.hub.lock().unwrap();
         let cached = hub
             .followers
@@ -163,20 +108,12 @@ pub(super) async fn transcript_rows(
                     .find(|(cached, _)| cached == &key)
                     .map(|(_, state)| state)
             });
-        if let Some(state) = cached
-            && state.initialized
-            && !state.rebuild
-            && state.dirty.is_empty()
-            && state
-                .records
-                .first_key_value()
-                .is_some_and(|(key, _)| key.0 <= start)
-            && state.end == end
-        {
-            return Ok(Json(
-                json!({"page":{"start_offset":start,"end_offset":end},"rows":state.chunks.values().filter(|chunk|state.records.len()<=ROW_RECORD_LIMIT || chunk.records.iter().any(|key|key.0>=start)).flat_map(|chunk|chunk.rows.iter()).chain(state.last_queued.iter()).collect::<Vec<_>>(),"usage":state.usage.value(),"remove":[]}),
-            ));
-        }
+        cached.and_then(|state| state.cached_tail(start, end))
+    } else {
+        None
+    };
+    if let Some(page) = cached_page {
+        return render_row_page(page, start, end).await;
     }
     let recovery = if query.before.is_some() {
         let hub = app.hub.lock().unwrap();
@@ -189,76 +126,72 @@ pub(super) async fn transcript_rows(
                     .find(|(cached, _)| cached == &key)
                     .map(|(_, state)| state)
             })
-            .filter(|state| {
-                state
-                    .records
-                    .first_key_value()
-                    .is_some_and(|(key, _)| key.0 > state.start)
-            })
-            .map(|state| (state.start, state.end))
+            .and_then(|state| state.recovery_range())
     } else {
         None
     };
     let recovery = if let Some((start, end)) = recovery {
-        Some(read_row_window(&app.tool, &log, start, end).await?)
+        Some(read_row_window(&app, &key, &log, start, end).await?)
     } else {
         None
     };
-    let page = read_row_window(&app.tool, &log, start, end).await?;
-    let key = format!("{}:{}", query.session, query.agent);
-    let mut hub = app.hub.lock().unwrap();
-    let active = hub
-        .followers
-        .get(&key)
-        .and_then(|follower| follower.rows.clone());
-    let history = query.before.and_then(|_| {
-        hub.row_cache
-            .iter()
-            .find(|(cached, _)| cached == &key)
-            .map(|(_, state)| state.clone())
-    });
-    let mut state = active.or(history).unwrap_or_else(|| page.clone());
-    if let Some(recovery) = recovery {
-        state.records.extend(recovery.records);
-        state.reindex();
-    }
-    let previous = state.rows();
-    state.records.extend(page.records);
-    state.start = state.start.min(start);
-    state.end = state.end.max(end);
-    state.reindex();
-    let rows = state.rows();
-    let ids: HashSet<_> = rows.iter().map(|row| &row.id).collect();
-    let remove: Vec<_> = previous
-        .iter()
-        .filter(|row| !ids.contains(&row.id))
-        .map(|row| &row.id)
-        .collect();
-    let usage = state.usage.value();
-    let previous: HashMap<_, _> = previous.iter().map(|row| (&row.id, row)).collect();
-    let upsert: Vec<_> = rows
-        .iter()
-        .filter(|row| {
-            query.before.is_none() || previous.get(&row.id).is_none_or(|old| *old != *row)
-        })
-        .collect();
-    let response = json!({"page": {"start_offset": start, "end_offset": end}, "rows": upsert, "usage": usage, "remove": remove});
-    state.last_usage = usage;
-    state.remember_shown(&rows);
-    state.prepare(rows.clone());
-    state.last_rows = rows;
-    state.compact();
-    state.last_rows = state.rows();
-    let subscribed = hub
-        .streams
-        .values()
-        .any(|client| client.row_keys.contains(&key));
-    if subscribed && let Some(follower) = hub.followers.get_mut(&key) {
-        follower.rows = Some(state);
-    } else {
-        hub.cache_rows(key, state);
-    }
-    Ok(Json(response))
+    let page = read_row_window(&app, &key, &log, start, end).await?;
+    let page = {
+        let mut hub = app.hub.lock().unwrap();
+        let active = hub
+            .followers
+            .get(&key)
+            .and_then(|follower| follower.rows.clone());
+        let history = query.before.and_then(|_| {
+            hub.row_cache
+                .iter()
+                .find(|(cached, _)| cached == &key)
+                .map(|(_, state)| state.clone())
+        });
+        let mut state = active.or(history).unwrap_or_else(|| page.clone());
+        if let Some(recovery) = recovery {
+            state.recover(recovery);
+        }
+        let page = state.merge_page(page, query.before.is_some());
+        let subscribed = hub
+            .streams
+            .values()
+            .any(|client| client.row_keys.contains(&key));
+        if subscribed && let Some(follower) = hub.followers.get_mut(&key) {
+            follower.rows = Some(state);
+        } else {
+            hub.cache_rows(key, state);
+        }
+        page
+    };
+    render_row_page(page, start, end).await
+}
+
+async fn render_row_page(
+    page: view::reader_rows::RowPage,
+    start: u64,
+    end: u64,
+) -> Result<Json<Value>, ApiError> {
+    tokio::task::spawn_blocking(move || {
+        let display = view::markdown::row_displays(&page.rows);
+        let body = view::markdown::row_bodies(&page.rows, &display);
+        let patch = view::patch_wire::row_patches(&page.rows);
+        let find = view::find_wire::row_finds(&page.rows);
+        let images = view::image_paths::row_images(&page.rows);
+        Json(json!({
+            "page": {"start_offset": start, "end_offset": end},
+            "rows": page.rows,
+            "usage": page.usage,
+            "remove": page.remove,
+            "display": display,
+            "body": body,
+            "patch": patch,
+            "find": find,
+            "images": images,
+        }))
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"))
 }
 
 #[cfg(test)]

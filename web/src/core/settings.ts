@@ -17,7 +17,7 @@ export const PAGES: [Page, string][] = [
   ["setup", "Setup & doctor"],
 ];
 
-/** One `swarm.doctor.v1` row. `group` is the `swarm setup` item that sets it up. */
+/** A setup, notice or UI row from `swarm.doctor.v1`. Transcript reads use the built-in Rust worker. */
 export type DoctorItem = { id: string; title: string; state: "ok" | "setup" | "broken"; reason: string; group: string | null };
 export type Doctor = { items: DoctorItem[] };
 /** `swarm setup <items> --plan --json`, cut to what the page shows. */

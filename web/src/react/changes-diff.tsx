@@ -1,8 +1,8 @@
 import { MessageSquarePlusIcon, XIcon } from "lucide-react";
-import { Fragment, memo, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from "react";
+import { Fragment, memo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent } from "react";
 import type { App } from "../core/app";
-import { diffLines, type Changes, type DiffComment, type FileDiff, type Load } from "../core/changes";
-import type { PatchLine } from "../core/transcript";
+import { type Changes, type DiffComment, type FileDiff, type Load } from "../core/changes";
+import type { PatchLineWire } from "../core/api";
 import { Button } from "../components/ui/button";
 import { SurfaceFind } from "./surface-find";
 import { textRanges, paintRanges } from "./find-text";
@@ -57,7 +57,7 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
 /** The capped patch. A click on a line number picks a line, a Shift-click picks a range; a comment
  *  box opens under it. Keys in the body: j/k or arrows move, Shift extends, Enter or c comments. */
 function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d: FileDiff; comments: DiffComment[] }) {
-  const lines = useMemo(() => (d.patch ? diffLines(d.patch) : []), [d.patch]);
+  const lines = d.display?.lines ?? [];
   const editor = useSyncExternalStore(changes.subscribe, () => changes.editor(d.path, d.layer ?? "branch"));
   const [sel, setSel] = useState<{ anchor: number; cursor: number } | null>(editor);
   const [composing, setComposing] = useState(!!editor);
@@ -71,6 +71,7 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
     setComposing(!!editor);
   }
   if (d.notice) return <p className="px-3 py-3 text-xs text-muted-foreground">{d.notice}</p>;
+  if (!d.display) return <pre className="patch cpatch" data-testid="diff-body">{d.patch ?? ""}</pre>;
   if (!lines.length) return <p className="px-3 py-3 text-xs text-muted-foreground">No text changes.</p>;
 
   const code = (i: number) => ["add", "del", "ctx"].includes(lines[i]?.kind);
@@ -79,11 +80,13 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
   // Drafts on this file show under their last line while that line still reads the same.
   const here = new Map<number, DiffComment[]>();
   for (const c of comments)
-    if (c.path === d.path && c.layer === (d.layer ?? "branch") && quote(lines[c.at]) === c.quoted[c.quoted.length - 1]) here.set(c.at, [...(here.get(c.at) ?? []), c]);
+    if (c.path === d.path && c.layer === (d.layer ?? "branch") && lines[c.at]?.quote === c.quoted[c.quoted.length - 1]) here.set(c.at, [...(here.get(c.at) ?? []), c]);
 
   const pick = (i: number, extend: boolean) => {
     if (!code(i)) return;
-    setSel((s) => (extend && s ? { anchor: s.anchor, cursor: i } : { anchor: i, cursor: i }));
+    const next = extend && sel ? { anchor: sel.anchor, cursor: i } : { anchor: i, cursor: i };
+    setSel(next);
+    changes.setEditor(d.path, d.layer ?? "branch", { ...next, text: editor?.text ?? "" });
   };
   const onClick = (e: MouseEvent) => {
     const el = (e.target as Element).closest<HTMLElement>("[data-pick]");
@@ -127,10 +130,14 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
                 label={`${d.path}`}
                 text={editor?.text ?? ""}
                 onChange={(text) => changes.setEditor(d.path, d.layer ?? "branch", { ...sel, text })}
-                onAdd={(text) => {
-                  changes.addComment(lo, hi, text);
-                  setSel(null);
-                  done();
+                onAdd={async (text) => {
+                  const captured = changes.editor(d.path, d.layer ?? "branch");
+                  const success = await changes.addComment(lo, hi, text);
+                  if (success && changes.editor(d.path, d.layer ?? "branch") === captured) {
+                    setSel(null);
+                    done();
+                  }
+                  return success;
                 }}
                 onCancel={done}
               />
@@ -148,9 +155,7 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
   );
 }
 
-const quote = (l: PatchLine | undefined) => (l ? `${l.kind === "add" ? "+" : l.kind === "del" ? "-" : " "}${l.text}` : undefined);
-
-const DiffLine = memo(function DiffLine({ l, i, picked }: { l: PatchLine; i: number; picked: boolean }) {
+const DiffLine = memo(function DiffLine({ l, i, picked }: { l: PatchLineWire; i: number; picked: boolean }) {
   if (l.kind === "hunk") return <div className="pl hunk">{l.text}</div>;
   return (
     <div className={`pl ${l.kind}`} data-testid="diff-line" data-picked={picked || undefined}>
@@ -166,7 +171,20 @@ const DiffLine = memo(function DiffLine({ l, i, picked }: { l: PatchLine; i: num
   );
 });
 
-function CommentBox({ label, text, onChange, onAdd, onCancel }: { label: string; text: string; onChange: (text: string) => void; onAdd: (text: string) => void; onCancel: () => void }) {
+function CommentBox({ label, text, onChange, onAdd, onCancel }: { label: string; text: string; onChange: (text: string) => void; onAdd: (text: string) => Promise<boolean>; onCancel: () => void }) {
+  const [pending, setPending] = useState(false);
+  const submitting = useRef(false);
+  const add = async () => {
+    if (submitting.current || !text.trim()) return;
+    submitting.current = true;
+    setPending(true);
+    try {
+      await onAdd(text);
+    } finally {
+      submitting.current = false;
+      setPending(false);
+    }
+  };
   return (
     <div className="comment-box" data-testid="comment-box">
       <MessageSquarePlusIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
@@ -181,7 +199,7 @@ function CommentBox({ label, text, onChange, onAdd, onCancel }: { label: string;
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            if (text.trim()) onAdd(text);
+            void add();
           } else if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();
@@ -190,7 +208,7 @@ function CommentBox({ label, text, onChange, onAdd, onCancel }: { label: string;
         }}
       />
       <div className="flex flex-col gap-1">
-        <Button size="sm" data-testid="comment-add" disabled={!text.trim()} onClick={() => onAdd(text)}>
+        <Button size="sm" data-testid="comment-add" disabled={pending || !text.trim()} onClick={() => void add()}>
           Add
         </Button>
         <Button size="sm" variant="ghost" onClick={onCancel}>

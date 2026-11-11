@@ -1,0 +1,135 @@
+{
+  "u1@raw-0-0": [
+    {
+      "f": "text"
+    }
+  ],
+  "u2@raw-139-0": [
+    {
+      "f": "text"
+    }
+  ],
+  "a1@raw-288-0": [
+    {
+      "f": "text"
+    }
+  ],
+  "fold:t1:call@raw-288-1": [
+    {
+      "f": "fold.text"
+    }
+  ],
+  "t1:call@raw-288-1": [
+    {
+      "f": "tool.name"
+    },
+    {
+      "f": "tool.header_title"
+    },
+    {
+      "f": "tool.command"
+    },
+    {
+      "f": "tool.output.text",
+      "p": "raw-572-0:output"
+    }
+  ],
+  "t2:call@raw-776-0": [
+    {
+      "f": "tool.name"
+    },
+    {
+      "f": "tool.header_title"
+    },
+    {
+      "f": "tool.path"
+    },
+    {
+      "f": "tool.output.text",
+      "p": "raw-988-0:output"
+    }
+  ],
+  "ghost:result@raw-1164-0": [
+    {
+      "f": "output.text",
+      "p": "raw-1164-0:output"
+    }
+  ],
+  "e1:call@raw-1361-0": [
+    {
+      "f": "tool.name"
+    },
+    {
+      "f": "tool.header_title"
+    },
+    {
+      "f": "tool.path"
+    },
+    {
+      "f": "tool.output.text",
+      "p": "raw-2036-0:output"
+    },
+    {
+      "f": "tool.diffs.0.patch",
+      "p": "raw-1603-1:diff"
+    },
+    {
+      "f": "tool.diffs.1.patch",
+      "p": "raw-2036-1:diff"
+    }
+  ],
+  "ghost-edit:result@raw-2477-0": [
+    {
+      "f": "output.text",
+      "p": "raw-2477-0:output"
+    }
+  ],
+  "ghost-edit:diff@raw-2477-1": [
+    {
+      "f": "diff.patch",
+      "p": "raw-2477-1:diff"
+    }
+  ],
+  "c1:system@raw-3139-0": [
+    {
+      "t": "/alpha now"
+    },
+    {
+      "f": "command.skill_body.text",
+      "p": "raw-3379-0:output"
+    },
+    {
+      "f": "command.output.text",
+      "p": "raw-3628-0:output"
+    }
+  ],
+  "c2:system@raw-3837-0": [
+    {
+      "t": "/beta alpha only"
+    }
+  ],
+  "s1:shell@raw-4075-0": [
+    {
+      "f": "shell.command"
+    },
+    {
+      "f": "shell.output.text",
+      "p": "raw-4230-0:output"
+    }
+  ],
+  "g1:ring@raw-4433-0": [
+    {
+      "t": "New swarm message"
+    }
+  ],
+  "a9@raw-4610-0": [
+    {
+      "f": "text"
+    }
+  ],
+  "a9@raw-4610-1": [
+    {
+      "f": "text"
+    }
+  ]
+}

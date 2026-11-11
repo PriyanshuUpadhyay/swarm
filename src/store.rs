@@ -354,7 +354,7 @@ mod tests {
             &path,
             format!(
                 "{}\n{first}\n{first}\n",
-                include_str!("../packages/transcript/src/fixtures/claude-chair-run.jsonl")
+                include_str!("../tests/fixtures/provider-logs/claude-chair-run.jsonl")
             ),
         )
         .unwrap();

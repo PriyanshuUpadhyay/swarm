@@ -1,0 +1,17 @@
+{
+  "purpose": "One more value-set in the Codex main test: a task_complete record with duration_ms:-0 -> OLD native turn_ended with duration_ms:null.",
+  "authority": "ORIGINAL c8ca837e1b70cbb4479bfda387f3bace2931749e, captured by the Pi checker before any code; seal SEAL4.sha256 SHA 936059612d24254b5f711d8363e022b9fa061d3455e870fcb8ca842842e114fb (13 entries).",
+  "files": [
+    {
+      "file": "inputs/codex-duration-negzero.jsonl",
+      "sha256": "b431a192f3e931e5aba79d3c8f3814192ef35b7c81ff54635ca35c6cf472ba10",
+      "copied_from": "swarm-transcript-pi-u04/tmp/flow/transcript-pi-u04/reference/rows/scalar-negative-zero/inputs/codex-duration-negzero.jsonl"
+    },
+    {
+      "file": "fixtures/native-duration-negzero.stdout",
+      "sha256": "85bdc079b015dc3e90952dcb85ad8be9d129969654266b993911ed2bf41baeef",
+      "copied_from": "swarm-transcript-pi-u04/tmp/flow/transcript-pi-u04/reference/rows/scalar-negative-zero/data/attempt1/codex/stdout.raw",
+      "note": "attempt 2 stdout is byte-equal, stderr is empty; session_id and uuid are empty strings (no session_meta); no OLD row set was captured, so none is asserted"
+    }
+  ]
+}

@@ -1,0 +1,734 @@
+{
+ "about": "ORIGINAL public values only (sealed lane-d-patch-4 orig-1). Compare as JS receiver: numbers are binary64, null/absent/arrays/strings exact.",
+ "sources": {
+  "orig-1.stdout": "48df3443492afc67277e15d464108d37063b041e779622637904d266ac8d94fc",
+  "inputs4-legit.json": "d3de903801ede575960b52f338fe7352e1b6e848cadfc0832642237973308759",
+  "inputs4-over.json": "54f6674b385eef7a71c4e9c94879870686acf5aef39ead91ea8994881936cd12",
+  "inputs4-inf.json": "b80645c49e8d23071b5900e8b628bb21bd9f26450c88d7815c95bd23e8543038"
+ },
+ "patch": {
+  "p-core": {
+   "isPatch": true,
+   "split": [
+    {
+     "hunk": "@@ -3,3 +3,3 @@"
+    },
+    {
+     "left": {
+      "kind": "ctx",
+      "text": "keep",
+      "old": 3,
+      "new": 3
+     },
+     "right": {
+      "kind": "ctx",
+      "text": "keep",
+      "old": 3,
+      "new": 3
+     }
+    },
+    {
+     "left": {
+      "kind": "del",
+      "text": "old",
+      "old": 4
+     },
+     "right": {
+      "kind": "add",
+      "text": "new",
+      "new": 4
+     }
+    },
+    {
+     "left": {
+      "kind": "ctx",
+      "text": "tail",
+      "old": 5,
+      "new": 5
+     },
+     "right": {
+      "kind": "ctx",
+      "text": "tail",
+      "old": 5,
+      "new": 5
+     }
+    }
+   ],
+   "parsed": [
+    {
+     "kind": "meta",
+     "text": "diff --git \"a/x\" \"b/x\""
+    },
+    {
+     "kind": "meta",
+     "text": "--- \"a/x\""
+    },
+    {
+     "kind": "meta",
+     "text": "+++ \"b/x\""
+    },
+    {
+     "kind": "hunk",
+     "text": "@@ -3,3 +3,3 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "keep",
+     "old": 3,
+     "new": 3
+    },
+    {
+     "kind": "del",
+     "text": "old",
+     "old": 4
+    },
+    {
+     "kind": "add",
+     "text": "new",
+     "new": 4
+    },
+    {
+     "kind": "ctx",
+     "text": "tail",
+     "old": 5,
+     "new": 5
+    }
+   ],
+   "diffLines": [
+    {
+     "kind": "hunk",
+     "text": "@@ -3,3 +3,3 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "keep",
+     "old": 3,
+     "new": 3
+    },
+    {
+     "kind": "del",
+     "text": "old",
+     "old": 4
+    },
+    {
+     "kind": "add",
+     "text": "new",
+     "new": 4
+    },
+    {
+     "kind": "ctx",
+     "text": "tail",
+     "old": 5,
+     "new": 5
+    }
+   ]
+  },
+  "p-two-hunks": {
+   "isPatch": true,
+   "split": [
+    {
+     "hunk": "@@ -1,2 +1,2 @@"
+    },
+    {
+     "left": {
+      "kind": "ctx",
+      "text": "keep",
+      "old": 1,
+      "new": 1
+     },
+     "right": {
+      "kind": "ctx",
+      "text": "keep",
+      "old": 1,
+      "new": 1
+     }
+    },
+    {
+     "left": {
+      "kind": "del",
+      "text": "-- old comment",
+      "old": 2
+     },
+     "right": {
+      "kind": "add",
+      "text": "-- new comment",
+      "new": 2
+     }
+    },
+    {
+     "hunk": "@@ -10 +10,3 @@"
+    },
+    {
+     "left": {
+      "kind": "ctx",
+      "text": "x",
+      "old": 10,
+      "new": 10
+     },
+     "right": {
+      "kind": "ctx",
+      "text": "x",
+      "old": 10,
+      "new": 10
+     }
+    },
+    {
+     "left": {
+      "kind": "del",
+      "text": "y",
+      "old": 11
+     },
+     "right": {
+      "kind": "add",
+      "text": "y2",
+      "new": 11
+     }
+    },
+    {
+     "left": null,
+     "right": {
+      "kind": "add",
+      "text": "y3",
+      "new": 12
+     }
+    }
+   ],
+   "parsed": [
+    {
+     "kind": "meta",
+     "text": "diff --git a/f b/f"
+    },
+    {
+     "kind": "meta",
+     "text": "index 1..2 100644"
+    },
+    {
+     "kind": "meta",
+     "text": "--- a/f"
+    },
+    {
+     "kind": "meta",
+     "text": "+++ b/f"
+    },
+    {
+     "kind": "hunk",
+     "text": "@@ -1,2 +1,2 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "keep",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "del",
+     "text": "-- old comment",
+     "old": 2
+    },
+    {
+     "kind": "add",
+     "text": "-- new comment",
+     "new": 2
+    },
+    {
+     "kind": "meta",
+     "text": "\\ No newline at end of file"
+    },
+    {
+     "kind": "hunk",
+     "text": "@@ -10 +10,3 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "x",
+     "old": 10,
+     "new": 10
+    },
+    {
+     "kind": "del",
+     "text": "y",
+     "old": 11
+    },
+    {
+     "kind": "add",
+     "text": "y2",
+     "new": 11
+    },
+    {
+     "kind": "add",
+     "text": "y3",
+     "new": 12
+    }
+   ],
+   "diffLines": [
+    {
+     "kind": "hunk",
+     "text": "@@ -1,2 +1,2 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "keep",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "del",
+     "text": "-- old comment",
+     "old": 2
+    },
+    {
+     "kind": "add",
+     "text": "-- new comment",
+     "new": 2
+    },
+    {
+     "kind": "hunk",
+     "text": "@@ -10 +10,3 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "x",
+     "old": 10,
+     "new": 10
+    },
+    {
+     "kind": "del",
+     "text": "y",
+     "old": 11
+    },
+    {
+     "kind": "add",
+     "text": "y2",
+     "new": 11
+    },
+    {
+     "kind": "add",
+     "text": "y3",
+     "new": 12
+    }
+   ]
+  },
+  "p-runs": {
+   "isPatch": true,
+   "split": [
+    {
+     "hunk": "@@ -1,5 +1,6 @@"
+    },
+    {
+     "left": {
+      "kind": "ctx",
+      "text": "a",
+      "old": 1,
+      "new": 1
+     },
+     "right": {
+      "kind": "ctx",
+      "text": "a",
+      "old": 1,
+      "new": 1
+     }
+    },
+    {
+     "left": {
+      "kind": "del",
+      "text": "b",
+      "old": 2
+     },
+     "right": {
+      "kind": "add",
+      "text": "B",
+      "new": 2
+     }
+    },
+    {
+     "left": {
+      "kind": "del",
+      "text": "c",
+      "old": 3
+     },
+     "right": {
+      "kind": "add",
+      "text": "C",
+      "new": 3
+     }
+    },
+    {
+     "left": null,
+     "right": {
+      "kind": "add",
+      "text": "D",
+      "new": 4
+     }
+    },
+    {
+     "left": {
+      "kind": "ctx",
+      "text": "d",
+      "old": 4,
+      "new": 5
+     },
+     "right": {
+      "kind": "ctx",
+      "text": "d",
+      "old": 4,
+      "new": 5
+     }
+    },
+    {
+     "left": {
+      "kind": "del",
+      "text": "e",
+      "old": 5
+     },
+     "right": null
+    },
+    {
+     "hunk": "@@ -20 +21 @@"
+    },
+    {
+     "left": null,
+     "right": {
+      "kind": "add",
+      "text": "z",
+      "new": 21
+     }
+    }
+   ],
+   "parsed": [
+    {
+     "kind": "hunk",
+     "text": "@@ -1,5 +1,6 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "a",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "del",
+     "text": "b",
+     "old": 2
+    },
+    {
+     "kind": "del",
+     "text": "c",
+     "old": 3
+    },
+    {
+     "kind": "add",
+     "text": "B",
+     "new": 2
+    },
+    {
+     "kind": "add",
+     "text": "C",
+     "new": 3
+    },
+    {
+     "kind": "add",
+     "text": "D",
+     "new": 4
+    },
+    {
+     "kind": "ctx",
+     "text": "d",
+     "old": 4,
+     "new": 5
+    },
+    {
+     "kind": "del",
+     "text": "e",
+     "old": 5
+    },
+    {
+     "kind": "meta",
+     "text": "\\ No newline at end of file"
+    },
+    {
+     "kind": "hunk",
+     "text": "@@ -20 +21 @@"
+    },
+    {
+     "kind": "add",
+     "text": "z",
+     "new": 21
+    }
+   ],
+   "diffLines": [
+    {
+     "kind": "hunk",
+     "text": "@@ -1,5 +1,6 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "a",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "del",
+     "text": "b",
+     "old": 2
+    },
+    {
+     "kind": "del",
+     "text": "c",
+     "old": 3
+    },
+    {
+     "kind": "add",
+     "text": "B",
+     "new": 2
+    },
+    {
+     "kind": "add",
+     "text": "C",
+     "new": 3
+    },
+    {
+     "kind": "add",
+     "text": "D",
+     "new": 4
+    },
+    {
+     "kind": "ctx",
+     "text": "d",
+     "old": 4,
+     "new": 5
+    },
+    {
+     "kind": "del",
+     "text": "e",
+     "old": 5
+    },
+    {
+     "kind": "hunk",
+     "text": "@@ -20 +21 @@"
+    },
+    {
+     "kind": "add",
+     "text": "z",
+     "new": 21
+    }
+   ]
+  },
+  "l-diff-u": {
+   "isPatch": true,
+   "kinds": [
+    "meta",
+    "meta",
+    "hunk",
+    "ctx",
+    "del",
+    "add",
+    "ctx"
+   ]
+  },
+  "l-git-two": {
+   "isPatch": true,
+   "kinds": [
+    "meta",
+    "meta",
+    "meta",
+    "meta",
+    "hunk",
+    "del",
+    "add",
+    "ctx",
+    "meta",
+    "meta",
+    "meta",
+    "meta",
+    "hunk",
+    "add",
+    "add",
+    "ctx"
+   ]
+  },
+  "p-oversized-header": {
+   "isPatch": true,
+   "split": [
+    {
+     "hunk": "@@ -99999999999999999999 +5 @@"
+    },
+    {
+     "left": {
+      "kind": "ctx",
+      "text": "a",
+      "old": 100000000000000000000,
+      "new": 5
+     },
+     "right": {
+      "kind": "ctx",
+      "text": "a",
+      "old": 100000000000000000000,
+      "new": 5
+     }
+    },
+    {
+     "left": {
+      "kind": "del",
+      "text": "b",
+      "old": 100000000000000000000
+     },
+     "right": {
+      "kind": "add",
+      "text": "c",
+      "new": 6
+     }
+    }
+   ],
+   "parsed": [
+    {
+     "kind": "hunk",
+     "text": "@@ -99999999999999999999 +5 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "a",
+     "old": 100000000000000000000,
+     "new": 5
+    },
+    {
+     "kind": "del",
+     "text": "b",
+     "old": 100000000000000000000
+    },
+    {
+     "kind": "add",
+     "text": "c",
+     "new": 6
+    }
+   ],
+   "diffLines": [
+    {
+     "kind": "hunk",
+     "text": "@@ -99999999999999999999 +5 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "a",
+     "old": 100000000000000000000,
+     "new": 5
+    },
+    {
+     "kind": "del",
+     "text": "b",
+     "old": 100000000000000000000
+    },
+    {
+     "kind": "add",
+     "text": "c",
+     "new": 6
+    }
+   ]
+  },
+  "p-infinite-header": {
+   "isPatch": true,
+   "split": [
+    {
+     "hunk": "@@ -9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999 +5 @@"
+    },
+    {
+     "left": {
+      "kind": "ctx",
+      "text": "a",
+      "old": null,
+      "new": 5
+     },
+     "right": {
+      "kind": "ctx",
+      "text": "a",
+      "old": null,
+      "new": 5
+     }
+    },
+    {
+     "left": {
+      "kind": "del",
+      "text": "b",
+      "old": null
+     },
+     "right": {
+      "kind": "add",
+      "text": "c",
+      "new": 6
+     }
+    }
+   ],
+   "parsed": [
+    {
+     "kind": "hunk",
+     "text": "@@ -9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999 +5 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "a",
+     "old": null,
+     "new": 5
+    },
+    {
+     "kind": "del",
+     "text": "b",
+     "old": null
+    },
+    {
+     "kind": "add",
+     "text": "c",
+     "new": 6
+    }
+   ],
+   "diffLines": [
+    {
+     "kind": "hunk",
+     "text": "@@ -9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999 +5 @@"
+    },
+    {
+     "kind": "ctx",
+     "text": "a",
+     "old": null,
+     "new": 5
+    },
+    {
+     "kind": "del",
+     "text": "b",
+     "old": null
+    },
+    {
+     "kind": "add",
+     "text": "c",
+     "new": 6
+    }
+   ]
+  }
+ },
+ "comment": {
+  "c-mixed": {
+   "lines": "lines 1-2",
+   "quoted": [
+    " keep",
+    "--- old comment",
+    "+-- new comment"
+   ]
+  },
+  "c-removed-only": {
+   "lines": "old line 2",
+   "quoted": [
+    "--- old comment"
+   ]
+  },
+  "c-oversized-removed": {
+   "lines": "old line 100000000000000000000",
+   "quoted": [
+    "-b"
+   ]
+  },
+  "c-infinite-removed": {
+   "lines": "old line Infinity",
+   "quoted": [
+    "-b"
+   ]
+  }
+ }
+}

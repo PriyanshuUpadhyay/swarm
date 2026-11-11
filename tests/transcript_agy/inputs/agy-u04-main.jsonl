@@ -1,0 +1,21 @@
+{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":1,"created_at":"2026-11-05T10:00:01Z","content":"<USER_REQUEST>hello</USER_REQUEST>\n<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>settings</USER_SETTINGS_CHANGE>"}
+{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":2,"created_at":"2026-11-05T10:00:02Z","content":" \n<USER_REQUEST>first</USER_REQUEST> second</USER_REQUEST>\n<ADDITIONAL_METADATA>d</ADDITIONAL_METADATA>"}
+{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":3,"created_at":"2026-11-05T10:00:03Z","content":"<USER_REQUEST>\n open only \n"}
+{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":4,"created_at":"2026-11-05T10:00:04Z","content":"plain naïve café ✓ 🙂"}
+{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":10,"created_at":"2026-11-05T10:00:10Z","thinking":"plan","content":"reading","tool_calls":[{"name":"view_file","args":{"AbsolutePath":"/work/a.txt","toolAction":"read"}},{"name":"run_command","args":{"CommandLine":"pwd"}}]}
+{"type":"VIEW_FILE","status":"DONE","source":"MODEL","step_index":11,"created_at":"2026-11-05T10:00:11Z","content":"file text"}
+{"type":"RUN_COMMAND","status":"ERROR","source":"MODEL","step_index":12,"created_at":"2026-11-05T10:00:12Z","content":"boom"}
+{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":13,"created_at":"2026-11-05T10:00:13Z","tool_calls":[{"name":"list_dir","args":{}}]}
+{"type":"LIST_DIRECTORY","status":"RUNNING","source":"MODEL","step_index":14,"created_at":"2026-11-05T10:00:14Z","content":"listing"}
+{"type":"SEARCH_WEB","status":"CANCELED","source":"MODEL","step_index":15,"created_at":"2026-11-05T10:00:15Z","content":"late"}
+{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":16,"created_at":"2026-11-05T10:00:16Z","thinking":"just thinking","tool_calls":[]}
+{"type":"PLANNER_RESPONSE","status":"RUNNING","source":"MODEL","step_index":17,"created_at":"2026-11-05T10:00:17Z","content":"partial"}
+{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":18,"created_at":"2026-11-05T10:00:18Z","thinking":"check","content":"All done."}
+{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":19,"created_at":"2026-11-05T10:00:19Z","thinking":"keep","content":false,"tool_calls":[false,{"name":"run_command","args":{"CommandLine":"ls"}},null]}
+{"type":"ERROR_MESSAGE","status":"DONE","source":"SYSTEM","step_index":20,"created_at":"2026-11-05T10:00:20Z","error":"bad"}
+{"type":"CHECKPOINT","status":"DONE","source":"MODEL","step_index":21,"created_at":"2026-11-05T10:00:21Z","content":"saved"}
+{"type":"SYSTEM_MESSAGE","status":"DONE","source":"MODEL","step_index":22,"created_at":"2026-11-05T10:00:22Z","content":"note"}
+{"type":"EPHEMERAL_MESSAGE","status":"DONE","source":"SYSTEM","step_index":23,"created_at":"2026-11-05T10:00:23Z"}
+{"type":"PLANNER_RESPONSE","status":"DONE","source":"MODEL","step_index":24,"created_at":"2026-11-05T10:00:24Z"}
+{"type":"FUTURE_STEP","status":"DONE","source":"MODEL","step_index":25,"created_at":"2026-11-05T10:00:25Z","content":"later"}
+{"type":"USER_INPUT","status":"DONE","source":"USER_EXPLICIT","step_index":26,"created_at":"2026-11-05T10:00:26Z","content":"<USER_REQUEST>\nswarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>.\n</USER_REQUEST>\n<ADDITIONAL_METADATA>m</ADDITIONAL_METADATA>"}

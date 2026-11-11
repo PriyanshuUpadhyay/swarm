@@ -38,7 +38,7 @@ Launch every seat of a stage in one turn and send their asks in one turn, as the
 Seat identifiers carry the run id. Write long briefs to a file, and send a one-line pointer as the ask.
 
 ```sh
-printf '%s' '<question>' | swarm send <id> ask   # stores the message and rings the child's pane
+printf '%s' '<question>' | swarm send <id> ask   # reads the body from stdin, stores it, and rings the child's pane
 swarm inbox                                      # seq sender kind body_path, unread only
 swarm ack <seq>
 ```

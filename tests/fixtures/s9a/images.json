@@ -1,0 +1,162 @@
+{
+  "append-unterminated/rows-full.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-back-00.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-back-01.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-back-02.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-back-03.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-back-04.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-back-05.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-full.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-tail-1.txt": {
+    "page": {}
+  },
+  "claude-chair-run/rows-tail-3.txt": {
+    "page": {}
+  },
+  "claude-edit/rows-back-00.txt": {
+    "page": {}
+  },
+  "claude-edit/rows-full.txt": {
+    "page": {}
+  },
+  "claude-edit/rows-tail-1.txt": {
+    "page": {}
+  },
+  "claude-edit/rows-tail-3.txt": {
+    "page": {}
+  },
+  "claude-input-depth-256/rows-full.txt": {
+    "page": {}
+  },
+  "crlf-claude/rows-full.txt": {
+    "page": {}
+  },
+  "follow-claude-chair-run/page-00-before-result.txt": {
+    "page": {}
+  },
+  "follow-claude-chair-run/page-01-after-result.txt": {
+    "page": {}
+  },
+  "follow-claude-chair-run/page-02-final.txt": {
+    "page": {}
+  },
+  "follow-claude-chair-run/step-02-late-result.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "follow-claude-chair-run/step-03-line-5.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "follow-claude-chair-run/step-04-line-6.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "follow-claude-chair-run/step-05-line-7.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "follow-claude-chair-run/step-06-line-8.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "follow-claude-chair-run/step-07-line-9.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "follow-claude-chair-run/step-08-line-10.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "follow-claude-chair-run/step-09-line-11.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "giant-output-claude/rows-full.txt": {
+    "page": {}
+  },
+  "guard-claude-invalid-json/rows-full.txt": {
+    "page": {}
+  },
+  "guard-claude-invalid-utf8/rows-full.txt": {
+    "page": {}
+  },
+  "guard-claude-non-ascii-escape/rows-full.txt": {
+    "page": {}
+  },
+  "guard-claude-unknown-log/rows-full.txt": {
+    "page": {}
+  },
+  "long-line-claude/rows-full.txt": {
+    "page": {}
+  },
+  "numbers-input-cost-decimal/rows-full.txt": {
+    "page": {}
+  },
+  "numbers-input-cost-zero/rows-full.txt": {
+    "page": {}
+  },
+  "numbers-input-duration-negzero/rows-full.txt": {
+    "page": {}
+  },
+  "numbers-input-negzero-whole-float/rows-full.txt": {
+    "page": {}
+  },
+  "numbers-input-u64-plus-1/rows-full.txt": {
+    "page": {}
+  },
+  "overlap-from-0/step-00-subscribe.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "overlap-from-0/step-01-append.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "overlap-from-end-plus-1000/step-01-append.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "overlap-from-line-5/step-00-subscribe.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "overlap-from-line-5/step-01-append.json": {
+    "rows": [
+      {}
+    ]
+  },
+  "overlap-from-line-5/step-02-second-client-from-0.json": {
+    "rows": [
+      {}
+    ]
+  }
+}

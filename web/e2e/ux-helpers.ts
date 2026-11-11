@@ -1,8 +1,52 @@
 import { expect, type Page } from "@playwright/test";
-import type { Row, RowPage } from "../src/core/api";
+import type { Block, Display, FindPart, Inline, PatchInfo, Row, RowPage } from "../src/core/api";
 
 export const row = (id: string, text: string, kind: Row["kind"] = "assistant"): Row => ({ id, kind, text, order: [Number(id.replace(/\D/g, "")) || 1, 0] });
-export const rows = (items: Row[], older = 0): RowPage => ({ rows: items, page: { start_offset: older, end_offset: 500 }, usage: null });
+function displayOf(item: Row): Display {
+  if (item.kind === "proposedPlan" && item.text === "## Steps\n\n1. Add the row") {
+    return { blocks: [
+      { type: "heading", value: { depth: 2, children: [{ type: "text", value: "Steps" }] } },
+      { type: "list", value: { ordered: true, start: 1, tight: true, items: [[
+        { type: "paragraph", value: [{ type: "text", value: "Add the row" }] },
+      ]] } },
+    ] };
+  }
+  if (item.text.startsWith("| CLI | Name form | Note |\n")) {
+    return { blocks: [{ type: "table", value: {
+      source: item.text,
+      align: ["none", "none", "none"],
+      head: [[{ type: "text", value: "CLI" }], [{ type: "text", value: "Name form" }], [{ type: "text", value: "Note" }]],
+      rows: [[[{ type: "text", value: "Claude" }], [{ type: "code", value: "swarm:plan" }], [{ type: "text", value: "plain words that wrap ".repeat(40).trimEnd() }]]],
+    } }] };
+  }
+  return { blocks: item.text.split(/\n[ \t]*\n/).filter(Boolean).map((text) => ({ type: "paragraph", value: [{ type: "text", value: text }] })) };
+}
+export function bodyMode(display: Display | null | undefined): "tree" | "plain" {
+  const ready = (node: Block | Inline): boolean => {
+    switch (node.type) {
+      case "later": return false;
+      case "paragraph": case "blockquote": case "emphasis": case "strong": case "delete":
+        return node.value.every(ready);
+      case "heading": case "link": return node.value.children.every(ready);
+      case "list": return node.value.items.every((item) => item.every(ready));
+      case "table": return [...node.value.head, ...node.value.rows.flat()].every((cell) => cell.every(ready));
+      case "text": case "code": case "break": case "thematic_break": return true;
+    }
+  };
+  return display != null && display.blocks.every(ready) ? "tree" : "plain";
+}
+export const rows = (items: Row[], older = 0, patch: Record<string, PatchInfo> = {}, find: Record<string, FindPart[]> = {}): RowPage => {
+  const display = Object.fromEntries(items.map((item) => [item.id, displayOf(item)]));
+  return {
+    rows: items,
+    patch,
+    find,
+    page: { start_offset: older, end_offset: 500 },
+    usage: null,
+    display,
+    body: Object.fromEntries(Object.entries(display).map(([id, tree]) => [id, bodyMode(tree)])),
+  };
+};
 export async function open(tab: Page, session = process.env.SWARM_E2E_LIVE!) {
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);
@@ -10,6 +54,6 @@ export async function open(tab: Page, session = process.env.SWARM_E2E_LIVE!) {
   await tab.locator(`[data-testid="tree-row"][data-session="${session}"]`).click();
   await expect(tab.getByTestId("transcript")).toHaveAttribute("data-state", /ready|error/);
 }
-export async function mockRows(tab: Page, items: Row[], older = 0) {
-  await tab.route("**/api/rows?*", (route) => route.fulfill({ json: rows(items, older) }));
+export async function mockRows(tab: Page, items: Row[], older = 0, patch: Record<string, PatchInfo> = {}, find: Record<string, FindPart[]> = {}) {
+  await tab.route("**/api/rows?*", (route) => route.fulfill({ json: rows(items, older, patch, find) }));
 }

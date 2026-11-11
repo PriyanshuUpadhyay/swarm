@@ -62,17 +62,10 @@ pub(super) fn start(
     )?;
     listener.set_nonblocking(true)?;
     let port = listener.local_addr()?.port();
-    let tool = std::env::var_os("SWARM_TRANSCRIPT_TOOL")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| swarm::paths::bundled("transcript"))
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("packages/transcript/zig-out/bin/transcript")
-        });
     let (actions, action_queue) = mpsc::channel(64);
     let app = Arc::new(Server {
+        sources: source_backend::Sources::default(),
         root,
-        tool,
         port,
         ui: record.is_some(),
         token,
@@ -171,6 +164,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/choices", post(choice_write))
         .route("/api/changes", get(panel_read))
         .route("/api/changes/diff", get(panel_read))
+        .route("/api/changes/comment-range", post(comment_range))
         .route("/api/changes/file", get(panel_read))
         .route("/api/pr", get(panel_read))
         .route("/api/issues", get(panel_read))
@@ -210,7 +204,11 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/project/import", post(lifecycle_write))
         .route("/api/project/remove", post(lifecycle_write))
         .route("/api/transcript", get(transcript))
-        .route("/api/rows", get(transcript_rows))
+        .route(
+            "/api/rows",
+            get(transcript_rows)
+                .merge(post(find_rows).layer(DefaultBodyLimit::max(ROWS_FIND_LIMIT))),
+        )
         .route("/api/tool-output", get(tool_output))
         .route("/api/background", get(background))
         .route("/api/terminal/ticket", post(terminal_ticket))

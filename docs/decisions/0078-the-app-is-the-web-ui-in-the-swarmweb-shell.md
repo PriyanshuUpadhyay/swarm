@@ -78,3 +78,5 @@ Where each Swift-only behaviour goes:
 ## Links
 
 - Supersedes: 0014. Related: 0027, 0048, 0062, 0075, 0076, 0077.
+
+- Amended 2026-11-10: the Rust transcript worker (`swarm _transcript-worker`, `src/view/transcript`) replaced the Zig tool; `libexec/transcript` is no longer shipped.

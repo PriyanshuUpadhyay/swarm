@@ -95,7 +95,6 @@ elif name == 'brew':
 elif name == 'cargo':
     if scenario == 'cargo-error': fail()
 elif name == 'uname': print('Darwin' if a == ['-s'] else 'arm64')
-elif name == 'zig': print('0.16.0')
 elif name == 'node': print('v22.0.0')
 elif name == 'pnpm': print('11.15.1')
 elif name == 'make':
@@ -126,7 +125,7 @@ class OwnerScripts(unittest.TestCase):
         (self.root / 'scripts/install-local.sh').write_text('#!/bin/sh\nexit 1\n')
         self.bin = self.root / 'bin'
         self.bin.mkdir()
-        for name in ('git', 'gh', 'date', 'brew', 'cargo', 'sleep', 'swarm', 'uname', 'zig', 'node', 'pnpm', 'make', 'swift'):
+        for name in ('git', 'gh', 'date', 'brew', 'cargo', 'sleep', 'swarm', 'uname', 'node', 'pnpm', 'make', 'swift'):
             path = self.bin / name
             path.write_text(STUB); path.chmod(0o755)
         self.state = dict(head='abcdef0123456789abcdef0123456789abcdef01')

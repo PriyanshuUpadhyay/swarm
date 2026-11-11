@@ -1,0 +1,2 @@
+{"timestamp":"2026-11-05T11:00:00.000Z","type":"response_item","payload":{"type":"tool_search_call","call_id":"ts-1","arguments":{"query":"limit"}}}
+{"timestamp":"2026-11-05T11:00:01.000Z","type":"response_item","payload":{"type":"tool_search_output","call_id":"ts-1","status":"completed","tools":[{"type":"function","name":"set_limit","description":"Set a limit","parameters":{"type":"object","properties":{"limit":{"type":"number","default":42.0,"minimum":1e-7}}}}]}}

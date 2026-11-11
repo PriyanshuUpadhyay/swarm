@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "diff2html/bundles/css/diff2html.min.css";
 
 @import "./styles-base.css";
 @import "./styles-sidebar.css";

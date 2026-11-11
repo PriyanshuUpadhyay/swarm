@@ -31,7 +31,7 @@ the task mixes verbs, plan from the block catalog with no preset.
 | `code-review` | check a range, walk a GitHub PR, or run a cleanup pass; it is a skill, so read `skills/code-review/SKILL.md` |
 | `research` | answer one question from evidence in a short report; it is a skill, so read `skills/research/SKILL.md` |
 | `explain` | explain how something works |
-| `council` | get a visible debate between Gemini, GPT, and Claude seats on one question; it is a skill, so read `skills/council/SKILL.md` |
+| `council` | get a visible debate on one question; `skills/council/SKILL.md` owns the seat and identity contract |
 
 ## Presets
 

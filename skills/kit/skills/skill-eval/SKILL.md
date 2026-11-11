@@ -142,5 +142,6 @@ Close every pane, then remove the scratch folder and the pane folders.
 
 ## Reply
 
-Open with the first screen from `<kit root>/references/plan-layout.md`. Give the verdict, a
-table of case, provider, and result, and each failed expectation with its quote.
+Follow the loaded session reply rules. Give the verdict, each case's provider and result, and
+each failed expectation with its quote. Use `<kit root>/references/explain-formats.md` when a
+table helps compare the case results.

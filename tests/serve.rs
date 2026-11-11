@@ -5,6 +5,10 @@ use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
+    os::{
+        fd::AsRawFd,
+        unix::{net::UnixStream, process::CommandExt},
+    },
     path::PathBuf,
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
@@ -12,6 +16,7 @@ use std::{
 
 struct Server {
     child: Child,
+    descendants: UnixStream,
     dir: PathBuf,
     log: PathBuf,
     session: String,
@@ -58,7 +63,7 @@ impl Server {
         };
         let log = dir.join("chair.jsonl");
         fs::copy(
-            repo.join("packages/transcript/src/fixtures/claude-chair-run.jsonl"),
+            repo.join("tests/fixtures/provider-logs/claude-chair-run.jsonl"),
             &log,
         )
         .unwrap();
@@ -122,7 +127,21 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         fs::write(assets.join("index.html"), "<h1>pilot</h1>").unwrap();
         fs::write(assets.join("app.js"), "console.log('pilot');").unwrap();
         std::os::unix::fs::symlink(&log, assets.join("escape.jsonl")).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        eprintln!("serve test binary: {}", env!("CARGO_BIN_EXE_swarm"));
+        let (mut descendants, inherited) = UnixStream::pair().unwrap();
+        let inherited_fd = inherited.as_raw_fd();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
+        // Keep one descriptor in every child, including workers in separate process groups.
+        // SAFETY: pre_exec only changes the open descriptor flags with an async-signal-safe call.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::fcntl(inherited_fd, libc::F_SETFD, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = command
             .env_clear()
             .env("HOME", &home)
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
@@ -143,15 +162,12 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
             .arg(assets)
             .args(["--dev-origin", "http://127.0.0.1:5173"])
             .env("SWARM_HOME", home)
-            .env(
-                "SWARM_TRANSCRIPT_TOOL",
-                repo.join("packages/transcript/zig-out/bin/transcript"),
-            )
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
             .unwrap();
+        drop(inherited);
         let mut first = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut first)
@@ -159,6 +175,7 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         let Some((address, token)) = first.trim().split_once("/#token=") else {
             let _ = child.kill();
             let _ = child.wait();
+            std::io::copy(&mut descendants, &mut std::io::sink()).unwrap();
             fs::remove_dir_all(&dir).unwrap();
             panic!("serve failed before the server URL and token");
         };
@@ -167,6 +184,7 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
         Self {
             child,
+            descendants,
             dir,
             log,
             session,
@@ -268,6 +286,8 @@ impl Drop for Server {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // EOF proves that children which can still write the fixture have also exited.
+        std::io::copy(&mut self.descendants, &mut std::io::sink()).unwrap();
         fs::remove_dir_all(&self.dir).unwrap();
     }
 }
@@ -405,6 +425,10 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
 mod chat;
 #[path = "serve/choices.rs"]
 mod choices;
+#[path = "serve/find_rows.rs"]
+mod find_rows;
+#[path = "serve/find_wire.rs"]
+mod find_wire;
 #[path = "serve/guards.rs"]
 mod guards;
 #[path = "serve/handoff.rs"]
@@ -415,3 +439,29 @@ mod kit;
 mod transcripts;
 #[path = "serve/workspace.rs"]
 mod workspace;
+
+#[path = "serve/s6b_changes.rs"]
+mod s6b_changes;
+
+#[path = "serve/s8c_queue.rs"]
+mod s8c_queue;
+
+#[path = "serve/s8d_images.rs"]
+mod s8d_images;
+
+#[path = "s9a/frozen.rs"]
+mod s9a_frozen;
+#[path = "serve/s9a_switch.rs"]
+mod s9a_switch;
+
+#[path = "serve/s9b_switch.rs"]
+mod s9b_switch;
+
+#[path = "serve/s9c_switch.rs"]
+mod s9c_switch;
+
+#[path = "serve/s9d_switch.rs"]
+mod s9d_switch;
+
+#[path = "serve/body_wire.rs"]
+mod body_wire;

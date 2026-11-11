@@ -1,6 +1,6 @@
 // Global setup: a temp SWARM_HOME with synthetic chats, and the dev `swarm serve` on it. One chat
 // has a live chair on a stand-in adapter, so chat actions run the real CLI with no provider.
-// E2E_SWARM and E2E_TOOL point at other builds of the two binaries, relative to the repo root.
+// E2E_SWARM points at another swarm build, relative to the repo root.
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -11,8 +11,7 @@ import { createInterface } from "node:readline";
 
 const repo = resolve(import.meta.dirname, "../..");
 const swarm = resolve(repo, process.env.E2E_SWARM ?? "target/debug/swarm");
-const tool = resolve(repo, process.env.E2E_TOOL ?? "packages/transcript/zig-out/bin/transcript");
-const fixtures = join(repo, "packages/transcript/src/fixtures");
+const fixtures = join(repo, "tests/fixtures/provider-logs");
 
 /** A synthetic Claude log: one prompt, then one Bash call whose output has `lines` lines. */
 function giantLog(session: string, lines: number): string {
@@ -133,7 +132,6 @@ export default async function setup() {
     SWARM_HOME: home,
     CLAUDE_CONFIG_DIR: join(home, ".claude"),
     CODEX_HOME: join(home, ".codex"),
-    SWARM_TRANSCRIPT_TOOL: tool,
     USER: "e2e",
     SWARM_CLAUDE_CMD: join(dir, "stand-ins/claude"),
     SWARM_CODEX_CMD: "/usr/bin/false",

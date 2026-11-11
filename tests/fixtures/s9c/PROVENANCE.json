@@ -1,0 +1,14 @@
+{
+  "OLD": "a8c2b3dc347e99f2e06ff7493123349aabdf3ab9",
+  "source": "original-s9c/bytes",
+  "runs": "out-1 and out-2 byte-equal; both use production OLD Zig and OLD Rust routes",
+  "normalization": "Only random session ids become SESSION. hello/snapshot/ping are excluded from transcript frames on both sides.",
+  "images": "Captured body.images and data.images are literal OLD maps. No HAND overlay.",
+  "native": "native-raw preserves full and per-line Zig stdout/stderr as hex, including exact numeric/depth data. native-lines joins OLD per-line events with physical input offsets for representable contexts.",
+  "HAND": "G1 wrappers/offsets follow protocol 2; Source.page omits route-only display/patch/find/images. G2/G3 compare all fields. A captured HTTP 500 becomes caller Fault::Core at that boundary.",
+  "legacy": "tests/transcript_agy remains byte-equal, including guard/numeric token assertions and the two-row full projection. G1/G2 keep OLD empty page-upsert values separate.",
+  "gaps": [
+    "Protocol-2 native guard/number transport for unrepresentable numbers is not asserted; legacy protocol-1 native tests stay unchanged.",
+    "Hard-input combinations, lease/cancel/shrink stress, new tools/schema/image/question forms and unusual path moves stay prototype gaps."
+  ]
+}

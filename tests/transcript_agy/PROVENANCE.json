@@ -1,0 +1,133 @@
+{
+ "purpose": "Data of the ONE AGY CLI main-path test (tests/transcript_agy.rs): sealed ORIGINAL AGY native lines and OLD HTTP row bodies, copied as bytes.",
+ "authority": "ORIGINAL c8ca837e1b70cbb4479bfda387f3bace2931749e. Native stdout: reference/SEALS.sha256 (round 1, 186 entries). OLD HTTP bodies: reference/rows/SEALS.sha256 (round 2, 71 entries). Logical path .../brain/agy-u04-main/steps.jsonl.",
+ "line_bounds": [
+  0,
+  265,
+  497,
+  653,
+  807,
+  1104,
+  1232,
+  1358,
+  1516,
+  1650,
+  1778,
+  1934,
+  2070,
+  2224,
+  2448,
+  2573,
+  2698,
+  2826,
+  2941,
+  3054,
+  3180,
+  3476
+ ],
+ "files": [
+  {
+   "file": "inputs/agy-u04-main.jsonl",
+   "sha256": "2ce28598969da9f10927c08ddbd3620688bf9db94b9c5d66bef18cd109500bbf",
+   "bytes": 3476,
+   "source": "inputs/agy-u04-main.jsonl",
+   "source_sha256": "2ce28598969da9f10927c08ddbd3620688bf9db94b9c5d66bef18cd109500bbf",
+   "note": "sealed round-1 owned input"
+  },
+  {
+   "file": "inputs/agy-u04-guards.jsonl",
+   "sha256": "aa63ed141252690de5ccc696dc50bcfb3722e7c2854a47a195480f3b103ce757",
+   "bytes": 2680,
+   "source": "inputs/agy-u04-guards.jsonl",
+   "source_sha256": "aa63ed141252690de5ccc696dc50bcfb3722e7c2854a47a195480f3b103ce757",
+   "note": "sealed round-1 owned input"
+  },
+  {
+   "file": "inputs/agy-u04-numbers.jsonl",
+   "sha256": "a0eec95923ad4b6e38fa777ac47c77b2623c292af4ad3c8462f69fa931f78123",
+   "bytes": 1264,
+   "source": "inputs/agy-u04-numbers.jsonl",
+   "source_sha256": "a0eec95923ad4b6e38fa777ac47c77b2623c292af4ad3c8462f69fa931f78123",
+   "note": "sealed round-1 owned input"
+  },
+  {
+   "file": "fixtures/native-guards.stdout",
+   "sha256": "dc8bde8d51269b15959a019b41ff5761320f3105f6e61dc921df9a795432a3b5",
+   "bytes": 4583,
+   "source": "data/run1/guards.full/stdout.raw",
+   "source_sha256": "dc8bde8d51269b15959a019b41ff5761320f3105f6e61dc921df9a795432a3b5",
+   "note": "ORIGINAL native stdout, whole file (round 1, run1 == run2)"
+  },
+  {
+   "file": "fixtures/native-numbers.stdout",
+   "sha256": "9dd8f255504daaf10dc363767de9ae9a79a9a9c3de5557f2186b789e4d2a5104",
+   "bytes": 1634,
+   "source": "data/run1/numbers.full/stdout.raw",
+   "source_sha256": "9dd8f255504daaf10dc363767de9ae9a79a9a9c3de5557f2186b789e4d2a5104",
+   "note": "ORIGINAL native stdout, whole file (round 1, run1 == run2)"
+  },
+  {
+   "file": "fixtures/lines-main.json",
+   "sha256": "80be0be0886088a865c811cab4b7b07aaf066267e53a52e91dd2d6e0da13da6e",
+   "bytes": 11334,
+   "source": "data/run1/main.follow-from0/stdout.raw",
+   "source_sha256": "a48991506877a16e7675b0988fdc04663f5f73d30670fa840c3ba4fd35f1c27d",
+   "note": "events of each input line, split at the sealed page markers; concatenation equals data/run1/main.full/stdout.raw (checked)"
+  },
+  {
+   "file": "fixtures/http-whole.body",
+   "sha256": "dbcfdf1cd502cd0c88d24b35339104374581a53914eefec61f5fe39e55caa127",
+   "bytes": 8158,
+   "source": "rows/data/run1/u1-main-whole.json (rows_cold.body_text)",
+   "source_sha256": "d12c44bdbd290ac25d57b0bc57fac0336fd3454227d0d9233b82c581fa644f86",
+   "note": "OLD HTTP GET /api/rows body, args {\"tail\": 200, \"before\": null}, page [0, 3476], 22 rows"
+  },
+  {
+   "file": "fixtures/http-prefix.body",
+   "sha256": "b79cd028ff822f7fedddee070db3025c259a4d90b063430fcc959a27123c62fd",
+   "bytes": 2449,
+   "source": "rows/data/run1/u2-main-prefix.json (rows_prefix.body_text)",
+   "source_sha256": "c0536f88946c884bac785c6cd9a1f2dc54b5c5ef7ac0c5bc4f8093980758beb4",
+   "note": "OLD HTTP GET /api/rows body, args {\"tail\": 200, \"before\": null}, page [0, 1104], 9 rows"
+  },
+  {
+   "file": "fixtures/http-after-results.body",
+   "sha256": "fe5e97352993df637641efa0e8f6fe5dd63868fd0244055a68bb7eb76b355f6f",
+   "bytes": 2791,
+   "source": "rows/data/run1/u3-main-continuation.json (rows_after_results.body_text)",
+   "source_sha256": "0f9f9369df1ca06e43c5fcf711e395a8341b9cc9db2f96fbba3f02f4fde92f99",
+   "note": "OLD HTTP GET /api/rows body, args {\"tail\": 200, \"before\": null}, page [0, 1358], 9 rows"
+  },
+  {
+   "file": "fixtures/http-window.body",
+   "sha256": "44a02db78f9f6934edacf344ae97f7d488aec5792230faa62cada0145f515601",
+   "bytes": 6183,
+   "source": "rows/data/run1/u4-continuation-window-tail16.json (rows.body_text)",
+   "source_sha256": "416f883a304172c3d21d65a2754f4349de1e0bc7650c52b318eb2049c14ce7fd",
+   "note": "OLD HTTP GET /api/rows body, args {\"tail\": 16, \"before\": null}, page [1104, 3476], 16 rows"
+  },
+  {
+   "file": "fixtures/http-result-only.body",
+   "sha256": "90c6704a5ba85011e0cd070a9bb8a084cd35fd81c483566e5b03928842c00e40",
+   "bytes": 83,
+   "source": "rows/data/run1/u4-result-only-tail2-before-line8.json (rows.body_text)",
+   "source_sha256": "81272e64623e5efea9731bbfe14c10563f7d852d9712bebab054fb1fe2a71cf8",
+   "note": "OLD HTTP GET /api/rows body, args {\"tail\": 2, \"before\": 1358}, page [1104, 1358], 0 rows"
+  },
+  {
+   "file": "fixtures/old-full-results-only.json",
+   "sha256": "85d54f279a4c85abd2bd9f8099e9b9d261f04b0e15122775ab66ee3da88044c4",
+   "bytes": 980,
+   "source": "provider-red/row-boundary/capture/old-full-rows-run1.json, key results-only (exact text span of that JSON value)",
+   "source_sha256": "1ae9c6dd47333c3a7510e9e43a0ed96df5b7ee5f9133e9783c143970dbe7ee70",
+   "repeat_source_sha256": "1ae9c6dd47333c3a7510e9e43a0ed96df5b7ee5f9133e9783c143970dbe7ee70 (old-full-rows-run2.json, byte-equal)",
+   "selected_case": "results-only: window [1104,1358], has_older true, 2 records, 2 rows (11:result@raw-1104-0, 12:result@raw-1232-0)",
+   "capture": "Round 9, ORIGINAL c8ca837e public view_rows_with_context on the sealed round-1 native events; row-boundary seal f8162b09d91d0c6cdaa0c1c3eb7a5df89ac3527d1b43280d886bcfde2b3a3769",
+   "chronology": "LATE capture, made after the native AGY module and Candidate01 existed. It is not pre-implementation evidence and no candidate row supplied it.",
+   "note": "Canonical full projection for bind-b-results-only. http-result-only.body (0 rows) stays unchanged as the OLD HTTP page-upsert fact for a cold before= request."
+  }
+ ],
+ "canonical_note": "Round 10: bind-b-results-only selects old-full-results-only.json (the OLD full Row owner outcome) instead of http-result-only.body (an OLD page upsert, empty for a cold before= request). No other selection or OLD file changed.",
+ "replay_note": "Round 8 correction: the replay of reader A over 0..1104 after A has ingested the results (file 1358) selects http-after-results.body (retained Row history, fold failed), not http-prefix.body. Source: ReaderSet::replay merges the replay page into the reader's ReaderRows and returns the full projection; next_complete_byte stays the live cursor. No OLD data file changed; http-prefix.body is still used for the first bind.",
+ "not_in_data":"no OLD row set exists for the guards and numbers files (OLD HTTP answers 500 for the whole files and re-spells numbers), so the test asserts native events only for them"
+}

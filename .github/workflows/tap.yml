@@ -1,8 +1,8 @@
 name: Tap
 
 # Points the Homebrew tap at a release once the owner publishes the draft, so the tarball is public.
-# swarm ships as one formula: the CLI with the web UI inside, plus the transcript tool, the notice
-# helper and the skills in libexec (ADR 0079). The same tap commit deletes the old swarm-app cask.
+# swarm ships as one formula: the CLI with the web UI inside, plus the notice helper
+# and the skills in libexec (ADR 0079). The same tap commit deletes the old swarm-app cask.
 on:
   release:
     types: [published]

@@ -34,18 +34,23 @@ def note(decision, count=0, message=""):
 def test_rounds_bind_approval_to_the_reviewed_bytes():
     root = setup()
     assert "no round in" in cr(root, "check").stderr
-    out = cr(root, "run", note("annotated", 1, "drop step 3"))
-    assert out.returncode == 0 and out.stdout == "round 1: annotated, with notes\n", out
+    result = note("annotated", 1, "drop step 3")
+    out = cr(root, "run", result)
+    assert out.returncode == 0, out
     saved = json.loads((root / "review" / "1.json").read_text())
+    assert saved["result"] == result, saved
     assert saved["files"] == {"../plan.md": __import__("hashlib").sha256(b"# Plan: x\n").hexdigest()}, saved
     assert "round 1 has notes but no answers" in cr(root, "run", note("approved")).stderr
     assert "round 1 has notes but no answers" in cr(root, "check").stderr
     (root / "review" / "1-answers.md").write_text("> drop step 3\nremoved 03-tokens\n")
     (root / "plan.md").write_text("# Plan: x, no tokens\n", encoding="utf-8")
     assert "round 1 is annotated, not approved" in cr(root, "check").stderr
+
     assert cr(root, "run", note("approved")).returncode == 0
     out = cr(root, "check")
-    assert out.returncode == 0 and out.stdout == "round 2 approved these files\n", out
+    assert out.returncode == 0, out
+    saved = json.loads((root / "review" / "2.json").read_text())
+    assert saved["result"]["decision"] == "approved", saved
     # An edit after approval voids it, and a check on other files does not borrow it.
     (root / "plan.md").write_text("# Plan: x, edited\n", encoding="utf-8")
     assert "../plan.md changed after round 2; start a new round" in cr(root, "check").stderr
@@ -71,8 +76,10 @@ def test_stops():
 def test_feedback_is_a_note():
     """plannotator 0.28.17 with --gate gives {decision, feedback} and no message or annotationCount."""
     root = setup()
-    out = cr(root, "run", {"decision": "annotated", "feedback": "# File Feedback\n### 1. Feedback on: x\n> sweet\n"})
-    assert out.returncode == 0 and out.stdout == "round 1: annotated, with notes\n", out
+    result = {"decision": "annotated", "feedback": "# File Feedback\n### 1. Feedback on: x\n> sweet\n"}
+    out = cr(root, "run", result)
+    assert out.returncode == 0, out
+    assert json.loads((root / "review" / "1.json").read_text())["result"] == result
     assert "round 1 has notes but no answers" in cr(root, "run", note("approved")).stderr
 
 

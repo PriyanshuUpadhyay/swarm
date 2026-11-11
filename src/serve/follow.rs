@@ -23,10 +23,12 @@ pub(super) async fn flush_transcript(
                 batches.clear();
                 return Ok(());
             };
+            // Keep the new tail unavailable until its rows frame is queued.
+            follower.rendering_rows = follower.rows.is_some();
             if let Some(state) = &mut follower.rows {
                 let mut start = follower.from;
                 for (end, events) in batches.iter() {
-                    state.ingest_log_line(source, start, *end, events);
+                    view::source_follow::ingest_log_line(state, source, start, *end, events);
                     start = *end;
                 }
             }
@@ -38,20 +40,22 @@ pub(super) async fn flush_transcript(
                 follower.rendering_rows = true;
                 follower.rows.take().map(Err)
             } else {
-                let frame = follower.rows.as_mut().map(|state| state.delta(key));
-                frame.map(Ok)
+                follower.rows.as_mut().map(|rows| rows.delta()).map(Ok)
             }
         };
-        let row_frame = if let Some(pending) = pending {
-            if let Ok(frame) = pending {
-                Some(frame)
+        let (row_frame, changed_rows, restored_rows) = if let Some(pending) = pending {
+            if let Ok(delta) = pending {
+                let changed = !delta.upsert.is_empty() || !delta.remove.is_empty();
+                (Some(row_frame(key, delta)), changed, false)
             } else {
                 let state = pending.err().unwrap();
                 let render_key = key.to_owned();
-                let (mut state, frame) = tokio::task::spawn_blocking(move || {
+                let (mut state, frame, changed) = tokio::task::spawn_blocking(move || {
                     let mut state = state;
-                    let frame = state.delta(&render_key);
-                    (state, frame)
+                    let delta = state.delta();
+                    let changed = !delta.upsert.is_empty() || !delta.remove.is_empty();
+                    let frame = row_frame(&render_key, delta);
+                    (state, frame, changed)
                 })
                 .await
                 .map_err(std::io::Error::other)?;
@@ -70,22 +74,12 @@ pub(super) async fn flush_transcript(
                             Some(incoming)
                         } else {
                             follower.rows = Some(state);
-                            follower.rendering_rows = false;
                             break;
                         }
                     };
                     if let Some(incoming) = incoming {
                         let merged = tokio::task::spawn_blocking(move || {
-                            let usage = state.usage.clone();
-                            state.records.extend(incoming.records);
-                            state.shown.extend(incoming.shown);
-                            state.start = state.start.min(incoming.start);
-                            state.end = state.end.max(incoming.end);
-                            state.reindex();
-                            state.usage = usage;
-                            let rows = state.rows_full();
-                            state.prepare(rows);
-                            state.compact();
+                            state.merge_incoming(incoming);
                             state
                         })
                         .await
@@ -93,10 +87,10 @@ pub(super) async fn flush_transcript(
                         state = merged;
                     }
                 }
-                Some(frame)
+                (Some(frame), changed, true)
             }
         } else {
-            None
+            (None, false, false)
         };
         let mut hub = app.hub.lock().unwrap();
         if hub
@@ -140,6 +134,15 @@ pub(super) async fn flush_transcript(
             }
         }
         if let Some(follower) = hub.followers.get_mut(key) {
+            follower.rendering_rows = false;
+            if changed_rows {
+                follower.rows_version += 1;
+                follower.rows_changed.send_replace(());
+            }
+            if restored_rows {
+                follower.rows_version += 1;
+                follower.rows_changed.send_replace(());
+            }
             follower.from = batches.last().unwrap().0;
         }
     }
@@ -149,7 +152,7 @@ pub(super) async fn flush_transcript(
 
 pub(super) async fn follow(
     app: Weak<Server>,
-    tool: PathBuf,
+    rust: Arc<source_backend::Lease>,
     entry: SubscriptionKey,
     log: Log,
     generation: String,
@@ -157,43 +160,21 @@ pub(super) async fn follow(
     done: watch::Sender<bool>,
 ) {
     let result = async {
-        if *stop.borrow() { return Ok(()); }
+        if *stop.borrow() {
+            return Ok(());
+        }
         if entry.view.as_deref() == Some("rows") {
-            tokio::spawn(watch_turn(app.clone(), entry.key.clone(), generation.clone(), stop.clone()));
+            tokio::spawn(watch_turn(
+                app.clone(),
+                entry.key.clone(),
+                generation.clone(),
+                stop.clone(),
+            ));
         }
         let source = std::fs::File::open(&log.path)?;
-        let mut child = tokio::process::Command::new(tool)
-            .args(["--follow", "--from", &entry.from.to_string(), "--format", &log.format])
-            .arg(log.path).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::inherit()).kill_on_drop(true).spawn()?;
-        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        let mut events = Vec::new();
-        let mut batches = Vec::new();
-        let mut first = true;
-        let mut timer = tokio::time::interval(Duration::from_millis(16));
-        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let result = async { loop {
-            tokio::select! {
-                biased;
-                _ = stop.changed() => break Ok::<_, std::io::Error>(()),
-                _ = timer.tick() => {
-                    flush_transcript(&app, &entry.key, &generation, &mut batches, &source).await?;
-                    timer.reset();
-                }
-                line = lines.next_line() => {
-                    let Some(line) = line? else { break Err(std::io::Error::other("transcript follower ended")); };
-                    let value: Value = serde_json::from_str(&line)?;
-                    if value["type"] == "page" {
-                        if first { first = false; continue; }
-                        let end = value["end_offset"].as_u64().ok_or_else(|| std::io::Error::other("transcript offset missing"))?;
-                        batches.push((end, std::mem::take(&mut events)));
-                    } else { events.push(value); }
-                }
-            }
-        } }.await;
-        let killed = child.kill().await;
-        let _ = child.wait().await;
-        result.and(killed)
-    }.await;
+        native_follow(&app, &entry, &generation, &source, rust, &mut stop).await
+    }
+    .await;
     if let Err(err) = result {
         eprintln!("swarm serve: follower {}: {err}", entry.key);
         if let Some(app) = app.upgrade() {
@@ -219,6 +200,33 @@ pub(super) async fn follow(
         }
     }
     let _ = done.send(true);
+}
+
+async fn native_follow(
+    app: &Weak<Server>,
+    entry: &SubscriptionKey,
+    generation: &str,
+    source: &std::fs::File,
+    rust: Arc<source_backend::Lease>,
+    stop: &mut watch::Receiver<bool>,
+) -> std::io::Result<()> {
+    use swarm::view::transcript::worker_protocol::v2::Operation;
+    let mut from = Some(entry.from);
+    let mut timer = tokio::time::interval(Duration::from_millis(16));
+    timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            biased;
+            _ = stop.changed() => return Ok(()),
+            _ = timer.tick() => {
+                // Follow runs inline in the worker, so finish this bounded read before stopping.
+                let payload = rust.read(Operation::Follow { from: from.take() }).await
+                    .map_err(|_| std::io::Error::other("transcript follower ended"))?;
+                let mut batches = source_backend::lines(&payload).map_err(|_| std::io::Error::other("invalid transcript output"))?.into_iter().map(|(_,end,events)| (end,events)).collect();
+                flush_transcript(app, &entry.key, generation, &mut batches, source).await?;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

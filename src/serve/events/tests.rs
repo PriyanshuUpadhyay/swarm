@@ -156,7 +156,7 @@ async fn show_tells_each_open_page_to_open_the_chat() {
     assert!(bad.is_err());
 }
 #[tokio::test]
-async fn a_working_chair_streams_its_screen_text_and_the_turn_end_clears_it() {
+async fn a_working_chair_streams_its_screen_text_and_keeps_the_ended_turn() {
     let fixture = Fixture::new();
     let screen = fixture.dir.join("screen.txt");
     std::fs::copy(
@@ -227,16 +227,20 @@ async fn a_working_chair_streams_its_screen_text_and_the_turn_end_clears_it() {
     tokio::time::sleep(Duration::from_millis(800)).await;
     assert!(live(&fixture.app)[0]["text"].is_string());
     fixture.app.hub.lock().unwrap().agents = agents("idle");
-    // The queue keeps only the newest live frame of a key, so the turn end replaces the text.
+    // The queue keeps the ended text until a rows frame clears it.
     for _ in 0..40 {
-        if live(&fixture.app)[0]["text"].is_null() {
+        if live(&fixture.app)[0]["ended"] == true {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let frames = live(&fixture.app);
     assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0]["text"], Value::Null);
+    assert!(frames[0]["text"].is_string());
+    assert_eq!(
+        json!({"ended": frames[0]["ended"], "hide_text": frames[0]["hide_text"], "hide_thinking": frames[0]["hide_thinking"]}),
+        json!({"ended": true, "hide_text": false, "hide_thinking": false})
+    );
     drop(Events {
         app: fixture.app.clone(),
         id: "all".into(),
@@ -313,14 +317,118 @@ async fn a_working_pi_chair_streams_its_extension_file_and_not_its_screen() {
     // pi empties the file when the message ends, while its tools run.
     std::fs::write(&file, "").unwrap();
     for _ in 0..40 {
-        if live(&fixture.app)[0]["text"].is_null() {
+        if live(&fixture.app)[0]["ended"] == true {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let frames = live(&fixture.app);
-    assert_eq!(frames[0]["text"], Value::Null);
-    assert_eq!(frames[0]["thinking"], Value::Null);
+    assert_eq!(
+        {
+            let mut actual = frames[0].clone();
+            actual.as_object_mut().unwrap().remove("live_body");
+            actual
+        },
+        json!({"key": key, "text": "The river bends.", "thinking": "Plan the walk.",
+        "display": {"blocks": [{"type": "paragraph", "value": [{"type": "text", "value": "The river bends."}]}]},
+        "ended": true, "hide_text": false, "hide_thinking": false})
+    );
+    drop(Events {
+        app: fixture.app.clone(),
+        id: "all".into(),
+    });
+}
+
+#[tokio::test]
+async fn a_working_pi_chair_streams_the_display_of_its_live_text() {
+    let fixture = Fixture::new();
+    let screen = fixture.dir.join("screen.txt");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/screens/pi-queued.txt"),
+        &screen,
+    )
+    .unwrap();
+    std::fs::create_dir_all(fixture.app.root.join("adapters")).unwrap();
+    std::fs::write(
+        fixture.app.root.join("adapters/tmux-swarm.conf"),
+        format!("capture = cat '{}'\n", screen.display()),
+    )
+    .unwrap();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::add_agent(
+        &connection,
+        &fixture.session,
+        "orchestrator",
+        "orchestrator",
+    )
+    .unwrap();
+    swarm::store::set_provider(&connection, &fixture.session, "orchestrator", "pi").unwrap();
+    drop(connection);
+    let file = swarm::bus::pi_live_file(&fixture.app.root, &fixture.session, "orchestrator");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let text = "**The** river: `bends`";
+    std::fs::write(
+        &file,
+        json!({"thinking": "Plan the walk.", "text": text}).to_string(),
+    )
+    .unwrap();
+    {
+        let mut hub = fixture.app.hub.lock().unwrap();
+        let agent = json!({"id": "orchestrator", "pane": "%1", "alive": true, "state": "working"});
+        hub.agents = json!({ fixture.session.as_str(): [agent] });
+        hub.streams.insert("all".into(), client(&[]));
+    }
+    let key = format!("{}:chair", fixture.session);
+    let from = std::fs::metadata(&fixture.log).unwrap().len();
+    let _ = subscribe(
+        State(fixture.app.clone()),
+        Json(Subscription {
+            stream: "all".into(),
+            keys: vec![SubscriptionKey {
+                key: key.clone(),
+                from,
+                view: Some("rows".into()),
+            }],
+        }),
+    )
+    .await
+    .unwrap();
+    let live = |app: &App| {
+        let hub = app.hub.lock().unwrap();
+        hub.streams["all"]
+            .queue
+            .iter()
+            .filter(|frame| frame.name == "live")
+            .map(|frame| serde_json::from_str::<Value>(&frame.data).unwrap())
+            .collect::<Vec<_>>()
+    };
+    until_live(&fixture.app, &live, 1).await;
+    let frames = live(&fixture.app);
+    // HAND: supported text has no later node, so this frame must serve tree.
+    let display = json!({"blocks": [{"type": "paragraph", "value": [
+        {"type": "strong", "value": [{"type": "text", "value": "The"}]},
+        {"type": "text", "value": " river: "}, {"type": "code", "value": "bends"}
+    ]}]});
+    assert_eq!(
+        json!({"display": frames[0]["display"], "live_body": frames[0]["live_body"]}),
+        json!({"display": display, "live_body": {"kind": "tree"}})
+    );
+    // pi empties the file when the message ends; its unlanded thought keeps both fields.
+    std::fs::write(&file, "").unwrap();
+    for _ in 0..40 {
+        if live(&fixture.app)[0]["ended"] == true {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let frames = live(&fixture.app);
+    assert_eq!(
+        frames[0],
+        json!({"key": key, "text": "**The** river: `bends`", "thinking": "Plan the walk.",
+        "display": {"blocks": [{"type": "paragraph", "value": [{"type": "strong", "value": [{"type": "text", "value": "The"}]}, {"type": "text", "value": " river: "}, {"type": "code", "value": "bends"}]}]},
+        "live_body": {"kind": "tree"},
+        "ended": true, "hide_text": false, "hide_thinking": false})
+    );
     drop(Events {
         app: fixture.app.clone(),
         id: "all".into(),
@@ -382,9 +490,20 @@ async fn a_new_watcher_tells_the_page_that_no_turn_runs() {
     until_live(&fixture.app, &live, 1).await;
     let frames = live(&fixture.app);
     assert_eq!(frames.len(), 1);
-    assert_eq!(frames[0]["text"], Value::Null);
+    assert_eq!(
+        {
+            let mut actual = frames[0].clone();
+            actual.as_object_mut().unwrap().remove("live_body");
+            actual
+        },
+        json!({"key": key, "text": null, "thinking": null, "display": null,
+        "ended": false, "hide_text": false, "hide_thinking": false})
+    );
     drop(Events {
         app: fixture.app.clone(),
         id: "all".into(),
     });
 }
+
+#[path = "tests_live_shown.rs"]
+mod live_shown;

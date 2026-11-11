@@ -1,11 +1,11 @@
 ---
 name: council
-description: Run a visible debate between Gemini/AGY, GPT/Codex, and Claude voices on one pinned question, and give one advisory recommendation. Use when the user asks for a council, a multi-model debate, a cross-model second opinion, or a high-stakes design review.
+description: Run a visible debate between three independent voices on one pinned question, and give one advisory recommendation. Use when the user asks for a council, a multi-model debate, a cross-model second opinion, or a high-stakes design review.
 ---
 
 # Council
 
-Three independent models debate one pinned question and produce one advisory recommendation. The
+Three independent voices in separate sessions debate one pinned question and produce one advisory recommendation. The
 top-level session is the chair: relay messages, correct grounding, judge convergence, and
 synthesize. Do not vote as a fourth voice.
 
@@ -47,8 +47,11 @@ Round-0 questions that survive the filter, and a split after Round 3, set the st
 - Every voice is a persistent, visible, interactive pane rooted at the invoking surface. A native
   subagent does not replace a voice.
 - The roles are `council.claude`, `council.gpt`, and `council.gemini`. `references/roles.md` gives
-  each seat the shared rule, and the Claude and GPT seats also get a method card. The card stays with the seat, so a seat on a fallback
+  each seat the shared rule, and `council.claude` and `council.gpt` also get a method card. The card stays with the seat, so a seat on a fallback
   runner keeps its card.
+- These role IDs are routing aliases, not provider identities. The voices need not use distinct
+  providers or model families. Record each seat's actual provider and model, with its method,
+  in the brief, transcript, and output trail. Never call a Codex runner Gemini or Claude.
 - Every seat is report-only, as `blocks/worker-brief/SKILL.md` says; its result file is its council
   scratch result.
 - Reuse the same three seats for every round, and never start the next round while a seat is
@@ -140,16 +143,15 @@ present the split and ask the user to break the tie. Send no fourth round. Do no
 Consensus reasoning: 2–4 sentences.
 Required changes: all accepted changes, when applicable.
 Dissent / residual risk: anything still contested.
-Per-model trail: one line each for GEMINI, GPT (evidence-check), and CLAUDE (first-principles).
+Per-seat trail: one line per seat with role ID, method (first-principles | evidence-check | none), actual provider, and actual model.
 ```
 
 Weigh the positions by their proof, not by the count of seats. A claim that the evidence-check
 seat marked not proven carries no weight in the consensus reasoning.
 
-The reply opens with the first screen in the kit's `references/plan-layout.md`. The verdict heading
-is its verdict line. Its table holds the required changes and the open dissent, grouped, and Read
-first names the top ones. The consensus reasoning, the full required changes and dissent, and
-the per-model trail go below `Reference below`.
+Follow the loaded session reply rules. Include the verdict, consensus reasoning, all required
+changes, dissent or residual risk, and per-seat trail in the reply. The Output block names the
+required content; it does not add a separate summary or table before it.
 
 ## Decision log
 
@@ -160,7 +162,7 @@ path when it is present, include it in every seat's pinned brief, and do not als
 log. An internally triggered planning Council must receive such an external path. Otherwise, use
 the council log path in `references/run-folder.md`. Never write the log into the inspected repository, because a public repository would
 publish its private paths. Include the artifact pointer,
-Round-0 Q&A, models actually used, final verdict, required changes, dissent, per-model trail, the round
+Round-0 Q&A, models actually used, final verdict, required changes, dissent, per-seat trail, the round
 at which the council converged, and each round's wall time.
 
 Close out the seats by `blocks/run-workers/SKILL.md`, remove the scratch directory only after

@@ -1,0 +1,62 @@
+{
+ "out-1/append-unterminated/rows-full.txt": {
+  "sha256": "cf3c133165456ac6d57a3babeaf909d0ace4a918bc9924de3bd5b7c94916c35f",
+  "parts": [
+   "46e7c156dd7100b5-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/error-raw-tail-0.txt": {
+  "sha256": "9abfdd769ce0fef31403dcf1f7bb4a1c96c8c22c1cf6a135112156d0a1435a33",
+  "parts": [
+   "1c3b9093b710d63d-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/error-tail-0.txt": {
+  "sha256": "9abfdd769ce0fef31403dcf1f7bb4a1c96c8c22c1cf6a135112156d0a1435a33",
+  "parts": [
+   "67b79cb14bc2bbda-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/error-unknown-agent.txt": {
+  "sha256": "aa42d000abea0f86cbbd4ae0bc4966f2ec840231d74d7b890cac8e70c2515bf5",
+  "parts": [
+   "e71643bfce62b77b-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/error-unknown-output.txt": {
+  "sha256": "7ed88c319501abd801d4e08d8107368c65e7a0bbce773bcfa9726b1eea7583a3",
+  "parts": [
+   "16a03c26a42ee02e-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/error-unknown-session.txt": {
+  "sha256": "4bca491c069d998477811a1871474108d68b6d9e36ef7ae527fe1475436cdbed",
+  "parts": [
+   "2bc55515f8ee2907-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/output-00.txt": {
+  "sha256": "2301a3ddf56e93fb81eb9cd0b48c0e5e423db93887204186eaf618477d561119",
+  "parts": [
+   "19c4ddf1ad2bed96-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/output-01.txt": {
+  "sha256": "2e6e299883939827684c3196e55f30df8e1449f536b6cd7ed47670e06755cea5",
+  "parts": [
+   "9f050fea1c5e892b-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/output-02.txt": {
+  "sha256": "74dddd9f2a1316d15214c8f05c82527b7eda6503d7d961104e2f941d8eb7e378",
+  "parts": [
+   "1733e201dd49f233-000.json"
+  ]
+ },
+ "out-1/claude-chair-run/output-03.txt": {
+  "sha256": "4c2e2e4feff6bc74a05b433426f65509b750d57e318e68ceeaba3e7243ef4bd2",
+  "parts": [
+   "3bf1fdb3eb5ada88-000.json"
+  ]
+ }
+}

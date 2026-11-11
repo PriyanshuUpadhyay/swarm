@@ -1,7 +1,6 @@
 #!/bin/zsh
 # Builds the release tarball that the Homebrew formula installs (ADR 0079):
 #   swarm-<version>/bin/swarm                    the CLI, with web/dist inside for `swarm ui`
-#   swarm-<version>/libexec/transcript           the row tool that `swarm serve` runs
 #   swarm-<version>/libexec/SwarmNotify.app      the notice helper (ADR 0077)
 #   swarm-<version>/libexec/SwarmHUD.app         the notch usage HUD (ADR 0087)
 #   swarm-<version>/libexec/Swarm.app            the window that `swarm ui` opens
@@ -11,14 +10,11 @@ set -euo pipefail
 
 root="${0:A:h:h}"
 repo="${root:h}"
-export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$root/.build/zig-global}"
-export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$root/.build/zig-local}"
 if [[ "$(uname -m)" != arm64 ]]; then
   print -u2 "the tarball is named macos-arm64, so build it on an arm64 Mac"
   exit 1
 fi
 
-zig build --build-file "$repo/packages/transcript/build.zig" -Doptimize=ReleaseSafe
 # build.rs embeds web/dist, so the web build comes first.
 pnpm --dir "$repo/web" install --frozen-lockfile
 pnpm --dir "$repo/web" build
@@ -34,8 +30,7 @@ stage="$out/swarm-$version"
 rm -rf "$stage"
 mkdir -p "$stage/bin" "$stage/libexec"
 cp "$repo/target/release/swarm" "$stage/bin/swarm"
-cp "$repo/packages/transcript/zig-out/bin/transcript" "$stage/libexec/transcript"
-cat "$repo/web/NOTICE" "$root/MASCOT-NOTICE" > "$stage/libexec/NOTICE"
+cat "$repo/web/NOTICE" "$root/MASCOT-NOTICE" "$repo/vendor/markdown-1.0.0/license" "$repo/vendor/markdown-1.0.0/UPSTREAM.md" "$repo/src/view/transcript/markdown/NOTICES.md" > "$stage/libexec/NOTICE"
 skills="$stage/libexec/skills"
 mkdir -p "$skills"
 # The whole kit, because it is the plugin swarm: its skills read blocks/ two folders up, and

@@ -1,0 +1,73 @@
+{
+ "expected_source": "ORIGINAL c8ca837e1b70cbb4479bfda387f3bace2931749e captures only; no candidate code",
+ "files": {
+  "fixtures/lines-main-a.json": {
+   "from": "reference/data/run1/main.follow-from0 (lines 1-14)",
+   "sha256": "6a73da029a4a7e9d2b48d7e63c4f4c9120e07d9fe3c1c70ef64451bfb920f3d1"
+  },
+  "fixtures/lines-main-b.json": {
+   "from": "reference/data/run1/main.follow-from0 (lines 15-27)",
+   "sha256": "e39d389ecb08cde8e7dbfe3dce2273e663805c0ac862fc40c6c1b6c414bac0b8"
+  },
+  "fixtures/native-num-digits30.stdout": {
+   "from": "reference/data/run1/guard.num-digits30/stdout.raw",
+   "sha256": "22b7ff60204af4942894151b781eaecb51445ba24fddb0f12fb6d1a8cf5fefa0"
+  },
+  "fixtures/native-num-f1e400.stdout": {
+   "from": "reference/data/run1/guard.num-f1e400/stdout.raw",
+   "sha256": "7f25862ed79840bf4ef5775968c06886eee2a81f90e600fc56a28d8c35eb75c4"
+  },
+  "fixtures/native-num-fE2.stdout": {
+   "from": "reference/data/run1/guard.num-fE2/stdout.raw",
+   "sha256": "c8b0fb416e02aab030454d6ee56d240555fc65b1ad78f2df9adae379297876c9"
+  },
+  "fixtures/native-usage-sum-three-2pow62.stdout": {
+   "from": "reference/data/run1/guard.usage-sum-three-2pow62/stdout.raw",
+   "sha256": "60668f95bc4199c24133365c3aedddd1d6d93f101674216deb3408da42238723"
+  },
+  "fixtures/rows-main-at-1265.json": {
+   "from": "reference/rows/data/rows-out/attempt1/main-prefix-append/1-prefix-rows.body (rows)",
+   "sha256": "35e33234230dc7ae8b66ff9d6c5491b8b4ed1a720ad59db961a5e87be39b663f"
+  },
+  "fixtures/rows-main-at-1687.json": {
+   "from": "reference/rows/data/rows-out/attempt1/main-prefix-append/2-results-rows.body (rows)",
+   "sha256": "fb012f56b70ebd14f938ae0865b94951a00fec7b7da0f9e3632088952713b20e"
+  },
+  "fixtures/rows-main-at-4179.json": {
+   "from": "reference/rows/data/rows-out/attempt1/main-whole/1-rows.body (rows)",
+   "sha256": "79f0b5b7bff6f6a14eb309a0e88ed0681591527cf64de0c554b8850503dbad34"
+  },
+  "fixtures/rows-output-only-full.json": {
+   "from": "provider-red/row-boundary/data/literal-rows/attempt1/window-1265-1687.rows.json (byte copy; attempt2 is byte-equal)",
+   "sha256": "59334d7c486cf4fdd8b9c263aaad1afb6019cc56640a6655c22043197d9cc51e",
+   "capture": "ORIGINAL c8ca837e public swarm::view::transcript::view_rows_with_context (has_older = start > 0, empty shown, no context) on the sealed normalized events of lines 1265..1687; whole, prefix and results outputs of the same harness equal the sealed HTTP bodies byte for byte",
+   "late_chronology": "LATE capture: made after the native Pi module and Candidate01 existed, not before. It replaces only the output-only Snapshot row comparison; native events and admission RED preceded the native code",
+   "seal": "provider-red/row-boundary/SEAL9.sha256 (21 entries, sha256 1e2c4739d4819408ee633d874a99f6fe78354cad46ba10642a14adcc753a48b3)"
+  },
+  "fixtures/rows-output-only-window.json": {
+   "note": "OLD HTTP page upsert body for tail=2&before=1687 on a cold server: rows [] means no listed change, not an empty window. Kept unchanged as the OLD HTTP fact; no test reads it after the canonical fixture above replaced it for the Snapshot comparison.",
+   "from": "reference/rows/data/rows-out/attempt1/main-output-window/1-rows.body (rows)",
+   "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "inputs/2026-11-05T00-00-00-000Z_pi-u04-main.jsonl": {
+   "from": "reference/inputs/main/2026-11-05T00-00-00-000Z_pi-u04-main.jsonl",
+   "sha256": "16ebe827cade4de4ea81fbabd4ef17f8b73f76688e4a7bf47988649b9453a3dc"
+  },
+  "inputs/num-digits30.jsonl": {
+   "from": "reference/inputs/guards/num-digits30.jsonl",
+   "sha256": "418c0c5d8dc503d0557d6cc2fb8f544802a38990a4b60c149ca2c32b0ee630a3"
+  },
+  "inputs/num-f1e400.jsonl": {
+   "from": "reference/inputs/guards/num-f1e400.jsonl",
+   "sha256": "2c45103d320874d017533a4d6b321fe9568c1ec1904c294a03d4fd1f28a794e8"
+  },
+  "inputs/num-fE2.jsonl": {
+   "from": "reference/inputs/guards/num-fE2.jsonl",
+   "sha256": "0064a406cbf200ccb0f34f4d4404bd0c243414b20f8cdbfa04e90331d0b1e883"
+  },
+  "inputs/usage-sum-three-2pow62.jsonl": {
+   "from": "reference/inputs/guards/usage-sum-three-2pow62.jsonl",
+   "sha256": "19d402c054dc11e6d4017f468289b52d08090efba0cf9b1f6b2f98f384b23699"
+  }
+ }
+}

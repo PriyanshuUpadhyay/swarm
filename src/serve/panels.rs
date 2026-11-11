@@ -75,6 +75,34 @@ pub(super) async fn panel_read(
     })?
 }
 
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "lowercase", deny_unknown_fields)]
+pub(super) enum CommentOperation {
+    Range {
+        patch: String,
+        from: usize,
+        to: usize,
+    },
+    Message {
+        comments: Vec<view::display_comments::Comment>,
+    },
+}
+
+pub(super) async fn comment_range(
+    body: Result<Json<CommentOperation>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    use view::display_comments;
+    let Json(operation) = body.map_err(|e| error(StatusCode::BAD_REQUEST, &e.body_text()))?;
+    Ok(Json(match operation {
+        CommentOperation::Range { patch, from, to } => {
+            display_comments::range_value(&patch, from, to)
+        }
+        CommentOperation::Message { comments } => {
+            json!({"message": display_comments::comment_message(&comments)})
+        }
+    }))
+}
+
 /// `POST /api/workspace/fetch`: `git fetch --prune origin` in the project, so New Workspace lists
 /// the branches that origin has now. It runs off the action queue, because a fetch can take a minute.
 pub(super) async fn workspace_fetch(

@@ -1,0 +1,101 @@
+{
+ "expected_source": "ORIGINAL c8ca837e1b70cbb4479bfda387f3bace2931749e captures only; no candidate code",
+ "files": {
+  "inputs/codex-depth254.jsonl": {
+   "from": "reference/extra/inputs/codex-depth254.jsonl",
+   "sha256": "5c37136e3717346ede5bcc4def367bc9f8a74f440cc5dc29adf03e96663fff43"
+  },
+  "inputs/codex-kernel.jsonl": {
+   "from": "reference/inputs/inputs-codex-kernel.jsonl",
+   "sha256": "883faaaece7f82302c0d9a28ad236fdad243c66e5ef7ff6327fad6de8da9c3ac"
+  },
+  "inputs/codex-numbers-nodeep.jsonl": {
+   "from": "reference/extra/inputs/codex-numbers-nodeep.jsonl",
+   "sha256": "e2bf43914cc946b3f0d97dfbf0c8f91ff54a3b0c4fb7200dcb0f93589fff4bfb"
+  },
+  "inputs/codex-yield.jsonl": {
+   "from": "reference/yield/inputs/inputs-codex-yield.jsonl",
+   "sha256": "73a7c94614e5dea1e555f45b2afb888ce1fc3f8d52e6b9aafaf6bcd5d9b2280d"
+  },
+  "lines-depth254.json": {
+   "from": "reference/extra/data/run1/codex-depth254.follow-from0",
+   "sha256": "dbba486774369a8fe429d319798b898a641b23fe4fb4e254d6ee0b101d194bba"
+  },
+  "lines-kernel-o0-a.json": {
+   "from": "reference/data/run1/kernel.follow-from0 (lines 1-10)",
+   "sha256": "a4a838bcf21e5ce53698dfff7d90f80da222896b731483ecbf2333b4b59fbfdd"
+  },
+  "lines-kernel-o0-b.json": {
+   "from": "reference/data/run1/kernel.follow-from0 (lines 11-20)",
+   "sha256": "6bd4a3a3ede859ca2f7d249548fc3b46ba3f44c7c12be19daf0eb60bf5ee588d"
+  },
+  "lines-kernel-o1752.json": {
+   "from": "reference/data/run1/kernel.follow-from-L10-question-accepted-output-only",
+   "sha256": "079afb17239adb03bdd404cec098fe07c580230f931214986e4579f22c813332"
+  },
+  "lines-kernel-o2549.json": {
+   "from": "reference/data/run1/kernel.follow-from-L13-answers-output-only",
+   "sha256": "4572178a37de368256918dad697e84f66ca20c6b7a8ddc7bf62dff4a22bf6d85"
+  },
+  "lines-numbers-nodeep.json": {
+   "from": "reference/extra/data/run1/codex-numbers-nodeep.follow-from0",
+   "sha256": "0a5ba233e23bcf3f63630a57fa87540f7c85af5317f753092faf0135031b206e"
+  },
+  "lines-yield-o0.json": {
+   "from": "reference/yield/data/run1/yield.follow-from0",
+   "sha256": "ec0f6930f1b5b5bd50e2c42233afb31588281eda97796f1725ae7d887fbc2788"
+  },
+  "lines-yield-o1143.json": {
+   "from": "reference/yield/data/run1/yield.follow-from-L6-poll-completion",
+   "sha256": "e045e651e425455e88f67d638511d5836b36f57b2ea0a9ed92a32e15d6800d18"
+  },
+  "lines-yield-o1887.json": {
+   "from": "reference/yield/data/run1/yield.follow-from-L9-late-completion",
+   "sha256": "cb3f4956088772116eeaf80f141c7debfa69bb4d15c6ddec2c1e8f171e20ca50"
+  },
+  "rows-kernel-o0-at2771.json": {
+   "from": "reference/rows/addendum/s7-prefix13-origin0.json rows.body.rows",
+   "sha256": "7d55c19a6db1a8990655c25c12705ccb94bc907648b58fb1ef615aade5d644de"
+  },
+  "rows-kernel-o0-at3836.json": {
+   "from": "reference/rows/data/run1/s1-kernel-whole.json rows_cold.body.rows",
+   "sha256": "29e3b42d013760eca216189254f0f41bece5736226fedac432be11c8791d76cc"
+  },
+  "rows-kernel-o1752-at2771.json": {
+   "from": "reference/rows/addendum/s7-prefix13-origin1752.json rows.body.rows",
+   "sha256": "c646c2aaa79deef7e22b0d69400412ab051532631b8793933f49209b947eb48d"
+  },
+  "rows-kernel-o1752-at3836.json": {
+   "from": "reference/rows/data/run1/s2-tail11-from-L10.json rows.body.rows",
+   "sha256": "e4e446ef22cc268ec97286c6fc540ec9e38822d6b95cf056614d46bffecaac0c"
+  },
+  "rows-kernel-o2549-at2771.json": {
+   "from": "reference/rows/addendum/s7-prefix13-origin2549.json rows.body.rows",
+   "sha256": "526fb91f0649566ac6d1fa7a7cf14acc1969680044cee7901426688bff665c5c"
+  },
+  "rows-kernel-o2549-at3836.json": {
+   "from": "reference/rows/data/run1/s2-tail8-from-L13.json rows.body.rows",
+   "sha256": "a8ddfaa6bfe7f747c14d18ea799893bd4482cd8d2d88b81bf178865bee7688cb"
+  },
+  "rows-kernel-replay-b.json": {
+   "from": "reference/rows/data/run1/s2b-paging.json tail200_after.body.rows",
+   "sha256": "968163343376ec73fc140e147d574f601b540b680497215be83bfa966bcb9f1c"
+  },
+  "rows-numbers-nodeep.json": {
+   "from": "reference/rows/data/run1/s4c-numbers-without-deep.json rows_text.body_text .rows",
+   "sha256": "2f4160f4a674f07e3494f09888987d1e346cbde728bd9756e814cf26165e5223"
+  },
+  "rows-yield-o0.json": {
+   "from": "s6-yield-whole.json",
+   "sha256": "1a7fa228fe71ab6afd4aced7979c9891e621d51c9a08d52959adc9e29bd77df4"
+  },
+  "rows-yield-o1143.json": {
+   "from": "s6-yield-tail4-from-L6.json",
+   "sha256": "66e8b3daa584b36e6c04688229eae4fb8d6feafded69877b6b7c419c21e6b7c0"
+  },
+  "rows-yield-o1887.json": {
+   "from": "s6-yield-tail1-from-L9.json",
+   "sha256": "3e6167efd0c9711a2dd31d7ade20dcee3adcb27074d8686cd7bd59b8a8c468a2"
+  }
+ }
+}

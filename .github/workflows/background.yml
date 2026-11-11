@@ -16,13 +16,9 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.16.0
-      - run: zig build -Doptimize=ReleaseSafe
-        working-directory: packages/transcript
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo clippy --all-targets --features serve -- -D warnings
+      - run: cargo build --features serve --bins
       # Shared runners cannot measure the owner's Mac speed or process-wide heap budgets.
       - run: 'cargo test --features serve -- --include-ignored --skip serve::live_delta::performance_tests::'
 
@@ -30,11 +26,6 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.16.0
-      - run: zig build -Doptimize=ReleaseSafe
-        working-directory: packages/transcript
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -44,7 +35,7 @@ jobs:
       - run: pnpm build
         working-directory: web
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo build --features serve
+      - run: cargo build --features serve --bins
       # The e2e setup drives the panes with tmux; macOS ships sqlite3.
       - run: brew install tmux
       - run: pnpm exec playwright install --with-deps webkit

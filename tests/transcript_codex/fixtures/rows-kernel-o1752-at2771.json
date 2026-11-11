@@ -1,0 +1,58 @@
+[
+ {
+  "id": "call-q:result@raw-1752-0",
+  "kind": "toolResult",
+  "order": [
+   1752,
+   0
+  ],
+  "output": {
+   "full_bytes": 17,
+   "full_lines": 1,
+   "hidden_lines": 0,
+   "id": "raw-1752-0:output",
+   "text": "{\"accepted\":true}"
+  },
+  "source_ids": [
+   "raw-1752-0"
+  ],
+  "text": "{\"accepted\":true}",
+  "tool_status": "completed"
+ },
+ {
+  "id": "call-q:answer@raw-1920-0",
+  "kind": "result",
+  "order": [
+   1920,
+   0
+  ],
+  "source_ids": [
+   "raw-1920-0"
+  ],
+  "text": "yes"
+ },
+ {
+  "id": "call-b:ask@raw-2272-0",
+  "kind": "question",
+  "order": [
+   2272,
+   0
+  ],
+  "source_ids": [
+   "raw-2272-0"
+  ],
+  "text": "First?\nSecond?"
+ },
+ {
+  "id": "call-b:answer@raw-2549-0",
+  "kind": "result",
+  "order": [
+   2549,
+   0
+  ],
+  "source_ids": [
+   "raw-2549-0"
+  ],
+  "text": "A1\nB1"
+ }
+]

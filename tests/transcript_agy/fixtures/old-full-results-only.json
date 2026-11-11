@@ -1,0 +1,48 @@
+{
+    "start": 1104,
+    "end": 1358,
+    "has_older": true,
+    "records": 2,
+    "rows": [
+      {
+        "id": "11:result@raw-1104-0",
+        "kind": "toolResult",
+        "text": "file text",
+        "tool_status": "completed",
+        "source_ids": [
+          "raw-1104-0"
+        ],
+        "output": {
+          "id": "raw-1104-0:output",
+          "text": "file text",
+          "full_lines": 1,
+          "full_bytes": 9,
+          "hidden_lines": 0
+        },
+        "order": [
+          1104,
+          0
+        ]
+      },
+      {
+        "id": "12:result@raw-1232-0",
+        "kind": "toolResult",
+        "text": "boom",
+        "tool_status": "failed",
+        "source_ids": [
+          "raw-1232-0"
+        ],
+        "output": {
+          "id": "raw-1232-0:output",
+          "text": "boom",
+          "full_lines": 1,
+          "full_bytes": 4,
+          "hidden_lines": 0
+        },
+        "order": [
+          1232,
+          0
+        ]
+      }
+    ]
+  }

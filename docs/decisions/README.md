@@ -8,6 +8,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 | 0141 | Reports live in one shared folder and pages have random IDs | 2 | accepted | 2026-11-11 | ↑0101 |
 | 0140 | A subagent call is a row, and its work opens as a read-only chat | 2 | accepted | 2026-11-11 | ↑0099 →0104 →0120 |
 | 0139 | The chat counts records no parser maps | 2 | accepted | 2026-11-11 | ↑0099 →0120 |
+| 0138 | Swarm notifies when the app chair ends a turn | 2 | accepted | 2026-11-06 | ↑0044 →0077 |
 | 0137 | A verb that becomes a skill leaves presets in the same change | 2 | accepted | 2026-11-05 | →0132 →0136 |
 | 0136 | The plugin ships chosen standalone skills, each tested by skill-eval | 2 | accepted | 2026-11-05 | ↑0132 →0133 |
 | 0135 | Agents edit only in task worktrees, and main is read-only for them | 3 | accepted | 2026-11-03 | ↑0019 →0040 →0042 →0046 →0055 |

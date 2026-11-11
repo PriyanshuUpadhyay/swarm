@@ -22,6 +22,8 @@ mod providers;
 mod pty_host;
 #[path = "launch/resume.rs"]
 mod resume;
+#[path = "launch/send.rs"]
+mod send;
 #[path = "launch/spawning.rs"]
 mod spawning;
 #[path = "launch/support.rs"]
@@ -92,7 +94,12 @@ fn a_send_stores_the_turn_start_hook_as_the_ring_proof() {
         let ring =
             format!("SWARM_AGENT_ID=seat \"$SWARM_EXE\" hook {provider} {event} < /dev/null");
         let (session, _connection) = seat_session(&home, provider, &ring);
-        let sent = swarm(&home, &chair(&session), &["send", "seat", "task"]);
+        let sent = swarm_input(
+            &home,
+            &chair(&session),
+            &["send", "seat", "task"],
+            Some("task"),
+        );
         assert!(sent.status.success(), "{provider}: {}", stderr(&sent));
         let listed = swarm(&home, &chair(&session), &["messages", "--json"]);
         let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
@@ -234,7 +241,12 @@ fn a_host_record_after_the_ring_proves_a_pi_ring() {
         "pi",
         "printf 'state=working:at=%s' \"$(date +%s)\" > \"$HOME/status\"",
     );
-    let sent = swarm(&home, &chair(&session), &["send", "seat", "task"]);
+    let sent = swarm_input(
+        &home,
+        &chair(&session),
+        &["send", "seat", "task"],
+        Some("task"),
+    );
     assert!(sent.status.success(), "{}", stderr(&sent));
     let listed = swarm(&home, &chair(&session), &["messages", "--json"]);
     let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
@@ -268,7 +280,12 @@ fn a_ring_to_an_agy_seat_waits_for_its_ready_record() {
             std::fs::write(status, "state=idle:at=1").unwrap();
         })
     };
-    let sent = swarm(&home, &chair(&session), &["send", "seat", "task"]);
+    let sent = swarm_input(
+        &home,
+        &chair(&session),
+        &["send", "seat", "task"],
+        Some("task"),
+    );
     assert!(sent.status.success(), "{}", stderr(&sent));
     ready.join().unwrap();
     assert_eq!(
@@ -300,7 +317,7 @@ fn lost_ring_session(home: &Path) -> (String, rusqlite::Connection) {
         .args(["send", "seat", "task"])
         .stdin(std::process::Stdio::piped());
     let mut child = send.spawn().unwrap();
-    drop(child.stdin.take());
+    std::io::Write::write_all(&mut child.stdin.take().unwrap(), b"task").unwrap();
     assert!(child.wait().unwrap().success());
     let rings = || std::fs::read_to_string(home.join("rings")).unwrap_or_default();
     assert_eq!(rings(), "ring\n");

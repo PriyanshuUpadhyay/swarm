@@ -103,3 +103,5 @@ passing. Revisit if a budget fails in the shell and no web-side fix brings it ba
   the web assets in place of the SwiftUI app.
 - Open from the pilot: three soak runs under heavy machine load had a 44 s paint pause with no
   known cause.
+
+- Amended 2026-11-10: the Rust transcript worker (`swarm _transcript-worker`, `src/view/transcript`) replaced the Zig tool; `libexec/transcript` is no longer shipped.

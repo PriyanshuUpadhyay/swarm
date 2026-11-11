@@ -2,18 +2,18 @@
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, LoaderCircleIcon, MailIcon, PencilIcon } from "lucide-react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
-import type { MarkdownCache } from "../core/markdown";
-import { duration, UNMAPPED, wordAt, type Line } from "../core/transcript";
+import { duration, imagesOf, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
 import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
+import { MarkdownView } from "./markdown-view";
 import { DiffView, OutputBox } from "./transcript-output";
 import { PlanRow, TodoRow } from "./transcript-todo";
 import { SubagentRow } from "./subagent-chat";
 import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
-type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean };
+type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean };
 
-function LineView({ app, line, index, md, full, match, composerId, branches }: Ctx & { index: number; match?: string }) {
+function LineView({ app, line, index, full, match, composerId, branches }: Ctx & { index: number; match?: string }) {
   const { row } = line;
   return (
     <div
@@ -24,7 +24,7 @@ function LineView({ app, line, index, md, full, match, composerId, branches }: C
       data-match={match}
       className={`line${line.fold ? " step" : ""}`}
     >
-      <RowBody app={app} line={line} md={md} full={full} composerId={composerId} branches={branches} />
+      <RowBody app={app} line={line} full={full} composerId={composerId} branches={branches} />
     </div>
   );
 }
@@ -42,12 +42,22 @@ const LABEL: Partial<Record<Row["kind"], string>> = {
   subagent: "Subagent",
 };
 
+function MdBody({ row }: { row: Row }) {
+  const body = paintBodyOf(row);
+  switch (body.kind) {
+    case "plain":
+      return <div className="whitespace-pre-wrap">{row.text}</div>;
+    case "tree":
+      return <div className="md"><MarkdownView display={body.display} /></div>;
+  }
+}
+
 function RowBody(ctx: Ctx) {
-  const { app, line, md } = ctx;
+  const { app, line } = ctx;
   const { row } = line;
   if (row.kind === "fold") return <FoldLine app={app} line={line} />;
   if (row.kind === "todoList") return <TodoRow row={row} />;
-  if (row.kind === "proposedPlan") return <PlanRow row={row} md={md} />;
+  if (row.kind === "proposedPlan") return <PlanRow row={row} />;
   if (row.subagent) return <SubagentRow run={row.subagent} title={row.text} />;
   if (row.tool) return <ToolCard {...ctx} />;
   if (row.kind === "divider")
@@ -84,7 +94,7 @@ function RowBody(ctx: Ctx) {
   if (row.system_kind === "compaction" || row.system_kind === "compact_summary")
     return row.text.includes("\n") ? (
       <Disclosure app={app} line={line} title={row.system_kind === "compaction" ? "Context compacted" : "Compaction summary"}>
-        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text) }} />
+        <MdBody row={row} />
       </Disclosure>
     ) : (
       <div className="quiet">Context compacted</div>
@@ -105,8 +115,8 @@ function RowBody(ctx: Ctx) {
         reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
         branch={row.kind === "user" && ctx.branches && app.branch ? () => app.branch?.(row.id) : undefined}
       >
-        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text, true) }} />
-        <ImageThumbs text={row.text} load={app.imageUrl} />
+        <MdBody row={row} />
+        <ImageThumbs paths={imagesOf(row)} load={app.imageUrl} />
       </Bubble>
     );
   }
@@ -124,7 +134,7 @@ function RowBody(ctx: Ctx) {
     return (
       <div className="msg">
         <CopyMessage row={row} />
-        <div className="md" dangerouslySetInnerHTML={{ __html: md.html(row.id, row.text) }} />
+        <MdBody row={row} />
       </div>
     );
   const label = <div className="row-label">{LABEL[row.kind] ?? row.kind}</div>;

@@ -1,7 +1,5 @@
 /target
 /.swarm-demo.*
-.zig-cache/
-zig-out/
 
 # Scratch output: plans, run folders, and the TMPDIR of scripts/kit-checks.sh.
 /tmp/

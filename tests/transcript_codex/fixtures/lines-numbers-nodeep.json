@@ -1,0 +1,154 @@
+{
+ "0-331": {
+  "end_byte": 331,
+  "events": [
+   {
+    "cache_read_tokens": 9223372036854775807,
+    "cache_write_tokens": null,
+    "context_capacity_tokens": 200,
+    "context_tokens": 5,
+    "cost_completeness": "unknown",
+    "cost_usd": null,
+    "input_tokens": 9007199254740993,
+    "kind": "context",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:00.000Z",
+     "uuid": ""
+    },
+    "output_tokens": 0,
+    "session_input_tokens": 9007199254740993,
+    "session_output_tokens": 2,
+    "source": "codex",
+    "type": "usage"
+   }
+  ],
+  "start_byte": 0,
+  "terminated": true
+ },
+ "1043-1187": {
+  "end_byte": 1187,
+  "events": [
+   {
+    "duration_ms": null,
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:05.000Z",
+     "uuid": ""
+    },
+    "reason": "completed",
+    "type": "turn_ended"
+   }
+  ],
+  "start_byte": 1043,
+  "terminated": true
+ },
+ "1187-1872": {
+  "end_byte": 1872,
+  "events": [
+   {
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:00.000Z",
+     "uuid": "fc-d"
+    },
+    "raw": "{\"timestamp\":\"2026-11-05T09:00:00.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"function_call\",\"id\":\"fc-d\",\"name\":\"exec_command\",\"arguments\":\"{\\\"a\\\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}\",\"call_id\":\"call-d\"}}",
+    "type": "unknown"
+   }
+  ],
+  "start_byte": 1187,
+  "terminated": true
+ },
+ "331-644": {
+  "end_byte": 644,
+  "events": [
+   {
+    "cache_read_tokens": null,
+    "cache_write_tokens": null,
+    "context_capacity_tokens": null,
+    "context_tokens": null,
+    "cost_completeness": "unknown",
+    "cost_usd": null,
+    "input_tokens": null,
+    "kind": "context",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:01.000Z",
+     "uuid": ""
+    },
+    "output_tokens": null,
+    "session_input_tokens": null,
+    "session_output_tokens": null,
+    "source": "codex",
+    "type": "usage"
+   }
+  ],
+  "start_byte": 331,
+  "terminated": true
+ },
+ "644-776": {
+  "end_byte": 776,
+  "events": [
+   {
+    "duration_ms": null,
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:02.000Z",
+     "uuid": ""
+    },
+    "reason": "completed",
+    "type": "turn_ended"
+   }
+  ],
+  "start_byte": 644,
+  "terminated": true
+ },
+ "776-903": {
+  "end_byte": 903,
+  "events": [
+   {
+    "duration_ms": null,
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:03.000Z",
+     "uuid": ""
+    },
+    "reason": "completed",
+    "type": "turn_ended"
+   }
+  ],
+  "start_byte": 776,
+  "terminated": true
+ },
+ "903-1043": {
+  "end_byte": 1043,
+  "events": [
+   {
+    "duration_ms": 9007199254740993,
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:04.000Z",
+     "uuid": ""
+    },
+    "reason": "completed",
+    "type": "turn_ended"
+   }
+  ],
+  "start_byte": 903,
+  "terminated": true
+ }
+}

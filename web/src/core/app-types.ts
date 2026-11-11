@@ -1,6 +1,5 @@
-import { type Row } from "./api";
+import { type Display, type PatchInfo, type Row } from "./api";
 import { type AgentInput, type SendKey, type Usage } from "./composer";
-import { MarkdownCache } from "./markdown";
 import { type PaneCell } from "./panes";
 import { FoldChoices, type Line, type Match } from "./transcript";
 import { type NavRow, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
@@ -10,7 +9,7 @@ export const LRU_SIZE = 4;
 export const MAX_KEYS = 32;
 
 /** The full text behind a capped preview, fetched on demand. */
-export type FullText = { state: "loading" } | { state: "ready"; text: string; lines: string[] } | { state: "error"; error: string };
+export type FullText = { state: "loading" } | { state: "ready"; text: string; lines: string[]; patch?: PatchInfo } | { state: "error"; error: string };
 
 export type Chat = {
   /** The session id for the chair's chat, and `paneId` for a child agent's. */
@@ -34,20 +33,25 @@ export type Chat = {
   folds: FoldChoices;
   opened: Map<string, boolean>;
   full: Map<string, FullText>;
-  md: MarkdownCache;
   built: { version: number; lines: Line[] } | null;
   usage: Usage;
   /** The queue that the agent's CLI shows, as rows after the log's rows. */
   queue: Row[];
   /** The running turn's text on the agent's screen, a preview the log replaces (ADR 0131). */
   live: string | null;
-  /** How many characters of `live` show. The screen grows a line at a time, so new text types
+  /** The live text's tree; it is set, kept and cleared with live. */
+  liveDisplay: Display | null;
+  /** The served live painter choice, validated before painting. */
+  liveBody: unknown;
+  /** How many visible units show, or text characters without a display. New text types
    *  out over a few steps. */
   liveShown: number;
   /** The thinking of pi's streaming message, from its extension (ADR 0131). It shows at once. */
   liveThinking: string | null;
   /** The turn ended; `live` stays shown until the log's next rows land. */
   liveEnded: boolean;
+  hideText: boolean;
+  hideThinking: boolean;
   /** The newest texts typed into this chat, never shown. A stop or Up on pi puts them back exact,
    *  because pi's box joins lines and its queue cuts them (ADR 0130). Each is its own object, so a
    *  restore drops the entries it matched and not a text sent while the stop was on its way. */
@@ -81,7 +85,7 @@ export type Composer = {
   sendKey: SendKey;
 };
 
-export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number };
+export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number; pending?: boolean; error?: string | null };
 
 /** One transcript with its composer: the chair's chat, or a child agent's column. */
 export type Pane = {
@@ -93,7 +97,6 @@ export type Pane = {
   hasOlder: boolean;
   loadingOlder: boolean;
   shift: boolean;
-  md: MarkdownCache | null;
   full: ReadonlyMap<string, FullText>;
   find: Find;
   composer: Composer | null;
@@ -193,7 +196,6 @@ export const NO_PANE: Pane = {
   hasOlder: false,
   loadingOlder: false,
   shift: false,
-  md: null,
   full: NO_FULL,
   find: NO_FIND,
   composer: null,

@@ -1,0 +1,17 @@
+{
+  "purpose": "One added value-set in the Codex main test: function-call arguments {\"negzero\":-0,\"whole_float\":1E2} -> OLD native input tokens {\"negzero\":-0,\"whole_float\":100}.",
+  "authority": "ORIGINAL c8ca837e1b70cbb4479bfda387f3bace2931749e, captured by the Pi checker before any code; seal SEAL2.sha256 SHA 1cf58e4f5ead47ee2c4014bafca649cd114955ebe18874f94ef2b644c0334804 (41 entries).",
+  "files": [
+    {
+      "file": "inputs/codex-negzero-whole.jsonl",
+      "sha256": "d6f7614bc0a72597d2e61f05964b6d8fd0c9fc63d64ae1a7a3da55f1e06ce85d",
+      "copied_from": "swarm-transcript-pi-u04/tmp/flow/transcript-pi-u04/reference/audit-addendum/inputs/addendum/codex-negzero-whole.jsonl"
+    },
+    {
+      "file": "fixtures/native-negzero-whole.stdout",
+      "sha256": "bc29a85f88be11de4023939c1944c4e180c52b26aabc7747cce326aa7ec9bfe7",
+      "copied_from": "swarm-transcript-pi-u04/tmp/flow/transcript-pi-u04/reference/audit-addendum/data/capture-v2/negzero-attempt1/negzero.codex/stdout.raw",
+      "note": "attempt 2 stdout is byte-equal; the event has no session_meta, so session_id and uuid are empty strings; no OLD row set was captured, so none is asserted"
+    }
+  ]
+}

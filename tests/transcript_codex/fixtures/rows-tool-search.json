@@ -1,0 +1,33 @@
+[
+ {
+  "detail": "{\"query\":\"limit\"}",
+  "id": "ts-1:call@raw-0-0",
+  "kind": "toolUse",
+  "order": [
+   0,
+   0
+  ],
+  "source_ids": [
+   "raw-0-0",
+   "raw-149-0"
+  ],
+  "text": "tool_search",
+  "tool": {
+   "duration_seconds": 1.0,
+   "header_title": "",
+   "input": {
+    "query": "limit"
+   },
+   "name": "tool_search",
+   "output": {
+    "full_bytes": 173,
+    "full_lines": 1,
+    "hidden_lines": 0,
+    "id": "raw-149-0:output",
+    "text": "[{\"type\":\"function\",\"name\":\"set_limit\",\"description\":\"Set a limit\",\"parameters\":{\"type\":\"object\",\"properties\":{\"limit\":{\"type\":\"number\",\"default\":42,\"minimum\":0.0000001}}}}]"
+   },
+   "state": "finished"
+  },
+  "tool_status": "pending"
+ }
+]

@@ -1,0 +1,14 @@
+[
+ {
+  "id": "call-b:answer@raw-2549-0",
+  "kind": "result",
+  "order": [
+   2549,
+   0
+  ],
+  "source_ids": [
+   "raw-2549-0"
+  ],
+  "text": "B1\nA1"
+ }
+]

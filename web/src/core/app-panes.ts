@@ -21,6 +21,7 @@ export class AppPanes {
     p.zoomed = has(p.zoomed);
     p.reveal = has(p.reveal);
     if (this.app.findId && !cells.some((c) => paneId(this.app.openId!, c.id) === this.app.findId)) this.app.findId = null;
+    this.app.reading.refind(this.app.chats.get(this.app.findId ?? this.app.openId ?? ""));
     return {
       ...(chat ? this.paneView(chat, sendKey, this.chairHasLog(chat.sessionId)) : NO_PANE),
       loaded: this.app.tree !== null,
@@ -48,7 +49,6 @@ export class AppPanes {
    *  shows has changed, so a sidebar key press does not render every column again. */
   paneView(chat: Chat, sendKey: SendKey, hasLog = true): Pane {
     const finds = chat.id === (this.app.findId ?? this.app.openId);
-    if (finds) this.app.reading.refind(chat);
     const find = finds ? this.app.find : NO_FIND;
     const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, sendKey, hasLog];
     if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
@@ -62,7 +62,6 @@ export class AppPanes {
       hasOlder: chat.older > 0,
       loadingOlder: chat.loadingOlder,
       shift: chat.shift,
-      md: chat.md,
       full: chat.full,
       find,
       composer: this.app.composing.composerView(chat, sendKey),

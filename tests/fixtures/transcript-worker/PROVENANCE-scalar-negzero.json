@@ -1,0 +1,17 @@
+{
+  "purpose": "One more value-set in the Claude main test: a turn_duration record with durationMs:-0 -> OLD native turn_ended with duration_ms:null.",
+  "authority": "ORIGINAL c8ca837e1b70cbb4479bfda387f3bace2931749e, captured by the Pi checker before any code; seal SEAL4.sha256 SHA 936059612d24254b5f711d8363e022b9fa061d3455e870fcb8ca842842e114fb (13 entries).",
+  "files": [
+    {
+      "file": "inputs/numbers-input-duration-negzero.jsonl",
+      "sha256": "ff79122c1a08c6f699b0af8f6365a198ab43c01f234a3d36b8544cd6a30c583b",
+      "copied_from": "swarm-transcript-pi-u04/tmp/flow/transcript-pi-u04/reference/rows/scalar-negative-zero/inputs/claude-duration-negzero.jsonl"
+    },
+    {
+      "file": "numbers/native-duration-negzero.stdout",
+      "sha256": "ea64bd01752851e123c66e0a065261a61b3830cae1f1b9acfd55a2b5a537137b",
+      "copied_from": "swarm-transcript-pi-u04/tmp/flow/transcript-pi-u04/reference/rows/scalar-negative-zero/data/attempt1/claude/stdout.raw",
+      "note": "attempt 2 stdout is byte-equal, stderr is empty; no OLD row set was captured, so none is asserted"
+    }
+  ]
+}

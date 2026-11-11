@@ -4,10 +4,25 @@ use serde::Serialize;
 use serde_json::Value;
 
 pub(super) mod checklist;
+pub mod display_comments;
+mod display_patch;
 mod events;
+pub mod find_matches;
+pub mod find_wire;
+pub mod image_paths;
+pub mod live_shown;
+pub mod markdown;
+mod normalize;
+pub mod patch_wire;
+pub mod queue_wire;
+pub mod reader_rows;
 mod records;
 mod shell;
+pub mod source;
+pub mod source_follow;
+pub mod source_readers;
 mod state;
+pub mod worker_protocol;
 
 pub use checklist::TodoItem;
 pub use events::row;

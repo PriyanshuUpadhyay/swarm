@@ -1,0 +1,524 @@
+{
+ "0-265": {
+  "start_byte": 0,
+  "end_byte": 265,
+  "terminated": true,
+  "events": [
+   {
+    "type": "user_message_chunk",
+    "text": "hello",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "1",
+     "timestamp": "2026-11-05T10:00:01Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "system_message",
+    "kind": "context",
+    "text": "<ADDITIONAL_METADATA>data</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>settings</USER_SETTINGS_CHANGE>",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "1",
+     "timestamp": "2026-11-05T10:00:01Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "265-497": {
+  "start_byte": 265,
+  "end_byte": 497,
+  "terminated": true,
+  "events": [
+   {
+    "type": "user_message_chunk",
+    "text": "first</USER_REQUEST> second",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "2",
+     "timestamp": "2026-11-05T10:00:02Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "system_message",
+    "kind": "context",
+    "text": "<ADDITIONAL_METADATA>d</ADDITIONAL_METADATA>",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "2",
+     "timestamp": "2026-11-05T10:00:02Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "497-653": {
+  "start_byte": 497,
+  "end_byte": 653,
+  "terminated": true,
+  "events": [
+   {
+    "type": "user_message_chunk",
+    "text": "open only",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "3",
+     "timestamp": "2026-11-05T10:00:03Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "653-807": {
+  "start_byte": 653,
+  "end_byte": 807,
+  "terminated": true,
+  "events": [
+   {
+    "type": "user_message_chunk",
+    "text": "plain naïve café ✓ 🙂",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "4",
+     "timestamp": "2026-11-05T10:00:04Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "807-1104": {
+  "start_byte": 807,
+  "end_byte": 1104,
+  "terminated": true,
+  "events": [
+   {
+    "type": "agent_thought_chunk",
+    "text": "plan",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "10",
+     "timestamp": "2026-11-05T10:00:10Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "agent_message_chunk",
+    "text": "reading",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "10",
+     "timestamp": "2026-11-05T10:00:10Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "tool_call",
+    "tool_call_id": "11",
+    "name": "view_file",
+    "input": {
+     "AbsolutePath": "/work/a.txt",
+     "toolAction": "read"
+    },
+    "status": "pending",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "10",
+     "timestamp": "2026-11-05T10:00:10Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "tool_call",
+    "tool_call_id": "12",
+    "name": "run_command",
+    "input": {
+     "CommandLine": "pwd"
+    },
+    "status": "pending",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "10",
+     "timestamp": "2026-11-05T10:00:10Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "1104-1232": {
+  "start_byte": 1104,
+  "end_byte": 1232,
+  "terminated": true,
+  "events": [
+   {
+    "type": "tool_call_update",
+    "tool_call_id": "11",
+    "status": "completed",
+    "content": "file text",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "11",
+     "timestamp": "2026-11-05T10:00:11Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "1232-1358": {
+  "start_byte": 1232,
+  "end_byte": 1358,
+  "terminated": true,
+  "events": [
+   {
+    "type": "tool_call_update",
+    "tool_call_id": "12",
+    "status": "failed",
+    "content": "boom",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "12",
+     "timestamp": "2026-11-05T10:00:12Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "1358-1516": {
+  "start_byte": 1358,
+  "end_byte": 1516,
+  "terminated": true,
+  "events": [
+   {
+    "type": "tool_call",
+    "tool_call_id": "14",
+    "name": "list_dir",
+    "input": {},
+    "status": "pending",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "13",
+     "timestamp": "2026-11-05T10:00:13Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "1516-1650": {
+  "start_byte": 1516,
+  "end_byte": 1650,
+  "terminated": true,
+  "events": [
+   {
+    "type": "tool_call_update",
+    "tool_call_id": "14",
+    "status": "pending",
+    "content": "listing",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "14",
+     "timestamp": "2026-11-05T10:00:14Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "1650-1778": {
+  "start_byte": 1650,
+  "end_byte": 1778,
+  "terminated": true,
+  "events": [
+   {
+    "type": "unknown",
+    "raw": "{\"type\":\"SEARCH_WEB\",\"status\":\"CANCELED\",\"source\":\"MODEL\",\"step_index\":15,\"created_at\":\"2026-11-05T10:00:15Z\",\"content\":\"late\"}",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "15",
+     "timestamp": "2026-11-05T10:00:15Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "1778-1934": {
+  "start_byte": 1778,
+  "end_byte": 1934,
+  "terminated": true,
+  "events": [
+   {
+    "type": "agent_thought_chunk",
+    "text": "just thinking",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "16",
+     "timestamp": "2026-11-05T10:00:16Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "1934-2070": {
+  "start_byte": 1934,
+  "end_byte": 2070,
+  "terminated": true,
+  "events": [
+   {
+    "type": "agent_message_chunk",
+    "text": "partial",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "17",
+     "timestamp": "2026-11-05T10:00:17Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "2070-2224": {
+  "start_byte": 2070,
+  "end_byte": 2224,
+  "terminated": true,
+  "events": [
+   {
+    "type": "agent_thought_chunk",
+    "text": "check",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "18",
+     "timestamp": "2026-11-05T10:00:18Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "agent_message_chunk",
+    "text": "All done.",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "18",
+     "timestamp": "2026-11-05T10:00:18Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "turn_ended",
+    "duration_ms": null,
+    "reason": "completed",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "18",
+     "timestamp": "2026-11-05T10:00:18Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "2224-2448": {
+  "start_byte": 2224,
+  "end_byte": 2448,
+  "terminated": true,
+  "events": [
+   {
+    "type": "agent_thought_chunk",
+    "text": "keep",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "19",
+     "timestamp": "2026-11-05T10:00:19Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "tool_call",
+    "tool_call_id": "21",
+    "name": "run_command",
+    "input": {
+     "CommandLine": "ls"
+    },
+    "status": "pending",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "19",
+     "timestamp": "2026-11-05T10:00:19Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "unknown",
+    "raw": "{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"source\":\"MODEL\",\"step_index\":19,\"created_at\":\"2026-11-05T10:00:19Z\",\"thinking\":\"keep\",\"content\":false,\"tool_calls\":[false,{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"ls\"}},null]}",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "19",
+     "timestamp": "2026-11-05T10:00:19Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "2448-2573": {
+  "start_byte": 2448,
+  "end_byte": 2573,
+  "terminated": true,
+  "events": [
+   {
+    "type": "error",
+    "message": "bad",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "20",
+     "timestamp": "2026-11-05T10:00:20Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "2573-2698": {
+  "start_byte": 2573,
+  "end_byte": 2698,
+  "terminated": true,
+  "events": [
+   {
+    "type": "system_message",
+    "kind": "compaction",
+    "text": "saved",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "21",
+     "timestamp": "2026-11-05T10:00:21Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "2698-2826": {
+  "start_byte": 2698,
+  "end_byte": 2826,
+  "terminated": true,
+  "events": [
+   {
+    "type": "system_message",
+    "kind": "system",
+    "text": "note",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "22",
+     "timestamp": "2026-11-05T10:00:22Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "2826-2941": {
+  "start_byte": 2826,
+  "end_byte": 2941,
+  "terminated": true,
+  "events": [
+   {
+    "type": "ignored",
+    "kind": "EPHEMERAL_MESSAGE",
+    "raw": "{\"type\":\"EPHEMERAL_MESSAGE\",\"status\":\"DONE\",\"source\":\"SYSTEM\",\"step_index\":23,\"created_at\":\"2026-11-05T10:00:23Z\"}",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "23",
+     "timestamp": "2026-11-05T10:00:23Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "2941-3054": {
+  "start_byte": 2941,
+  "end_byte": 3054,
+  "terminated": true,
+  "events": [
+   {
+    "type": "ignored",
+    "kind": "PLANNER_RESPONSE",
+    "raw": "{\"type\":\"PLANNER_RESPONSE\",\"status\":\"DONE\",\"source\":\"MODEL\",\"step_index\":24,\"created_at\":\"2026-11-05T10:00:24Z\"}",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "24",
+     "timestamp": "2026-11-05T10:00:24Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "3054-3180": {
+  "start_byte": 3054,
+  "end_byte": 3180,
+  "terminated": true,
+  "events": [
+   {
+    "type": "unknown",
+    "raw": "{\"type\":\"FUTURE_STEP\",\"status\":\"DONE\",\"source\":\"MODEL\",\"step_index\":25,\"created_at\":\"2026-11-05T10:00:25Z\",\"content\":\"later\"}",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "25",
+     "timestamp": "2026-11-05T10:00:25Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ },
+ "3180-3476": {
+  "start_byte": 3180,
+  "end_byte": 3476,
+  "terminated": true,
+  "events": [
+   {
+    "type": "system_message",
+    "kind": "swarm_ring",
+    "text": "swarm: new message. Run swarm inbox and read each body at /home/owner/.swarm/<body_path>.",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "26",
+     "timestamp": "2026-11-05T10:00:26Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   },
+   {
+    "type": "system_message",
+    "kind": "context",
+    "text": "<ADDITIONAL_METADATA>m</ADDITIONAL_METADATA>",
+    "meta": {
+     "session_id": "agy-u04-main",
+     "uuid": "26",
+     "timestamp": "2026-11-05T10:00:26Z",
+     "parent_uuid": null,
+     "source_tool_use_id": null
+    }
+   }
+  ]
+ }
+}

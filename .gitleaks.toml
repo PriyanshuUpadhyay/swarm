@@ -25,7 +25,7 @@ description = "Reserved and example domains, SSH remotes, and image scale suffix
 regexes = ['''(?i)^(?:(?:[a-z0-9-]+\.)*(?:example\.(?:com|org|net)|test|local|example|invalid|localhost)|(?:users\.)?noreply\.github\.com|github\.com|\d+x\.(?:png|jpe?g))$''']
 [[rules.allowlists]]
 description = "Third-party license notices keep their authors' addresses"
-paths = ['''(?:^|/)LICENSE[^/]*$''']
+paths = ['''(?:^|/)LICENSE[^/]*$''', '''(?:^|/)vendor/markdown-1\.0\.0/''']
 
 [[rules]]
 id = "session-id"

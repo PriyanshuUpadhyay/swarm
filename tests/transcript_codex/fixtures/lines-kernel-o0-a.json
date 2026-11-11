@@ -1,0 +1,244 @@
+{
+ "0-130": {
+  "end_byte": 130,
+  "events": [
+   {
+    "kind": "model",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:00.000Z",
+     "uuid": "codex-u03"
+    },
+    "type": "session_info",
+    "value": "gpt-demo"
+   },
+   {
+    "kind": "cwd",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:00.000Z",
+     "uuid": "codex-u03"
+    },
+    "type": "session_info",
+    "value": "/work/demo"
+   }
+  ],
+  "start_byte": 0,
+  "terminated": true
+ },
+ "1039-1252": {
+  "end_byte": 1252,
+  "events": [
+   {
+    "input": {
+     "cmd": "ls -la",
+     "yield_time_ms": 1000
+    },
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:06.000Z",
+     "uuid": "fc-1"
+    },
+    "name": "exec_command",
+    "status": "pending",
+    "tool_call_id": "exec-1",
+    "type": "tool_call"
+   }
+  ],
+  "start_byte": 1039,
+  "terminated": true
+ },
+ "1252-1518": {
+  "end_byte": 1518,
+  "events": [
+   {
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:07.000Z",
+     "uuid": "fc-q"
+    },
+    "questions": [
+     {
+      "header": "",
+      "multi_select": false,
+      "options": [
+       {
+        "description": "",
+        "label": "yes"
+       },
+       {
+        "description": "",
+        "label": "no"
+       }
+      ],
+      "question": "Go?"
+     }
+    ],
+    "tool_call_id": "call-q",
+    "type": "elicitation"
+   }
+  ],
+  "start_byte": 1252,
+  "terminated": true
+ },
+ "130-249": {
+  "end_byte": 249,
+  "events": [
+   {
+    "kind": "model",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:01.000Z",
+     "uuid": ""
+    },
+    "type": "session_info",
+    "value": "gpt-demo-2"
+   },
+   {
+    "kind": "cwd",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:01.000Z",
+     "uuid": ""
+    },
+    "type": "session_info",
+    "value": "/work/demo/sub"
+   }
+  ],
+  "start_byte": 130,
+  "terminated": true
+ },
+ "1518-1752": {
+  "end_byte": 1752,
+  "events": [
+   {
+    "content": "Chunk ID: c1\nWall time: 0.2 seconds\nProcess exited with code 0\nOutput:\nfile.txt\n",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:08.000Z",
+     "uuid": "fo-1"
+    },
+    "status": "completed",
+    "tool_call_id": "exec-1",
+    "type": "tool_call_update"
+   }
+  ],
+  "start_byte": 1518,
+  "terminated": true
+ },
+ "1752-1920": {
+  "end_byte": 1920,
+  "events": [
+   {
+    "kind": "question_accepted",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:09.000Z",
+     "uuid": "fo-q"
+    },
+    "raw": "{\"timestamp\":\"2026-11-05T09:00:09.000Z\",\"type\":\"response_item\",\"payload\":{\"type\":\"function_call_output\",\"id\":\"fo-q\",\"call_id\":\"call-q\",\"output\":\"{\\\"accepted\\\":true}\"}}",
+    "type": "ignored"
+   }
+  ],
+  "start_byte": 1752,
+  "terminated": true
+ },
+ "249-362": {
+  "end_byte": 362,
+  "events": [
+   {
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:02.000Z",
+     "uuid": ""
+    },
+    "type": "turn_started"
+   }
+  ],
+  "start_byte": 249,
+  "terminated": true
+ },
+ "362-541": {
+  "end_byte": 541,
+  "events": [
+   {
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:03.000Z",
+     "uuid": "user-1"
+    },
+    "text": "list the files",
+    "type": "user_message_chunk"
+   }
+  ],
+  "start_byte": 362,
+  "terminated": true
+ },
+ "541-744": {
+  "end_byte": 744,
+  "events": [
+   {
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:04.000Z",
+     "uuid": "say-1"
+    },
+    "text": "I will look.",
+    "type": "agent_message_chunk"
+   }
+  ],
+  "start_byte": 541,
+  "terminated": true
+ },
+ "744-1039": {
+  "end_byte": 1039,
+  "events": [
+   {
+    "cache_read_tokens": 80,
+    "cache_write_tokens": null,
+    "context_capacity_tokens": 200,
+    "context_tokens": 120,
+    "cost_completeness": "unknown",
+    "cost_usd": null,
+    "input_tokens": 100,
+    "kind": "context",
+    "meta": {
+     "parent_uuid": null,
+     "session_id": "codex-u03",
+     "source_tool_use_id": null,
+     "timestamp": "2026-11-05T09:00:05.000Z",
+     "uuid": ""
+    },
+    "output_tokens": 20,
+    "session_input_tokens": 9000,
+    "session_output_tokens": 1000,
+    "source": "codex",
+    "type": "usage"
+   }
+  ],
+  "start_byte": 744,
+  "terminated": true
+ }
+}

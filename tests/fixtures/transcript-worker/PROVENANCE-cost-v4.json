@@ -1,0 +1,27 @@
+{
+  "purpose": "Two more value-sets in the Claude main test: a cost-state record with totalCostUSD 0, and one with the finite decimal 15.275728604913303. OLD native cost_usd keeps the exact tokens 0 and 15.275728604913303.",
+  "authority": "ORIGINAL c8ca837e1b70cbb4479bfda387f3bace2931749e, unchanged ReleaseSafe exe SHA 5c61d0379152b5b632aa13d1fff610846750b906380fcc4f815958187a53b6af, captured twice (equal, exit 0, empty stderr) and sealed in reference/numeric-red/cost-v4/native/SEALS.sha256 (SHA b63f73c526a42e56919fbad068442616d835def4cb29d97b1f513a55cbb7650e) before any test edit. Record shape: claude.zig cost-state branch and the ORIGINAL test record in claude_message_tests.zig.",
+  "files": [
+    {
+      "file": "inputs/numbers-input-cost-zero.jsonl",
+      "sha256": "e06706807fe76a68040a03b34ba09447fb69fb508f683df7de9f2020a584dd6f",
+      "copied_from": "cost-v4/native/inputs/cost-zero.jsonl"
+    },
+    {
+      "file": "numbers/native-cost-zero.stdout",
+      "sha256": "2ef356ffc185809b3b25d37a2f748081e63e3441b2ca8f2bbc60b482cb86be5d",
+      "copied_from": "cost-v4/native/data/attempt1/cost-zero/stdout.raw"
+    },
+    {
+      "file": "inputs/numbers-input-cost-decimal.jsonl",
+      "sha256": "15a8d4f4503ee3915cf26eb75bc1b26505aaec1b0ee5d1e1f237551d6c186dd5",
+      "copied_from": "cost-v4/native/inputs/cost-decimal.jsonl"
+    },
+    {
+      "file": "numbers/native-cost-decimal.stdout",
+      "sha256": "c56027811adc42c8eda78efb9f80c4a47449ecf8b7bb30dc41af38bf23bdd47b",
+      "copied_from": "cost-v4/native/data/attempt1/cost-decimal/stdout.raw",
+      "note": "attempt 2 is byte-equal; no OLD row set was captured, so none is asserted"
+    }
+  ]
+}

@@ -1,7 +1,10 @@
 //! Tests for server live rows.
 
+include!("../../../tests/serve/legacy_body.rs");
+
 use super::*;
 use crate::serve::test_support::*;
+use swarm::view::transcript::source_follow::ingest_log_line;
 
 #[test]
 fn overlapping_log_windows_keep_one_record_per_source_event() {
@@ -20,10 +23,10 @@ fn overlapping_log_windows_keep_one_record_per_source_event() {
     let mut live = LiveRows::empty(0, false);
     let mut reference = LiveRows::empty(0, false);
     reference.ingest(start, end, &events);
-    live.ingest_log_line(&source, 0, end, &events);
-    live.delta("chat");
-    live.ingest_log_line(&source, start, end, &events);
-    live.delta("chat");
+    ingest_log_line(&mut live, &source, 0, end, &events);
+    row_frame("chat", live.delta());
+    ingest_log_line(&mut live, &source, start, end, &events);
+    row_frame("chat", live.delta());
     assert_eq!(live.records.len(), events.len());
     reference.shown = live.shown.clone();
     assert_eq!(live.rows(), reference.rows_full());
@@ -57,14 +60,14 @@ fn source_positions_skip_fragments_and_preserve_identical_lines() {
     let end = line.len() as u64;
     let events = [json!({"type":"unknown","raw":"same"})];
     let mut state = LiveRows::empty(0, false);
-    state.ingest_log_line(&source, 1, end, &events);
+    ingest_log_line(&mut state, &source, 1, end, &events);
     assert!(state.records.is_empty());
-    state.ingest_log_line(&source, 0, end, &events);
-    state.ingest_log_line(&source, end, end * 2, &events);
+    ingest_log_line(&mut state, &source, 0, end, &events);
+    ingest_log_line(&mut state, &source, end, end * 2, &events);
     assert_eq!(state.records.len(), 2);
     assert_eq!(state.records[&(0, 0)].source_id, "raw-0-0");
     assert_eq!(state.records[&(end, 0)].source_id, format!("raw-{end}-0"));
-    state.ingest_log_line(&source, end * 2, end * 2, &[]);
+    ingest_log_line(&mut state, &source, end * 2, end * 2, &[]);
     assert_eq!(state.records.len(), 2);
 }
 
@@ -110,9 +113,15 @@ async fn partial_append_and_overlapping_page_keep_one_question() {
         path: fixture.log.clone(),
         format: "claude".into(),
     };
-    let mut reference = read_row_window(&fixture.app.tool, &log, 0, end)
-        .await
-        .unwrap();
+    let mut reference = read_row_window(
+        &fixture.app,
+        &format!("{}:chair", fixture.session),
+        &log,
+        0,
+        end,
+    )
+    .await
+    .unwrap();
     {
         let hub = fixture.app.hub.lock().unwrap();
         let live = hub.followers[&key].rows.as_ref().unwrap();
@@ -175,7 +184,10 @@ fn live_chunks_match_full_frames_for_claude_and_codex() {
             }
             reference.ingest(index as u64, index as u64 + 1, &[event]);
             let expected = reference_delta(&mut reference, "chat");
-            let actual = incremental.delta("chat").data;
+            let actual = without_body(
+                serde_json::from_str(&row_frame("chat", incremental.delta()).data).unwrap(),
+            )
+            .to_string();
             assert_eq!(actual, expected.to_string(), "event {index}, codex={codex}");
         }
         assert_eq!(incremental.rows(), reference.last_rows);
@@ -195,7 +207,7 @@ fn trimmed_history_has_the_same_live_frames() {
     ];
     live.ingest(0, 1, &first);
     reference.ingest(0, 1, &first);
-    live.delta("chat");
+    row_frame("chat", live.delta());
     reference_delta(&mut reference, "chat");
     for index in 0..2400 {
         let event = synthetic_event(index, false);
@@ -207,7 +219,9 @@ fn trimmed_history_has_the_same_live_frames() {
         reference.ingest(index as u64 + 1, index as u64 + 2, &[event]);
         if index % 8 == 7 {
             assert_eq!(
-                serde_json::from_str::<Value>(&live.delta("chat").data).unwrap(),
+                without_body(
+                    serde_json::from_str::<Value>(&row_frame("chat", live.delta()).data).unwrap()
+                ),
                 reference_delta(&mut reference, "chat"),
                 "event {index}"
             );
@@ -240,9 +254,15 @@ async fn synthetic_provider_logs_match_full_rebuild() {
         let mut start = 0;
         for line in &lines {
             let end = start + line.len() as u64 + 1;
-            let page = read_row_window(&fixture.app.tool, &log, start, end)
-                .await
-                .unwrap();
+            let page = read_row_window(
+                &fixture.app,
+                &format!("{}:chair", fixture.session),
+                &log,
+                start,
+                end,
+            )
+            .await
+            .unwrap();
             state.ingest(
                 start,
                 end,
@@ -252,12 +272,18 @@ async fn synthetic_provider_logs_match_full_rebuild() {
                     .map(|record| record.event.clone())
                     .collect::<Vec<_>>(),
             );
-            state.delta("chat");
+            row_frame("chat", state.delta());
             start = end;
         }
-        let mut full = read_row_window(&fixture.app.tool, &log, 0, start)
-            .await
-            .unwrap();
+        let mut full = read_row_window(
+            &fixture.app,
+            &format!("{}:chair", fixture.session),
+            &log,
+            0,
+            start,
+        )
+        .await
+        .unwrap();
         full.shown = state.shown.clone();
         assert_eq!(state.rows(), full.rows_full());
         assert_eq!(
@@ -291,19 +317,19 @@ fn row_frames_report_changed_usage_and_clear_it() {
     let usage =
         json!({"type":"usage","kind":"context","context_tokens":80,"context_capacity_tokens":100});
     state.ingest(0, 1, &[usage]);
-    let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
+    let payload: Value = serde_json::from_str(&row_frame("chat", state.delta()).data).unwrap();
     assert_eq!(payload["usage"]["remaining_percent"], 20);
-    let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
+    let payload: Value = serde_json::from_str(&row_frame("chat", state.delta()).data).unwrap();
     assert!(payload.get("usage").is_none());
     state.ingest(1, 2, &[json!({"type":"usage","kind":"context","context_tokens":90,"context_capacity_tokens":100})]);
-    let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
+    let payload: Value = serde_json::from_str(&row_frame("chat", state.delta()).data).unwrap();
     assert_eq!(payload["usage"]["remaining_percent"], 10);
     state.ingest(
         2,
         3,
         &[json!({"type":"system_message","kind":"compaction"})],
     );
-    let payload: Value = serde_json::from_str(&state.delta("chat").data).unwrap();
+    let payload: Value = serde_json::from_str(&row_frame("chat", state.delta()).data).unwrap();
     assert!(payload.get("usage").unwrap().is_null());
 }
 
@@ -313,7 +339,7 @@ fn failed_source_reads_fall_back_to_page_positions() {
     let source = std::fs::File::create(&fixture.log).unwrap();
     let events = [json!({"type":"user_message_chunk","text":"fallback"})];
     let mut state = LiveRows::empty(1, false);
-    state.ingest_log_line(&source, 1, 9, &events);
+    ingest_log_line(&mut state, &source, 1, 9, &events);
     assert_eq!(state.records[&(1, 0)].event, events[0]);
     assert_eq!(state.end, 9);
 }
@@ -341,8 +367,8 @@ fn live_task_checklist_matches_the_stored_rows_and_shows_only_the_newest() {
     for (index, event) in events.iter().enumerate() {
         let (start, end) = (index as u64 * 2 + 1, index as u64 * 2 + 3);
         reference.ingest(start, end, std::slice::from_ref(event));
-        live.ingest_log_line(&source, start, end, std::slice::from_ref(event));
-        live.delta("chat");
+        ingest_log_line(&mut live, &source, start, end, std::slice::from_ref(event));
+        live.delta();
     }
     reference.shown = live.shown.clone();
 

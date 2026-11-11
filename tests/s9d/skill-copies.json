@@ -1,0 +1,10 @@
+{
+  "source": "packages/transcript/src/pi_tests.zig:91",
+  "copies": [
+    "{\"type\":\"message\",\"id\":\"u1\",\"parentId\":\"a0\",\"timestamp\":\"t\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"<skill name=\\\"plan\\\" location=\\\"/s/plan/SKILL.md\\\">\\nReferences are relative to /s/plan.\\n\\n# Plan\\nStep one.\\n</skill>\\n\\nfix this now\"}]}}",
+    "{\"type\":\"message\",\"id\":\"u2\",\"timestamp\":\"t\",\"message\":{\"role\":\"user\",\"content\":\"look at this\\n<skill name=\\\"x\\\" location=\\\"/x\\\">\\nbody\\n</skill>\\nand fix it\"}}",
+    "{\"type\":\"message\",\"id\":\"u3\",\"timestamp\":\"t\",\"message\":{\"role\":\"user\",\"content\":\"<skill name=\\\"x\\\" location=\\\"/x\\\">\\nno end\"}}",
+    "{\"type\":\"message\",\"id\":\"u4\",\"timestamp\":\"t\",\"message\":{\"role\":\"user\",\"content\":\"<skill name=\\\"doc\\\" location=\\\"/d\\\">\\nwrite\\n</skill>\\nlike this\\n</skill>\\n\\ngo\"}}",
+    "{\"type\":\"message\",\"id\":\"u5\",\"timestamp\":\"t\",\"message\":{\"role\":\"user\",\"content\":\"<skill name=\\\"\\\" location=\\\"/x\\\">\\nbody\\n</skill>\"}}"
+  ]
+}

@@ -1,0 +1,118 @@
+[
+ {
+  "collapsed": true,
+  "id": "record-raw-0-0@raw-0-0",
+  "kind": "system",
+  "order": [
+   0,
+   0
+  ],
+  "output": {
+   "full_bytes": 536,
+   "full_lines": 22,
+   "hidden_lines": 0,
+   "id": "raw-0-0:output",
+   "text": "{\n  \"type\": \"usage\",\n  \"source\": \"codex\",\n  \"kind\": \"context\",\n  \"context_tokens\": 5,\n  \"context_capacity_tokens\": 200,\n  \"input_tokens\": 9007199254740993,\n  \"output_tokens\": 0,\n  \"cache_read_tokens\": 9223372036854775807,\n  \"cache_write_tokens\": null,\n  \"session_input_tokens\": 9007199254740993,\n  \"session_output_tokens\": 2,\n  \"cost_usd\": null,\n  \"cost_completeness\": \"unknown\",\n  \"meta\": {\n    \"session_id\": \"\",\n    \"uuid\": \"\",\n    \"timestamp\": \"2026-11-05T09:00:00.000Z\",\n    \"parent_uuid\": null,\n    \"source_tool_use_id\": null\n  }\n}"
+  },
+  "source_ids": [
+   "raw-0-0"
+  ],
+  "system_kind": "record",
+  "text": "usage \u00b7 context"
+ },
+ {
+  "collapsed": true,
+  "id": "record-raw-331-0@raw-331-0",
+  "kind": "system",
+  "order": [
+   331,
+   0
+  ],
+  "output": {
+   "full_bytes": 507,
+   "full_lines": 22,
+   "hidden_lines": 0,
+   "id": "raw-331-0:output",
+   "text": "{\n  \"type\": \"usage\",\n  \"source\": \"codex\",\n  \"kind\": \"context\",\n  \"context_tokens\": null,\n  \"context_capacity_tokens\": null,\n  \"input_tokens\": null,\n  \"output_tokens\": null,\n  \"cache_read_tokens\": null,\n  \"cache_write_tokens\": null,\n  \"session_input_tokens\": null,\n  \"session_output_tokens\": null,\n  \"cost_usd\": null,\n  \"cost_completeness\": \"unknown\",\n  \"meta\": {\n    \"session_id\": \"\",\n    \"uuid\": \"\",\n    \"timestamp\": \"2026-11-05T09:00:01.000Z\",\n    \"parent_uuid\": null,\n    \"source_tool_use_id\": null\n  }\n}"
+  },
+  "source_ids": [
+   "raw-331-0"
+  ],
+  "system_kind": "record",
+  "text": "usage \u00b7 context"
+ },
+ {
+  "ends_turn": true,
+  "id": "event-raw-644-0@raw-644-0",
+  "kind": "result",
+  "order": [
+   644,
+   0
+  ],
+  "source_ids": [
+   "raw-644-0"
+  ],
+  "text": "completed"
+ },
+ {
+  "ends_turn": true,
+  "id": "event-raw-776-0@raw-776-0",
+  "kind": "result",
+  "order": [
+   776,
+   0
+  ],
+  "source_ids": [
+   "raw-776-0"
+  ],
+  "text": "completed"
+ },
+ {
+  "detail": "150119987579m 1s",
+  "ends_turn": true,
+  "id": "event-raw-903-0@raw-903-0",
+  "kind": "result",
+  "order": [
+   903,
+   0
+  ],
+  "source_ids": [
+   "raw-903-0"
+  ],
+  "text": "completed"
+ },
+ {
+  "ends_turn": true,
+  "id": "event-raw-1043-0@raw-1043-0",
+  "kind": "result",
+  "order": [
+   1043,
+   0
+  ],
+  "source_ids": [
+   "raw-1043-0"
+  ],
+  "text": "completed"
+ },
+ {
+  "collapsed": true,
+  "id": "record-raw-1187-0@raw-1187-0",
+  "kind": "system",
+  "order": [
+   1187,
+   0
+  ],
+  "output": {
+   "full_bytes": 730,
+   "full_lines": 11,
+   "hidden_lines": 0,
+   "id": "raw-1187-0:output",
+   "text": "{\n  \"timestamp\": \"2026-11-05T09:00:00.000Z\",\n  \"type\": \"response_item\",\n  \"payload\": {\n    \"type\": \"function_call\",\n    \"id\": \"fc-d\",\n    \"name\": \"exec_command\",\n    \"arguments\": \"{\\\"a\\\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}\",\n    \"call_id\": \"call-d\"\n  }\n}"
+  },
+  "source_ids": [
+   "raw-1187-0"
+  ],
+  "system_kind": "record",
+  "text": "unknown"
+ }
+]
