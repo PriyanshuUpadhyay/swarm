@@ -16,6 +16,7 @@ import { copyText } from "./copy";
 import { showError } from "./errors";
 import { StatusGlyph } from "./status";
 import { store } from "./store";
+import { SubagentOverlay } from "./subagent-chat";
 import { ChatView, PaneBody } from "./transcript";
 import { inputOf } from "../core/focus";
 
@@ -189,6 +190,7 @@ export function PaneStrip({ app }: { app: App }) {
           <section inert={!!strip.zoomed} className="strip-chat" onPointerDownCapture={() => app.paneFocused(null)} onFocusCapture={() => app.paneFocused(null)}>
             <Asking app={app} strip={strip} />
             <ChatView app={app} />
+            <SubagentOverlay app={app} />
           </section>
           {hasPanes && (
             <Grip

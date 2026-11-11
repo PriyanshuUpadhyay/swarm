@@ -8,6 +8,7 @@ import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
 import { DiffView, OutputBox } from "./transcript-output";
 import { PlanRow, TodoRow } from "./transcript-todo";
+import { SubagentRow } from "./subagent-chat";
 import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
 type Ctx = { app: Reader; line: Line; md: MarkdownCache; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean };
@@ -38,6 +39,7 @@ const LABEL: Partial<Record<Row["kind"], string>> = {
   system: "System",
   result: "Result",
   toolUse: "Tool",
+  subagent: "Subagent",
 };
 
 function RowBody(ctx: Ctx) {
@@ -46,6 +48,7 @@ function RowBody(ctx: Ctx) {
   if (row.kind === "fold") return <FoldLine app={app} line={line} />;
   if (row.kind === "todoList") return <TodoRow row={row} />;
   if (row.kind === "proposedPlan") return <PlanRow row={row} md={md} />;
+  if (row.subagent) return <SubagentRow {...ctx} />;
   if (row.tool) return <ToolCard {...ctx} />;
   if (row.kind === "divider")
     return (

@@ -25,6 +25,7 @@ export type RowKind =
   | "assistant"
   | "thought"
   | "toolUse"
+  | "subagent"
   | "toolResult"
   | "diff"
   | "question"
@@ -90,6 +91,7 @@ export type FoldSummary = {
 
 /** One step of a `todoList` row; `activeText` shows while the step runs. */
 export type TodoItem = { text: string; status: "pending" | "in_progress" | "completed"; active_text?: string };
+export type SubagentRun = { call_id: string; agent_type: string; description: string; state: ToolState; result?: TextPreview };
 
 export type Row = {
   id: string;
@@ -102,6 +104,7 @@ export type Row = {
   system_kind?: string;
   shell?: ShellRun;
   command?: CommandChip;
+  subagent?: SubagentRun;
   source_ids?: string[];
   ends_turn?: boolean;
   starts_turn?: boolean;
