@@ -23,3 +23,18 @@ Verdict: keep (4 wins, 2 ties, 0 losses; the split case was rerun once and tied)
 is cut off before the end, and the grader then rewards the run that bundled it. Both of its
 expectations are guards that the old pair mode already had, so it can only tie or lose on
 completeness. Shrink was not run.
+
+
+Round 2026-11-11, prompt audit. The skill side is `f63f8338`, the baseline is `9d924cfd`. The clones
+and owner replies are as in round 1; the upstream commit was made again with the same subject.
+
+| date | skill commit | baseline | case | provider | result | grader note |
+|---|---|---|---|---|---|---|
+| 2026-11-11 | f63f8338 | 9d924cfd | stale-base | claude | loss (narrow) | 2/2 each; the baseline's applied chunk also changed the usage line |
+| 2026-11-11 | f63f8338 | 9d924cfd | stale-base | codex | loss (narrow) | 2/2 each; the skill side's first chunk only accepted the flag |
+| 2026-11-11 | f63f8338 | 9d924cfd | only-what-it-names | claude | tie | 2/2 each |
+| 2026-11-11 | f63f8338 | 9d924cfd | only-what-it-names | codex | tie | 2/2 each |
+
+Verdict 2026-11-11: keep, with a watch. Both stale-base losses pass every expectation and differ in
+how the behavior list split the flag from its output. No expectation tests that split, so the next
+case should.

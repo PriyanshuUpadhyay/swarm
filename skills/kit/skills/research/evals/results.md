@@ -65,3 +65,17 @@ Limits:
 - Expectation 1 of `recent-compliance` did not say whether two findings need two papers, and
   expectation 2 had no rule for a new revision of an old paper. Both were made exact after these
   runs.
+
+
+Round 2026-11-11, prompt audit. The skill side is `f63f8338`, the baseline is `9d924cfd`, solo mode.
+
+| date | skill commit | baseline | case | provider | grader | result | grader note |
+|---|---|---|---|---|---|---|---|
+| 2026-11-11 | f63f8338 | 9d924cfd | origin-number | claude | checker codex | loss (narrow) | 3/4 each; the skill side swapped the v1 and v3 abstract wording |
+| 2026-11-11 | f63f8338 | 9d924cfd | origin-number | codex | checker claude | win (narrow) | 4/4 each; clearer first answer |
+| 2026-11-11 | f63f8338 | 9d924cfd | recent-compliance | claude | checker codex | loss | 2/4 vs 3/4; counted a file-content paper as compliance evidence, misdated one, a dead alphaXiv link |
+| 2026-11-11 | f63f8338 | 9d924cfd | recent-compliance | codex | checker claude | win (narrow) | 4/4 each; found the newest on-topic study |
+
+Verdict 2026-11-11: keep, with a fix. Both Claude losses are claims that the page did not support,
+and the cut had moved the number check into the link check, for numbers only. `5e3d8590` makes the
+link check also compare each quoted passage and its version. The fix is not rerun yet.
