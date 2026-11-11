@@ -10,6 +10,7 @@ pub(super) mod codex;
 mod codex_changes;
 mod codex_context;
 mod codex_facts;
+mod codex_items;
 mod codex_questions;
 mod codex_tools;
 pub(super) mod pi;

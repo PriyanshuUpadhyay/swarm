@@ -76,6 +76,13 @@ impl Template {
 }
 
 impl Fact<'_> {
+    pub(super) fn mark_mirrors(&mut self, start: usize) {
+        for action in &mut self.actions[start..] {
+            if let Action::Event(event) = action {
+                event.fields["codex_mirror"] = json!(true);
+            }
+        }
+    }
     pub(super) fn push(&mut self, kind: &'static str, fields: Value) {
         self.actions
             .push(Action::Event(Template::new(kind, fields)));
@@ -239,31 +246,14 @@ fn event_message(
             };
             fact.push("system_message", json!({"kind":"review_mode", "text":text}));
         }
-        "item_completed" if plan_text(payload).is_some() => {
-            fact.push("proposed_plan", json!({"text":plan_text(payload).unwrap()}));
-        }
+        "item_completed" => super::codex_items::append(fact, payload, work)?,
         "patch_apply_end" => super::codex_changes::append(fact, payload, "call_id", work)?,
         "sub_agent_activity" => subagent_activity(fact, payload),
-        "item_completed"
-            if payload
-                .object("item")
-                .is_some_and(|item| item.text("type") == "SubAgentActivity") =>
-        {
-            subagent_activity(fact, &payload.object("item").unwrap());
-        }
-        "item_completed"
-            if payload
-                .object("item")
-                .is_some_and(|item| item.text("type") == "FileChange") =>
-        {
-            super::codex_changes::append(fact, &payload.object("item").unwrap(), "id", work)?;
-        }
         "user_message"
         | "agent_message"
         | "exec_command_end"
         | "mcp_tool_call_end"
         | "web_search_end"
-        | "item_completed"
         | "thread_settings_applied" => fact.push_ignored(&format!("event_msg/{kind}")),
         _ => fact.push_unknown(),
     }
@@ -394,12 +384,4 @@ fn reasoning(
         fact.push("agent_thought_chunk", json!({"text":""}));
     }
     Ok(())
-}
-
-/// The text of a completed Codex plan-mode item.
-fn plan_text(payload: &Object<'_>) -> Option<String> {
-    let item = payload.object("item")?;
-    (item.text("type") == "Plan")
-        .then(|| item.optional_text("text"))
-        .flatten()
 }

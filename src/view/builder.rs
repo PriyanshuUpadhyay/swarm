@@ -8,6 +8,9 @@ use super::{TextPreview, ToolActivity, ToolState};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+#[path = "builder_codex.rs"]
+mod codex;
+
 #[derive(Clone)]
 struct Anchor {
     index: usize,
@@ -40,6 +43,12 @@ pub(super) fn rows_with_context(
     is_codex: bool,
     context: Option<(bool, bool)>,
 ) -> Vec<Row> {
+    let mirror_parts = if is_codex {
+        codex::mirror_parts(records)
+    } else {
+        HashMap::new()
+    };
+    let mirror_joined: HashSet<_> = mirror_parts.values().flatten().copied().collect();
     let mut scope = 0;
     let mut saw_tool = false;
     let mut scopes = Vec::new();
@@ -51,6 +60,10 @@ pub(super) fn rows_with_context(
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
         let event_type = string(event, "type");
+        if mirror_joined.contains(&index) {
+            scopes.push(scope);
+            continue;
+        }
         if matches!(event_type, "page" | "turn_started")
             || (event_type == "user_message_chunk" && saw_tool)
         {
@@ -118,8 +131,11 @@ pub(super) fn rows_with_context(
             });
         }
     }
-    let mut joined = HashSet::new();
+    let mut joined = mirror_joined;
     for (index, record) in records.iter().enumerate() {
+        if joined.contains(&index) {
+            continue;
+        }
         let event = &record.event;
         let scope = scopes[index];
         let kind = string(event, "kind");
@@ -353,6 +369,7 @@ pub(super) fn rows_with_context(
         sources.extend(diffs.get(&index).into_iter().flatten());
         sources.extend(attached.get(&index).into_iter().flatten());
         sources.extend(activity.get(&index).into_iter().flatten());
+        sources.extend(mirror_parts.get(&index).into_iter().flatten());
         sources.sort_unstable();
         row.source_ids = sources
             .iter()

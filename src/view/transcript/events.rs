@@ -291,11 +291,15 @@ pub fn row(record: &Record) -> Option<Row> {
         }
         "image" => Row::new(
             RowKind::Notice,
-            format!(
-                "{} image ({})",
-                string(event, "role"),
-                string(event, "media_type")
-            ),
+            if text.is_empty() {
+                format!(
+                    "{} image ({})",
+                    string(event, "role"),
+                    string(event, "media_type")
+                )
+            } else {
+                text.into()
+            },
             key(record, "image"),
         ),
         // A page marker is the tool's own window bound, not a log record.

@@ -92,3 +92,92 @@ fn codex_subagent_activity_updates_the_spawn_row() {
         );
     }
 }
+
+#[test]
+fn codex_completed_items_keep_their_rows_and_command_output() {
+    let rows = codex_rows(vec![
+        response(
+            json!({"type":"message","id":"u","role":"user","content":[{"type":"input_text","text":"Build it"}]}),
+        ),
+        completed(
+            json!({"type":"UserMessage","id":"u","content":[{"type":"text","text":"Build it"}]}),
+        ),
+        response(
+            json!({"type":"reasoning","id":"r","summary":[{"type":"summary_text","text":"Check the code"}]}),
+        ),
+        completed(
+            json!({"type":"Reasoning","id":"r","summary_text":["Check the code"],"raw_content":[]}),
+        ),
+        response(
+            json!({"type":"function_call","call_id":"cmd","name":"exec_command","arguments":"{\"cmd\":\"cargo check\"}"}),
+        ),
+        completed(
+            json!({"type":"CommandExecution","id":"cmd","command":["cargo","check"],"status":"completed","aggregated_output":"Build passed","exit_code":0}),
+        ),
+        completed(
+            json!({"type":"CommandExecution","id":"nested","command":["cargo","fmt"],"status":"failed","aggregated_output":"Needs format","exit_code":1}),
+        ),
+        response(
+            json!({"type":"message","id":"a","role":"assistant","content":[{"type":"output_text","text":"Done"}]}),
+        ),
+        completed(
+            json!({"type":"AgentMessage","id":"a","content":[{"type":"Text","text":"Done"}]}),
+        ),
+    ]);
+    let visible: Vec<_> = rows.iter().filter(|row| !row.collapsed).cloned().collect();
+    assert_eq!(
+        kinds(&visible),
+        [
+            RowKind::User,
+            RowKind::Thought,
+            RowKind::ToolUse,
+            RowKind::ToolUse,
+            RowKind::Assistant
+        ]
+    );
+    assert_eq!(outputs(&visible), ["Build passed", "Needs format"]);
+    assert_eq!(tool(&visible[3]).state, ToolState::Failed);
+    assert_eq!(tool(&visible[3]).exit_code, Some(1));
+    assert!(
+        !rows
+            .iter()
+            .any(|row| row.system_kind.as_deref() == Some("unmapped"))
+    );
+}
+
+#[test]
+fn codex_completed_notices_are_visible_and_unknown_items_are_counted() {
+    let rows = codex_rows(vec![
+        completed(
+            json!({"type":"EnteredReviewMode","id":"review","user_facing_hint":"Review the patch"}),
+        ),
+        completed(json!({"type":"ExitedReviewMode","id":"end-review"})),
+        completed(
+            json!({"type":"HookPrompt","id":"hook","fragments":[{"text":"Hook feedback","hookRunId":"run"}]}),
+        ),
+        completed(json!({"type":"ImageView","id":"image","path":"/tmp/picture.png"})),
+        completed(json!({"type":"FutureItem","id":"future"})),
+        completed(json!({"type":"Extension","id":"extension"})),
+    ]);
+    let visible: Vec<_> = rows.iter().filter(|row| !row.collapsed).collect();
+    assert_eq!(
+        visible
+            .iter()
+            .map(|row| row.system_kind.as_deref())
+            .collect::<Vec<_>>(),
+        [
+            Some("review_mode"),
+            Some("review_mode"),
+            Some("hook_prompt"),
+            None
+        ]
+    );
+    assert!(visible[2].text.contains("Hook feedback"));
+    assert!(visible[3].text.contains("/tmp/picture.png"));
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.system_kind.as_deref() == Some("unmapped"))
+            .count(),
+        2
+    );
+}
