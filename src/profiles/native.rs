@@ -127,13 +127,18 @@ fn rollouts(accounts: &[Account], archived: bool) -> Vec<(String, String, PathBu
     rollouts
 }
 
-/// The folder a rollout's session started in, from its first line, the `session_meta` record.
-fn rollout_cwd(path: &Path) -> Option<PathBuf> {
+/// A rollout's first line, the `session_meta` record.
+pub fn rollout_meta(path: &Path) -> Option<Value> {
     let mut line = String::new();
     BufReader::new(std::fs::File::open(path).ok()?)
         .read_line(&mut line)
         .ok()?;
-    let meta: Value = serde_json::from_str(&line).ok()?;
+    serde_json::from_str(&line).ok()
+}
+
+/// The folder a rollout's session started in, from its first line, the `session_meta` record.
+fn rollout_cwd(path: &Path) -> Option<PathBuf> {
+    let meta = rollout_meta(path)?;
     (meta["type"] == "session_meta")
         .then(|| meta["payload"]["cwd"].as_str().map(PathBuf::from))
         .flatten()

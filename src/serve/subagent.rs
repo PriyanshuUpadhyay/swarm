@@ -17,10 +17,12 @@ const CALL_ID_MAX: usize = 128;
 const CLAUDE_PREFIX: &str = "agent-";
 const CLAUDE_META: &str = ".meta.json";
 const CLAUDE_LOG: &str = ".jsonl";
+/// The line before the JSON object that names a new AGY subagent.
+const AGY_CREATED: &str = "Created the following subagent:";
+/// Where a child's full log sits under its folder in the AGY brain.
+const AGY_CHILD_LOG: &str = ".system_generated/logs/transcript_full.jsonl";
 /// Codex keeps rollouts in `sessions/<year>/<month>/<day>/`, so a file sits this far below it.
 const CODEX_DEPTH: u8 = 4;
-/// The length of a hyphenated UUID.
-const UUID_LEN: usize = 36;
 
 /// A tool call id as any of the CLIs writes it; it never holds a path part.
 fn plain_id(id: &str) -> bool {
@@ -44,6 +46,7 @@ pub(super) fn child_log(parent: &Log, call_id: &str) -> Result<Log, ApiError> {
     let path = match parent.format.as_str() {
         "claude" => claude_child(&parent.path, call_id),
         "codex" => codex_child(&parent.path, call_id),
+        "agy" => agy_child(&parent.path, call_id),
         _ => None,
     };
 
@@ -66,7 +69,8 @@ fn claude_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
             continue;
         };
 
-        // A file that Claude is still writing is not this call's; the next one may be.
+        // A file that cannot be read yet, such as one Claude is still writing, is skipped; the
+        // page reads again.
         let Some(meta) = std::fs::read(entry.path())
             .ok()
             .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
@@ -97,14 +101,44 @@ fn codex_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
     let log = find_rollout(sessions, &format!("-{id}.jsonl"), CODEX_DEPTH)?;
 
     // Only the first line, the `session_meta`, says whose child this is.
-    let mut first = String::new();
-    BufReader::new(std::fs::File::open(&log).ok()?)
-        .read_line(&mut first)
-        .ok()?;
-    let meta: Value = serde_json::from_str(&first).ok()?;
+    let meta = swarm::profiles::native::rollout_meta(&log)?;
     meta["payload"]["source"]["subagent"]["thread_spawn"]["parent_thread_id"]
         .is_string()
         .then_some(log)
+}
+
+/// AGY keeps each conversation in `brain/<conversation id>/`. The result step of an
+/// `invoke_subagent` call names the child's id in the JSON that follows "Created the following
+/// subagent:"; `logAbsoluteUri` is not used as a path.
+fn agy_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
+    let brain = parent
+        .ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "brain"))?;
+    let step: u64 = call_id.parse().ok()?;
+
+    let lines = BufReader::new(std::fs::File::open(parent).ok()?).lines();
+    let id = lines.map_while(Result::ok).find_map(|line| {
+        let record: Value = serde_json::from_str(&line).ok()?;
+        let content = record["content"].as_str()?;
+        let (_, after) = content.split_once(AGY_CREATED)?;
+        if record["step_index"] != step {
+            return None;
+        }
+        let created: Value = serde_json::Deserializer::from_str(after)
+            .into_iter::<Value>()
+            .next()?
+            .ok()?;
+        uuid::Uuid::parse_str(created["conversationId"].as_str()?).ok()
+    })?;
+
+    let root = brain.canonicalize().ok()?;
+    let log = brain
+        .join(id.to_string())
+        .join(AGY_CHILD_LOG)
+        .canonicalize()
+        .ok()?;
+    // A link out of the brain folder is not this parent's child.
+    (log.starts_with(&root) && log.is_file()).then_some(log)
 }
 
 /// The child id in the output of the call, reading the parent rollout only up to that line.
@@ -137,8 +171,9 @@ fn find_rollout(dir: &Path, suffix: &str, depth: u8) -> Option<PathBuf> {
 
 /// The first UUID in the text.
 fn first_uuid(text: &str) -> Option<String> {
-    (0..=text.len().checked_sub(UUID_LEN)?).find_map(|start| {
-        let window = text.get(start..start + UUID_LEN)?;
+    let len = uuid::fmt::Hyphenated::LENGTH;
+    (0..=text.len().checked_sub(len)?).find_map(|start| {
+        let window = text.get(start..start + len)?;
         uuid::Uuid::parse_str(window).ok().map(|id| id.to_string())
     })
 }
@@ -183,6 +218,39 @@ mod tests {
 
         assert!(child_log(&parent, "toolu_none").is_err());
         assert!(child_log(&parent, "../x").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_agy_call_finds_the_child_conversation_in_the_same_brain_folder() {
+        let dir = scratch("agy");
+        let brain = dir.join("brain");
+        let parent_id = "11111111-2222-3333-4444-555555555555";
+        let child_id = "b79eceff-9bd5-489a-9d69-b8dff0280aa0";
+        let logs = |id: &str| brain.join(id).join(".system_generated/logs");
+        std::fs::create_dir_all(logs(parent_id)).unwrap();
+        std::fs::create_dir_all(logs(child_id)).unwrap();
+        std::fs::write(logs(child_id).join("transcript_full.jsonl"), "{}\n").unwrap();
+
+        let call = r#"{"step_index":25,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","tool_calls":[{"name":"invoke_subagent","args":{"Prompt":"Say hello and stop.","TypeName":"self"}}]}"#;
+        let content = format!(
+            "Created At: 2026-10-23T10:14:31+05:30\nCreated the following subagent:\n{}\nThe subagent will send you a message when it has completed its work.",
+            serde_json::to_string_pretty(&json!({"conversationId": child_id, "logAbsoluteUri": "file:///elsewhere/transcript.jsonl", "workspaceUris": ["file:///private/tmp/ws"]})).unwrap()
+        );
+        let result = json!({"step_index":26,"source":"MODEL","type":"GENERIC","status":"DONE","content":content});
+        let parent = logs(parent_id).join("transcript.jsonl");
+        std::fs::write(&parent, format!("{call}\n{result}\n")).unwrap();
+
+        let log = Log {
+            path: parent,
+            format: "agy".into(),
+        };
+        let child = child_log(&log, "26").unwrap();
+        assert!(child.path.ends_with(format!(
+            "{child_id}/.system_generated/logs/transcript_full.jsonl"
+        )));
+        assert_eq!(child.format, "agy");
+        assert!(child_log(&log, "27").is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
