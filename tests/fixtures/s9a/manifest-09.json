@@ -4,7 +4,7 @@
   "parts": [
    "64e560064fbb89c2-000.json"
   ]
- },
+ , "HAND": {"note": "HAND: ADR 0139 (docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md), owner answer a, 2026-11-11. Only unknown rows change system_kind from record to unmapped. sha256 and bytes describe the ORIGINAL source capture.", "values": 1, "parts": {"64e560064fbb89c2-000.json": 1}}},
  "out-1/guard-claude-non-ascii-escape/raw-full.txt": {
   "sha256": "fffa41ad7358d9d551fc6c3cc34322a4dda25f4977680e617d2fea68e565a525",
   "parts": [
@@ -34,7 +34,7 @@
   "parts": [
    "041f716a96790acb-000.json"
   ]
- },
+ , "HAND": {"note": "HAND: ADR 0139 (docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md), owner answer a, 2026-11-11. Only unknown rows change system_kind from record to unmapped. sha256 and bytes describe the ORIGINAL source capture.", "values": 1, "parts": {"041f716a96790acb-000.json": 1}}},
  "out-1/long-line-claude/raw-full.txt": {
   "sha256": "5bc708a5a9de7358f5d319570b761d25c9c597ff1bcbb644a22abf8d42d96c2c",
   "parts": [

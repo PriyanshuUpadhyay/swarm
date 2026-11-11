@@ -26,6 +26,8 @@ import { store } from "./store";
 import { TabStrip } from "./tabs";
 import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
 import { copyText } from "./copy";
+import { OPEN_BACKGROUND, pickedKey, type OpenBackgroundDetail } from "../core/background";
+import { writeStore } from "../core/app-types";
 import { watchUpdates } from "./update";
 
 // Sidebar side and width stay in this browser until P3b adds their owner choices.
@@ -123,6 +125,21 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
 function ChatColumn({ app, openId }: { app: App; openId: string }) {
   const [open, setOpen] = useState(() => store.getItem(BACKGROUND_KEY) === "1");
   const [focusRequest, setFocusRequest] = useState({ session: openId, seq: 0 });
+  const [pick, setPick] = useState(0);
+  // The chat-end line's Open: show the panel on that task's row.
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const { session, key } = (e as CustomEvent<OpenBackgroundDetail>).detail;
+      if (session !== openId) return;
+      store.setItem(BACKGROUND_KEY, "1");
+      // The panel reads its picked row when it mounts, so a new key remounts it on that row.
+      writeStore(pickedKey(session), key);
+      setOpen(true);
+      setPick((n) => n + 1);
+    };
+    window.addEventListener(OPEN_BACKGROUND, onOpen);
+    return () => window.removeEventListener(OPEN_BACKGROUND, onOpen);
+  }, [openId]);
   useEffect(() => {
     backgroundPanel.toggle = () =>
       setOpen((was) => {
@@ -148,7 +165,7 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
         <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
           <LoadFailed key={openId} what="background panel">
             <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
-              <BackgroundPanel app={app} session={openId} focusRequest={focusRequest.session === openId ? focusRequest.seq : 0} />
+              <BackgroundPanel key={pick} app={app} session={openId} focusRequest={focusRequest.session === openId ? focusRequest.seq : 0} />
             </Suspense>
           </LoadFailed>
         </ResizablePanel>

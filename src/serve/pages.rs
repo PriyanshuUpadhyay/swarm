@@ -6,14 +6,13 @@ use std::{fs, net::Ipv4Addr, process::Command as Process, time::Instant};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const PORT: u16 = 4748;
 const WAIT: Duration = Duration::from_secs(5);
-const USAGE: &str =
-    "usage: swarm pages [publish <folder> [--slug <slug>] | stop | --foreground [--port N]]";
+const USAGE: &str = "usage: swarm pages [publish <folder> [--slug <slug>] | stop | --foreground [--port N] [--id <id>]...]";
 
 #[derive(Debug, PartialEq)]
 enum Command {
     List,
     Stop,
-    Foreground(u16),
+    Foreground(u16, Vec<String>),
     Publish(PathBuf, Option<String>),
 }
 
@@ -29,12 +28,14 @@ pub fn pages(args: &[String]) -> Result<()> {
                 "{}",
                 running.as_ref().map_or("no shelf runs", |(url, _)| url)
             );
-            for folder in folders(&root.join("pages"))? {
-                println!("{folder}");
+            let shelf = root.join("pages");
+            pages_hub::prepare_shelf(&shelf)?;
+            for page in pages_hub::list(&shelf)? {
+                println!("{}", list_line(&page));
             }
         }
         Command::Stop => stop(&record)?,
-        Command::Foreground(port) => {
+        Command::Foreground(port, ids) => {
             if let Some((url, _)) =
                 read_record(&record).filter(|(url, pid)| answers(url, *pid, Instant::now() + WAIT))
             {
@@ -43,7 +44,7 @@ pub fn pages(args: &[String]) -> Result<()> {
                 )
                 .into());
             }
-            foreground(&root, &record, port)?;
+            foreground(&root, &record, port, ids)?;
         }
         Command::Publish(folder, slug) => {
             let absolute = std::env::current_dir()?.join(folder);
@@ -60,7 +61,7 @@ pub fn pages(args: &[String]) -> Result<()> {
                 "{}",
                 publish_lines(
                     &url,
-                    &published.folder,
+                    &published.id,
                     &published.hash,
                     &source,
                     source_commit(&source).as_deref()
@@ -75,14 +76,26 @@ fn parse(args: &[String]) -> Result<Command> {
     match args {
         [] => Ok(Command::List),
         [verb] if verb == "stop" => Ok(Command::Stop),
-        [flag] if flag == "--foreground" => Ok(Command::Foreground(PORT)),
-        [flag, option, port] if flag == "--foreground" && option == "--port" => {
-            let port = port
-                .parse::<u16>()
-                .ok()
-                .filter(|port| *port != 0)
-                .ok_or(USAGE)?;
-            Ok(Command::Foreground(port))
+        [flag, rest @ ..] if flag == "--foreground" => {
+            let mut port = PORT;
+            let mut ids = Vec::new();
+            let mut rest = rest.iter();
+            while let Some(option) = rest.next() {
+                let value = rest.next().ok_or(USAGE)?;
+                match option.as_str() {
+                    "--port" => {
+                        port = value
+                            .parse::<u16>()
+                            .ok()
+                            .filter(|port| *port != 0)
+                            .ok_or(USAGE)?;
+                    }
+                    "--id" if pages_hub::page_id(value) => ids.push(value.clone()),
+                    "--id" => return Err(format!("swarm pages: {value} is not a page ID").into()),
+                    _ => return Err(USAGE.into()),
+                }
+            }
+            Ok(Command::Foreground(port, ids))
         }
         [verb, folder] if verb == "publish" => Ok(Command::Publish(folder.into(), None)),
         [verb, folder, flag, slug] if verb == "publish" && flag == "--slug" => {
@@ -90,6 +103,19 @@ fn parse(args: &[String]) -> Result<Command> {
         }
         _ => Err(USAGE.into()),
     }
+}
+
+fn list_line(page: &pages_hub::Page) -> String {
+    let name = match (page.date.as_str(), page.slug.as_str()) {
+        ("", slug) => slug.to_owned(),
+        (date, slug) => format!("{date}-{slug}"),
+    };
+    let mut line = format!("{}  {name}", page.id);
+    if !page.source.is_empty() {
+        line.push_str("  ");
+        line.push_str(&page.source);
+    }
+    line
 }
 
 fn default_slug(source: &Path) -> String {
@@ -143,15 +169,9 @@ fn write_record(record: &Path, url: &str, pid: u32) -> Result<()> {
     Ok(())
 }
 
-fn publish_lines(
-    url: &str,
-    folder: &str,
-    hash: &str,
-    source: &Path,
-    commit: Option<&str>,
-) -> String {
+fn publish_lines(url: &str, id: &str, hash: &str, source: &Path, commit: Option<&str>) -> String {
     let mut text = format!(
-        "{url}{folder}/\nhash sha256:{hash}\nsource {}\n",
+        "{url}{id}/\nhash sha256:{hash}\nsource {}\n",
         source.display()
     );
     if let Some(commit) = commit {
@@ -197,40 +217,16 @@ fn today() -> Result<String> {
     Ok(String::from_utf8(output.stdout)?.trim().to_owned())
 }
 
-fn folders(shelf: &Path) -> Result<Vec<String>> {
-    let entries = match fs::read_dir(shelf) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error.into()),
-    };
-    let mut rows = Vec::new();
-    for entry in entries {
-        let entry = entry?;
-        let Ok(name) = entry.file_name().into_string() else {
-            continue;
-        };
-        if name.starts_with('.') {
-            continue;
-        }
-        let metadata = match fs::symlink_metadata(entry.path()) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error.into()),
-        };
-        if !metadata.is_dir()
-            || !fs::symlink_metadata(entry.path().join("index.html"))
-                .is_ok_and(|file| file.is_file())
-        {
-            continue;
-        }
-        rows.push((metadata.modified()?, name));
+fn foreground(root: &Path, record: &Path, port: u16, ids: Vec<String>) -> Result<()> {
+    let shelf = root.join("pages");
+    pages_hub::prepare_shelf(&shelf)?;
+    let pages = pages_hub::list(&shelf)?;
+    if let Some(missing) = ids
+        .iter()
+        .find(|id| !pages.iter().any(|page| &page.id == *id))
+    {
+        return Err(format!("swarm pages: no page has ID {missing}").into());
     }
-    rows.sort_by(|left, right| right.cmp(left));
-    Ok(rows.into_iter().map(|(_, name)| name).collect())
-}
-
-fn foreground(root: &Path, record: &Path, port: u16) -> Result<()> {
-    pages_hub::prepare_shelf(&root.join("pages"))?;
     let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port)).map_err(
         |error| -> Box<dyn std::error::Error> {
             if error.kind() == std::io::ErrorKind::AddrInUse {
@@ -250,7 +246,7 @@ fn foreground(root: &Path, record: &Path, port: u16) -> Result<()> {
     runtime.block_on(async {
         axum::serve(
             tokio::net::TcpListener::from_std(listener)?,
-            pages_hub::router(root.join("pages"), port),
+            pages_hub::router(shelf, port, (!ids.is_empty()).then_some(ids)),
         )
         .await
     })?;

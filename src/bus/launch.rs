@@ -72,10 +72,8 @@ pub fn argv(
                 start.insert(0, handler(chair_hook_command(provider.id())?));
             }
             hooks.insert("SessionStart".into(), start.into());
-            args.extend([
-                "--settings".into(),
-                serde_json::json!({ "hooks": hooks }).to_string(),
-            ]);
+
+            args.extend(["--settings".into(), owner_choice::claude_json(hooks, cwd)]);
             Ok(args)
         }
         Provider::Codex => {
@@ -252,6 +250,8 @@ pub fn argv(
                     ),
                 ]);
             }
+
+            args.extend(owner_choice::codex_args());
             Ok(args)
         }
         Provider::Agy => {

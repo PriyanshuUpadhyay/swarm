@@ -221,6 +221,22 @@ fn event_message(fact: &mut Fact<'_>, payload: &Object<'_>, kind: &str) {
             fact.push_ignored("event_msg/token_count");
         }
         "error" => fact.push("error", json!({"message": payload.text("message")})),
+        "entered_review_mode" | "exited_review_mode" => {
+            let hint = payload.text("user_facing_hint");
+            let text = if kind == "entered_review_mode" {
+                if hint.is_empty() {
+                    "Entered review mode".into()
+                } else {
+                    format!("Entered review mode: {hint}")
+                }
+            } else {
+                "Exited review mode".into()
+            };
+            fact.push("system_message", json!({"kind":"review_mode", "text":text}));
+        }
+        "item_completed" if plan_text(payload).is_some() => {
+            fact.push("proposed_plan", json!({"text":plan_text(payload).unwrap()}));
+        }
         "user_message"
         | "agent_message"
         | "exec_command_end"
@@ -229,8 +245,6 @@ fn event_message(fact: &mut Fact<'_>, payload: &Object<'_>, kind: &str) {
         | "web_search_end"
         | "item_completed"
         | "thread_settings_applied"
-        | "entered_review_mode"
-        | "exited_review_mode"
         | "sub_agent_activity" => fact.push_ignored(&format!("event_msg/{kind}")),
         _ => fact.push_unknown(),
     }
@@ -330,7 +344,7 @@ fn reasoning(
 ) -> Result<(), SnapshotError> {
     let summary = payload.get("summary");
     if summary.is_none_or(|raw| raw.get() == "null") {
-        fact.push_ignored("response_item/reasoning");
+        fact.push("agent_thought_chunk", json!({"text":""}));
         return Ok(());
     }
     let Some(parts) = summary.and_then(claude_json::array) else {
@@ -350,7 +364,15 @@ fn reasoning(
         }
     }
     if fact.actions.is_empty() {
-        fact.push_ignored("response_item/reasoning");
+        fact.push("agent_thought_chunk", json!({"text":""}));
     }
     Ok(())
+}
+
+/// The text of a completed Codex plan-mode item.
+fn plan_text(payload: &Object<'_>) -> Option<String> {
+    let item = payload.object("item")?;
+    (item.text("type") == "Plan")
+        .then(|| item.optional_text("text"))
+        .flatten()
 }

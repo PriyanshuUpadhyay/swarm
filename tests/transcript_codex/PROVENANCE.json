@@ -97,5 +97,11 @@
    "from": "s6-yield-tail1-from-L9.json",
    "sha256": "3e6167efd0c9711a2dd31d7ade20dcee3adcb27074d8686cd7bd59b8a8c468a2"
   }
- }
+ },
+  "HAND_ADR_0139": {
+    "note": "HAND: ADR 0139 (docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md), owner answer a, 2026-11-11. Only unknown rows change system_kind from record to unmapped. Existing hashes describe the ORIGINAL source captures; all other expected bytes stay unchanged.",
+    "values_per_file": {
+      "fixtures/rows-numbers-nodeep.json": 1
+    }
+  }
 }

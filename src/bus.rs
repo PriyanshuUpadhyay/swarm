@@ -150,6 +150,7 @@ fn pty_socket(host: Option<&str>, chair_session: Option<&str>, uid: u32) -> Opti
 mod codex;
 mod hooks;
 mod launch;
+mod owner_choice;
 mod refusal;
 mod trust;
 
@@ -308,6 +309,7 @@ mod tests {
 
     mod hooks;
     mod launch;
+    mod owner_choice;
     mod policy;
     mod trust;
     mod trust_targets;

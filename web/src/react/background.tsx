@@ -1,4 +1,4 @@
-// The Cmd+J panel: the open chat's live agents and their Claude background tasks, with a terminal
+// The Cmd+J panel: the open chat's live agents and their Claude and Codex background tasks, with a terminal
 // for the selected row (ADR 0104). An agent's terminal is its tmux pane; a background shell's is
 // its output file, read-only, since nothing outside Claude Code can type into it. The folder's own
 // shells are tmux sessions the owner opens here, which outlive the panel. One terminal is live at
@@ -11,25 +11,24 @@ import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } fro
 import type { App } from "../core/app";
 import { ApiError } from "../core/api";
 import { message, readStore, writeStore } from "../core/app-types";
-import { backgroundRows, poll, type BackgroundRow, type BackgroundTask, type WorkspaceShell } from "../core/background";
+import { backgroundRows, pickedKey, poll, type BackgroundRow, type WorkspaceShell } from "../core/background";
 import { Button } from "../components/ui/button";
+import { POLL_MS, useBackgroundTasks } from "./background-line";
 import { StatusGlyph } from "./status";
 import { SurfaceFind } from "./surface-find";
 import { terminalMatches } from "../core/background";
 import { useTheme } from "./appearance";
 
-const POLL_MS = 3000;
-
 const readShells = (app: App, session: string) => app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session });
 
 export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; session: string; focusRequest?: number }) {
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
-  const [tasks, setTasks] = useState<BackgroundTask[]>([]);
+  const tasks = useBackgroundTasks(app, session);
   const [shells, setShells] = useState<WorkspaceShell[]>([]);
   const [shellError, setShellError] = useState<string | null>(null);
   // A shell request in flight: a second click would make a second shell, or close one twice.
   const [busy, setBusy] = useState(false);
-  const [picked, setPicked] = useState<string | null>(() => readStore(`swarm.background.picked.${session}`));
+  const [picked, setPicked] = useState<string | null>(() => readStore(pickedKey(session)));
   const requested = useRef(0);
   // A click asks for focus once: the shown terminal takes it now, a new one when its socket opens.
   // Nothing else focuses, so a panel that opens with the chat, or a row that comes back, leaves
@@ -38,7 +37,7 @@ export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; 
   const shown = useRef<{ key: string; focus: () => void } | null>(null);
   const choose = (key: string) => {
     setPicked(key);
-    writeStore(`swarm.background.picked.${session}`, key);
+    writeStore(pickedKey(session), key);
     if (shown.current?.key === key) requestAnimationFrame(() => { if (shown.current?.key === key) shown.current.focus(); });
     else wanted.current = key;
   };
@@ -59,10 +58,7 @@ export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; 
     // A failed poll keeps the last list, and the next tick tries again.
     const end = poll(
       () =>
-        Promise.all([
-          app.api.get<{ tasks: BackgroundTask[] }>("/api/background", { session }).then((r) => !stop && setTasks(r.tasks)),
-          readShells(app, session).then((r) => !stop && setShells(r.shells)),
-        ]),
+        readShells(app, session).then((r) => !stop && setShells(r.shells)),
       POLL_MS,
       () => document.hidden,
     );
@@ -179,7 +175,7 @@ function Detail({ app, session, row, busy, onReady, onOwner, onClose }: { app: A
     <>
       <div className="flex items-center gap-2 border-b px-2 py-1 text-xs text-muted-foreground">
         <span className="min-w-0 flex-1 truncate">{task.summary ?? `${task.kind === "shell" ? "Shell" : "Subagent"} ${task.status}`}</span>
-        <Button variant="ghost" size="sm" title="Stop it with /tasks in the owner's terminal" onClick={() => onOwner(row.agent)}>
+        <Button variant="ghost" size="sm" title="Stop it from the owner's terminal" onClick={() => onOwner(row.agent)}>
           Open owner terminal
         </Button>
       </div>

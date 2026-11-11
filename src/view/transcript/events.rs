@@ -1,15 +1,56 @@
 //! Transcript rows for individual events.
 
 use super::super::tool;
+use super::checklist;
 use super::{
-    Record, Row, RowKind, TextPreview, chip, is_record, key, meta, peer_text, record_text,
-    shell_row, shell_run, string, tagged, task_summary,
+    RECORD, Record, Row, RowKind, TextPreview, UNMAPPED, chip, is_record, key, meta, peer_text,
+    record_text, shell_row, shell_run, string, tagged, task_summary,
 };
+use serde_json::Value;
+
+fn call_row_id(event: &Value) -> String {
+    format!("{}:call", string(event, "tool_call_id"))
+}
+
+/// A subagent's task text is cut to this many characters.
+const LABEL_CHARS: usize = 200;
+
+/// The calls that start a subagent: Claude `Agent` (older `Task`), Codex `spawn_agent`, AGY
+/// `invoke_subagent`. pi has no such tool (ADR 0140).
+fn is_subagent_call(name: &str) -> bool {
+    ["agent", "task", "spawn_agent", "invoke_subagent"]
+        .iter()
+        .any(|known| name.eq_ignore_ascii_case(known))
+}
+
+/// The agent's type and its task text, as each CLI names them. The Codex argument names changed
+/// between versions, so the text falls back through `message` and the first `items` text.
+pub(in crate::view) fn subagent_labels(input: &Value, name: &str) -> (String, String) {
+    let first = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|key| input[*key].as_str().filter(|text| !text.is_empty()))
+    };
+    let agent_type = first(&["subagent_type", "agent_type", "role"]).unwrap_or(name);
+    let item = input["items"]
+        .as_array()
+        .and_then(|items| items.iter().find_map(|item| item["text"].as_str()));
+    let description = first(&["description", "message", "prompt"])
+        .or(item)
+        .unwrap_or("");
+    let line = description.lines().next().unwrap_or("");
+    (agent_type.into(), line.chars().take(LABEL_CHARS).collect())
+}
 
 pub fn row(record: &Record) -> Option<Row> {
     let event = &record.event;
     let event_type = string(event, "type");
     let text = string(event, "text");
+    if event_type == "tool_call"
+        && let Some(row) =
+            checklist::tool_row(string(event, "name"), &event["input"], call_row_id(event))
+    {
+        return Some(row);
+    }
     let mut row = match event_type {
         "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk" => {
             let kind = match event_type {
@@ -18,6 +59,19 @@ pub fn row(record: &Record) -> Option<Row> {
                 _ => RowKind::Thought,
             };
             Row::new(kind, text.into(), meta(event, "uuid").into())
+        }
+        "proposed_plan" => Row::new(RowKind::ProposedPlan, text.into(), key(record, "plan")),
+        "tool_call" if is_subagent_call(string(event, "name")) => {
+            let (agent_type, description) = subagent_labels(&event["input"], string(event, "name"));
+            Row::new(
+                RowKind::Subagent,
+                if description.is_empty() {
+                    agent_type
+                } else {
+                    format!("{agent_type} · {description}")
+                },
+                format!("{}:call", string(event, "tool_call_id")),
+            )
         }
         "tool_call" => {
             let command = tool::command(&event["input"], string(event, "name"));
@@ -31,8 +85,9 @@ pub fn row(record: &Record) -> Option<Row> {
                 } else {
                     format!("{name} · {title}")
                 },
-                format!("{}:call", string(event, "tool_call_id")),
+                call_row_id(event),
             );
+
             row.detail = Some(event["input"].to_string());
             row.tool_status = Some(string(event, "status").into());
             row
@@ -170,6 +225,7 @@ pub fn row(record: &Record) -> Option<Row> {
                 "queue_operation" => string(event, "operation"),
                 _ => string(event, "kind"),
             };
+
             let mut row = Row::new(
                 RowKind::System,
                 [event_type, detail]
@@ -180,7 +236,15 @@ pub fn row(record: &Record) -> Option<Row> {
                 // Its own id form: a uuid-less queue edit also makes a queued row under `key`.
                 format!("record-{}", record.source_id),
             );
-            row.system_kind = Some("record".into());
+
+            // `ignored` is a decision; `unknown` is a line no parser maps, which the chat counts.
+            let kind = if event_type == "unknown" {
+                UNMAPPED
+            } else {
+                RECORD
+            };
+            row.system_kind = Some(kind.into());
+
             row.output = record.text_preview.clone();
             row
         }
@@ -224,7 +288,7 @@ pub fn row(record: &Record) -> Option<Row> {
                 event_type.into(),
                 format!("record-{}", record.source_id),
             );
-            row.system_kind = Some("record".into());
+            row.system_kind = Some(UNMAPPED.into());
             let mut preview = TextPreview::new(&record_text(event), 120);
             preview.id = format!("{}:output", record.source_id);
             row.output = Some(preview);
@@ -235,4 +299,63 @@ pub fn row(record: &Record) -> Option<Row> {
         row.id = format!("event-{}", record.source_id);
     }
     Some(row)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::{ToolState, builder};
+    use super::*;
+    use serde_json::json;
+
+    fn rows_of(events: Vec<Value>) -> Vec<Row> {
+        let records: Vec<_> = events
+            .into_iter()
+            .enumerate()
+            .map(|(index, event)| Record::new(event, format!("raw-{index}"), false))
+            .collect();
+        builder::rows(&records, false, false)
+    }
+
+    #[test]
+    fn each_cli_subagent_call_is_a_subagent_row_with_its_result() {
+        let cases = [
+            (
+                "Agent",
+                json!({"subagent_type": "Explore", "description": "Find the parser", "prompt": "long"}),
+                "Explore",
+                "Find the parser",
+            ),
+            (
+                "spawn_agent",
+                json!({"agent_type": "worker", "message": "Check the tests\nmore"}),
+                "worker",
+                "Check the tests",
+            ),
+            (
+                "invoke_subagent",
+                json!({"description": "Review it"}),
+                "invoke_subagent",
+                "Review it",
+            ),
+        ];
+
+        for (name, input, agent_type, description) in cases {
+            let rows = rows_of(vec![
+                json!({"type": "tool_call", "tool_call_id": "c1", "name": name, "input": input, "status": "pending"}),
+                json!({"type": "tool_call_update", "tool_call_id": "c1", "status": "completed", "content": "done: 3 files"}),
+            ]);
+
+            assert_eq!(rows.len(), 1, "{name}");
+            let run = rows[0].subagent.as_ref().expect(name);
+            assert_eq!(rows[0].kind, RowKind::Subagent);
+            assert_eq!(rows[0].tool, None);
+            assert_eq!(
+                (run.agent_type.as_str(), run.description.as_str()),
+                (agent_type, description)
+            );
+            assert_eq!(run.state, ToolState::Finished);
+            assert_eq!(run.result.as_ref().unwrap().text, "done: 3 files");
+            assert_eq!(run.call_id, "c1");
+        }
+    }
 }

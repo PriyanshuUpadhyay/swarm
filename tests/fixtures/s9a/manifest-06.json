@@ -34,7 +34,7 @@
   "parts": [
    "c34efbdaa0e8d908-000.json"
   ]
- },
+ , "HAND": {"note": "HAND: ADR 0139 (docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md), owner answer a, 2026-11-11. Only unknown rows change system_kind from record to unmapped. sha256 and bytes describe the ORIGINAL source capture.", "values": 1, "parts": {"c34efbdaa0e8d908-000.json": 1}}},
  "out-1/crlf-claude/raw-full.txt": {
   "sha256": "692cbbe23cc5cdd8804ff69a1fada5061d196a73124dc69366363c2fe83a882f",
   "parts": [

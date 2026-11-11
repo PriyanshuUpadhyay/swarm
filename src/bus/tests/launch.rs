@@ -108,7 +108,13 @@ mod tests {
                 "never"
             ]
         );
-        assert_eq!(codex_args.len(), 15 + 2 * CODEX_STATE_EVENTS.len());
+        // The summary pair is last, and missing only when the machine's own config sets it.
+        let fixed = 15 + 2 * CODEX_STATE_EVENTS.len();
+        match codex_args.len() - fixed {
+            0 => {}
+            2 => assert_eq!(codex_args[fixed + 1], "model_reasoning_summary=\"auto\""),
+            other => panic!("{other} extra Codex args"),
+        }
 
         let mut agy = role("agy");
         agy.permission = Some("skip".into());
