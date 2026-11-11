@@ -12,9 +12,12 @@ fn call_row_id(event: &Value) -> String {
     format!("{}:call", string(event, "tool_call_id"))
 }
 
+/// A subagent's task text is cut to this many characters.
+const LABEL_CHARS: usize = 200;
+
 /// The calls that start a subagent: Claude `Agent` (older `Task`), Codex `spawn_agent`, AGY
 /// `invoke_subagent`. pi has no such tool (ADR 0140).
-pub fn is_subagent_call(name: &str) -> bool {
+fn is_subagent_call(name: &str) -> bool {
     ["agent", "task", "spawn_agent", "invoke_subagent"]
         .iter()
         .any(|known| name.eq_ignore_ascii_case(known))
@@ -35,7 +38,7 @@ pub(in crate::view) fn subagent_labels(input: &Value, name: &str) -> (String, St
         .or(item)
         .unwrap_or("");
     let line = description.lines().next().unwrap_or("");
-    (agent_type.into(), line.chars().take(200).collect())
+    (agent_type.into(), line.chars().take(LABEL_CHARS).collect())
 }
 
 pub fn row(record: &Record) -> Option<Row> {
@@ -335,11 +338,13 @@ mod tests {
                 "Review it",
             ),
         ];
+
         for (name, input, agent_type, description) in cases {
             let rows = rows_of(vec![
                 json!({"type": "tool_call", "tool_call_id": "c1", "name": name, "input": input, "status": "pending"}),
                 json!({"type": "tool_call_update", "tool_call_id": "c1", "status": "completed", "content": "done: 3 files"}),
             ]);
+
             assert_eq!(rows.len(), 1, "{name}");
             let run = rows[0].subagent.as_ref().expect(name);
             assert_eq!(rows[0].kind, RowKind::Subagent);

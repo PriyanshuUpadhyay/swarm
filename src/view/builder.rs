@@ -234,6 +234,7 @@ pub(super) fn rows_with_context(
             };
             if row.kind == RowKind::Subagent {
                 let (agent_type, description) = subagent_labels(&input, name);
+
                 row.subagent = Some(SubagentRun {
                     call_id: string(event, "tool_call_id").into(),
                     agent_type,

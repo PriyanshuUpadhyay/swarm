@@ -10,8 +10,8 @@ mod shell;
 mod state;
 
 pub use checklist::TodoItem;
+pub use events::row;
 pub(super) use events::subagent_labels;
-pub use events::{is_subagent_call, row};
 pub use records::Record;
 pub(super) use shell::shell_row;
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run};
