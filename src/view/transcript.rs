@@ -52,6 +52,11 @@ pub struct ShellRun {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i64>,
 }
+/// `Row.system_kind` of a hidden bookkeeping record, such as an `ignored` event.
+pub const RECORD: &str = "record";
+/// `Row.system_kind` of a record no parser maps; the web counts these rows (ADR 0139).
+pub const UNMAPPED: &str = "unmapped";
+
 /// Absent fields have the same meaning as null, false, or an empty array.
 /// `id`, `kind`, `text`, and `order` are always present.
 #[derive(Clone, Debug, PartialEq, Serialize)]

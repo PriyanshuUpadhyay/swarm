@@ -1,10 +1,9 @@
 //! Transcript rows for individual events.
 
-use super::super::builder::UNMAPPED;
 use super::super::tool;
 use super::{
-    Record, Row, RowKind, TextPreview, chip, is_record, key, meta, peer_text, record_text,
-    shell_row, shell_run, string, tagged, task_summary,
+    RECORD, Record, Row, RowKind, TextPreview, UNMAPPED, chip, is_record, key, meta, peer_text,
+    record_text, shell_row, shell_run, string, tagged, task_summary,
 };
 
 pub fn row(record: &Record) -> Option<Row> {
@@ -171,6 +170,7 @@ pub fn row(record: &Record) -> Option<Row> {
                 "queue_operation" => string(event, "operation"),
                 _ => string(event, "kind"),
             };
+
             let mut row = Row::new(
                 RowKind::System,
                 [event_type, detail]
@@ -181,13 +181,15 @@ pub fn row(record: &Record) -> Option<Row> {
                 // Its own id form: a uuid-less queue edit also makes a queued row under `key`.
                 format!("record-{}", record.source_id),
             );
+
             // `ignored` is a decision; `unknown` is a line no parser maps, which the chat counts.
             let kind = if event_type == "unknown" {
                 UNMAPPED
             } else {
-                "record"
+                RECORD
             };
             row.system_kind = Some(kind.into());
+
             row.output = record.text_preview.clone();
             row
         }

@@ -1,5 +1,7 @@
 use super::tool;
-use super::transcript::{Record, Row, RowKind, chip, meta, row, shell_row, string};
+use super::transcript::{
+    RECORD, Record, Row, RowKind, UNMAPPED, chip, meta, row, shell_row, string,
+};
 use super::{TextPreview, ToolActivity, ToolState};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -338,9 +340,6 @@ pub(super) fn rows_with_context(
     rows
 }
 
-/// The `system_kind` of a record no parser maps; the web counts these rows (ADR 0139).
-pub const UNMAPPED: &str = "unmapped";
-
 pub fn is_collapsed(row: &Row) -> bool {
     (row.kind == RowKind::Notice
         && !row.starts_turn
@@ -352,6 +351,6 @@ pub fn is_collapsed(row: &Row) -> bool {
                 // Codex writes its setup prompt and AGENTS.md as developer and context messages.
                 || matches!(
                     row.system_kind.as_deref(),
-                    Some("injected" | "developer" | "context" | "record" | UNMAPPED)
+                    Some("injected" | "developer" | "context" | RECORD | UNMAPPED)
                 )))
 }
