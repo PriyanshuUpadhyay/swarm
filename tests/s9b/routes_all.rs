@@ -1,3 +1,4 @@
+include!("../serve/legacy_body.rs");
 // Shared real-route journey. Expected bytes come only from the OLD capture.
 use std::io::ErrorKind;
 use std::path::Path;
@@ -26,7 +27,7 @@ impl Cap {
     }
 }
 fn result() -> Value {
-    CAPTURE.with_borrow(|values| Value::Object(values.clone()))
+    CAPTURE.with_borrow(|values| without_body(Value::Object(values.clone())))
 }
 fn get(server: &Server, path: &str) -> String {
     let (status, _, body) = server.request("GET", path, "", "", true);

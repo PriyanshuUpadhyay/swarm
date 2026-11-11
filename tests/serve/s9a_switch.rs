@@ -1,6 +1,7 @@
 //! G3 keeps the existing route guards, then checks the captured Claude journey.
 use super::s9a_frozen as frozen;
 use super::*;
+include!("legacy_body.rs");
 
 mod captured {
     use super::*;
@@ -25,5 +26,6 @@ pub(super) fn journey() {
     // Reopen must keep the already captured final page, with the same session and source ids.
     expected["follow-claude-chair-run/page-03-reopen.txt"] =
         expected["follow-claude-chair-run/page-02-final.txt"].clone();
-    assert_eq!(captured::result(), expected);
+    let actual = without_body(captured::result());
+    assert_eq!(actual, expected);
 }

@@ -115,6 +115,7 @@ pub(super) async fn transcript_rows(
     if let Some(page) = cached_page {
         return tokio::task::spawn_blocking(move || {
             let display = view::markdown::row_displays(&page.rows);
+            let body = view::markdown::row_bodies(&page.rows, &display);
             let patch = view::patch_wire::row_patches(&page.rows);
             let find = view::find_wire::row_finds(&page.rows);
             let images = view::image_paths::row_images(&page.rows);
@@ -124,6 +125,7 @@ pub(super) async fn transcript_rows(
                 "usage": page.usage,
                 "remove": page.remove,
                 "display": display,
+                "body": body,
             "patch": patch,
                 "find": find,
                 "images": images,
@@ -184,6 +186,7 @@ pub(super) async fn transcript_rows(
     };
     tokio::task::spawn_blocking(move || {
         let display = view::markdown::row_displays(&page.rows);
+        let body = view::markdown::row_bodies(&page.rows, &display);
         let patch = view::patch_wire::row_patches(&page.rows);
         let find = view::find_wire::row_finds(&page.rows);
         let images = view::image_paths::row_images(&page.rows);
@@ -193,6 +196,7 @@ pub(super) async fn transcript_rows(
             "usage": page.usage,
             "remove": page.remove,
             "display": display,
+            "body": body,
             "patch": patch,
             "find": find,
             "images": images,

@@ -1,77 +1,68 @@
-// Step 5(g) slice S4 (contract PAINTER-V3 R1, V2 items 4 and 5): the map that came with the rows decides how a Markdown row is painted.
-// noteDisplay keeps one Display per row object, mergeRows keeps or replaces row objects, and bodyOf says what to paint:
-// html (no map: today's renderer), plain (no entry, the text as it is), or tree (the Display, when it holds no later block or inline).
-import { describe, expect, it } from "vitest";
+// S10e-2 C. Frozen ORIGINAL page/frame/older outcomes plus served-choice guards.
+import { describe, expect, it, vi } from "vitest";
+import original from "../../../tests/fixtures/s10e2/inputs-existing.json";
+import expected from "../../../tests/fixtures/s10e2/matches-existing.json";
+import hand from "../../../tests/fixtures/s10e2/inputs-hand.json";
 import type { Display, Row } from "./api";
-import { bodyOf, mergeRows, noteDisplay } from "./transcript";
+import type { App } from "./app";
+import { AppReader } from "./app-reader";
+import { AppStream } from "./app-stream";
+import { paintedBody } from "./body-paint.fixture";
 
-// A row as the server sends it; `order` is [source offset, event ordinal].
-const row = (id: string, offset: number, extra: Partial<Row> = {}): Row => ({ id, kind: "assistant", text: id, order: [offset, 0], ...extra });
 const say = (text: string): Display => ({ blocks: [{ type: "paragraph", value: [{ type: "text", value: text }] }] });
-// A later inline inside a quote: the check has to look through nesting.
-const laterInline: Display = {
-  blocks: [{ type: "blockquote", value: [{ type: "paragraph", value: [{ type: "text", value: "a" }, { type: "later", value: "inline" }] }] }],
-};
-const laterBlock: Display = { blocks: [{ type: "later", value: "block" }] };
 
-describe("bodyOf", () => {
-  it("follows the map of a page, of a frame that replaces and removes, and of a page without a map", () => {
-    // The tail page: five rows and a fold with one step. The fold and "no-entry" have no entry in the map.
-    const tail = [
-      row("replaced", 10),
-      row("removed", 20),
-      row("untouched", 30),
-      row("no-entry", 40),
-      row("later-inline", 50),
-      row("later-block", 55),
-      row("fold", 70, { kind: "fold", steps: [row("fold-step", 60)] }),
-    ];
-    noteDisplay(tail, {
-      replaced: say("first"),
-      removed: say("gone"),
-      untouched: say("kept"),
-      "later-inline": laterInline,
-      "later-block": laterBlock,
-      "fold-step": say("step"),
-    });
-    let rows = mergeRows([], tail);
+describe("served saved body", () => {
+  it("keeps ORIGINAL paint across a page, replacing frame and older page, and requires served tree with its Display", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => setTimeout(callback, 16));
+    try {
+      const source = structuredClone(original);
+      const older = [{ id: "older", kind: "assistant", text: "older", order: [5, 0] }];
+      let page: unknown = {
+        rows: source.tail, display: source.display,
+        body: { replaced: "tree", removed: "tree", untouched: "tree", "no-entry": "tree", "later-inline": "plain", "later-block": "plain", "fold-step": "tree" },
+        page: { start_offset: 5, end_offset: 100 }, usage: null,
+      };
+      const app = {
+        chats: new Map(), pending: new Map(), openId: "s", frame: 0,
+        composing: { chair: () => ({ queue: [] }) }, notify: () => {},
+        api: { rows: async () => structuredClone(page) },
+      };
+      const reader = new AppReader(app as unknown as App);
+      const stream = new AppStream(app as unknown as App);
+      const chat = reader.newChat("s");
+      await reader.loadTail(chat);
+      const originalText = new Map(source.tail.flatMap(r => [r, ...(r.steps ?? [])]).map(r => [r.id, r.text]));
+      stream.onSse({ event: "rows", data: JSON.stringify({ key: "s:chair", upsert: source.upsert, remove: source.remove, display: source.upsertDisplay, body: { replaced: "tree" }, end_offset: 120 }) });
+      vi.advanceTimersByTime(16);
+      // An absent body map cannot authorize this older server's raw Display.
+      page = { rows: older, display: { older: say("older") }, page: { start_offset: 0, end_offset: 5 }, usage: null };
+      await reader.loadOlder("s");
+      const by = new Map(chat.rows.flatMap(r => [r, ...(r.steps ?? [])]).map(r => [r.id, r]));
+      const observed = {
+        ids: chat.rows.map(r => r.id),
+        bodies: expected.bodies.map(([id]) => [id, paintedBody(by.get(String(id))!)]),
+      };
+      const texts = [...by.values()].map(r => [r.id, r.text]);
+      const expectedTexts = [...by.values()].map(r => [r.id, r.id === "replaced" ? "second" : r.id === "older" ? "older" : originalText.get(r.id)]);
 
-    // A frame: "replaced" comes again with new text and a new Display, "removed" goes, "untouched" is not in the frame.
-    const upsert = [row("replaced", 10, { text: "second" })];
-    noteDisplay(upsert, { replaced: say("second") });
-    rows = mergeRows(rows, upsert, ["removed"]);
-
-    // An older page with no map: its row has no note, and a call with no map changes no note.
-    const older = [row("older", 5)];
-    noteDisplay(older, undefined);
-    rows = mergeRows(rows, older);
-    noteDisplay(rows, undefined);
-
-    const by = (id: string) => rows.find((r) => r.id === id) as Row;
-    const observed = {
-      ids: rows.map((r) => r.id),
-      bodies: [
-        ["replaced", bodyOf(by("replaced"))],
-        ["untouched", bodyOf(by("untouched"))],
-        ["no-entry", bodyOf(by("no-entry"))],
-        ["later-inline", bodyOf(by("later-inline"))],
-        ["later-block", bodyOf(by("later-block"))],
-        ["fold-step", bodyOf((by("fold").steps as Row[])[0])],
-        ["older", bodyOf(by("older"))],
-      ],
-    };
-
-    expect(observed).toEqual({
-      ids: ["older", "replaced", "untouched", "no-entry", "later-inline", "later-block", "fold"],
-      bodies: [
-        ["replaced", { kind: "tree", display: say("second") }],
-        ["untouched", { kind: "tree", display: say("kept") }],
-        ["no-entry", { kind: "plain" }],
-        ["later-inline", { kind: "plain" }],
-        ["later-block", { kind: "plain" }],
-        ["fold-step", { kind: "tree", display: say("step") }],
-        ["older", { kind: "plain" }],
-      ],
-    });
+      // The mode is external input: absent, null and new values mean plain.
+      const control = hand.find(c => c.id === "hand-present")!.display!.p as Display;
+      const guards: Row[] = ["plain", "missing", "null", "unknown", "tree-without-display"].map((id, i) => ({ id, kind: "assistant", text: "p", order: [200 + i, 0] }));
+      page = {
+        rows: guards, display: Object.fromEntries(guards.filter(r => r.id !== "tree-without-display").map(r => [r.id, control])),
+        body: { plain: "plain", null: null, unknown: "future", "tree-without-display": "tree" },
+        page: { start_offset: 0, end_offset: 300 }, usage: null,
+      };
+      const guarded = reader.newChat("g");
+      await reader.loadTail(guarded);
+      expect({ observed, texts, guards: guarded.rows.map(r => ({ body: paintedBody(r), text: r.text })) }).toEqual({
+        observed: expected, texts: expectedTexts,
+        guards: guards.map(() => ({ body: { kind: "plain" }, text: "p" })),
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 });

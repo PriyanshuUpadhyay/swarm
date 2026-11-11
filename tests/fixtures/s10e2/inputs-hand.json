@@ -1,0 +1,321 @@
+[
+  {
+    "id": "hand-present",
+    "row": {
+      "id": "p",
+      "kind": "assistant",
+      "text": "p",
+      "order": [
+        1,
+        0
+      ]
+    },
+    "display": {
+      "p": {
+        "blocks": [
+          {
+            "type": "heading",
+            "value": {
+              "depth": 2,
+              "children": [
+                {
+                  "type": "emphasis",
+                  "value": [
+                    {
+                      "type": "strong",
+                      "value": [
+                        {
+                          "type": "delete",
+                          "value": [
+                            {
+                              "type": "link",
+                              "value": {
+                                "url": "https://e.test",
+                                "title": null,
+                                "children": [
+                                  {
+                                    "type": "text",
+                                    "value": "ready"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "type": "list",
+            "value": {
+              "ordered": false,
+              "start": null,
+              "tight": true,
+              "items": [
+                [
+                  {
+                    "type": "blockquote",
+                    "value": [
+                      {
+                        "type": "paragraph",
+                        "value": [
+                          {
+                            "type": "code",
+                            "value": "x"
+                          },
+                          {
+                            "type": "break"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "type": "table",
+            "value": {
+              "source": "| h |",
+              "align": [
+                "none"
+              ],
+              "head": [
+                [
+                  {
+                    "type": "text",
+                    "value": "h"
+                  }
+                ]
+              ],
+              "rows": [
+                [
+                  [
+                    {
+                      "type": "text",
+                      "value": "v"
+                    }
+                  ]
+                ]
+              ]
+            }
+          },
+          {
+            "type": "thematic_break"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "hand-absent",
+    "row": {
+      "id": "p",
+      "kind": "assistant",
+      "text": "p",
+      "order": [
+        1,
+        0
+      ]
+    }
+  },
+  {
+    "id": "hand-missing-entry",
+    "row": {
+      "id": "p",
+      "kind": "assistant",
+      "text": "p",
+      "order": [
+        1,
+        0
+      ]
+    },
+    "display": {}
+  },
+  {
+    "id": "hand-later-inline",
+    "row": {
+      "id": "p",
+      "kind": "assistant",
+      "text": "p",
+      "order": [
+        1,
+        0
+      ]
+    },
+    "display": {
+      "p": {
+        "blocks": [
+          {
+            "type": "blockquote",
+            "value": [
+              {
+                "type": "paragraph",
+                "value": [
+                  {
+                    "type": "text",
+                    "value": "a"
+                  },
+                  {
+                    "type": "later",
+                    "value": "inline"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "hand-later-block",
+    "row": {
+      "id": "p",
+      "kind": "assistant",
+      "text": "p",
+      "order": [
+        1,
+        0
+      ]
+    },
+    "display": {
+      "p": {
+        "blocks": [
+          {
+            "type": "later",
+            "value": "block"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "hand-mixed-patch",
+    "row": {
+      "id": "p",
+      "kind": "assistant",
+      "text": "p",
+      "order": [
+        1,
+        0
+      ]
+    },
+    "display": {
+      "p": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "before"
+              }
+            ]
+          },
+          {
+            "type": "code",
+            "value": {
+              "label": "diff",
+              "text": "@@ -1 +1 @@\n-a\n+b\n",
+              "diff": {
+                "prefix": [
+                  {
+                    "kind": "ctx",
+                    "text": "later metadata is not a Display node"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "after"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "hand-mixed-patch-later",
+    "row": {
+      "id": "p",
+      "kind": "assistant",
+      "text": "p",
+      "order": [
+        1,
+        0
+      ]
+    },
+    "display": {
+      "p": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "before"
+              }
+            ]
+          },
+          {
+            "type": "code",
+            "value": {
+              "label": "diff",
+              "text": "@@ -1 +1 @@\n-a\n+b\n",
+              "diff": {
+                "prefix": [
+                  {
+                    "kind": "ctx",
+                    "text": "later metadata is not a Display node"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "after"
+              }
+            ]
+          },
+          {
+            "type": "later",
+            "value": "block"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "hand-empty-text",
+    "row": {
+      "id": "p",
+      "kind": "assistant",
+      "text": "",
+      "order": [
+        1,
+        0
+      ]
+    },
+    "display": {
+      "p": {
+        "blocks": []
+      }
+    }
+  }
+]

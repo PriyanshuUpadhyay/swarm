@@ -5,6 +5,7 @@ use swarm::view::transcript::reader_rows::RowDelta;
 
 pub(super) fn row_frame(key: &str, delta: RowDelta) -> Frame {
     let display = view::markdown::row_displays(&delta.upsert);
+    let body = view::markdown::row_bodies(&delta.upsert, &display);
     let patch = view::patch_wire::row_patches(&delta.upsert);
     let find = view::find_wire::row_finds(&delta.upsert);
     let images = view::image_paths::row_images(&delta.upsert);
@@ -14,6 +15,7 @@ pub(super) fn row_frame(key: &str, delta: RowDelta) -> Frame {
         "remove": delta.remove,
         "end_offset": delta.end_offset,
         "display": display,
+        "body": body,
         "patch": patch,
         "find": find,
         "images": images,

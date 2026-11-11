@@ -9,6 +9,7 @@ import { AppReader } from "./app-reader";
 import { AppStream } from "./app-stream";
 import type { Chat } from "./app-types";
 import { FoldChoices, bodyOf } from "./transcript";
+import { paintedBody } from "./body-paint.fixture";
 
 const text = (value: string) => ({ type: "text" as const, value });
 const strong = (value: string) => ({ type: "strong" as const, value: [text(value)] });
@@ -100,65 +101,78 @@ describe("live display", () => {
   });
 });
 
+// Live tests above keep bodyOf and the exact prefix behavior.
 describe("queue display", () => {
   const queue = [
-    { images: [], mode: "steering", text: "**b**", display: bold, id: "queue-0", detail: "Steering" },
-    { images: [], mode: "steering", text: "plain note", display: null, id: "queue-1", detail: "Steering" },
-    { images: [], mode: "steering", text: "from an older server", id: "queue-2", detail: "Steering" },
+    { images: [], mode: "steering", text: "**b**", display: bold, body: "tree", id: "queue-0", detail: "Steering" },
+    { images: [], mode: "steering", text: "plain note", display: null, body: "tree", id: "queue-1", detail: "Steering" },
+    { images: [], mode: "steering", text: "from an older server", display: bold, id: "queue-2", detail: "Steering" },
   ];
-  const bodies = (chat: Chat) => chat.queue.map((row) => bodyOf(row));
+  const bodies = (chat: Chat) => chat.queue.map(paintedBody);
   const expected = [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "plain" }];
 
-  it("paints a queue row from its display when the chat is built", () => {
-    const app = { chats: new Map(), composing: { chair: () => ({ queue }) } };
-    const chat = new AppReader(app as unknown as App).newChat("s");
-    expect(bodies(chat)).toEqual(expected);
+  it("paints a queue row only with served tree and its Display when the chat is built", () => {
+    vi.useFakeTimers();
+    try {
+      const app = { chats: new Map(), composing: { chair: () => ({ queue }) } };
+      const chat = new AppReader(app as unknown as App).newChat("s");
+      expect({ bodies: bodies(chat), text: chat.queue.map(r => r.text) }).toEqual({ bodies: expected, text: queue.map(q => q.text) });
+    } finally { vi.useRealTimers(); }
   });
 
-  it("paints a queue row from its display when a snapshot brings the item", () => {
-    let items: typeof queue = [];
-    const app = { chats: new Map(), composing: { chair: () => ({ queue: items }) }, inputs: new Map(), reading: {}, visible: [], liveAll: false };
-    const chat = new AppReader(app as unknown as App).newChat("s");
-    items = queue;
-    new AppStream(app as unknown as App).applySnapshot({ version: 2, sessions: [], agents: {} } as Snapshot);
-    expect(bodies(chat)).toEqual(expected);
+  it("paints a queue row only with served tree and its Display when a snapshot brings the item", () => {
+    vi.useFakeTimers();
+    try {
+      let items: typeof queue = [];
+      const app = { chats: new Map(), composing: { chair: () => ({ queue: items }) }, inputs: new Map(), reading: {}, visible: [], liveAll: false };
+      const chat = new AppReader(app as unknown as App).newChat("s");
+      items = queue;
+      new AppStream(app as unknown as App).applySnapshot({ version: 2, sessions: [], agents: {} } as Snapshot);
+      expect({ bodies: bodies(chat), text: chat.queue.map(r => r.text) }).toEqual({ bodies: expected, text: queue.map(q => q.text) });
+    } finally { vi.useRealTimers(); }
   });
 });
 
-// S8C-QUEUE-V2 T2. HAND network metadata deliberately differs from mode/index.
-// OLD q-two supplies complete Rows; no candidate function computes expectations.
+// S10e-2: reuse the S8c queue flow; the served mode can change by itself.
 describe("S8c queue wire", () => {
-  it("uses served queue ids and labels for first paint, refresh and clear", () => {
-    let items: { mode: string; text: string; id: string; detail: string; images: string[]; display?: Display | null }[] = [
-      { images: [], mode: "steering", text: "**b**", id: "served-7", detail: "From wire", display: bold },
-      { images: [], mode: "follow-up", text: "plain note", id: "served-9", detail: "Kept label", display: null },
-      { images: [], mode: "steering", text: "without display", id: "served-11", detail: "Third label" },
-    ];
-    const app = { chats: new Map(), composing: { chair: () => ({ queue: items }) }, inputs: new Map(), reading: {}, visible: [], liveAll: false };
-    const reader = new AppReader(app as unknown as App);
-    const chat = reader.newChat("s");
-    const first = { rows: chat.queue, bodies: chat.queue.map(bodyOf) };
-    const stream = new AppStream(app as unknown as App);
-    // HAND: the refresh labels differ from their modes, so a browser that rebuilds detail from mode fails.
-    items = frozenQueue.wire.map(q => ({ ...q, detail: `Served ${q.detail}` })) as typeof items;
-    stream.applySnapshot({ version: 2, sessions: [], agents: {} } as Snapshot);
-    const refreshed = { rows: chat.queue, bodies: chat.queue.map(bodyOf) };
-    items = [];
-    stream.applySnapshot({ version: 3, sessions: [], agents: {} } as Snapshot);
-    expect({ first, refreshed, cleared: chat.queue }).toEqual({
-      first: {
-        rows: [
-          { id: "served-7", kind: "queued", text: "**b**", detail: "From wire", order: [9007199254740991, 0] },
-          { id: "served-9", kind: "queued", text: "plain note", detail: "Kept label", order: [9007199254740991, 1] },
-          { id: "served-11", kind: "queued", text: "without display", detail: "Third label", order: [9007199254740991, 2] },
-        ],
-        bodies: [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "plain" }],
-      },
-      refreshed: {
-        rows: frozenQueue.rows.map(r => ({ ...r, detail: `Served ${r.detail}` })),
-        bodies: frozenQueue.wire.map(q => ({ kind: "tree", display: q.display })),
-      },
-      cleared: [],
-    });
+  it("uses served queue choices for first paint, refresh, mode-only refresh and clear", () => {
+    vi.useFakeTimers();
+    try {
+      let items: { mode: string; text: string; id: string; detail: string; images: string[]; display?: Display | null; body?: string | null }[] = [
+        { images: [], mode: "steering", text: "**b**", id: "served-7", detail: "From wire", display: bold, body: "tree" },
+        { images: [], mode: "follow-up", text: "plain note", id: "served-9", detail: "Kept label", display: null, body: "tree" },
+        { images: [], mode: "steering", text: "without display", id: "served-11", detail: "Third label", display: bold, body: "future" },
+      ];
+      const app = { chats: new Map(), composing: { chair: () => ({ queue: items }) }, inputs: new Map(), reading: {}, visible: [], liveAll: false };
+      const reader = new AppReader(app as unknown as App);
+      const chat = reader.newChat("s");
+      const first = { rows: chat.queue, bodies: chat.queue.map(paintedBody) };
+      const stream = new AppStream(app as unknown as App);
+      items = frozenQueue.wire.map(q => ({ ...q, detail: `Served ${q.detail}`, body: "tree" })) as typeof items;
+      stream.applySnapshot({ version: 2, sessions: [], agents: {} } as Snapshot);
+      const refreshed = { rows: chat.queue, bodies: chat.queue.map(paintedBody) };
+      // These snapshots keep ids, text, labels and images; only body changes.
+      const modeOnly = ["plain", null, undefined, "future"].map((body, i) => {
+        items = items.map(q => ({ ...q, body }));
+        stream.applySnapshot({ version: 3 + i, sessions: [], agents: {} } as Snapshot);
+        return { rows: chat.queue, bodies: chat.queue.map(paintedBody) };
+      });
+      items = [];
+      stream.applySnapshot({ version: 7, sessions: [], agents: {} } as Snapshot);
+      const refreshedRows = frozenQueue.rows.map(r => ({ ...r, detail: `Served ${r.detail}` }));
+      expect({ first, refreshed, modeOnly, cleared: chat.queue }).toEqual({
+        first: {
+          rows: [
+            { id: "served-7", kind: "queued", text: "**b**", detail: "From wire", order: [9007199254740991, 0] },
+            { id: "served-9", kind: "queued", text: "plain note", detail: "Kept label", order: [9007199254740991, 1] },
+            { id: "served-11", kind: "queued", text: "without display", detail: "Third label", order: [9007199254740991, 2] },
+          ],
+          bodies: [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "plain" }],
+        },
+        refreshed: { rows: refreshedRows, bodies: frozenQueue.wire.map(q => ({ kind: "tree", display: q.display })) },
+        modeOnly: ["plain", null, undefined, "future"].map(() => ({ rows: refreshedRows, bodies: frozenQueue.rows.map(() => ({ kind: "plain" })) })),
+        cleared: [],
+      });
+    } finally { vi.useRealTimers(); }
   });
 });

@@ -1,5 +1,6 @@
 //! G2 drives the actual HTTP router on TCP; only source selection is test-visible.
 use super::*;
+include!("../../../tests/serve/legacy_body.rs");
 use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Read, Write},
@@ -175,5 +176,6 @@ fn drop_pings(value: Value) -> Value {
 #[test]
 fn g2_real_routes_with_the_rust_caller_match_every_old_context() {
     all();
-    assert_eq!(drop_pings(result()), drop_pings(frozen::expected(&[])));
+    let actual = without_body(result());
+    assert_eq!(drop_pings(actual), drop_pings(frozen::expected(&[])));
 }

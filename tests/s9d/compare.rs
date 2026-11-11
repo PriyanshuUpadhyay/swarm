@@ -1,3 +1,4 @@
+include!("../serve/legacy_body.rs");
 fn empty_client(key: &str) -> Value {
     json!({"rows":{},"display":{},"patch":{},"find":{},"images":{},"usage":null,"end_offset":0,
         "live":{"key":key,"text":null,"thinking":null,"display":null,"ended":false,"hide_text":false,"hide_thinking":false}})
@@ -176,7 +177,7 @@ impl Drop for RowCheck {
     }
 }
 fn assert_capture(mode: &str, actual: &Value) {
-    let mut actual = actual.clone();
+    let mut actual = without_body(actual.clone());
     let mut expected = frozen::expected(&[&format!("{mode}/")]);
     for values in [&mut actual, &mut expected] {
         for (name, value) in values.as_object_mut().unwrap() {

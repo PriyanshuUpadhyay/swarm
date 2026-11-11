@@ -1,7 +1,7 @@
 import { sleep, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import type { Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
-import { imagesOf, mergeRows, noteDisplay, noteFind, noteImages, notePatch, units } from "./transcript";
+import { bodyModeOf, displayOf, imagesOf, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, units } from "./transcript";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
 
@@ -34,10 +34,13 @@ export class AppStream {
         order: [Number.MAX_SAFE_INTEGER, i],
       }));
       if (JSON.stringify(queue) === JSON.stringify(chat.queue)
-        && queue.every((_, i) => JSON.stringify(items[i].images ?? []) === JSON.stringify(imagesOf(chat.queue[i])))) continue;
+        && queue.every((_, i) => JSON.stringify(items[i].images ?? []) === JSON.stringify(imagesOf(chat.queue[i]))
+          && JSON.stringify(items[i].display ?? null) === JSON.stringify(displayOf(chat.queue[i]) ?? null)
+          && (items[i].body ?? null) === bodyModeOf(chat.queue[i]))) continue;
       chat.queue = queue;
       queue.forEach((row, i) => {
         noteImages([row], { [row.id]: items[i].images ?? [] });
+        noteBody([row], { [row.id]: items[i].body ?? null });
         const display = items[i].display;
         if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
       });
@@ -198,6 +201,7 @@ export class AppStream {
           continue;
         }
         noteDisplay(f.upsert ?? [], f.display);
+        noteBody(f.upsert ?? [], f.body);
         notePatch(f.upsert ?? [], f.patch);
         noteFind(f.upsert ?? [], f.find);
         noteImages(f.upsert ?? [], f.images);

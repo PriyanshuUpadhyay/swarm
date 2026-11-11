@@ -41,6 +41,20 @@ pub fn row_displays(rows: &[super::Row]) -> std::collections::BTreeMap<String, d
     displays
 }
 
+/// Pair each row and step with the painter for its already parsed Display.
+pub fn row_bodies(
+    rows: &[super::Row],
+    displays: &std::collections::BTreeMap<String, display::Display>,
+) -> std::collections::BTreeMap<String, display::BodyMode> {
+    let mut bodies = std::collections::BTreeMap::new();
+    let mut pending: Vec<_> = rows.iter().rev().collect();
+    while let Some(row) = pending.pop() {
+        pending.extend(row.steps.iter().rev());
+        bodies.insert(row.id.clone(), display::body_mode(displays.get(&row.id)));
+    }
+    bodies
+}
+
 fn prelude(source: &str) -> std::borrow::Cow<'_, str> {
     // Each CRLF makes later byte offsets 1 smaller; each NUL adds 2.
     // Later columns on a NUL's line can move too (tabs snap to 4-column stops).

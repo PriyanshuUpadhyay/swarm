@@ -2,7 +2,7 @@
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, LoaderCircleIcon, MailIcon, PencilIcon } from "lucide-react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
-import { bodyOf, duration, imagesOf, wordAt, type Line } from "../core/transcript";
+import { duration, imagesOf, paintBodyOf, wordAt, type Line } from "../core/transcript";
 import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
 import { MarkdownView } from "./markdown-view";
@@ -40,7 +40,7 @@ const LABEL: Partial<Record<Row["kind"], string>> = {
 };
 
 function MdBody({ row }: { row: Row }) {
-  const body = bodyOf(row);
+  const body = paintBodyOf(row);
   switch (body.kind) {
     case "plain":
       return <div className="whitespace-pre-wrap">{row.text}</div>;

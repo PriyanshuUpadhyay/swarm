@@ -1,7 +1,7 @@
 
 
 import type { Usage } from "./composer";
-import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteDisplay, noteFind, noteImages, notePatch, partsOf, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, noteLiveDisplay, notePatch, partsOf, type Line } from "./transcript";
 import { ApiError, type Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -24,7 +24,7 @@ export class AppReader {
     const text = chat.liveShown === 0 ? null : display === null ? chat.live?.slice(0, chat.liveShown) ?? null : chat.live;
     const live = liveRows(text, chat.liveThinking, chat);
     const row = live.find((row) => row.id === "live");
-    if (row && display !== null) noteDisplay([row], { live: cut(display, chat.liveShown) });
+    if (row) noteLiveDisplay(row, display === null ? null : cut(display, chat.liveShown));
     const rows = live.length || chat.queue.length ? [...chat.rows, ...live, ...chat.queue] : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
@@ -68,6 +68,7 @@ export class AppReader {
     }));
     chat.queue.forEach((row, i) => {
       noteImages([row], { [row.id]: queue[i].images ?? [] });
+      noteBody([row], { [row.id]: queue[i].body ?? null });
       const display = queue[i].display;
       if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
     });
@@ -95,6 +96,7 @@ export class AppReader {
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL);
       noteDisplay(page.rows, page.display);
+      noteBody(page.rows, page.body);
       notePatch(page.rows, page.patch);
       noteFind(page.rows, page.find);
       noteImages(page.rows, page.images);
@@ -238,6 +240,7 @@ export class AppReader {
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL, chat.older);
       noteDisplay(page.rows, page.display);
+      noteBody(page.rows, page.body);
       notePatch(page.rows, page.patch);
       noteFind(page.rows, page.find);
       noteImages(page.rows, page.images);

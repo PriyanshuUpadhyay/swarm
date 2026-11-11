@@ -1,5 +1,7 @@
 //! Tests for server live rows.
 
+include!("../../../tests/serve/legacy_body.rs");
+
 use super::*;
 use crate::serve::test_support::*;
 use swarm::view::transcript::source_follow::ingest_log_line;
@@ -164,7 +166,10 @@ fn live_chunks_match_full_frames_for_claude_and_codex() {
             }
             reference.ingest(index as u64, index as u64 + 1, &[event]);
             let expected = reference_delta(&mut reference, "chat");
-            let actual = row_frame("chat", incremental.delta()).data;
+            let actual = without_body(
+                serde_json::from_str(&row_frame("chat", incremental.delta()).data).unwrap(),
+            )
+            .to_string();
             assert_eq!(actual, expected.to_string(), "event {index}, codex={codex}");
         }
         assert_eq!(incremental.rows(), reference.last_rows);
@@ -196,7 +201,9 @@ fn trimmed_history_has_the_same_live_frames() {
         reference.ingest(index as u64 + 1, index as u64 + 2, &[event]);
         if index % 8 == 7 {
             assert_eq!(
-                serde_json::from_str::<Value>(&row_frame("chat", live.delta()).data).unwrap(),
+                without_body(
+                    serde_json::from_str::<Value>(&row_frame("chat", live.delta()).data).unwrap()
+                ),
                 reference_delta(&mut reference, "chat"),
                 "event {index}"
             );

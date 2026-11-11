@@ -1,0 +1,66 @@
+[
+  {
+    "id": "original-replaced",
+    "text": "second",
+    "body": "tree",
+    "source": "matches-existing.json replaced"
+  },
+  {
+    "id": "original-untouched",
+    "text": "kept",
+    "body": "tree",
+    "source": "matches-existing.json untouched"
+  },
+  {
+    "id": "original-fold-step",
+    "text": "step",
+    "body": "tree",
+    "source": "matches-existing.json fold-step"
+  },
+  {
+    "id": "original-older",
+    "text": "older",
+    "block": "thinking",
+    "body": "plain",
+    "source": "matches-existing.json older; no Display row"
+  },
+  {
+    "id": "original-no-entry",
+    "text": "no-entry",
+    "block": "thinking",
+    "body": "plain",
+    "source": "matches-existing.json no-entry"
+  },
+  {
+    "id": "hand-absent",
+    "text": "hand absent",
+    "block": "thinking",
+    "body": "plain",
+    "source": "hand-expected.json hand-absent"
+  },
+  {
+    "id": "hand-missing-entry",
+    "text": "hand missing",
+    "block": "thinking",
+    "body": "plain",
+    "source": "hand-expected.json hand-missing-entry"
+  },
+  {
+    "id": "hand-present",
+    "text": "## *~~**[ready](https://e.test)**~~*\n\n- > `x`  \n  > y\n\n| h |\n|---|\n| v |\n\n---",
+    "body": "tree",
+    "source": "hand-expected.json hand-present; same no-later containers, real table source and break"
+  },
+  {
+    "id": "hand-mixed-patch",
+    "text": "before\n\n```diff\n@@ -1 +1 @@\n-a\n+b\n```\n\nafter",
+    "body": "tree",
+    "source": "hand-expected.json hand-mixed-patch; real patch metadata"
+  },
+  {
+    "id": "hand-empty-text",
+    "text": "",
+    "body": "tree",
+    "source": "hand-expected.json hand-empty-text"
+  }
+]

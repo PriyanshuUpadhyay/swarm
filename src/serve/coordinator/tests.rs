@@ -1,5 +1,7 @@
 //! Tests for coordinator agent snapshots.
 
+include!("../../../tests/serve/legacy_body.rs");
+
 use super::*;
 use crate::all_agent_listings;
 use crate::serve::test_support::Fixture;
@@ -170,10 +172,10 @@ fn a_queued_message_carries_its_display_and_a_missing_listing_keeps_it() {
         {"mode":"steering","text":"second queued note that is quite long so that it will need to be cut by the truncated...","id":"queue-1","detail":"Steering","images":[],
          "display":{"blocks":[{"type":"paragraph","value":[{"type":"text","value":"second queued note that is quite long so that it will need to be cut by the truncated..."}]}]}}
     ]);
-    assert_eq!(
+    let actual = without_body(
         json!({"first":first[&fixture.session][0]["queue"],"kept":kept[&fixture.session][0]["queue"]}),
-        json!({"first":queue,"kept":queue})
     );
+    assert_eq!(actual, json!({"first":queue,"kept":queue}));
 }
 
 #[test]

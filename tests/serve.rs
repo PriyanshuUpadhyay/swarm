@@ -439,3 +439,6 @@ mod s9c_switch;
 
 #[path = "serve/s9d_switch.rs"]
 mod s9d_switch;
+
+#[path = "serve/body_wire.rs"]
+mod body_wire;

@@ -2,7 +2,7 @@ import "./ux-chat-images";
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { row, rows, open, mockRows } from "./ux-helpers";
+import { bodyMode, row, rows, open, mockRows } from "./ux-helpers";
 import fencePainter from "../../tests/fixtures/s6c/painter.json" with { type: "json" };
 import type { Display, PatchInfo } from "../src/core/api";
 import previewPatch from "./fixtures/s6a-preview.json" with { type: "json" };
@@ -253,6 +253,7 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
   tool.diff = { id: "fence-tool", path: "x", patch: "@@ -1 +1 @@\n-tool-raw\n+tool-raw\n", added: 1, removed: 1, omitted_lines: 0, shortened_lines: 0, full_lines: 5, full_bytes: 48 };
   const page = rows([fence, tool], 0, { "fence-tool": fencePainter.patch as PatchInfo });
   page.display![fence.id] = fencePainter.display as Display;
+  page.body![fence.id] = bodyMode(page.display![fence.id]);
   await tab.route("**/api/rows?*", route => route.fulfill({ json: page }));
   await open(tab);
   const hunk = tab.locator('[data-id="fence1"] .md-code').nth(0);

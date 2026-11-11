@@ -111,6 +111,9 @@ export type Row = {
   order: [number, number];
 };
 
+// Unknown or absent body modes select plain text.
+export type BodyMode = string | null;
+
 export type Display = { blocks: Block[] };
 
 export type Block =
@@ -147,10 +150,10 @@ export type FindSnapshot = { version: 1; query: string; rows: readonly Row[]; fi
 // Keep equal to ROWS_FIND_LIMIT in src/serve/row_pages.rs.
 export const FIND_ROWS_LIMIT_BYTES = 16 * 1024 * 1024;
 
-export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
+export type RowPage = { page: Page; rows: Row[]; usage: unknown; remove?: string[]; display?: Record<string, Display>; body?: Record<string, BodyMode> | null; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
 
 /** One `rows` stream frame. `usage` is there only when it changed; null clears it. */
-export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display>; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
+export type RowFrame = { key: string; upsert?: Row[]; remove?: string[]; end_offset: number; usage?: unknown; display?: Record<string, Display>; body?: Record<string, BodyMode> | null; patch?: Record<string, PatchInfo>; find?: Record<string, FindPart[]>; images?: Record<string, string[]> };
 
 export type SubscribeKey = { key: string; from: number; view: "rows" };
 

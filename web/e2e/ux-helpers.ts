@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import type { Display, FindPart, PatchInfo, Row, RowPage } from "../src/core/api";
+import type { Block, Display, FindPart, Inline, PatchInfo, Row, RowPage } from "../src/core/api";
 
 export const row = (id: string, text: string, kind: Row["kind"] = "assistant"): Row => ({ id, kind, text, order: [Number(id.replace(/\D/g, "")) || 1, 0] });
 function displayOf(item: Row): Display {
@@ -13,14 +13,32 @@ function displayOf(item: Row): Display {
   }
   return { blocks: item.text.split(/\n[ \t]*\n/).filter(Boolean).map((text) => ({ type: "paragraph", value: [{ type: "text", value: text }] })) };
 }
-export const rows = (items: Row[], older = 0, patch: Record<string, PatchInfo> = {}, find: Record<string, FindPart[]> = {}): RowPage => ({
-  rows: items,
-  patch,
-  find,
-  page: { start_offset: older, end_offset: 500 },
-  usage: null,
-  display: Object.fromEntries(items.map((item) => [item.id, displayOf(item)])),
-});
+export function bodyMode(display: Display | null | undefined): "tree" | "plain" {
+  const ready = (node: Block | Inline): boolean => {
+    switch (node.type) {
+      case "later": return false;
+      case "paragraph": case "blockquote": case "emphasis": case "strong": case "delete":
+        return node.value.every(ready);
+      case "heading": case "link": return node.value.children.every(ready);
+      case "list": return node.value.items.every((item) => item.every(ready));
+      case "table": return [...node.value.head, ...node.value.rows.flat()].every((cell) => cell.every(ready));
+      case "text": case "code": case "break": case "thematic_break": return true;
+    }
+  };
+  return display != null && display.blocks.every(ready) ? "tree" : "plain";
+}
+export const rows = (items: Row[], older = 0, patch: Record<string, PatchInfo> = {}, find: Record<string, FindPart[]> = {}): RowPage => {
+  const display = Object.fromEntries(items.map((item) => [item.id, displayOf(item)]));
+  return {
+    rows: items,
+    patch,
+    find,
+    page: { start_offset: older, end_offset: 500 },
+    usage: null,
+    display,
+    body: Object.fromEntries(Object.entries(display).map(([id, tree]) => [id, bodyMode(tree)])),
+  };
+};
 export async function open(tab: Page, session = process.env.SWARM_E2E_LIVE!) {
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);

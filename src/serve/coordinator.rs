@@ -163,11 +163,11 @@ fn agent_snapshot(
                         item["images"] = json!(view::image_paths::image_paths(
                             item["text"].as_str().unwrap_or_default(),
                         ));
-                        item["display"] = json!(
-                            item["text"]
-                                .as_str()
-                                .and_then(|text| display::display_with_breaks(text).ok())
-                        );
+                        let tree = item["text"]
+                            .as_str()
+                            .and_then(|text| display::display_with_breaks(text).ok());
+                        item["body"] = json!(display::body_mode(tree.as_ref()));
+                        item["display"] = json!(tree);
                     }
                 }
                 agents.insert(session.id, rows);

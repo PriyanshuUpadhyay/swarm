@@ -66,6 +66,50 @@ pub enum Inline {
     Later(&'static str),
 }
 
+/// The painter for a complete display tree. New modes may be added.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BodyMode {
+    Plain,
+    Tree,
+}
+
+/// Use a tree only when every block and inline can be painted.
+pub fn body_mode(display: Option<&Display>) -> BodyMode {
+    match display {
+        Some(display) if display.blocks.iter().all(block_ready) => BodyMode::Tree,
+        _ => BodyMode::Plain,
+    }
+}
+
+fn block_ready(block: &Block) -> bool {
+    match block {
+        Block::Later(_) => false,
+        Block::Paragraph(children) | Block::Heading { children, .. } => {
+            children.iter().all(inline_ready)
+        }
+        Block::Blockquote(children) => children.iter().all(block_ready),
+        Block::List { items, .. } => items.iter().flatten().all(block_ready),
+        Block::Table { head, rows, .. } => head
+            .iter()
+            .chain(rows.iter().flatten())
+            .flatten()
+            .all(inline_ready),
+        Block::ThematicBreak | Block::Code { .. } => true,
+    }
+}
+
+fn inline_ready(inline: &Inline) -> bool {
+    match inline {
+        Inline::Later(_) => false,
+        Inline::Emphasis(children)
+        | Inline::Strong(children)
+        | Inline::Delete(children)
+        | Inline::Link { children, .. } => children.iter().all(inline_ready),
+        Inline::Text(_) | Inline::Code(_) | Inline::Break => true,
+    }
+}
+
 /// Map parsed blocks and inlines to their display values.
 ///
 /// # Errors

@@ -1,3 +1,4 @@
+include!("legacy_body.rs");
 use super::*;
 
 // S8C-QUEUE-V2 T1. A real coordinator reads a private pi screen. The
@@ -69,12 +70,13 @@ fn s8c_snapshot_queue_has_served_labels_and_clears_after_a_version_notice() {
     let cleared = ready_queue(&server, &json!([]));
     let notice = named_event(&mut live, "snapshot");
     let fixture: Value = serde_json::from_str(include_str!("../fixtures/s8c/queue.json")).unwrap();
+    let actual = without_body(json!({
+        "initial":queue(&server, &initial),
+        "cleared":queue(&server, &cleared),
+        "refresh":notice["version"].as_u64().unwrap() > initial["version"].as_u64().unwrap()
+    }));
     assert_eq!(
-        json!({
-            "initial":queue(&server, &initial),
-            "cleared":queue(&server, &cleared),
-            "refresh":notice["version"].as_u64().unwrap() > initial["version"].as_u64().unwrap()
-        }),
+        actual,
         json!({"initial":fixture["wire"],"cleared":[],"refresh":true})
     );
 }

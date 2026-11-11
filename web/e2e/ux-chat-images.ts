@@ -20,7 +20,7 @@ test("S8d images paint served paths on pages, older rows, upserts and snapshot q
   await tab.route("**/api/snapshot", async route => {
     const snapshot = await (await route.fetch()).json();
     snapshot.agents[process.env.SWARM_E2E_LIVE!][0].queue = [
-      { mode: "steering", text: a, id: "served-queue", detail: "Steering", display: null, images: [b] },
+      { mode: "steering", text: a, id: "served-queue", detail: "Steering", display: null, body: "plain", images: [b] },
     ];
     await route.fulfill({ json: snapshot });
   });

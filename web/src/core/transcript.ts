@@ -2,7 +2,7 @@
 // skips rows the server marks `collapsed`, merges rows by id, places them by `order`, and keeps
 // the reader's open and closed choices.
 
-import type { Block, DiffPreview, Display, FindPart, Inline, PatchInfo, PatchLineWire, PatchSplitWire, Row, TextPreview } from "./api";
+import type { BodyMode, Block, DiffPreview, Display, FindPart, Inline, PatchInfo, PatchLineWire, PatchSplitWire, Row, TextPreview } from "./api";
 
 const patches = new WeakMap<TextPreview | DiffPreview, PatchInfo>();
 
@@ -64,6 +64,33 @@ export function noteDisplay(rows: Row[], display: Record<string, Display> | unde
 
 export function displayOf(row: Row): Display | null | undefined {
   return displays.get(row);
+}
+
+const bodies = new WeakMap<Row, BodyMode>();
+const liveBodies = new WeakSet<Row>();
+
+/** Live rows still judge their exact cut tree until S10e-3. */
+export function noteLiveDisplay(row: Row, display: Display | null): void {
+  liveBodies.add(row);
+  noteDisplay([row], display === null ? {} : { [row.id]: display });
+}
+
+/** Keep the served choice on each row object, including steps. */
+export function noteBody(rows: Row[], body: Record<string, BodyMode> | null | undefined): void {
+  const stack = [...rows];
+  while (stack.length) {
+    const row = stack.pop()!;
+    bodies.set(row, body?.[row.id] ?? null);
+    for (const step of row.steps ?? []) stack.push(step);
+  }
+}
+
+export const bodyModeOf = (row: Row): BodyMode => bodies.get(row) ?? null;
+
+export function paintBodyOf(row: Row): { kind: "plain" } | { kind: "tree"; display: Display } {
+  if (liveBodies.has(row)) return bodyOf(row);
+  const display = displayOf(row);
+  return bodyModeOf(row) === "tree" && display != null ? { kind: "tree", display } : { kind: "plain" };
 }
 
 export function bodyOf(row: Row): { kind: "plain" } | { kind: "tree"; display: Display } {

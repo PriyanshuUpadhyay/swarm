@@ -1,3 +1,4 @@
+include!("legacy_body.rs");
 use super::*;
 
 const QUEUE_READY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -80,8 +81,11 @@ fn s8d_images_cover_pages_cached_tail_live_rows_and_snapshot_queue() {
             "images":images
         })
     };
-    assert_eq!(
+    let actual = without_body(
         json!({"page":first["images"],"cached":cached["images"],"live":frame["images"],"queue":queue}),
+    );
+    assert_eq!(
+        actual,
         json!({"page":fixture["page_images"],"cached":fixture["page_images"],"live":fixture["live_images"],"queue":[
             wire_item(0,"steering","Steering",&fixture["two"],json!([fixture["a"],fixture["b"]])),
             wire_item(1,"follow-up","Follow-up",&fixture["other"],json!([]))
