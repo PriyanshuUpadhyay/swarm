@@ -31,17 +31,17 @@ ADR 0099 keeps the chat to what the CLI shows. Claude, Codex, and AGY each show 
 
 Chosen: the first option. The row is made in `src/view` from a call named `Agent` or `Task` (Claude), `spawn_agent` (Codex), or `invoke_subagent` (AGY), so no parser changes. The row shows the type, the task, the state, and the result.
 
-A click opens the child chat. Its agent id is `<agent>~sub~<tool call id>`, so every route that takes an agent id (`/api/rows`, the stream, full tool output) reads the child's log. The server finds that log (`src/serve/subagent.rs`): for Claude by `toolUseId` in `agent-<id>.meta.json` and a check that the file stays in the session's `subagents` folder; for Codex by the id in the `spawn_agent` output and a check that the rollout names a `thread_spawn` parent. The child chat has no composer. Its bar says "Runs on its own" and has "Open parent".
+A click opens the child chat. Its agent id is `<agent>~sub~<tool call id>`, so every route that takes an agent id (`/api/rows`, full tool output) reads the child's log. The server finds that log (`src/serve/subagent.rs`): for Claude by `toolUseId` in `agent-<id>.meta.json` and a check that the file stays in the session's `subagents` folder; for Codex by the id in the `spawn_agent` output and a check that the rollout names a `thread_spawn` parent. The child chat has no composer. Its bar says "Runs on its own" and has "Open parent".
 
-AGY shows the row, but its click finds no log, because its docs give no path. pi gets no row and no child chat, because it has no subagent tool. Both are named gaps, not guesses.
+AGY shows the row, but its click shows the error "no subagent log", because its docs give no path. pi gets no row and no child chat, because it has no subagent tool. Both are named gaps, not guesses.
 
 ### Consequences
 
 - Good: no parser change, and one view serves the chair, a pane, and a child.
 - Good: the child log path comes from the parent log and one folder check, never from the page.
-- Bad: the Claude folder layout is not documented by Claude, so an update can move it; the row stays and its click shows "log is not available".
+- Bad: the Claude folder layout is not documented by Claude, so an update can move it; the row stays and its click shows the chat error "no subagent log".
 - Bad: the Codex `spawn_agent` argument names changed across versions, so the task text falls back through `description`, `message`, `prompt`, and the first `items` text, and the child id is the first UUID in the output.
-- Bad: a child chat follows no stream; it reads its log again every 3 seconds while it is open.
+- Bad: a child chat follows no stream; it reads its log again every 3 seconds while the subagent runs, and once when it has ended. It opens in a dialog, so Escape and focus work.
 
 ## Links
 
