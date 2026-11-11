@@ -26,5 +26,6 @@ test("a checklist row shows its steps and a plan row shows its Markdown", async 
   await expect(list).toContainText("2 of 5 done");
   await expect(list.locator("li")).toHaveCount(5);
   await expect(list.locator('li[data-status="in_progress"]')).toContainText("Editing the parser");
+  await expect(list.locator('li[data-status="pending"]').first().getByRole("img", { name: "Pending" })).toBeVisible();
   await expect(tab.getByTestId("plan").locator("h2")).toHaveText("Steps");
 });
