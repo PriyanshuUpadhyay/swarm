@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 pub(super) const CLAUDE_KEY: &str = "showThinkingSummaries";
 pub(super) const CODEX_KEY: &str = "model_reasoning_summary";
 
-/// The owner's HOME, or None, and then nothing is read. A launched pane runs with
+/// The owner's home. `std::env::home_dir` falls back to the passwd home when HOME is unset, and
+/// gives None only when that lookup also fails; then nothing is read. A launched pane runs with
 /// `CLAUDE_CONFIG_DIR` and `CODEX_HOME` removed, so its CLI reads `$HOME/.claude` and
 /// `$HOME/.codex`; the launcher's own values do not count. A picked Codex account sets `CODEX_HOME`
 /// to its own home, and that home's config is not read here, because `argv` runs before the pick.
