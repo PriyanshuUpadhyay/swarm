@@ -29,6 +29,8 @@ def main():
     assert units["gone.py"]["symbol"] == "deleted file"
     s, g, h = units["pane.swift"]["id"], units["gone.py"]["id"], units["util.py"]["id"]
     assert "REF" in checklist[h]["rules"] and "app.py:1" in checklist[h]["refs"]["helper"], checklist[h]
+    rule_text = (run / "rules.md").read_text()
+    assert "- `L-1` " in rule_text and "Source:" not in rule_text, rule_text[:300]
 
     def all_rules(uid, quote):  # one n/a row may cover many rules with one reason
         ids = ", ".join(checklist[uid]["rules"]) or "-"

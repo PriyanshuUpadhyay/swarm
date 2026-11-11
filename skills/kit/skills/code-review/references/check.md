@@ -84,10 +84,10 @@ that can move.
 
 For each unit, read its full range in `head/`, the diff hunks, and every place that
 `checklist.json` lists under `refs`. Then check the unit against each rule ID in its checklist.
-The rules live in `references/lens.md`, `references/lens-<name>.md`, and the repo's rules file that
-`01-units.md` names. Also read the kit block `blocks/when-to-extract/SKILL.md`, `blocks/engineering-standards/SKILL.md`, the
-repo's own convention docs, and the `review` paths of each domain in `~/.flow/domains.md` whose `Signals:`
-line matches the file. A defect that no rule names is still a finding, with rule `-`.
+`rules.md` in the run folder holds the text of each rule ID in the checklist, so read it rather
+than the lens files, whose `Source:` citations are for rule authors. A rule that cites a kit block or a standards row reads that target. The `repo`
+seat also reads the repo's own convention docs and the `review` paths of each domain in
+`~/.flow/domains.md` whose `Signals:` line matches the file. A defect that no rule names is still a finding, with rule `-`.
 
 When `~/.review-walk/taste.md` exists, `start` loads its `TASTE-` rules with the repo rules, so
 each matching unit's checklist holds them. They say what the owner flags. A copy that the change
@@ -102,20 +102,15 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
 - `rule` is one ID, a comma list of IDs for a `pass` or an `n/a` row, or `-`.
 - `kind` is `pass` (the unit follows the rule), `n/a` (the rule cannot apply, for example "no SQL
   in this hunk"), `fix` (a proved defect or a rule break), `ask` (a question, or a defect that is
-  not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`. A test
+  not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`; start
+  its problem with "potential issue, not confirmed:" and name the input that would trigger it. A test
   that a run shows passes with and without its change is proved, so it is a `fix` (`L-14`), never an `ask`. A `fix` also needs a defect that this change
   introduced and that its author would fix; an older defect or a matter of taste is a `note`, unless
   the change says it fixes or bounds that defect (`L-15`). A `TASTE-` row that the change breaks is
-  the owner's rule, not a matter of taste, so it is a `fix` that asks for the remedy the row names. Start
-  its problem with "potential issue, not confirmed:" and name the input that would trigger it.
-  A `note` whose problem names a crash (`crash`, `traceback`, `panic`, `uncaught`, `non-zero exit`,
-  `exits 1`) and that quotes a line the change added counts as a `fix`: `verdict` changes its kind, and only an
-  owner's `limit:` answer closes it, as a limit. A crash word right after a denial (`cannot crash`,
-  `no traceback`), or after a denial and one of the words `longer`, `possibly`, `even`, `ever`,
-  `raise`, `throw`, or `cause` (`no longer crashes`), names no crash, so that note stays a note. A
-  note whose problem opens (after an optional `follow-up:`) with `older defect` or `not from
-  this change` stays a note, and so does a quote on a line the diff did not add (a context line),
-  because the change did not make that crash.
+  the owner's rule, not a matter of taste, so it is a `fix` that asks for the remedy the row names.
+  A `note` that names a crash on a line the change added counts as a `fix`; `verdict` changes its
+  kind, and only an owner's `limit:` answer closes it. When the change did not cause the crash,
+  open the problem with `older defect` or `not from this change`.
   The script sets `answered` when an answer closes an `ask`, or `limit` when the user accepts a
   `fix` as a known limit; a seat never writes those kinds.
 - `quote` is an exact part of one line. A `pass` or `n/a` quotes a line of its unit. Other kinds
@@ -153,39 +148,12 @@ The user can accept a `fix` as a known limit. Write this line only with the user
 `<line>` is the whole trimmed source line, as in an ask's answer. A new `start` of the same range
 does not replace the answer that an open ask needs.
 
-After answering, run `verdict <run>` again on the same run, with no new range.
-`start` refuses a new range, or `local`, when the newest run for any ancestor head has no verdict,
-an INCOMPLETE verdict, or 0 fix and an open ask (same head too for `local`).
-Answers carry from the deepest ancestor run, newest first on a tie.
-`--patch` runs never block `start` or carry answers; runs whose heads are no longer ancestors after
-a rebase or amend are skipped.
-`answers-before.md` is history only; copy an answer into `answers.md` to use it in this run.
+After answering, run `verdict <run>` again on the same run, with no new range. `start` refuses a
+new range while an ancestor run still waits for a verdict or an answer, and prints why. Answers
+carry from the deepest ancestor run. `answers-before.md` is history only; copy an answer into
+`answers.md` to use it in this run.
 
-Known limits, accepted by the user on 2026-10-09 (review run range-01cdecf-f715957-01): the
-script assumes UTF-8 source and a UTF-8 host. `parse_diff`, `start`, and `verdict` still split
-source on form feed and U+0085, the ctags and CI subprocess output decode by locale, a local run
-reads a changed file as strict UTF-8, a non-ASCII file name needs `core.quotepath=false`, and a
-closed pipe on stdout is not caught. Answers carry only from the deepest ancestor run that has an
-`answers.md`.
-
-## Rule files
-
-Each rule is one line: ``- `ID` flag → ask. Files: `<glob>, <glob>`. Applies: `<regex>`. Source: …``.
-`Files:` is optional and falls back to the file's own `Files:` header line. `Applies:` is one
-Python regex on the unit's code, new and removed; with none, the rule applies to every unit of a
-matching file. A regex must never skip a unit that can break the rule, so leave it out when in
-doubt. `Scope: added` matches `Applies:` against the unit's added lines only. Use it only when the
-token on the added line is the defect itself, never for a rule about callers, aliases, or data
-flow. Add a `lens-<name>.md` for a new language or platform in the same shape.
-
-`Check: <tool>:<rule>` names the lint rule that proves the whole rule text. The build gate owns
-the ID for a unit only when the repo's `CI:` line names a lint config that runs that rule at
-error level, with no options, on the unit's file, and not as a type-aware rule on a JS file. Else
-the seat owns it. A rule that a tool covers only in part splits into two IDs, one with `Check:`
-and one for the seat, as TS-1 and TS-33 do. Every `Check:` needs `fixtures/<tool>/<rule>/` with
-`bad`, `good`, and `exception` files, where each `// expect` line of `bad` is a hit and the other
-files have none. `scripts/test_review_check.py` runs them with the oxlint on PATH, so run it with
-`PATH=<repo>/node_modules/.bin:$PATH` to test the repo's own version before you add a `Check:`.
+To add or change a rule, a lens, or a repo rules file, read `references/maintain.md`.
 
 ## Seats
 
@@ -196,10 +164,8 @@ with one quote and one proof, so write one row for each group of IDs.
 
 Dispatch and gap follow-ups follow [the kit's fan-out.md](../../../references/fan-out.md).
 
-`start` splits each `review.check` aspect by assigned unit-rule pairs, with one shard per
-150 checks rounded up, at most three. Units stay whole and in order. The split balances check
-counts. One shard keeps the aspect name; more shards use `<aspect>-1`, `<aspect>-2`, and
-`<aspect>-3`. Each seat writes `02-review-<seat>.md`. Before it reports, the seat runs
+`start` prints the seats. One shard keeps the aspect name; more shards use `<aspect>-N`. Each
+seat writes `02-review-<seat>.md`. Before it reports, the seat runs
 `python3 <kit root>/skills/code-review/scripts/review_check.py lint <run> 02-review-<seat>.md`, which checks
 only that file's rows (cells, IDs, quotes, and proofs), and fixes each row that it names.
 
@@ -232,19 +198,6 @@ disprove each one from the code, and writes one row for each in `02-refute.md`:
 `| file:line | quote | kept or refuted | proof |`. The file and quote are copied from the `fix` row. A
 `refuted` proof names the input, caller, or line that shows the row is wrong. Then run `verdict`
 again. A refuted `fix` becomes an `ask`, never a pass, so only the owner can close it.
-
-## Rules for each repo
-
-`~/.review-check/rules/<repo>.md` holds what the team of that repo cares about, from its own past
-reviews. `<repo>` is the folder name above the git common dir. It stays out of this public skill,
-because it names internal code. This preset owns the format and the upkeep of those files. A rule
-that the repo's own docs already state points to that doc and is not copied. Add a rule when a
-review raises the same point on a third PR.
-
-A rules file may have one line ``CI: `<check name>` runs `<command>`; config `<lint config>` ``.
-`<check name>` is the GitHub check that `build` reads, `<command>` is what `build --run` runs from
-the repo root, and the JSON lint config decides which `Check:` IDs the build owns. The command
-must not write files, so check that its type checker sets `noEmit`.
 
 ## Callers
 
