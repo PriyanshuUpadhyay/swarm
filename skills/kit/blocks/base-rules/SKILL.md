@@ -16,7 +16,7 @@ metadata:
 ## Rules
 - In pages and docs built from a repo, facts come only from {{source_of_truth}}.
 - Real over drawn. Cite the file and line for a fact or a code claim.
-- If two rules disagree, name both and stop the work that depends on them: a worker publishes blocked by `blocks/worker-brief/SKILL.md`, and a chair explains the trade-off by `blocks/decision-with-default/SKILL.md`.
+- If two rules disagree and the task names which one wins, follow the task and say which rule you set aside. Otherwise name both and stop the work that depends on them: a worker publishes blocked by `blocks/worker-brief/SKILL.md`, and a chair explains the trade-off by `blocks/decision-with-default/SKILL.md`.
 
 ## Example
 Initial state: a doc built from a repo wants to write "the agent retries three times". Action: find the line in {{source_of_truth}} that says so and cite it. Result: the claim carries its `path:line`, or it is cut.
