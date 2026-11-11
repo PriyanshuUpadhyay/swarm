@@ -127,14 +127,17 @@ export function fileRows(files: readonly string[], note: string | null): Command
   return { commands: files.map((f) => ({ name: f, insert: `@${f}`, kind: "file", description: "", hint: "", source: "", dialog: false })), note };
 }
 
-/** The rows that match the query, best first: the exact name, then names that start with it,
- *  then jean's fuzzy order. */
+/** The probe labels every row of the plugin `swarm` with this source, prefixed or not. */
+export const isSwarmRow = (r: MenuRow) => r.source === "swarm";
+
+/** The rows that match the query: the swarm plugin's rows first, then the rest. Inside each group
+ *  the best come first: the exact name, then names that start with it, then jean's fuzzy order. */
 export function matches(rows: readonly MenuRow[], query: string, limit = 12): MenuRow[] {
   const q = query.toLowerCase();
   const rank = (r: MenuRow) => (r.name.toLowerCase() === q ? 0 : r.name.toLowerCase().startsWith(q) ? 1 : 2);
   return fuzzySearchItems([...rows], query, 50)
     .map((r, i) => ({ r, i }))
-    .sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i)
+    .sort((a, b) => Number(!isSwarmRow(a.r)) - Number(!isSwarmRow(b.r)) || rank(a.r) - rank(b.r) || a.i - b.i)
     .slice(0, limit)
     .map(({ r }) => r);
 }

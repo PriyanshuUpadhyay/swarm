@@ -9,6 +9,7 @@ import { Button } from "../components/ui/button";
 import { dragOverFiles, dropImage, pasteImage } from "./composer-image";
 import { ImageThumbs } from "./images";
 import { RunChip } from "./run-chip";
+import { SlashMenu } from "./slash-menu";
 import { cn } from "../lib/utils";
 
 /** Two Escapes within this many ms count as Esc Esc. */
@@ -272,50 +273,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         className="relative rounded-lg border border-border-strong bg-surface shadow-sm focus-within:border-ring has-[textarea:disabled]:opacity-70"
       >
         {open && (
-          <div
-            id={listId}
-            role="listbox"
-            aria-label={menu.opener === "@" ? "Files" : "Commands and skills"}
-            data-testid="slash-menu"
-            className="absolute right-0 bottom-full left-0 z-20 mb-1 max-h-72 overflow-y-auto rounded-lg border border-border-strong bg-surface p-1 text-sm shadow-lg"
-          >
-            {rows.map((r, i) => (
-              <div
-                key={r.insert}
-                id={`${listId}-${i}`}
-                role="option"
-                aria-selected={i === current}
-                data-testid="slash-row"
-                className={cn("flex cursor-default items-baseline gap-2 rounded-md px-2 py-1", i === current && "bg-hover")}
-                onMouseMove={() => setSelected(i)}
-                onMouseDown={(e) => {
-                  // A click inserts only, and the text area keeps the focus.
-                  e.preventDefault();
-                  choose(r, false);
-                }}
-              >
-                {/* A file path can be wider than the menu, so it wraps; a command name never does. */}
-                <span className={cn("font-mono", r.kind === "file" ? "min-w-0 break-all" : "shrink-0")}>{r.insert}</span>
-                {r.hint && <span className="shrink-0 font-mono text-xs text-faint-foreground">{r.hint}</span>}
-                <span className="min-w-0 flex-1 truncate text-muted-foreground">{r.description}</span>
-                {r.dialog && (
-                  <span
-                    className="shrink-0 text-xs text-waiting"
-                    title={`Opens a picker in the pane, so Swarm only inserts it. Run \`swarm attach ${chair.who ?? "orchestrator"}\` to use the picker.`}
-                  >
-                    opens in pane
-                  </span>
-                )}
-                {r.source && <span className="shrink-0 text-xs text-faint-foreground">{r.source}</span>}
-              </div>
-            ))}
-            {rows.length === 0 && (
-              <div className="px-2 py-1 text-muted-foreground" data-testid="slash-status">
-                {shownList ? "No matches" : menu.opener === "@" ? "Loading files…" : "Loading commands…"}
-              </div>
-            )}
-            {shownList?.note && <div className="px-2 py-1 text-xs text-failed">{shownList.note}</div>}
-          </div>
+          <SlashMenu id={listId} menu={menu} rows={rows} current={current} list={shownList} who={chair.who} select={setSelected} choose={choose} />
         )}
         <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />
         <div className="relative">

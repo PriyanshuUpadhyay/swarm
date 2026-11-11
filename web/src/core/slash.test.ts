@@ -91,6 +91,20 @@ describe("offered and matches", () => {
   });
 });
 
+describe("swarm skills first", () => {
+  it("lists the swarm plugin's rows before the rest and keeps each group's order, also when filtered", () => {
+    const mixed = [
+      row("/clear", { kind: "builtin", source: "built-in" }),
+      row("/other:plan", { source: "other" }),
+      row("/swarm:plan", { source: "swarm" }),
+      row("/swarm:research", { source: "swarm" }),
+      row("/review", { source: "user" }),
+    ];
+    expect(matches(mixed, "").map((r) => r.insert)).toEqual(["/swarm:plan", "/swarm:research", "/clear", "/other:plan", "/review"]);
+    expect(matches(mixed, "plan").map((r) => r.insert)).toEqual(["/swarm:plan", "/other:plan"]);
+  });
+});
+
 describe("pick", () => {
   it("replaces the whole token and adds one space", () => {
     const menu = menuAt("/cl", 3, "claude")!;
