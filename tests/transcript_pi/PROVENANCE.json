@@ -69,5 +69,11 @@
    "from": "reference/inputs/guards/usage-sum-three-2pow62.jsonl",
    "sha256": "19d402c054dc11e6d4017f468289b52d08090efba0cf9b1f6b2f98f384b23699"
   }
- }
+ },
+  "HAND_ADR_0139": {
+    "note": "HAND: ADR 0139 (docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md), owner answer a, 2026-11-11. Only unknown rows change system_kind from record to unmapped. Existing hashes describe the ORIGINAL source captures; all other expected bytes stay unchanged.",
+    "values_per_file": {
+      "fixtures/rows-main-at-4179.json": 6
+    }
+  }
 }

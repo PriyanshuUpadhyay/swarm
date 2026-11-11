@@ -467,7 +467,7 @@
     ],
     "bytes": 4124,
     "sha256": "171b3345217a063b51301311b6c91f7429055b8beb1147ddf04843d9233ed2ae"
-  },
+  , "HAND": {"note": "HAND: ADR 0139 (docs/decisions/0139-the-chat-counts-records-no-parser-maps-and-hides-nothing-else-silently.md), owner answer a, 2026-11-11. Only unknown rows change system_kind from record to unmapped. sha256 and bytes describe the ORIGINAL source capture.", "values": 1, "parts": {"b0150-000.json": 1}}},
   "out-1/codex-tool-search/output-00.txt": {
     "parts": [
       "b0151-000.json"
