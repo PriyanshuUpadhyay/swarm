@@ -113,26 +113,7 @@ pub(super) async fn transcript_rows(
         None
     };
     if let Some(page) = cached_page {
-        return tokio::task::spawn_blocking(move || {
-            let display = view::markdown::row_displays(&page.rows);
-            let body = view::markdown::row_bodies(&page.rows, &display);
-            let patch = view::patch_wire::row_patches(&page.rows);
-            let find = view::find_wire::row_finds(&page.rows);
-            let images = view::image_paths::row_images(&page.rows);
-            Json(json!({
-                "page": {"start_offset": start, "end_offset": end},
-                "rows": page.rows,
-                "usage": page.usage,
-                "remove": page.remove,
-                "display": display,
-                "body": body,
-            "patch": patch,
-                "find": find,
-                "images": images,
-            }))
-        })
-        .await
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"));
+        return render_row_page(page, start, end).await;
     }
     let recovery = if query.before.is_some() {
         let hub = app.hub.lock().unwrap();
@@ -155,7 +136,6 @@ pub(super) async fn transcript_rows(
         None
     };
     let page = read_row_window(&app, &key, &log, start, end).await?;
-    let key = format!("{}:{}", query.session, query.agent);
     let page = {
         let mut hub = app.hub.lock().unwrap();
         let active = hub
@@ -184,6 +164,14 @@ pub(super) async fn transcript_rows(
         }
         page
     };
+    render_row_page(page, start, end).await
+}
+
+async fn render_row_page(
+    page: view::reader_rows::RowPage,
+    start: u64,
+    end: u64,
+) -> Result<Json<Value>, ApiError> {
     tokio::task::spawn_blocking(move || {
         let display = view::markdown::row_displays(&page.rows);
         let body = view::markdown::row_bodies(&page.rows, &display);

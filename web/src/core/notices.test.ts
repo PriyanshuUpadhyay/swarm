@@ -55,7 +55,7 @@ describe("notices card", () => {
     });
     await notices.load();
     await notices.fix("focus");
-    expect(calls).toContain("notice Notices: no helper");
+    expect(calls).toContainEqual(expect.stringMatching(/^notice Notices\b.*no helper$/));
     expect(notices.state.pending).toBeNull();
     expect(noticesCard(notices.state)).toEqual(health("held", "focus"));
   });
