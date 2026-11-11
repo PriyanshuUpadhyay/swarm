@@ -5,6 +5,10 @@ use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
+    os::{
+        fd::AsRawFd,
+        unix::{net::UnixStream, process::CommandExt},
+    },
     path::PathBuf,
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
@@ -12,6 +16,7 @@ use std::{
 
 struct Server {
     child: Child,
+    descendants: UnixStream,
     dir: PathBuf,
     log: PathBuf,
     session: String,
@@ -123,7 +128,20 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         fs::write(assets.join("app.js"), "console.log('pilot');").unwrap();
         std::os::unix::fs::symlink(&log, assets.join("escape.jsonl")).unwrap();
         eprintln!("serve test binary: {}", env!("CARGO_BIN_EXE_swarm"));
-        let mut child = Command::new(env!("CARGO_BIN_EXE_swarm"))
+        let (mut descendants, inherited) = UnixStream::pair().unwrap();
+        let inherited_fd = inherited.as_raw_fd();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_swarm"));
+        // Keep one descriptor in every child, including workers in separate process groups.
+        // SAFETY: pre_exec only changes the open descriptor flags with an async-signal-safe call.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::fcntl(inherited_fd, libc::F_SETFD, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = command
             .env_clear()
             .env("HOME", &home)
             .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
@@ -149,6 +167,7 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
             .stderr(Stdio::inherit())
             .spawn()
             .unwrap();
+        drop(inherited);
         let mut first = String::new();
         BufReader::new(child.stdout.take().unwrap())
             .read_line(&mut first)
@@ -156,6 +175,7 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         let Some((address, token)) = first.trim().split_once("/#token=") else {
             let _ = child.kill();
             let _ = child.wait();
+            std::io::copy(&mut descendants, &mut std::io::sink()).unwrap();
             fs::remove_dir_all(&dir).unwrap();
             panic!("serve failed before the server URL and token");
         };
@@ -164,6 +184,7 @@ key = printf 'key %s %s\n' "$SWARM_PANE" "$SWARM_KEY" >> "$HOME/actions"
         assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
         Self {
             child,
+            descendants,
             dir,
             log,
             session,
@@ -265,6 +286,8 @@ impl Drop for Server {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // EOF proves that children which can still write the fixture have also exited.
+        std::io::copy(&mut self.descendants, &mut std::io::sink()).unwrap();
         fs::remove_dir_all(&self.dir).unwrap();
     }
 }
