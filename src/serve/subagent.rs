@@ -3,7 +3,8 @@
 //! The page names a child chat `<agent>~sub~<tool call id>`. The parent's log tells where the
 //! child's log is: Claude writes `<session>/subagents/agent-<id>.jsonl` with a `.meta.json` that
 //! holds `toolUseId`; Codex writes the child as its own rollout file, named by the id in the
-//! `spawn_agent` output. AGY keeps no log path in its public docs, and pi has no subagent.
+//! `spawn_agent` output; AGY finds its child log from the `conversationId` in the result of the
+//! `invoke_subagent` call. pi has no subagent.
 
 use super::*;
 use std::io::{BufRead, BufReader};
@@ -31,6 +32,19 @@ fn plain_id(id: &str) -> bool {
         && id
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+/// The nearest folder above `path` with this name.
+fn ancestor_named<'a>(path: &'a Path, name: &str) -> Option<&'a Path> {
+    path.ancestors()
+        .find(|dir| dir.file_name().is_some_and(|found| found == name))
+}
+
+/// The real path of the file `log` when it is a file that stays inside `root` (a canonical folder).
+/// A link out of the folder is not this session's subagent log.
+fn file_inside(root: &Path, log: &Path) -> Option<PathBuf> {
+    let log = log.canonicalize().ok()?;
+    (log.starts_with(root) && log.is_file()).then_some(log)
 }
 
 /// The parent agent and the call id of a child chat's agent id.
@@ -81,12 +95,10 @@ fn claude_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
             continue;
         }
 
-        // A link out of the folder is not this session's subagent log.
-        let log = folder
-            .join(format!("{CLAUDE_PREFIX}{stem}{CLAUDE_LOG}"))
-            .canonicalize()
-            .ok()?;
-        return (log.starts_with(&root) && log.is_file()).then_some(log);
+        return file_inside(
+            &root,
+            &folder.join(format!("{CLAUDE_PREFIX}{stem}{CLAUDE_LOG}")),
+        );
     }
     None
 }
@@ -94,9 +106,7 @@ fn claude_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
 /// The Codex child's id is the first UUID in the output of the `spawn_agent` call.
 fn codex_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
     let id = spawn_output_id(parent, call_id)?;
-    let sessions = parent
-        .ancestors()
-        .find(|dir| dir.file_name().is_some_and(|name| name == "sessions"))?;
+    let sessions = ancestor_named(parent, "sessions")?;
     // ponytail: each read walks the day folders; keep the found path if a long history lags.
     let log = find_rollout(sessions, &format!("-{id}.jsonl"), CODEX_DEPTH)?;
 
@@ -104,16 +114,15 @@ fn codex_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
     let meta = swarm::profiles::native::rollout_meta(&log)?;
     meta["payload"]["source"]["subagent"]["thread_spawn"]["parent_thread_id"]
         .is_string()
-        .then_some(log)
+        .then_some(())?;
+    file_inside(&sessions.canonicalize().ok()?, &log)
 }
 
 /// AGY keeps each conversation in `brain/<conversation id>/`. The result step of an
 /// `invoke_subagent` call names the child's id in the JSON that follows "Created the following
 /// subagent:"; `logAbsoluteUri` is not used as a path.
 fn agy_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
-    let brain = parent
-        .ancestors()
-        .find(|dir| dir.file_name().is_some_and(|name| name == "brain"))?;
+    let brain = ancestor_named(parent, "brain")?;
     let step: u64 = call_id.parse().ok()?;
 
     let lines = BufReader::new(std::fs::File::open(parent).ok()?).lines();
@@ -131,14 +140,10 @@ fn agy_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
         uuid::Uuid::parse_str(created["conversationId"].as_str()?).ok()
     })?;
 
-    let root = brain.canonicalize().ok()?;
-    let log = brain
-        .join(id.to_string())
-        .join(AGY_CHILD_LOG)
-        .canonicalize()
-        .ok()?;
-    // A link out of the brain folder is not this parent's child.
-    (log.starts_with(&root) && log.is_file()).then_some(log)
+    file_inside(
+        &brain.canonicalize().ok()?,
+        &brain.join(id.to_string()).join(AGY_CHILD_LOG),
+    )
 }
 
 /// The child id in the output of the call, reading the parent rollout only up to that line.
