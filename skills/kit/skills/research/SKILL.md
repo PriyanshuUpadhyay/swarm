@@ -32,10 +32,10 @@ folders up from this skill's folder. `reach` below means
    - A blog, a summary, or an abstract is a lead, never the origin. Name it "(secondary)" when you
      cannot reach the origin.
 5. **Write the report** as `<kit root>/blocks/report/SKILL.md` says.
-6. **Check every link** as `<kit root>/blocks/link-check/SKILL.md` says. When a link backs a number,
-   compare the number, its unit, what it measures (odds or a rate), its scope (which files, models,
-   or tasks), and the version on the page you open, and fix or drop each claim that does not
-   match. A reader must be able to open each link without your browser. When a page opens only through the browser, such as an X
+6. **Check every link** as `<kit root>/blocks/link-check/SKILL.md` says. When a link backs a number or a
+   quote, compare the number or the words, its unit, what it measures (odds or a rate), its scope
+   (which files, models, or tasks), and the version on the page you open, and fix or drop each
+   claim that does not match. A reader must be able to open each link without your browser. When a page opens only through the browser, such as an X
    post or a page that answers 403 to a plain fetch, cite a `web.archive.org` copy next to it, or
    drop the claim.
 
