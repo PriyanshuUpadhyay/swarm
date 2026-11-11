@@ -123,9 +123,10 @@ fn codex_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
 
     // Only the first line, the `session_meta`, says whose child this is.
     let meta = swarm::profiles::native::rollout_meta(&log)?;
-    meta["payload"]["source"]["subagent"]["thread_spawn"]["parent_thread_id"]
-        .is_string()
-        .then_some(())?;
+    if !meta["payload"]["source"]["subagent"]["thread_spawn"]["parent_thread_id"].is_string() {
+        return None;
+    }
+
     file_inside(&sessions.canonicalize().ok()?, &log)
 }
 

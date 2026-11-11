@@ -67,10 +67,12 @@ export function SubagentOverlay({ app }: { app: App }) {
     };
     void load();
 
-    // A subagent that started a moment ago may have no log yet, so a failed read tries again, up to 10 times in a row (about 30 s).
-    // A tail read drops older pages, so a reader who loaded them keeps the rows they have. A log
+    // A subagent that started a moment ago may have no log yet, so a failed read tries again, up
+    // to MAX_FAILED_READS times in a row at REFRESH_MS. A good read, also one that the Retry button
+    // makes, ends the count and the reads start again. A tail read drops older pages, so a reader who loaded them keeps the rows they have. A log
     // whose last row ends the turn no longer grows. `load` never rejects: `loadTail` catches.
     const timer = setInterval(() => {
+      if (child.state === "ready") failed = 0;
       if (failed < MAX_FAILED_READS && !child.rows.at(-1)?.ends_turn && child.rows.length <= TAIL) void load();
     }, REFRESH_MS);
 

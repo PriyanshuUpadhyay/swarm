@@ -43,7 +43,7 @@ pi gets no row and no child chat. It has no subagent tool: 212 local pi sessions
 - Good: the child log path comes from the parent log and one folder check, never from the page.
 - Bad: the Claude folder layout is not documented by Claude, so an update can move it; the row stays and its click shows the chat error "no subagent log".
 - Bad: the Codex `spawn_agent` argument names changed across versions, so the task text falls back through `description`, `message`, `prompt`, and the first `items` text, and the child id is the first UUID in the output.
-- Bad: a child chat follows no stream; it reads its log again every 3 seconds until its last row ends the turn, and it tries again after a failed read, because a new subagent may have no log yet. It stops after 10 failed reads in a row (about 30 seconds) and shows the error with Retry. It opens in a dialog, so Escape and focus work.
+- Bad: a child chat follows no stream; it reads its log again every 3 seconds until its last row ends the turn, and it tries again after a failed read, because a new subagent may have no log yet. It stops after 10 failed reads in a row (about 30 seconds) and shows the error with Retry; a good read, also one from Retry, starts the 3-second reads again. It opens in a dialog, so Escape and focus work.
 
 ## Links
 
