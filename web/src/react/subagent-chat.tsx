@@ -12,6 +12,8 @@ import { StatusGlyph } from "./transcript-tool";
 /** How often an open child chat reads its log again until its last row ends the turn, since it
  *  follows no stream. */
 const REFRESH_MS = 3000;
+/** Failed reads in a row after which the dialog stops trying and shows the error with Retry. */
+const MAX_FAILED_READS = 10;
 
 export function SubagentRow({ run, title }: { run: SubagentRun; title: string }) {
   const result = run.result?.text.trim().split("\n", 1)[0] ?? "";
@@ -53,21 +55,23 @@ export function SubagentOverlay({ app }: { app: App }) {
     app.notify();
     let stopped = false;
     let reading = false;
+    let failed = 0;
 
     const load = async () => {
       if (reading) return;
       reading = true;
       await app.reading.loadTail(child);
       reading = false;
+      failed = child.state === "error" ? failed + 1 : 0;
       if (!stopped) app.notify();
     };
     void load();
 
-    // A subagent that started a moment ago may have no log yet, so a failed read tries again.
+    // A subagent that started a moment ago may have no log yet, so a failed read tries again, up to 10 times in a row (about 30 s).
     // A tail read drops older pages, so a reader who loaded them keeps the rows they have. A log
     // whose last row ends the turn no longer grows. `load` never rejects: `loadTail` catches.
     const timer = setInterval(() => {
-      if (!child.rows.at(-1)?.ends_turn && child.rows.length <= TAIL) void load();
+      if (failed < MAX_FAILED_READS && !child.rows.at(-1)?.ends_turn && child.rows.length <= TAIL) void load();
     }, REFRESH_MS);
 
     return () => {

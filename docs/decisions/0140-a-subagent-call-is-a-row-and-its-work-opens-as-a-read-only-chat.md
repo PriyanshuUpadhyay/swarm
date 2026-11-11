@@ -8,7 +8,7 @@ informed-by:
   - 'owner, 2026-11-11: "They are independent. Get them sorted out completely in parallel. We have to care about each and every kind of agent, be it claude pi AGY Codex."'
   - 'owner, 2026-11-11: approved plan tmp/flow/2026-11-11-ui-subagent-chat/plan.md on its Plannotator page with no notes, so each recommended default was accepted'
   - 'research 2026-11-11: T3 Code shows a subagent item and opens its child thread with a bar that says it runs on its own and has "Open parent" (ProviderSubagentBar.tsx)'
-  - 'Claude Code writes each subagent log to <session dir>/subagents/agent-<id>.jsonl with agent-<id>.meta.json that holds toolUseId (checked by the chair on a local session)'
+  - 'Claude Code writes each subagent log to <session dir>/subagents/agent-<id>.jsonl with agent-<id>.meta.json that holds toolUseId'
   - 'Codex docs and source: a child is its own rollout file whose session_meta has source.subagent.thread_spawn.parent_thread_id (hexdocs Codex.Protocol.SubAgentSource)'
   - 'AGY docs: the parent calls the invoke_subagent tool; owner approved real AGY records on 2026-11-11 (tmp/ui-gaps/agy-pi-records.md): the result names conversationId, and the child log is brain/<conversationId>/.system_generated/logs/transcript_full.jsonl'
   - 'pi docs: no built-in subagent; the official extension example runs a separate pi process'
@@ -43,7 +43,7 @@ pi gets no row and no child chat. It has no subagent tool: 212 local pi sessions
 - Good: the child log path comes from the parent log and one folder check, never from the page.
 - Bad: the Claude folder layout is not documented by Claude, so an update can move it; the row stays and its click shows the chat error "no subagent log".
 - Bad: the Codex `spawn_agent` argument names changed across versions, so the task text falls back through `description`, `message`, `prompt`, and the first `items` text, and the child id is the first UUID in the output.
-- Bad: a child chat follows no stream; it reads its log again every 3 seconds until its last row ends the turn, and it tries again after a failed first read, because a new subagent may have no log yet. It opens in a dialog, so Escape and focus work.
+- Bad: a child chat follows no stream; it reads its log again every 3 seconds until its last row ends the turn, and it tries again after a failed read, because a new subagent may have no log yet. It stops after 10 failed reads in a row (about 30 seconds) and shows the error with Retry. It opens in a dialog, so Escape and focus work.
 
 ## Links
 
