@@ -542,3 +542,29 @@ pre.plain {
 ::highlight(find-matches) { background: #f5da62; color: #202020; }
 ::highlight(find-current) { background: #ff963b; color: #202020; }
 ::highlight(surface-find) { background: #ff963b; color: #202020; }
+
+/* To-do list and plan rows: what the CLI shows under Ctrl+T, and the plan it proposes. */
+.todo-list {
+  margin: 2px -8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+  font-size: 12px;
+}
+.todo-list ul {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.todo-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.todo-list li[data-status="completed"] .todo-text {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}

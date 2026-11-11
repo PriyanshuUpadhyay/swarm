@@ -35,7 +35,9 @@ export type RowKind =
   | "shell"
   | "divider"
   | "fold"
-  | "queued";
+  | "queued"
+  | "todoList"
+  | "proposedPlan";
 
 export type ToolState = "waiting" | "finished" | "failed" | "interrupted" | "unreported";
 
@@ -86,6 +88,9 @@ export type FoldSummary = {
   text: string;
 };
 
+/** One step of a `todoList` row; `activeText` shows while the step runs. */
+export type TodoItem = { text: string; status: "pending" | "in_progress" | "completed"; active_text?: string };
+
 export type Row = {
   id: string;
   kind: RowKind;
@@ -106,6 +111,7 @@ export type Row = {
   output?: TextPreview;
   fold?: FoldSummary;
   steps?: Row[];
+  todo?: TodoItem[];
   default_open?: boolean;
   /** Source byte offset and event ordinal. */
   order: [number, number];
