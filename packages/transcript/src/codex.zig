@@ -88,11 +88,18 @@ pub fn parseLineState(arena: std.mem.Allocator, line: []const u8, state: ?*q.Sta
             try events.append(arena, .{ .@"error" = .{ .meta = meta, .message = root.str(payload, "message") } });
         } else if (std.mem.eql(u8, payload_type, "user_message")) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "event_msg/user_message" } });
+        } else if (std.mem.eql(u8, payload_type, "entered_review_mode") or std.mem.eql(u8, payload_type, "exited_review_mode")) {
+            // Codex's own history keeps both items, so the chat shows them.
+            const hint = root.str(payload, "user_facing_hint");
+            const entered = std.mem.eql(u8, payload_type, "entered_review_mode");
+            const text = if (entered and hint.len != 0)
+                try std.fmt.allocPrint(arena, "Entered review mode: {s}", .{hint})
+            else if (entered) "Entered review mode" else "Exited review mode";
+            try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "review_mode", .text = text } });
         } else if (root.oneOf(payload_type, &.{
-            "agent_message",           "exec_command_end",    "patch_apply_end",
-            "mcp_tool_call_end",       "web_search_end",      "item_completed",
-            "thread_settings_applied", "entered_review_mode", "exited_review_mode",
-            "sub_agent_activity",
+            "agent_message",           "exec_command_end",   "patch_apply_end",
+            "mcp_tool_call_end",       "web_search_end",     "item_completed",
+            "thread_settings_applied", "sub_agent_activity",
         })) {
             try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = try std.fmt.allocPrint(arena, "event_msg/{s}", .{payload_type}) } });
         } else {

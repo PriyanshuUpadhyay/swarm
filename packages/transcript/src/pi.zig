@@ -34,7 +34,11 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]root.Event {
         try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "branch_summary", .text = root.str(rec, "summary") } });
     } else if (std.mem.eql(u8, record_type, "custom_message")) {
         try events.append(arena, .{ .system_message = .{ .meta = meta, .kind = "injected", .text = try joinText(arena, rec.get("content") orelse .null) } });
-    } else if (root.oneOf(record_type, &.{ "thinking_level_change", "custom", "label", "context_edit", "usage" })) {
+    } else if (root.oneOf(record_type, &.{
+        "thinking_level_change", "custom",       "label",     "context_edit",            "usage",
+        // Bookkeeping that pi's session-format doc keeps out of model context, and footer state.
+        "session_state",         "agent_status", "git_state", "child_usage_attribution", "service_tier_change",
+    })) {
         try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = record_type } });
     } else if (std.mem.eql(u8, record_type, "message")) {
         const message = rec.get("message") orelse .null;

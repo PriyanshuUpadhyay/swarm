@@ -166,3 +166,17 @@ test "Codex swarm ring is a swarm_ring system message, a near miss stays a user 
     try std.testing.expectEqualStrings("m2", events[0].system_message.meta.uuid);
     try std.testing.expectEqualStrings("swarm: new message'. When it arrives: run swarm inbox", events[1].user_message_chunk.text);
 }
+
+test "codex review mode shows as a system message" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const entered = try parseLine(arena_state.allocator(),
+        \\{"type":"event_msg","timestamp":"t","payload":{"type":"entered_review_mode","target":{"type":"uncommittedChanges"},"user_facing_hint":"current changes"}}
+    );
+    const exited = try parseLine(arena_state.allocator(),
+        \\{"type":"event_msg","timestamp":"t","payload":{"type":"exited_review_mode"}}
+    );
+    try std.testing.expectEqualStrings("review_mode", entered[0].system_message.kind);
+    try std.testing.expectEqualStrings("Entered review mode: current changes", entered[0].system_message.text);
+    try std.testing.expectEqualStrings("Exited review mode", exited[0].system_message.text);
+}

@@ -141,3 +141,13 @@ test "a pi skill block ends where pi's own regex ends it, and needs a name" {
     try std.testing.expectEqual(@as(usize, 1), unnamed.len);
     try std.testing.expect(unnamed[0] == .user_message_chunk);
 }
+
+test "pi bookkeeping entries are ignored, not unknown" {
+    var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena_state.deinit();
+    const events = try parseLine(arena_state.allocator(),
+        \\{"type":"agent_status","id":"s1","parentId":null,"timestamp":"t","summary":"working"}
+    );
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("agent_status", events[0].ignored.kind);
+}
