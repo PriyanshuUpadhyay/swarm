@@ -107,6 +107,12 @@ pub struct Row {
     pub default_open: bool,
     pub order: [u64; 2],
 }
+impl RowKind {
+    /// A to-do list or a plan: drawn as its own row, never as a tool step.
+    pub fn is_checklist(self) -> bool {
+        matches!(self, RowKind::TodoList | RowKind::ProposedPlan)
+    }
+}
 impl Row {
     pub fn new(kind: RowKind, text: String, id: String) -> Self {
         Self {

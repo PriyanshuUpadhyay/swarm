@@ -6,17 +6,19 @@ use super::{
     RECORD, Record, Row, RowKind, TextPreview, UNMAPPED, chip, is_record, key, meta, peer_text,
     record_text, shell_row, shell_run, string, tagged, task_summary,
 };
+use serde_json::Value;
+
+fn call_row_id(event: &Value) -> String {
+    format!("{}:call", string(event, "tool_call_id"))
+}
 
 pub fn row(record: &Record) -> Option<Row> {
     let event = &record.event;
     let event_type = string(event, "type");
     let text = string(event, "text");
     if event_type == "tool_call"
-        && let Some(row) = checklist::tool_row(
-            string(event, "name"),
-            &event["input"],
-            format!("{}:call", string(event, "tool_call_id")),
-        )
+        && let Some(row) =
+            checklist::tool_row(string(event, "name"), &event["input"], call_row_id(event))
     {
         return Some(row);
     }
@@ -42,7 +44,7 @@ pub fn row(record: &Record) -> Option<Row> {
                 } else {
                     format!("{name} · {title}")
                 },
-                format!("{}:call", string(event, "tool_call_id")),
+                call_row_id(event),
             );
             row.detail = Some(event["input"].to_string());
             row.tool_status = Some(string(event, "status").into());

@@ -324,11 +324,16 @@ impl LiveRows {
         {
             self.context.1 = true;
         }
-        // A checklist hides the older ones and replays task changes over every record, so a full
-        // build makes the live rows equal to the stored rows.
+        // A checklist hides the older ones and replays task changes over every record, and a
+        // task's id arrives with its call's result, so each of them needs a full build to make the
+        // live rows equal to the stored rows.
+        let is_checklist = |record: &Record| {
+            view::row(record).is_some_and(|row| row.kind == view::RowKind::TodoList)
+        };
         if row
             .as_ref()
             .is_some_and(|row| row.kind == view::RowKind::TodoList)
+            || target.is_some_and(|key| is_checklist(&self.records[&key]))
         {
             self.rebuild = true;
         }
@@ -352,11 +357,8 @@ impl LiveRows {
             }
             return;
         };
-        let checklist = matches!(
-            row.kind,
-            view::RowKind::TodoList | view::RowKind::ProposedPlan
-        );
-        let step = swarm::view::is_step(&row) || (event_type == "tool_call" && !checklist);
+        let step =
+            swarm::view::is_step(&row) || (event_type == "tool_call" && !row.kind.is_checklist());
         let prose = matches!(
             row.kind,
             view::RowKind::User | view::RowKind::Assistant | view::RowKind::Thought

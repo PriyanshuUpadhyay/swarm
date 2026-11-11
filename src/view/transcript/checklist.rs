@@ -1,6 +1,6 @@
 //! Checklist and plan rows: the to-do list and the plan that an agent CLI shows.
 
-use super::{Row, RowKind};
+use super::{Row, RowKind, string};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -29,7 +29,7 @@ fn status(value: &Value) -> Option<&'static str> {
 }
 
 fn text_of(value: &Value, key: &str) -> String {
-    value[key].as_str().unwrap_or("").trim().into()
+    string(value, key).trim().into()
 }
 
 /// The row for a to-do or plan tool call, or None when the call is another tool or its input
@@ -42,6 +42,7 @@ pub fn tool_row(name: &str, input: &Value, id: String) -> Option<Row> {
             } else {
                 (&input["plan"], "step", "")
             };
+
             let todo = list
                 .as_array()?
                 .iter()
@@ -54,11 +55,12 @@ pub fn tool_row(name: &str, input: &Value, id: String) -> Option<Row> {
                     })
                 })
                 .collect();
+
             let mut row = Row::new(RowKind::TodoList, String::new(), id);
             row.todo = todo;
             row
         }
-        "TaskCreate" | "TaskUpdate" => Row::new(RowKind::TodoList, String::new(), id),
+        _ if is_task_change(name) => Row::new(RowKind::TodoList, String::new(), id),
         "ExitPlanMode" => {
             let plan = text_of(input, "plan");
             if plan.is_empty() {
@@ -68,6 +70,7 @@ pub fn tool_row(name: &str, input: &Value, id: String) -> Option<Row> {
         }
         _ => return None,
     };
+
     if row.kind == RowKind::TodoList {
         row.text = summary(&row.todo);
     }
@@ -106,14 +109,16 @@ pub fn apply_task(
         }
         return;
     }
-    let id = input["taskId"].as_str().unwrap_or("");
+
+    let id = string(input, "taskId");
     let Some(at) = tasks.iter().position(|(task, _)| task == id) else {
         return;
     };
-    if input["status"].as_str() == Some("deleted") {
+    if string(input, "status") == "deleted" {
         tasks.remove(at);
         return;
     }
+
     let item = &mut tasks[at].1;
     if let Some(next) = status(&input["status"]) {
         item.status = next.into();

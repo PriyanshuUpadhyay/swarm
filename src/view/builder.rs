@@ -174,11 +174,12 @@ pub(super) fn rows_with_context(
         let Some(mut row) = row(record) else {
             continue;
         };
+        let last_update = updates
+            .get(&index)
+            .and_then(|updates| updates.last())
+            .map(|index| &records[*index]);
         if row.kind == RowKind::TodoList && checklist::is_task_change(string(event, "name")) {
-            let created_id = updates
-                .get(&index)
-                .and_then(|updates| updates.last())
-                .and_then(|update| records[*update].event["task_id"].as_str());
+            let created_id = last_update.and_then(|update| update.event["task_id"].as_str());
             checklist::apply_task(
                 &mut tasks,
                 string(event, "name"),
@@ -197,13 +198,7 @@ pub(super) fn rows_with_context(
             }
             prompt_expected = false;
         }
-        if string(event, "type") == "tool_call"
-            && !matches!(row.kind, RowKind::TodoList | RowKind::ProposedPlan)
-        {
-            let last_update = updates
-                .get(&index)
-                .and_then(|updates| updates.last())
-                .map(|index| &records[*index]);
+        if string(event, "type") == "tool_call" && !row.kind.is_checklist() {
             let final_status = last_update
                 .map(|record| string(&record.event, "status"))
                 .unwrap_or_else(|| string(event, "status"));

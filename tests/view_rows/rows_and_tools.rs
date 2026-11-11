@@ -479,6 +479,7 @@ fn todo_write_draws_one_checklist_row() {
         ),
         update("t1", "completed", "Todos have been modified"),
     ]);
+
     assert_eq!(kinds(&rows), [RowKind::TodoList]);
     assert_eq!(
         items(&rows[0]),
@@ -488,6 +489,7 @@ fn todo_write_draws_one_checklist_row() {
             ("Test", "pending")
         ]
     );
+
     assert_eq!(rows[0].todo[1].active_text, "Editing");
     assert!(rows[0].tool.is_none() && !rows[0].collapsed);
 }
@@ -499,6 +501,7 @@ fn task_tools_replay_into_the_current_list_and_hide_older_lists() {
         done["task_id"] = json!(id);
         done
     };
+
     let rows = build(vec![
         call(
             "c1",
@@ -519,11 +522,13 @@ fn task_tools_replay_into_the_current_list_and_hide_older_lists() {
         ),
         update("u1", "completed", "updated"),
     ]);
+
     let lists: Vec<&Row> = rows
         .iter()
         .filter(|row| row.kind == RowKind::TodoList)
         .collect();
     assert_eq!(lists.len(), 3);
+
     assert_eq!(
         items(lists[2]),
         [("Write", "completed"), ("Ship", "pending")]

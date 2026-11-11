@@ -319,32 +319,40 @@ fn failed_source_reads_fall_back_to_page_positions() {
 }
 
 #[test]
-fn live_checklists_match_the_stored_rows_and_show_only_the_newest() {
+fn live_task_checklist_matches_the_stored_rows_and_shows_only_the_newest() {
     let fixture = Fixture::new();
-    std::fs::write(&fixture.log, "x\n".repeat(4)).unwrap();
+    std::fs::write(&fixture.log, "x\n".repeat(6)).unwrap();
     let source = std::fs::File::open(&fixture.log).unwrap();
-    let list = |id: &str, status: &str| json!({"type":"tool_call","tool_call_id":id,"name":"TodoWrite","status":"pending","input":{"todos":[{"content":"Edit","status":status,"activeForm":"Editing"}]}});
+
+    let create = |id: &str, subject: &str| json!({"type":"tool_call","tool_call_id":id,"name":"TaskCreate","status":"pending","input":{"subject":subject,"description":"d"}});
+    let created = |id: &str, task: &str| json!({"type":"tool_call_update","tool_call_id":id,"status":"completed","content":"ok","task_id":task});
     let events = [
-        json!({"type":"turn_started"}),
-        list("t1", "in_progress"),
-        json!({"type":"tool_call_update","tool_call_id":"t1","status":"completed","content":"ok"}),
-        list("t2", "completed"),
+        create("c1", "Write"),
+        created("c1", "1"),
+        create("c2", "Ship"),
+        created("c2", "2"),
+        json!({"type":"tool_call","tool_call_id":"u1","name":"TaskUpdate","status":"pending","input":{"taskId":"1","status":"completed"}}),
+        json!({"type":"tool_call_update","tool_call_id":"u1","status":"completed","content":"ok"}),
     ];
-    let mut live = LiveRows::empty(0, false);
-    let mut reference = LiveRows::empty(0, false);
+
+    // Start above 0, so each frame builds only its dirty chunks unless a full build is forced.
+    let mut live = LiveRows::empty(1, false);
+    let mut reference = LiveRows::empty(1, false);
     for (index, event) in events.iter().enumerate() {
-        let (start, end) = (index as u64 * 2, index as u64 * 2 + 2);
+        let (start, end) = (index as u64 * 2 + 1, index as u64 * 2 + 3);
         reference.ingest(start, end, std::slice::from_ref(event));
         live.ingest_log_line(&source, start, end, std::slice::from_ref(event));
         live.delta("chat");
     }
     reference.shown = live.shown.clone();
+
     let rows = live.rows();
     assert_eq!(rows, reference.rows_full());
     let lists: Vec<_> = rows
         .iter()
         .filter(|row| row.kind == view::RowKind::TodoList)
         .collect();
-    assert_eq!(lists.len(), 2);
-    assert!(lists[0].collapsed && !lists[1].collapsed);
+    assert_eq!(lists.len(), 3);
+    assert_eq!(lists[2].text, "1 of 2 done");
+    assert!(lists[0].collapsed && lists[1].collapsed && !lists[2].collapsed);
 }
