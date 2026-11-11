@@ -100,7 +100,7 @@ test "reasoning summary becomes thought chunks" {
     try std.testing.expectEqualStrings("plan", events[0].agent_thought_chunk.text);
 }
 
-test "empty reasoning summary becomes ignored" {
+test "empty reasoning summary becomes an empty thought chunk" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
@@ -108,18 +108,22 @@ test "empty reasoning summary becomes ignored" {
     ;
     const events = try parseLine(arena_state.allocator(), line);
     try std.testing.expectEqual(1, events.len);
-    try std.testing.expectEqualStrings("response_item/reasoning", events[0].ignored.kind);
+    try std.testing.expectEqualStrings("", events[0].agent_thought_chunk.text);
 }
 
-test "empty reasoning text becomes ignored" {
+test "empty reasoning text and a null summary become an empty thought chunk" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
-    const line =
+    for ([_][]const u8{
         \\{"type":"response_item","payload":{"type":"reasoning","summary":[{"text":""}]}}
-    ;
-    const events = try parseLine(arena_state.allocator(), line);
-    try std.testing.expectEqual(1, events.len);
-    try std.testing.expect(events[0] == .ignored);
+        ,
+        \\{"type":"response_item","payload":{"type":"reasoning","summary":null}}
+        ,
+    }) |line| {
+        const events = try parseLine(arena_state.allocator(), line);
+        try std.testing.expectEqual(1, events.len);
+        try std.testing.expectEqualStrings("", events[0].agent_thought_chunk.text);
+    }
 }
 
 test "invalid JSON becomes unknown without meta" {

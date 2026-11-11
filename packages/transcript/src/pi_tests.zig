@@ -62,6 +62,22 @@ test "pi records keep their ids, tool links, and turn ends" {
     try std.testing.expectEqual(root.SessionInfoKind.title, events[25].session_info.kind);
 }
 
+test "an empty pi thinking block becomes an empty thought chunk before its tool call" {
+    var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer state.deinit();
+    const events = try parseLine(state.allocator(),
+        \\{"type":"message","id":"a2","parentId":"u1","timestamp":"t","message":{"role":"assistant","content":[{"type":"thinking","thinking":""},{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}],"stopReason":"toolUse"}}
+    );
+    var thoughts: usize = 0;
+    for (events) |event| {
+        if (event == .agent_thought_chunk) {
+            try std.testing.expectEqualStrings("", event.agent_thought_chunk.text);
+            thoughts += 1;
+        }
+    }
+    try std.testing.expectEqual(1, thoughts);
+}
+
 test "two text blocks of one pi reply stay apart" {
     var state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer state.deinit();

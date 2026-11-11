@@ -229,10 +229,8 @@ pub fn parseLine(arena: std.mem.Allocator, line: []const u8) ![]Event {
                 }),
             } });
         } else if (std.mem.eql(u8, block_type, "thinking")) {
-            const thinking = str(block.object, "thinking");
-            if (thinking.len != 0) {
-                try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = thinking } });
-            }
+            // An empty block still shows that the agent thought; the chat draws it with no body.
+            try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = str(block.object, "thinking") } });
         } else if (std.mem.eql(u8, block_type, "tool_use") and !is_user) {
             const input = block.object.get("input") orelse .null;
             if (!valueFitsDepth(input, max_event_input_depth)) {

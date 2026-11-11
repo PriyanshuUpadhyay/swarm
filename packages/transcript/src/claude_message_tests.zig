@@ -27,14 +27,15 @@ test "assistant text and thinking blocks become two chunks" {
     try std.testing.expectEqualStrings("done", events[1].agent_message_chunk.text);
 }
 
-test "empty thinking blocks yield no events" {
+test "empty thinking blocks become an empty thought chunk" {
     var arena_state: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena_state.deinit();
     const line =
         \\{"type":"assistant","message":{"content":[{"type":"thinking","thinking":""}]}}
     ;
     const events = try parseLine(arena_state.allocator(), line);
-    try std.testing.expectEqual(0, events.len);
+    try std.testing.expectEqual(1, events.len);
+    try std.testing.expectEqualStrings("", events[0].agent_thought_chunk.text);
 }
 
 test "unknown record keeps raw line and meta" {

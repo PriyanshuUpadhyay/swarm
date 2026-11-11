@@ -140,8 +140,8 @@ fn parseAssistant(arena: std.mem.Allocator, events: *std.ArrayList(root.Event), 
                 try events.append(arena, .{ .agent_message_chunk = .{ .meta = meta, .text = chunk } });
                 wrote_text = true;
             } else if (std.mem.eql(u8, block_type, "thinking")) {
-                const thinking = root.str(block.object, "thinking");
-                if (thinking.len != 0) try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = thinking } });
+                // An empty block still shows that the agent thought; the chat draws it with no body.
+                try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = root.str(block.object, "thinking") } });
             } else if (std.mem.eql(u8, block_type, "toolCall")) {
                 const input = block.object.get("arguments") orelse .null;
                 if (!root.valueFitsDepth(input, root.max_event_input_depth)) {

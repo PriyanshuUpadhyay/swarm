@@ -231,12 +231,14 @@ pub fn parseLineState(arena: std.mem.Allocator, line: []const u8, state: ?*q.Sta
     }
 
     if (std.mem.eql(u8, payload_type, "reasoning")) {
+        // A reasoning item with no summary still shows that the agent thought; the chat draws it
+        // with no body.
         const summary = payload.get("summary") orelse {
-            try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "response_item/reasoning" } });
+            try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = "" } });
             return events.items;
         };
         if (summary == .null) {
-            try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "response_item/reasoning" } });
+            try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = "" } });
             return events.items;
         }
         if (summary != .array) {
@@ -270,7 +272,7 @@ pub fn parseLineState(arena: std.mem.Allocator, line: []const u8, state: ?*q.Sta
                 try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = text.string } });
             }
         }
-        if (events.items.len == 0) try events.append(arena, .{ .ignored = .{ .meta = meta, .kind = "response_item/reasoning" } });
+        if (events.items.len == 0) try events.append(arena, .{ .agent_thought_chunk = .{ .meta = meta, .text = "" } });
         return events.items;
     }
 
