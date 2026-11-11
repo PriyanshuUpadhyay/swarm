@@ -3,6 +3,7 @@
 // the reader's open and closed choices.
 
 import type { Row } from "./api";
+import { plural } from "./lifecycle-state";
 
 /** A queued row waits for the agent, so it sits after every logged row. */
 function compare(a: Row, b: Row): number {
@@ -70,27 +71,34 @@ export const LIVE_THOUGHT = "live-thought";
 /** A failed tool card and the streaming thinking start open; the reader's choice wins. */
 export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>) => opened.get(row.id) ?? (row.id === LIVE_THOUGHT || row.tool?.state === "failed");
 
+/** The `system_kind` of a record that no parser maps (ADR 0139). */
+export const UNMAPPED = "unmapped";
+
 /** Visible rows become lines; an open fold includes only its visible steps. Records that no parser
- *  maps stay hidden one by one and show as one count line at the end (ADR 0139). */
+ *  maps stay hidden one by one, also inside a fold, and show as one count line at the end (ADR 0139). */
 export function lines(rows: readonly Row[], s: LineState): Line[] {
   const out: Line[] = [];
   const unmapped: Row[] = [];
+
   for (const row of rows) {
     if (row.collapsed) {
-      if (row.system_kind === "unmapped") unmapped.push(row);
+      if (row.system_kind === UNMAPPED) unmapped.push(row);
       continue;
     }
     if (row.kind !== "fold") {
       out.push({ id: row.id, row, fold: null, open: cardOpen(row, s.opened) });
       continue;
     }
+    // The server nests a hidden record between two tool calls in the fold's steps.
+    unmapped.push(...(row.steps ?? []).filter((step) => step.collapsed && step.system_kind === UNMAPPED));
     const open = s.folds.isOpen(row);
     out.push({ id: row.id, row, fold: null, open });
     if (open) for (const step of row.steps ?? []) if (!step.collapsed) out.push({ id: step.id, row: step, fold: row, open: cardOpen(step, s.opened) });
   }
+
   if (unmapped.length) {
-    const text = `${unmapped.length} ${unmapped.length === 1 ? "item" : "items"} this app does not show yet`;
-    const row: Row = { id: "unmapped", kind: "notice", system_kind: "unmapped", text, steps: unmapped, order: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER] };
+    const text = `${plural(unmapped.length, "item")} this app does not show yet`;
+    const row: Row = { id: UNMAPPED, kind: "notice", system_kind: UNMAPPED, text, steps: unmapped, order: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER] };
     out.push({ id: row.id, row, fold: null, open: cardOpen(row, s.opened) });
   }
   return out;

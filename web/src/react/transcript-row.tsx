@@ -3,7 +3,7 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon,
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
 import type { MarkdownCache } from "../core/markdown";
-import { duration, wordAt, type Line } from "../core/transcript";
+import { duration, UNMAPPED, wordAt, type Line } from "../core/transcript";
 import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
 import { DiffView, OutputBox } from "./transcript-output";
@@ -57,7 +57,7 @@ function RowBody(ctx: Ctx) {
         <LoaderCircleIcon className="glyph working" /> {row.text}
       </div>
     );
-  if (row.system_kind === "unmapped")
+  if (row.system_kind === UNMAPPED)
     return (
       <div className="quiet" data-testid="unmapped">
         <Disclosure app={app} line={line} title={row.text}>
