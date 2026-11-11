@@ -108,15 +108,13 @@ Then wait for one of three replies:
 | `change: <text>` | revise the same chunk and show it again |
 | `deny` | drop the chunk without argument, ask at most one question, then propose the next chunk |
 
-Example. The intent is "reject an empty phone number (`""`) in the parser". The target is
-`src/parse.py:88`. The reply shows a `diff` fence with 2 `-` lines and 12 `+` lines from
-`diff -u`. The user types `approve`. The chunk is applied, `pytest tests/test_parse.py -q`
-runs, and the reply is one line: `1 passed`. When the last chunk of the behavior passes, the
-behavior is committed as `parse: reject empty phone number` and the reply is `1 passed, a1b2c3d`.
+The check line is the check's own output, such as `1 passed`, and `1 passed, a1b2c3d` after a
+behavior commit.
 
 Save the `diff -u` output to `<scratchpad>/chunk-<N>.diff`. On `approve`, apply it yourself with
 `patch <target> <scratchpad>/chunk-<N>.diff`. Never spawn a chunk writer or any other worker; the
-diff already is the change, and a worker would only re-type it.
+diff already is the change, and a worker would only re-type it. Pair mode is an explicit exception
+to a host contract that sends edits to a coding seat.
 
 Never apply a chunk before `approve`. Never bundle two chunks into one proposal. Exactly one chunk
 stands in front of the user at a time, however many agents or panes are working; the others wait in
@@ -146,25 +144,6 @@ or tear down.
 
 ## Guards
 
-- No edit before `approve`.
-- The base check runs before the behavior list, and a branch behind its upstream is named with
-  its commits.
-- One chunk is one behavior as one diff, up to about 100 changed lines of related changes. A bigger
-  behavior is split in the list, never walked up in stages.
-- A chunk touches only what its behavior names, and its intent line names each case it handles.
-  An unnamed case is a one-line question. Apply `blocks/checked-units/SKILL.md` to new symbols. An
-  edited function stays in place.
-- Code stays inline unless the kit block `blocks/when-to-extract/SKILL.md` allows the
-  extraction.
-- A delete, rename, or conflict resolution is its own chunk, shown as `git diff --stat` plus
-  the file list.
-- `approve` applies and checks the chunk in one turn, and commits when the behavior is complete.
-  No commit question.
-- The agent applies its own chunk with `patch`. No chunk writer, no worker, under any host.
-- The task ends at the last behavior. No cleanup gate, no readability review, no teardown step.
-- The commit subject is one imperative line; a body is optional and short.
-- One chunk in front of the user at a time.
-- The task file follows `blocks/task-file/SKILL.md`, and is updated after every approved chunk.
-- Keep replies to the chunk itself. No progress essays, no restated plan.
-- Show the behavior list and every chunk inline in the chat. A file path is never the reply.
-- Every chunk is a unified diff from `diff -u`, never a prose description of the change.
+- Update the task file after every approved chunk.
+- Keep replies to the chunk itself. No progress essays, no restated plan, and never a file path
+  in place of the list or a chunk.
