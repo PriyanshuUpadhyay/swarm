@@ -1,4 +1,5 @@
-//! A chat's background tasks: the shells and subagents its live Claude agents started (ADR 0104).
+//! A chat's background tasks: the shells and subagents its live Claude agents started, and the
+//! background terminals its live Codex agents started (ADR 0104).
 //!
 //! Claude Code runs them inside its own process, so nothing outside can stop them or type into
 //! them. Its log names each one: a tool result with `toolUseResult.backgroundTaskId` (a shell) or
@@ -22,12 +23,17 @@ pub(super) enum TaskKind {
 pub(super) struct Task {
     pub(super) id: String,
     pub(super) agent: String,
+    /// The CLI that owns the task: `claude` or `codex`.
+    pub(super) provider: &'static str,
     pub(super) kind: TaskKind,
     pub(super) title: String,
     /// The notification's status (`completed`, `failed`, `killed`, ...), `running`, or `unknown`.
     pub(super) status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) summary: Option<String>,
+    /// The log record's own timestamp for the launch, for the chat's running timer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) started_at: Option<String>,
     #[serde(skip)]
     pub(super) output: Option<PathBuf>,
 }
@@ -98,6 +104,7 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
         found.push(Task {
             id: id.into(),
             agent: agent.into(),
+            provider: "claude",
             kind,
             title: title
                 .lines()
@@ -108,6 +115,7 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
                 .collect(),
             status: String::new(),
             summary: None,
+            started_at: record["timestamp"].as_str().map(str::to_string),
             output: texts.iter().find_map(|text| output_path(text)),
         });
     }
@@ -121,6 +129,89 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
         };
     }
     found
+}
+
+/// Every background terminal one live Codex agent's log names, oldest first. Codex unified exec
+/// answers a command that outlives its wait with `Process running with session ID <n>`; the
+/// session is running until a later `write_stdin` poll answers `Process exited with code <c>`.
+pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
+    let mut commands: HashMap<String, String> = HashMap::new();
+    let mut polls: HashMap<String, String> = HashMap::new();
+    let mut found: Vec<Task> = Vec::new();
+    for line in log.lines() {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let payload = &record["payload"];
+        let call = payload["call_id"].as_str().unwrap_or("");
+        match payload["type"].as_str() {
+            Some("function_call") => {
+                let args: Value = payload["arguments"]
+                    .as_str()
+                    .and_then(|text| serde_json::from_str(text).ok())
+                    .unwrap_or_default();
+                match payload["name"].as_str() {
+                    Some("exec_command") => {
+                        let cmd = args["cmd"].as_str().unwrap_or("");
+                        commands.insert(call.into(), cmd.into());
+                    }
+                    Some("write_stdin") => {
+                        if let Some(id) = args["session_id"].as_i64() {
+                            polls.insert(call.into(), id.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Some("function_call_output") => {
+                let Some(text) = payload["output"].as_str() else {
+                    continue;
+                };
+                if let Some(id) = session_id(text, "Process running with session ID ") {
+                    if let Some(cmd) = commands.get(call)
+                        && !found.iter().any(|task| task.id == id)
+                    {
+                        found.push(Task {
+                            id,
+                            agent: agent.into(),
+                            provider: "codex",
+                            kind: TaskKind::Shell,
+                            title: cmd
+                                .lines()
+                                .next()
+                                .unwrap_or("")
+                                .chars()
+                                .take(TITLE_CHARS)
+                                .collect(),
+                            status: "running".into(),
+                            summary: None,
+                            started_at: record["timestamp"].as_str().map(str::to_string),
+                            output: None,
+                        });
+                    }
+                } else if let Some(id) = polls.get(call)
+                    && let Some(code) = session_id(text, "Process exited with code ")
+                    && let Some(task) = found.iter_mut().find(|task| task.id == *id)
+                {
+                    task.status = if code == "0" { "completed" } else { "failed" }.into();
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// The run of digits (or a leading minus) after `label`.
+fn session_id(text: &str, label: &str) -> Option<String> {
+    let rest = &text[text.find(label)? + label.len()..];
+    let id: String = rest
+        .chars()
+        .enumerate()
+        .take_while(|(i, c)| c.is_ascii_digit() || (*i == 0 && *c == '-'))
+        .map(|(_, c)| c)
+        .collect();
+    (!id.is_empty()).then_some(id)
 }
 
 /// The text of a record that Claude Code writes for a task notification: the queued notice, the
@@ -174,26 +265,34 @@ pub(super) fn live_agents(agents: &Value) -> impl Iterator<Item = &Value> {
         .filter(|agent| agent["alive"] == true)
 }
 
-/// The live Claude agents of a session, as (agent id, log path).
-fn claude_logs(app: &Server, session: &str) -> Vec<(String, PathBuf)> {
+/// The live Claude and Codex agents of a session, as (agent id, provider, log path).
+fn agent_logs(app: &Server, session: &str) -> Vec<(String, String, PathBuf)> {
     let hub = app.hub.lock().unwrap();
     live_agents(&hub.agents[session])
-        .filter(|agent| agent["provider"] == "claude")
+        .filter(|agent| agent["provider"] == "claude" || agent["provider"] == "codex")
         .filter_map(|agent| {
             let log = agent["log"].as_str().filter(|log| !log.is_empty())?;
-            Some((agent["id"].as_str()?.to_string(), PathBuf::from(log)))
+            Some((
+                agent["id"].as_str()?.to_string(),
+                agent["provider"].as_str()?.to_string(),
+                PathBuf::from(log),
+            ))
         })
         .collect()
 }
 
-/// Every background task of the session's live Claude agents.
+/// Every background task of the session's live Claude and Codex agents.
 pub(super) fn session_tasks(app: &Server, session: &str) -> Vec<Task> {
-    claude_logs(app, session)
+    agent_logs(app, session)
         .into_iter()
-        .flat_map(|(agent, log)| {
+        .flat_map(|(agent, provider, log)| {
             // ponytail: reads each whole log per call; keep an offset per log if a long chat lags.
             let text = std::fs::read_to_string(log).unwrap_or_default();
-            tasks(&agent, &text)
+            if provider == "codex" {
+                codex_tasks(&agent, &text)
+            } else {
+                tasks(&agent, &text)
+            }
         })
         .collect()
 }
@@ -299,5 +398,53 @@ mod tests {
             Some(Path::new("/tmp/claude-1/x/s/tasks/a3.output"))
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_codex_log_names_a_running_background_terminal() {
+        let record = |payload: Value| {
+            line(
+                json!({"timestamp": "2026-11-11T10:00:00Z", "type": "response_item", "payload": payload}),
+            )
+        };
+        let call = |id: &str, name: &str, args: Value| {
+            record(
+                json!({"type": "function_call", "name": name, "arguments": args.to_string(), "call_id": id}),
+            )
+        };
+        let output = |id: &str, text: &str| {
+            record(json!({"type": "function_call_output", "call_id": id, "output": text}))
+        };
+        let log = [
+            call("c1", "exec_command", json!({"cmd": "npm run dev"})),
+            output("c1", "Chunk ID: 1\nWall time: 1.0 seconds\nProcess running with session ID 1001\nOutput:\nready"),
+            call("c2", "exec_command", json!({"cmd": "make build"})),
+            output("c2", "Wall time: 1.0 seconds\nProcess running with session ID 1002\nOutput:\n"),
+            call("c3", "write_stdin", json!({"session_id": 1002, "chars": ""})),
+            output("c3", "Wall time: 5.0 seconds\nProcess exited with code 0\nOutput:\ndone"),
+            call("c4", "exec_command", json!({"cmd": "ls"})),
+            output("c4", "Wall time: 0.1 seconds\nProcess exited with code 0\nOutput:\nfile"),
+        ]
+        .concat();
+        let found = codex_tasks("chair", &log);
+        let brief: Vec<_> = found
+            .iter()
+            .map(|t| {
+                (
+                    t.id.as_str(),
+                    t.provider,
+                    t.title.as_str(),
+                    t.status.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            brief,
+            [
+                ("1001", "codex", "npm run dev", "running"),
+                ("1002", "codex", "make build", "completed"),
+            ]
+        );
+        assert_eq!(found[0].started_at.as_deref(), Some("2026-11-11T10:00:00Z"));
     }
 }
