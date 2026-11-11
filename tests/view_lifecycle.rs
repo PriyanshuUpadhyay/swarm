@@ -61,15 +61,19 @@ impl Fixture {
             .extend(extra.as_object().unwrap().clone());
         serde_json::from_value(value).unwrap()
     }
-    fn create(&self, name: &str, extra: Value) -> String {
-        lifecycle::create_workspace(
+    /// Creates a workspace and records it as opened, as the New Workspace route does.
+    fn create(&mut self, name: &str, extra: Value) -> String {
+        let path = lifecycle::create_workspace(
             &self.home,
             &self.project(),
             &self.owner,
             &self.request(name, extra),
         )
         .unwrap()
-        .0
+        .0;
+        let project = self.repo.clone();
+        lifecycle::remember(&mut self.owner, &path, &project);
+        path
     }
 }
 macro_rules! isolated {

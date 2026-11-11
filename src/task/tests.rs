@@ -133,3 +133,60 @@ fn the_ref_hook_stops_an_agent_shell_from_moving_main() {
     assert!(String::from_utf8_lossy(&refused.stderr).contains("swarm task land"));
     assert!(move_main(false).status.success());
 }
+
+fn rev(dir: &Path, name: &str) -> String {
+    git(dir, &["rev-parse", name]).unwrap()
+}
+
+#[test]
+fn a_left_over_task_branch_reopens_instead_of_failing() {
+    let Some(wt) = real_wt() else {
+        eprintln!("skipped: Worktrunk is not installed");
+        return;
+    };
+    let dir = hub_fixture("reopen");
+    let root = dir.join("home");
+    let main = dir.join("wt/main");
+    let mine = (Some("s1".to_string()), None);
+    let (task, _) = start(&root, &wt, &main, "fix-y", mine.clone()).unwrap();
+    commit(Path::new(&task.path), "y.txt");
+    let head = rev(Path::new(&task.path), "HEAD");
+    // The same session asks again: it gets its own worktree back.
+    assert_eq!(start(&root, &wt, &main, "fix-y", mine).unwrap().0, task);
+    // Another session is refused while the worktree holds the branch.
+    let other = (Some("s2".to_string()), None);
+    assert!(start(&root, &wt, &main, "fix-y", other.clone()).is_err());
+    // The worktree goes and the branch stays, as Remove worktree and the sweep leave it.
+    git(&main, &["worktree", "remove", &task.path]).unwrap();
+    let (reopened, _) = start(&root, &wt, &main, "fix-y", other).unwrap();
+    assert_eq!(rev(Path::new(&reopened.path), "HEAD"), head);
+    assert_eq!(reopened.session.as_deref(), Some("s2"));
+}
+
+#[test]
+fn a_new_task_starts_from_a_fresh_origin_default() {
+    let Some(wt) = real_wt() else {
+        eprintln!("skipped: Worktrunk is not installed");
+        return;
+    };
+    let dir = hub_fixture("origin");
+    let main = dir.join("wt/main");
+    let upstream = dir.join("upstream");
+    let sh = |script: &str| {
+        let status = Command::new("/bin/sh")
+            .args(["-c", script])
+            .current_dir(&dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .status()
+            .unwrap();
+        assert!(status.success(), "{script}");
+    };
+    sh(
+        "git clone -q .bare upstream && git -C .bare remote add origin \"$PWD/upstream\" \
+        && git -C .bare fetch -q origin && git -C .bare remote set-head origin main",
+    );
+    // origin moves on after the last fetch; the task must start from that new commit.
+    commit(&upstream, "new.txt");
+    let (task, _) = start(&dir.join("home"), &wt, &main, "fresh", (None, None)).unwrap();
+    assert_eq!(rev(Path::new(&task.path), "HEAD"), rev(&upstream, "HEAD"));
+}

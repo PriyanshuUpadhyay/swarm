@@ -251,6 +251,7 @@ fn a_close_of_a_dropped_workspace_ends_only_its_own_shells() {
             main_path: None,
             launch_directory: "/w/repo".into(),
             workspaces: vec![workspace("/w/repo")],
+            hidden: 0,
         }],
         importable: Vec::new(),
     };

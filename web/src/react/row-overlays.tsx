@@ -30,7 +30,7 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
     // A native listener runs before React's root listener, so Radix opens with the row already set.
     const onContextMenu = (e: MouseEvent) => {
       const target = rowOf(app, e.target as Element);
-      if (!target || ["more", "child", "archived"].includes(target.kind)) {
+      if (!target || ["more", "worktrees", "child", "archived"].includes(target.kind)) {
         // Off a row: no menu at all, not an empty one.
         e.preventDefault();
         e.stopPropagation();

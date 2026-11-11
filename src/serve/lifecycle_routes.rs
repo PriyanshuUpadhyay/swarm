@@ -18,7 +18,7 @@ pub(super) fn lifecycle_error(err: lifecycle::Error) -> ApiError {
     let status = match err {
         lifecycle::Error::Forbidden => StatusCode::FORBIDDEN,
         lifecycle::Error::Invalid(_) => StatusCode::BAD_REQUEST,
-        lifecycle::Error::Failed(_) => StatusCode::CONFLICT,
+        lifecycle::Error::Failed(_) | lifecycle::Error::Exists { .. } => StatusCode::CONFLICT,
     };
     error(status, &err.to_string())
 }
@@ -183,7 +183,7 @@ pub(super) async fn execute_lifecycle(
                 if !lifecycle::can_delete(project, workspace) {
                     return Err(error(
                         StatusCode::BAD_REQUEST,
-                        "This workspace cannot be deleted",
+                        "This worktree cannot be removed",
                     ));
                 }
                 let path = p.workspace.clone();
@@ -236,7 +236,7 @@ pub(super) async fn execute_lifecycle(
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "lifecycle task failed"))??;
-    if let Some(script) = setup {
+    if let Some(script) = setup.filter(|_| result["created"] == true) {
         let path = result["workspace"]
             .as_str()
             .expect("created workspace")

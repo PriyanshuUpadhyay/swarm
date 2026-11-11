@@ -18,6 +18,8 @@ pub fn snapshot(sessions: Vec<Value>, agents: Value) -> Value {
 pub fn owner() -> OwnerChoices {
     let mut owner = OwnerChoices::default();
     owner.project_paths.push("/repo/wt/main".into());
+    // The owner opened the empty worktree, so the sidebar lists it with no chat.
+    owner.project_paths.push("/repo/wt/empty".into());
     owner
 }
 pub fn tree() -> Tree {

@@ -10,8 +10,6 @@ pub const PREFIX: &str = "swarm/";
 /// Agents may write main's `tmp/`: it is ignored scratch where kit runs live, and the sidebar
 /// reads step runs there (ADR 0046).
 pub const SCRATCH: &str = "tmp";
-/// The first line of the ref hook swarm writes, so it never replaces another tool's hook.
-const HOOK_MARK: &str = "# swarm task guard (ADR 0135)";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hub {
@@ -255,8 +253,11 @@ fn now() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-/// `swarm task start <slug>`: a worktree on `swarm/<slug>` from the default branch, its record,
-/// and the ref hook. Returns the record and a warning when the hook could not be set.
+/// `swarm task start <slug>`: a worktree on `swarm/<slug>` from a fresh `origin/<default>` (or the
+/// local default branch with no origin), its record, and the ref hook. A left-over `swarm/<slug>`
+/// with no worktree is reopened at its own commit; one that this session's record names returns
+/// that record; one that another worktree holds is refused with its path. Returns the record and a
+/// warning when the hook could not be set.
 pub fn start(
     root: &Path,
     wt: &Path,
@@ -277,27 +278,47 @@ pub fn start(
     }
     let hub = hub(cwd).ok_or("this folder is not in a worktree hub (a bare .bare with wt/)")?;
     let branch = format!("{PREFIX}{slug}");
-    let created = run(
-        wt,
-        &hub.main,
-        &[
-            "switch",
-            "--create",
-            &branch,
-            "--base",
-            &hub.default,
-            "--no-cd",
-            "--format",
-            "json",
-        ],
-        false,
-    )?;
+    let repo = hub.common.to_string_lossy().into_owned();
+    let created = match branch_state(&hub.common, &branch) {
+        BranchState::Checkout(path) => {
+            let mine = read_record(root, &repo, &branch).filter(|task| {
+                owner.0.is_some()
+                    && task.session == owner.0
+                    && resolve(Path::new("/"), Path::new(&task.path))
+                        == resolve(Path::new("/"), &path)
+            });
+            return match mine {
+                Some(task) => Ok((task, None)),
+                None => Err(format!(
+                    "{branch} is already checked out at {}, and this session did not start it there; pick another name, or ask the owner",
+                    path.display()
+                )),
+            };
+        }
+        BranchState::Free => run(
+            wt,
+            &hub.main,
+            &["switch", &branch, "--no-cd", "--format", "json"],
+            false,
+        )?,
+        BranchState::Absent => {
+            let base = fresh_origin_base(&hub.common, &hub.default)?
+                .unwrap_or_else(|| hub.default.clone());
+            run(
+                wt,
+                &hub.main,
+                &[
+                    "switch", "--create", &branch, "--base", &base, "--no-cd", "--format", "json",
+                ],
+                false,
+            )?
+        }
+    };
     let path = created
         .lines()
         .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .and_then(|value| value["path"].as_str().map(str::to_string))
         .ok_or_else(|| format!("Worktrunk did not report a path: {created}"))?;
-    let repo = hub.common.to_string_lossy().into_owned();
     let task = Task {
         branch: branch.clone(),
         path,
@@ -313,60 +334,6 @@ pub fn start(
         return Err(format!("cannot write the task record: {error}"));
     }
     Ok((task, install_hook(&hub)))
-}
-
-/// Write the ref hook into the hub's hooks folder. Returns why it was not written, when it was not.
-pub fn install_hook(hub: &Hub) -> Option<String> {
-    if let Some(path) = git(&hub.common, &["config", "--get", "core.hooksPath"]) {
-        return Some(format!(
-            "core.hooksPath is {path}, so the ref hook is not set; the guard wall still blocks agent moves of {}",
-            hub.default
-        ));
-    }
-    // The name goes into a shell script, so only plain branch names are written there.
-    if !hub
-        .default
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || "._/-".contains(c))
-    {
-        return Some(format!(
-            "the default branch {:?} has characters a hook script would read as shell, so the ref hook is not set",
-            hub.default
-        ));
-    }
-    let file = hub.common.join("hooks").join("reference-transaction");
-    // Read as bytes, so a hook that is not UTF-8 still counts as another tool's.
-    if let Ok(bytes) = std::fs::read(&file)
-        && !String::from_utf8_lossy(&bytes).contains(HOOK_MARK)
-    {
-        return Some(format!(
-            "{} is another tool's hook, so swarm's ref hook is not set",
-            file.display()
-        ));
-    }
-    let markers = AGENT_MARKERS
-        .iter()
-        .map(|name| format!("${{{name}:-}}"))
-        .collect::<String>();
-    let script = format!(
-        "#!/bin/sh\n{HOOK_MARK}: an agent shell cannot move {default}; `swarm task land` asks swarm to.\n\
-         [ \"$1\" = prepared ] || {{ cat >/dev/null; exit 0; }}\n\
-         refused=0\n\
-         while read -r old new ref; do\n  [ \"$ref\" = refs/heads/{default} ] && refused=1\ndone\n\
-         [ \"$refused\" = 1 ] && [ -n \"{markers}\" ] || exit 0\n\
-         echo \"swarm: agents cannot move {default}; edit in a task worktree and run swarm task land\" >&2\n\
-         exit 1\n",
-        default = hub.default
-    );
-    let written = std::fs::create_dir_all(file.parent()?)
-        .and_then(|()| std::fs::write(&file, script))
-        .and_then(|()| {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755))
-        });
-    written
-        .err()
-        .map(|error| format!("cannot write {}: {error}", file.display()))
 }
 
 /// The task worktree that holds `cwd`, with its record.
@@ -462,6 +429,12 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Ta
     Ok(task)
 }
 
+#[path = "task/branches.rs"]
+mod branches;
+pub use branches::{BranchState, branch_state, fresh_origin_base};
+#[path = "task/hook.rs"]
+mod hook;
+pub use hook::install_hook;
 #[path = "task/landing.rs"]
 mod landing;
 pub use landing::{request_landing, serve_landings, take_result};

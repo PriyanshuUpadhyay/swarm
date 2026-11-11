@@ -64,12 +64,15 @@ pub fn options(project: &Project, owner: &OwnerChoices) -> Result<Value> {
         .unwrap_or(Value::Null);
     Ok(value)
 }
+/// Creates a workspace, or opens the worktree that already has the picked existing branch.
+/// Returns its path, the project's new defaults, and whether git made a new worktree. A new
+/// branch whose name is taken is `Error::Exists`, so the dialog can offer to open or reopen it.
 pub fn create_workspace(
     root: &Path,
     project: &Project,
     owner: &OwnerChoices,
     request: &NewWorkspace,
-) -> Result<(String, Value)> {
+) -> Result<(String, Value, bool)> {
     let common = common(project)
         .ok_or_else(|| Error::Invalid("New Workspace needs a Git project".into()))?;
     checked_path(root, &project.path, true)?;
@@ -79,6 +82,36 @@ pub fn create_workspace(
     let branch = branch_name(&request.name, prefix).ok_or_else(|| {
         Error::Invalid("Enter a name and prefix that make a valid Git branch".into())
     })?;
+    let current = owner
+        .project_defaults
+        .get(&project.path)
+        .filter(|s| s.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let state = |name: &str| crate::task::branch_state(Path::new(common), name);
+    match request.mode {
+        Mode::ExistingBranch => {
+            let existing = request.branch.as_deref().unwrap_or("");
+            let name = existing.strip_prefix("origin/").unwrap_or(existing);
+            if let crate::task::BranchState::Checkout(path) = state(name)
+                && references(common)?.checkouts.contains_key(name)
+            {
+                return Ok((path.to_string_lossy().into_owned(), current, false));
+            }
+        }
+        _ => match state(&branch) {
+            crate::task::BranchState::Absent => {}
+            crate::task::BranchState::Free => {
+                return Err(Error::Exists { branch, path: None });
+            }
+            crate::task::BranchState::Checkout(path) => {
+                return Err(Error::Exists {
+                    branch,
+                    path: Some(path.to_string_lossy().into_owned()),
+                });
+            }
+        },
+    }
     let folder_setting = request.folder.as_deref().unwrap_or(&folder).trim();
     if folder_setting.is_empty() {
         return Err(Error::Invalid("Enter a worktree folder".into()));
@@ -116,6 +149,16 @@ pub fn create_workspace(
             } else {
                 if !refs.bases.iter().any(|b| b == base) {
                     return Err(Error::Invalid("Select a known base branch".into()));
+                }
+                // A remote base is fetched first, so the branch starts from origin as it is now.
+                // No upstream, so a plain push cannot go to the base branch.
+                if let Some(name) = base.strip_prefix("origin/") {
+                    check_git(common, &["fetch", "--quiet", "origin", name]).map_err(|e| {
+                        Error::Failed(format!(
+                            "Swarm could not fetch {base}, so it made no workspace. Try again. {e}"
+                        ))
+                    })?;
+                    args.push("--no-track");
                 }
                 args.extend(["-b", &branch, "--", path, base]);
             }
@@ -181,12 +224,7 @@ pub fn create_workspace(
                 "Git created {expected}, but did not list its worktree"
             ))
         })?;
-    let mut settings = owner
-        .project_defaults
-        .get(&project.path)
-        .filter(|s| s.is_object())
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let mut settings = current;
     settings["worktreeFolder"] = json!(if folder_setting == seed {
         None
     } else {
@@ -197,5 +235,5 @@ pub fn create_workspace(
     } else {
         Some(prefix)
     });
-    Ok((created.path, settings))
+    Ok((created.path, settings, true))
 }

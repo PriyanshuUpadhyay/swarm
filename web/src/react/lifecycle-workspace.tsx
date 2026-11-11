@@ -20,16 +20,16 @@ function NewWorkspaceDialog({ app }: { app: App }) {
   const nw = useLife(app, "newWorkspace");
   return (
     <Frame open={nw !== null} onClose={() => app.life.close("newWorkspace")} title="New workspace" testid="new-workspace" wide>
-      {nw && <NewWorkspaceBody app={app} initialProject={nw.project} key={nw.project} />}
+      {nw && <NewWorkspaceBody app={app} initialProject={nw.project} initialMode={nw.mode} key={`${nw.project}:${nw.mode ?? ""}`} />}
     </Frame>
   );
 }
 
-function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: string }) {
+function NewWorkspaceBody({ app, initialProject, initialMode }: { app: App; initialProject: string; initialMode?: Mode }) {
   const create = useLife(app, "create");
   const projects = app.life.projects();
   const [project, setProject] = useState(initialProject);
-  const [mode, setMode] = useState<Mode>("new-branch");
+  const [mode, setMode] = useState<Mode>(initialMode ?? "new-branch");
   const [opts, setOpts] = useState<{ project: string; options: NewOptions | null; error: string | null } | null>(null);
   const [name, setName] = useState("");
   const [base, setBase] = useState("");
@@ -42,6 +42,7 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
   const [fetching, setFetching] = useState<{ error: string | null } | null>(null);
   const working = create?.state === "working";
   const kept = create?.state === "kept";
+  const existing = create?.state === "exists" ? (create.existing ?? null) : null;
 
   useEffect(() => {
     let live = true;
@@ -52,7 +53,8 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
         setOpts({ project, options, error: null });
         // A re-read after a fetch keeps the picks that still exist.
         setBase((b) => (options.bases.includes(b) ? b : (options.bases[0] ?? "")));
-        setBranch((b) => (options.branches.includes(b) ? b : (options.branches[0] ?? "")));
+        const choices = branchChoices(options);
+        setBranch((b) => (choices.includes(b) ? b : (choices[0] ?? "")));
         setFolder(options.folder);
         setPrefix(options.prefix);
       },
@@ -79,14 +81,17 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
   const request = (): NewRequest | null => {
     const common = { project, folder, prefix };
     if (mode === "issue") return issue?.project === project ? { ...common, mode, name: "", issue: issue.issue.number, base: base || undefined } : null;
+    // An existing branch names its folder after itself when the name is blank.
+    if (mode === "existing-branch") return branch ? { ...common, mode, name: name.trim() || (branch.split("/").pop() ?? branch), branch } : null;
     if (!name.trim()) return null;
     if (mode === "new-branch") return { ...common, mode, name: name.trim(), base: unborn ? undefined : base };
-    if (mode === "existing-branch") return branch ? { ...common, mode, name: name.trim(), branch } : null;
     const n = Number(pr);
     return Number.isInteger(n) && n > 0 ? { ...common, mode, name: name.trim(), pr: n } : null;
   };
   const req = request();
   const submit = () => req && !working && void app.life.create(req);
+  // Open or Reopen a taken name: the same request as a pick on Existing branch.
+  const openExisting = (e: { branch: string }) => void app.life.create({ project, folder, prefix, mode: "existing-branch", name: name.trim() || (e.branch.split("/").pop() ?? e.branch), branch: e.branch });
 
   return (
     <form
@@ -128,7 +133,15 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
           <>
             {mode !== "issue" && (
               <Label text="Name">
-                <input autoFocus className={FIELD} data-testid="nw-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={mode === "pr" ? "Review 42" : "Fix sidebar"} />
+                <input
+                  autoFocus
+                  className={FIELD}
+                  data-testid="nw-name"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    app.life.forgetExisting();
+                  }} placeholder={mode === "pr" ? "Review 42" : "Fix sidebar"} />
               </Label>
             )}
             {(mode === "new-branch" || mode === "issue") &&
@@ -138,11 +151,12 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
                 <BranchPicker label="Base branch" testid="nw-base" branches={options.bases} value={base} onChange={setBase} />
               ))}
             {mode === "existing-branch" &&
-              (options.branches.length ? (
+              (branchChoices(options).length ? (
                 <BranchPicker
                   label="Branch"
                   testid="nw-branch"
-                  branches={options.branches}
+                  branches={branchChoices(options)}
+                  open={options.checkouts}
                   value={branch}
                   onChange={(b) => {
                     setBranch(b);
@@ -150,7 +164,7 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
                   }}
                 />
               ) : (
-                <p className="text-sm text-muted-foreground">Every branch is already checked out in a workspace.</p>
+                <p className="text-sm text-muted-foreground">This project has no branch but the default one.</p>
               ))}
             {mode === "pr" && (
               <Label text="Pull request number">
@@ -175,6 +189,19 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
         )}
       </fieldset>
       <CreateProgress app={app} />
+      {existing && (
+        <p className="text-sm" role="status" data-testid="nw-existing">
+          {existing.path ? (
+            <>
+              The branch <code className="font-mono">{existing.branch}</code> is already open at <code className="font-mono break-all">{existing.path}</code>.
+            </>
+          ) : (
+            <>
+              The branch <code className="font-mono">{existing.branch}</code> already exists, with no worktree. Reopen it to continue its work, or change the name.
+            </>
+          )}
+        </p>
+      )}
       {working && <p className="text-sm text-muted-foreground">Setup continues when you hide this dialog.</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("newWorkspace")}>
@@ -184,10 +211,14 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
           <Button type="button" size="sm" data-testid="nw-open" onClick={() => void app.life.openKept()}>
             Open workspace
           </Button>
+        ) : existing ? (
+          <Button type="button" size="sm" data-testid="nw-open-existing" onClick={() => openExisting(existing)}>
+            {existing.path ? "Open workspace" : "Reopen branch"}
+          </Button>
         ) : (
           <Button type="submit" size="sm" data-testid="nw-create" disabled={!req || working}>
             {working && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
-            Create
+            {mode === "existing-branch" && options?.checkouts?.[branch] ? "Open" : "Create"}
           </Button>
         )}
       </div>
@@ -195,8 +226,14 @@ function NewWorkspaceBody({ app, initialProject }: { app: App; initialProject: s
   );
 }
 
-/** A filter box over a branch list, so a long list needs no scrolling. Arrow keys move the pick. */
-function BranchPicker({ label, testid, branches, value, onChange }: { label: string; testid: string; branches: string[]; value: string; onChange: (branch: string) => void }) {
+/** The Existing branch list: the open worktrees first, then the free branches. */
+function branchChoices(options: NewOptions): string[] {
+  return [...Object.keys(options.checkouts ?? {}), ...options.branches];
+}
+
+/** A filter box over a branch list, so a long list needs no scrolling. Arrow keys move the pick.
+ *  A branch in `open` is checked out already, so picking it opens that worktree. */
+function BranchPicker({ label, testid, branches, open, value, onChange }: { label: string; testid: string; branches: string[]; open?: Record<string, string>; value: string; onChange: (branch: string) => void }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
   const shown = q ? branches.filter((b) => b.toLowerCase().includes(q)) : branches;
@@ -224,10 +261,15 @@ function BranchPicker({ label, testid, branches, value, onChange }: { label: str
             role="option"
             aria-selected={b === value}
             ref={b === value ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
-            className="flex w-full px-2 py-1 text-left font-mono text-sm hover:bg-hover aria-selected:bg-selected"
+            className="flex w-full gap-2 px-2 py-1 text-left font-mono text-sm hover:bg-hover aria-selected:bg-selected"
             onClick={() => onChange(b)}
           >
-            <span className="min-w-0 truncate">{b}</span>
+            <span className="min-w-0 flex-1 truncate">{b}</span>
+            {open?.[b] && (
+              <span className="shrink-0 text-xs text-muted-foreground" title={open[b]}>
+                open
+              </span>
+            )}
           </button>
         ))}
       </div>
