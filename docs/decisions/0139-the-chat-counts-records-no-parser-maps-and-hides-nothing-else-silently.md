@@ -7,6 +7,7 @@ related: ["0099", "0120"]
 informed-by:
   - 'owner, 2026-11-11: approved plan tmp/flow/2026-11-11-ui-unmapped-items/plan.md on its Plannotator page with no notes, so every recommended default stands'
   - 'research 2026-11-11: T3 Code drops unknown item types on decode, and Swarm hid them too'
+  - 'owner, 2026-11-11: approved the record-map audit build; every record must have an explicit end state'
 ---
 
 # 0139. The chat counts records no parser maps
@@ -17,6 +18,16 @@ maps, and 0099 hid it like any other bookkeeping, so an update went unnoticed. A
 
 ## Decision
 
+- Every record is a row, part of a named row, hidden on purpose, or counted as unmapped. A record
+  that gives no events is unmapped. Copies of an item join its row; they do not add a second row.
+- `tests/record_map/mapping.rs` owns `RECORD_MAP`, the table of CLI kinds and their end states.
+  Its guard in `tests/record_map.rs`
+  reads the reader sources with `include_str!`, rejects a named kind with no table entry, and
+  replays every row or part entry through the public `SnapshotReader`. Run `cargo test --test record_map`.
+  `NotKnown` keeps a hidden Claude kind hidden when its CLI display is not confirmed. The four
+  existing rows `away_summary`, `scheduled_task_fire`, `stop_hook_summary`, and
+  `hook_permission_decision` keep their rows until the owner checks the CLI. Codex `Extension`
+  items stay unmapped until their display contract is chosen.
 - A record no parser maps (event `unknown`, or a contract event the view does not know) becomes a
   hidden row with `system_kind` `unmapped`. An `ignored` event stays `record`, because ignoring is
   a decision, not a loss.
