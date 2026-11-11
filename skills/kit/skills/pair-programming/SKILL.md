@@ -60,7 +60,11 @@ Read the code the task touches first. Then ask the questions that change what ge
 round is one numbered list of every open direction-changing question whose prerequisites are
 settled, each with a default that `yes` accepts. There is no limit on rounds or questions.
 
-- Never ask what the code or the task already answers; look it up.
+- Never ask what the code or the task already answers; look it up. A question that restates the
+  task text, or a choice already recorded as an A-line, is never asked. When the task text states a
+  value, record it as an A-line marked `typed` with the words `from the request` and go on. In a
+  real run the agent asked "Print to stdout, with the line `size_gate 1` and nothing else?", which
+  the task text already stated, and later asked again about a choice it had recorded as accepted.
 - Each number, size, or limit that the agent invents is a question, with the number as its default.
 - A task with no open choice gets no question.
 - Ask one question alone when its answer controls the next ones, or when the user asks for single
