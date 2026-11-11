@@ -10,6 +10,9 @@ fn without_body(mut value: serde_json::Value) -> serde_json::Value {
                 if map.contains_key("display") && (page || frame || queue) {
                     map.shift_remove("body");
                 }
+                if map.contains_key("key") && map.contains_key("ended") {
+                    map.shift_remove("live_body");
+                }
                 for child in map.values_mut() {
                     strip(child);
                 }

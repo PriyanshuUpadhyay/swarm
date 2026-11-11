@@ -9,10 +9,11 @@ fn queued(app: &App) -> Vec<(String, Value)> {
         .queue
         .iter()
         .map(|frame| {
-            (
-                frame.name.to_owned(),
-                serde_json::from_str(&frame.data).unwrap(),
-            )
+            let mut actual: Value = serde_json::from_str(&frame.data).unwrap();
+            if frame.name == "live" {
+                actual.as_object_mut().unwrap().remove("live_body");
+            }
+            (frame.name.to_owned(), actual)
         })
         .collect()
 }

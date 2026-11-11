@@ -41,6 +41,8 @@ export type Chat = {
   live: string | null;
   /** The live text's tree; it is set, kept and cleared with live. */
   liveDisplay: Display | null;
+  /** The served live painter choice, validated before painting. */
+  liveBody: unknown;
   /** How many visible units show, or text characters without a display. New text types
    *  out over a few steps. */
   liveShown: number;

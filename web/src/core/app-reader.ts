@@ -1,7 +1,7 @@
 
 
 import type { Usage } from "./composer";
-import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, noteLiveDisplay, notePatch, partsOf, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, type Line } from "./transcript";
 import { ApiError, type Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -24,7 +24,15 @@ export class AppReader {
     const text = chat.liveShown === 0 ? null : display === null ? chat.live?.slice(0, chat.liveShown) ?? null : chat.live;
     const live = liveRows(text, chat.liveThinking, chat);
     const row = live.find((row) => row.id === "live");
-    if (row) noteLiveDisplay(row, display === null ? null : cut(display, chat.liveShown));
+    if (row) {
+      const body = chat.liveBody;
+      const tree = body !== null && typeof body === "object" && "kind" in body
+        && (body.kind === "tree" || (body.kind === "plain_from" && "shown_utf16" in body
+          && typeof body.shown_utf16 === "number" && Number.isSafeInteger(body.shown_utf16)
+          && body.shown_utf16 >= 0 && chat.liveShown < body.shown_utf16));
+      noteDisplay([row], display === null ? {} : { [row.id]: cut(display, chat.liveShown) });
+      noteBody([row], { [row.id]: tree ? "tree" : "plain" });
+    }
     const rows = live.length || chat.queue.length ? [...chat.rows, ...live, ...chat.queue] : chat.rows;
     return lines(rows, { folds: chat.folds, opened: chat.opened });
   }
@@ -50,6 +58,7 @@ export class AppReader {
       queue: [],
       live: null,
       liveDisplay: null,
+      liveBody: undefined,
       liveShown: 0,
       liveThinking: null,
       liveEnded: false,

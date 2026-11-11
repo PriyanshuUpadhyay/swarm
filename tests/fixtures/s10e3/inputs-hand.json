@@ -1,0 +1,68 @@
+[
+  {
+    "id": "hand-live-cut-before-later",
+    "live": {
+      "text": "ab raw unsupported c",
+      "display": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "ab"
+              }
+            ]
+          },
+          {
+            "type": "later",
+            "value": "block"
+          },
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "c"
+              }
+            ]
+          }
+        ]
+      },
+      "shown": 1
+    }
+  },
+  {
+    "id": "hand-live-whole-later",
+    "live": {
+      "text": "ab raw unsupported c",
+      "display": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "ab"
+              }
+            ]
+          },
+          {
+            "type": "later",
+            "value": "block"
+          },
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "c"
+              }
+            ]
+          }
+        ]
+      },
+      "shown": 3
+    }
+  }
+]

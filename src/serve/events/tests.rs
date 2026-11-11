@@ -324,7 +324,11 @@ async fn a_working_pi_chair_streams_its_extension_file_and_not_its_screen() {
     }
     let frames = live(&fixture.app);
     assert_eq!(
-        frames[0],
+        {
+            let mut actual = frames[0].clone();
+            actual.as_object_mut().unwrap().remove("live_body");
+            actual
+        },
         json!({"key": key, "text": "The river bends.", "thinking": "Plan the walk.",
         "display": {"blocks": [{"type": "paragraph", "value": [{"type": "text", "value": "The river bends."}]}]},
         "ended": true, "hide_text": false, "hide_thinking": false})
@@ -400,8 +404,15 @@ async fn a_working_pi_chair_streams_the_display_of_its_live_text() {
     };
     until_live(&fixture.app, &live, 1).await;
     let frames = live(&fixture.app);
-    let display = swarm::view::transcript::markdown::display::display(text).unwrap();
-    assert_eq!(frames[0]["display"], serde_json::to_value(display).unwrap());
+    // HAND: supported text has no later node, so this frame must serve tree.
+    let display = json!({"blocks": [{"type": "paragraph", "value": [
+        {"type": "strong", "value": [{"type": "text", "value": "The"}]},
+        {"type": "text", "value": " river: "}, {"type": "code", "value": "bends"}
+    ]}]});
+    assert_eq!(
+        json!({"display": frames[0]["display"], "live_body": frames[0]["live_body"]}),
+        json!({"display": display, "live_body": {"kind": "tree"}})
+    );
     // pi empties the file when the message ends; its unlanded thought keeps both fields.
     std::fs::write(&file, "").unwrap();
     for _ in 0..40 {
@@ -415,6 +426,7 @@ async fn a_working_pi_chair_streams_the_display_of_its_live_text() {
         frames[0],
         json!({"key": key, "text": "**The** river: `bends`", "thinking": "Plan the walk.",
         "display": {"blocks": [{"type": "paragraph", "value": [{"type": "strong", "value": [{"type": "text", "value": "The"}]}, {"type": "text", "value": " river: "}, {"type": "code", "value": "bends"}]}]},
+        "live_body": {"kind": "tree"},
         "ended": true, "hide_text": false, "hide_thinking": false})
     );
     drop(Events {
@@ -479,7 +491,11 @@ async fn a_new_watcher_tells_the_page_that_no_turn_runs() {
     let frames = live(&fixture.app);
     assert_eq!(frames.len(), 1);
     assert_eq!(
-        frames[0],
+        {
+            let mut actual = frames[0].clone();
+            actual.as_object_mut().unwrap().remove("live_body");
+            actual
+        },
         json!({"key": key, "text": null, "thinking": null, "display": null,
         "ended": false, "hide_text": false, "hide_thinking": false})
     );

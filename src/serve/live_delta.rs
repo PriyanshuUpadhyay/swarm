@@ -31,6 +31,7 @@ pub(super) fn live_frame(
     shown: view::live_shown::Shown,
     display: Option<view::markdown::display::Display>,
 ) -> Frame {
+    let live_body = view::markdown::display::live_body(display.as_ref());
     Frame::new(
         "live",
         json!({
@@ -38,6 +39,7 @@ pub(super) fn live_frame(
             "text": shown.raw.text,
             "thinking": shown.raw.thinking,
             "display": display,
+            "live_body": live_body,
             "ended": shown.ended,
             "hide_text": shown.hide_text,
             "hide_thinking": shown.hide_thinking,

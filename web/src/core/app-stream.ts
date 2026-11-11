@@ -83,6 +83,7 @@ export class AppStream {
         this.app.reconnecting = false;
         // A frame sent while the stream was down is lost, so live text could be stale.
         for (const chat of this.app.chats.values()) {
+          chat.liveBody = undefined;
           if (chat.live === null && chat.liveThinking === null) continue;
           [chat.live, chat.liveDisplay, chat.liveThinking] = [null, null, null];
           chat.version++;
@@ -146,6 +147,7 @@ export class AppStream {
       if (hidesChanged) this.app.reading.changed(chat);
       return;
     }
+    chat.liveBody = data.live_body;
     if (ended) {
       [chat.live, chat.liveDisplay, chat.liveThinking, chat.liveEnded] = [text, display, thinking, true];
       chat.liveShown = shown(chat).length;

@@ -1,14 +1,14 @@
-// Step 5(g) slice S5b (contract LIVE-WEB-V3, R2, R3 and V2 items 1 to 3, V3 item 1): the live row and the queue
-// rows are painted from their display. Every expected tree is written by hand, so these cases compile and fail
-// by assertion before the code exists. The setup is the one of app-stream.test.ts.
+// S10e-3: served live choices reach the production row painter through the local clock.
 import { describe, expect, it, vi } from "vitest";
 import frozenQueue from "../../../tests/fixtures/s8c/queue.json";
+import liveInputs from "../../../tests/fixtures/s10e3/inputs-hand.json";
+import liveExpected from "../../../tests/fixtures/s10e3/expected-hand.json";
 import type { Display, Snapshot } from "./api";
 import type { App } from "./app";
 import { AppReader } from "./app-reader";
 import { AppStream } from "./app-stream";
 import type { Chat } from "./app-types";
-import { FoldChoices, bodyOf } from "./transcript";
+import { FoldChoices } from "./transcript";
 import { paintedBody } from "./body-paint.fixture";
 
 const text = (value: string) => ({ type: "text" as const, value });
@@ -26,7 +26,7 @@ const short: Display = paragraph(strong("ab"), text(" c"));
 // "**b**"
 const bold: Display = paragraph(strong("b"));
 
-const frame = (data: Record<string, unknown>) => ({ event: "live", data: JSON.stringify({ key: "s:chair", thinking: null, ended: false, hide_text: false, hide_thinking: false, ...data }) });
+const frame = (data: Record<string, unknown>) => ({ event: "live", data: JSON.stringify({ key: "s:chair", thinking: null, ended: false, hide_text: false, hide_thinking: false, live_body: { kind: "tree" }, ...data }) });
 /** The field the code adds to Chat. Read through a cast, so this file compiles before it exists. */
 const shownDisplay = (chat: Chat) => (chat as unknown as { liveDisplay?: Display | null }).liveDisplay ?? null;
 
@@ -37,7 +37,12 @@ function liveApp() {
     live: null, liveShown: 0, liveThinking: null, liveEnded: false, liveDisplay: null, hideText: false, hideThinking: false,
     queue: [], folds: new FoldChoices(), opened: new Map(),
   } as unknown as Chat;
-  const app = { chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {}, reading: { changed: (c: Chat) => c.version++ } };
+  const app = {
+    chats: new Map([["s", chat]]), pending: new Map(), openId: "s", notify: () => {},
+    reading: { changed: (c: Chat) => c.version++ }, serverBuild: null, streamId: null,
+    sentKeys: "", lru: [], visible: [], pane: { zoomed: null },
+    navigation: { refreshSnapshot: async () => {} },
+  };
   const stream = new AppStream(app as unknown as App);
   const reader = new AppReader(app as unknown as App);
   /** The live row as the list builds it, or null while no live row shows. */
@@ -53,10 +58,10 @@ describe("live display", () => {
       stream.onSse(frame({ text: source, display: full }));
       vi.advanceTimersByTime(40);
       const step = liveLine();
-      const afterStep = step && { body: bodyOf(step), text: step.text };
+      const afterStep = step && { body: paintedBody(step), text: step.text };
       vi.advanceTimersByTime(1000);
       const end = liveLine();
-      const atEnd = end && { body: bodyOf(end), text: end.text };
+      const atEnd = end && { body: paintedBody(end), text: end.text };
       expect({ afterStep, atEnd }).toEqual({
         afterStep: { body: { kind: "tree", display: firstStep }, text: source },
         atEnd: { body: { kind: "tree", display: full }, text: source },
@@ -74,7 +79,7 @@ describe("live display", () => {
       vi.advanceTimersByTime(1000);
       stream.onSse(frame({ text: source, display: full, ended: true }));
       const row = liveLine();
-      expect({ live: chat.live, display: shownDisplay(chat), body: row && bodyOf(row) }).toEqual({
+      expect({ live: chat.live, display: shownDisplay(chat), body: row && paintedBody(row) }).toEqual({
         live: source,
         display: full,
         body: { kind: "tree", display: full },
@@ -101,7 +106,88 @@ describe("live display", () => {
   });
 });
 
-// Live tests above keep bodyOf and the exact prefix behavior.
+describe("served live body", () => {
+  it("keeps both ORIGINAL live prefixes and full raw text through the row painter", () => {
+    vi.useFakeTimers();
+    try {
+      const results = liveInputs.map(({ id, live }) => {
+        const { stream, chat, liveLine } = liveApp();
+        stream.onSse(frame({ text: live.text, display: live.display,
+          live_body: { kind: "plain_from", shown_utf16: 3 } }));
+        vi.advanceTimersByTime(live.shown * 30);
+        const row = liveLine()!;
+        return { id, shown: chat.liveShown, body: paintedBody(row), text: row.text };
+      });
+      expect(results).toEqual(liveExpected);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("requires a known served choice and a safe UTF-16 threshold before painting a tree", () => {
+    vi.useFakeTimers();
+    try {
+      // These are wire-input guards for the owner-approved plain fallback.
+      const choices = [undefined, null, { kind: "future" }, { kind: "plain" },
+        { kind: "plain_from", shown_utf16: -1 },
+        { kind: "plain_from", shown_utf16: 0.5 },
+        { kind: "plain_from", shown_utf16: Number.MAX_SAFE_INTEGER + 1 },
+        { kind: "plain_from", shown_utf16: "3" },
+        { kind: "plain_from", shown_utf16: null }];
+      const results = choices.map(live_body => {
+        const { stream, liveLine } = liveApp();
+        stream.onSse(frame({ text: source, display: full, live_body }));
+        vi.advanceTimersByTime(30);
+        const row = liveLine()!;
+        return { body: paintedBody(row), text: row.text };
+      });
+      const { stream, liveLine } = liveApp();
+      stream.onSse(frame({ text: "abc", display: null, live_body: { kind: "tree" } }));
+      vi.advanceTimersByTime(30);
+      const noDisplay = liveLine()!;
+      expect({ results, noDisplay: { body: paintedBody(noDisplay), text: noDisplay.text } }).toEqual({
+        results: choices.map(() => ({ body: { kind: "plain" }, text: source })),
+        noDisplay: { body: { kind: "plain" }, text: "a" },
+      });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("pairs choices with accepted frames and drops old choices when an end or hello clears them", () => {
+    vi.useFakeTimers();
+    try {
+      const { stream, chat, liveLine } = liveApp();
+      const paint = () => {
+        const row = liveLine();
+        return row && { body: paintedBody(row), text: row.text };
+      };
+      stream.onSse(frame({ text: source, display: full }));
+      vi.advanceTimersByTime(30);
+      stream.onSse(frame({ text: source, display: bold, live_body: { kind: "plain" } }));
+      const ignored = paint();
+      // The same-text active frame is ignored; the ended frame is accepted.
+      stream.onSse(frame({ text: source, display: full, ended: true, live_body: undefined }));
+      const ended = paint();
+      stream.onSse(frame({ text: null, display: null, ended: true }));
+      const cleared = paint();
+      stream.onSse(frame({ text: source, display: full }));
+      vi.advanceTimersByTime(30);
+      const beforeHello = paint();
+      stream.onSse({ event: "hello", data: JSON.stringify({ stream: "new", build: "test" }) });
+      const hello = { live: chat.live, display: shownDisplay(chat), row: paint() };
+      stream.onSse(frame({ text: source, display: full, live_body: undefined }));
+      vi.advanceTimersByTime(30);
+      const afterHello = paint();
+      expect({ ignored, ended, cleared, beforeHello, hello, afterHello }).toEqual({
+        ignored: { body: { kind: "tree", display: firstStep }, text: source },
+        ended: { body: { kind: "plain" }, text: source },
+        cleared: null,
+        beforeHello: { body: { kind: "tree", display: firstStep }, text: source },
+        hello: { live: null, display: null, row: null },
+        afterHello: { body: { kind: "plain" }, text: source },
+      });
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+// Queue tests keep their served saved-row choices.
 describe("queue display", () => {
   const queue = [
     { images: [], mode: "steering", text: "**b**", display: bold, body: "tree", id: "queue-0", detail: "Steering" },

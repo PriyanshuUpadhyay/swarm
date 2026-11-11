@@ -66,6 +66,86 @@ pub enum Inline {
     Later(&'static str),
 }
 
+/// The live painter's first plain position, in visible UTF-16 units.
+/// New variants may be added; unknown choices must fall back to plain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LiveBody {
+    Plain,
+    Tree,
+    PlainFrom { shown_utf16: usize },
+}
+
+/// Count the same visible units as the web's units/cut traversal, without a cut tree.
+pub fn live_body(display: Option<&Display>) -> LiveBody {
+    let Some(display) = display else {
+        return LiveBody::Plain;
+    };
+    let mut count = LiveUnits::default();
+    count.blocks(&display.blocks);
+    match count.before_later {
+        // At full length, cut returns the complete tree, including trailing later nodes.
+        Some(before) => LiveBody::PlainFrom {
+            shown_utf16: before.saturating_add(1).min(count.total),
+        },
+        None => LiveBody::Tree,
+    }
+}
+
+#[derive(Default)]
+struct LiveUnits {
+    total: usize,
+    before_later: Option<usize>,
+}
+
+impl LiveUnits {
+    fn text(&mut self, text: &str) {
+        self.total += text.encode_utf16().count();
+    }
+
+    fn later(&mut self) {
+        self.before_later.get_or_insert(self.total);
+    }
+
+    fn blocks(&mut self, blocks: &[Block]) {
+        for block in blocks {
+            match block {
+                Block::Paragraph(children) | Block::Heading { children, .. } => {
+                    self.inlines(children);
+                }
+                Block::Blockquote(children) => self.blocks(children),
+                Block::List { items, .. } => {
+                    for item in items {
+                        self.blocks(item);
+                    }
+                }
+                Block::Code { text, .. } => self.text(text),
+                Block::Table { head, rows, .. } => {
+                    for cell in head.iter().chain(rows.iter().flatten()) {
+                        self.inlines(cell);
+                    }
+                }
+                Block::Later(_) => self.later(),
+                Block::ThematicBreak => {}
+            }
+        }
+    }
+
+    fn inlines(&mut self, inlines: &[Inline]) {
+        for inline in inlines {
+            match inline {
+                Inline::Text(text) | Inline::Code(text) => self.text(text),
+                Inline::Break => self.total += 1,
+                Inline::Emphasis(children)
+                | Inline::Strong(children)
+                | Inline::Delete(children)
+                | Inline::Link { children, .. } => self.inlines(children),
+                Inline::Later(_) => self.later(),
+            }
+        }
+    }
+}
+
 /// The painter for a complete display tree. New modes may be added.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]

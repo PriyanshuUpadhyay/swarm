@@ -277,7 +277,12 @@ fn frames(cap: &Cap, name: &str, rows: &mut SseStream, raw: &mut SseStream) {
         serde_json::from_slice(&frozen::bytes(&format!("out-1/{}/{name}.json", cap.case))).unwrap();
     let value = json!({"rows":collect(rows, expected["rows"].as_array().unwrap()),"raw":collect(raw, expected["raw"].as_array().unwrap())});
     let text = value.to_string().replace(&cap.session, "SESSION");
-    let actual: Value = serde_json::from_str(&text).unwrap();
+    let mut actual: Value = serde_json::from_str(&text).unwrap();
+    for frame in actual["rows"].as_array_mut().unwrap() {
+        if frame["event"] == "live" {
+            frame["data"].as_object_mut().unwrap().shift_remove("live_body");
+        }
+    }
     rows.check.as_mut().unwrap().observe(
         name,
         actual["rows"].as_array().unwrap(),

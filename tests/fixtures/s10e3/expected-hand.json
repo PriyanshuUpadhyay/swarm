@@ -1,0 +1,31 @@
+[
+  {
+    "id": "hand-live-cut-before-later",
+    "shown": 1,
+    "body": {
+      "kind": "tree",
+      "display": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "value": [
+              {
+                "type": "text",
+                "value": "a"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "text": "ab raw unsupported c"
+  },
+  {
+    "id": "hand-live-whole-later",
+    "shown": 3,
+    "body": {
+      "kind": "plain"
+    },
+    "text": "ab raw unsupported c"
+  }
+]
