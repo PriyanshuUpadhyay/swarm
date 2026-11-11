@@ -14,6 +14,36 @@ pub(super) fn append(
     work: &mut dyn Work,
 ) -> Result<bool, SnapshotError> {
     match kind {
+        "local_shell_call" => {
+            let Some(action) = payload
+                .object("action")
+                .filter(|action| action.text("type") == "exec")
+            else {
+                fact.push_unknown();
+                return Ok(true);
+            };
+            let Some(command) = action
+                .get("command")
+                .and_then(|raw| serde_json::from_str::<Vec<String>>(raw.get()).ok())
+            else {
+                fact.push_unknown();
+                return Ok(true);
+            };
+            let id = payload
+                .optional_text("call_id")
+                .filter(|id| !id.is_empty())
+                .unwrap_or_else(|| payload.text("id"));
+            let mut event = Template::new(
+                "tool_call",
+                json!({
+                    "tool_call_id":id, "name":"exec_command", "status":if payload.text("status") == "completed" {"completed"} else {"pending"},
+                }),
+            );
+            event.input = Some(Input::Scalar(
+                json!({"cmd":command.join(" "),"cwd":action.text("working_directory")}),
+            ));
+            fact.actions.push(Action::Event(event));
+        }
         "web_search_call" | "tool_search_call" => {
             let web = kind == "web_search_call";
             let raw = payload.get(if web { "action" } else { "arguments" });

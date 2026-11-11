@@ -204,3 +204,18 @@ fn codex_image_generation_copies_make_one_image_row() {
         assert!(!rows[0].collapsed);
     }
 }
+
+#[test]
+fn codex_local_shell_calls_show_the_command_and_output() {
+    let rows = codex_rows(vec![
+        response(
+            json!({"type":"local_shell_call","id":"shell-item","call_id":"shell","status":"in_progress","action":{"type":"exec","command":["ls","src"],"working_directory":"/work"}}),
+        ),
+        response(json!({"type":"function_call_output","call_id":"shell","output":"main.rs"})),
+    ]);
+    assert_eq!(kinds(&rows), [RowKind::ToolUse]);
+    let tool = tool(&rows[0]);
+    assert_eq!(tool.command.as_deref(), Some("ls src"));
+    assert_eq!(tool.output.as_ref().unwrap().text, "main.rs");
+    assert_eq!(tool.state, ToolState::Finished);
+}
