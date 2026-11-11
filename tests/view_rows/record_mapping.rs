@@ -300,6 +300,13 @@ fn pi_custom_messages_follow_the_display_flag() {
                 .iter()
                 .any(|row| row.system_kind.as_deref() == Some("unmapped"))
         );
+        let image = json!({"type":"custom_message","display":display,"content":[{"type":"image","mimeType":"image/png","data":"eA=="}]}).to_string();
+        let rows = build(inline_fixture("pi", &[&image]));
+        assert_eq!(
+            rows.iter()
+                .any(|row| row.kind == RowKind::Notice && !row.collapsed),
+            display
+        );
     }
 }
 
@@ -320,6 +327,9 @@ fn provider_context_stays_hidden_and_codex_hook_prompts_are_not_user_turns() {
     let rows = codex_rows(vec![
         response(
             json!({"type":"message","role":"system","content":[{"type":"input_text","text":"System setup"}]}),
+        ),
+        completed(
+            json!({"type":"UserMessage","id":"setup","content":[{"type":"text","text":"<environment_context>Setup</environment_context>"}]}),
         ),
         response(
             json!({"type":"message","role":"user","content":[{"type":"input_text","text":"<hook_prompt hook_run_id=\"run\">Hook feedback</hook_prompt>"}]}),
@@ -345,11 +355,37 @@ fn codex_bookkeeping_is_hidden_without_an_unmapped_count() {
     .collect();
     lines.push(event(json!({"type":"thread_goal_updated"})));
     lines.push(response(json!({"type":"configuration_update"})));
+    lines.push(json!({"type":"security_risk_score","payload":1}));
+    lines.push(json!({"type":"realtime_item","payload":[{"type":"message"}]}));
     let rows = codex_rows(lines);
     assert!(
         rows.iter()
             .all(|row| row.collapsed && row.system_kind.as_deref() == Some("record"))
     );
+}
+
+#[test]
+fn codex_completed_outputs_keep_question_rules() {
+    for reverse in [false, true] {
+        let call = response(
+            json!({"type":"function_call","call_id":"ask","name":"request_user_input_async","arguments":"{\"questions\":[{\"title\":\"Continue?\",\"options\":[\"Yes\",\"No\"]}]}"}),
+        );
+        let mut copies = vec![
+            response(
+                json!({"type":"function_call_output","call_id":"ask","output":"{\"accepted\":true}"}),
+            ),
+            completed(
+                json!({"type":"FunctionCallOutput","id":"ask","name":"request_user_input_async","output":"{\"accepted\":true}"}),
+            ),
+        ];
+        if reverse {
+            copies.reverse();
+        }
+        let rows = codex_rows(std::iter::once(call).chain(copies).collect());
+        let visible: Vec<_> = rows.iter().filter(|row| !row.collapsed).collect();
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].kind, RowKind::Question);
+    }
 }
 
 #[test]

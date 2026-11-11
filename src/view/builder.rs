@@ -135,16 +135,19 @@ pub(super) fn rows_with_context(
             && let Some(call) =
                 anchor_match(string(event, "tool_call_id"), event, scopes[index], &calls)
         {
-            agents.entry(agent_id.into()).or_default().push(Anchor {
-                index: call,
-                session: meta(event, "session_id").into(),
-                scope: 0,
-            });
+            let entries = agents.entry(agent_id.into()).or_default();
+            if !entries.iter().any(|anchor| anchor.index == call) {
+                entries.push(Anchor {
+                    index: call,
+                    session: meta(event, "session_id").into(),
+                    scope: 0,
+                });
+            }
         }
     }
     let mut joined = mirror_joined;
     let thought_parts = if is_codex {
-        codex::thought_parts(records, &scopes)
+        codex::thought_parts(records, &scopes, &joined)
     } else {
         HashMap::new()
     };
@@ -237,8 +240,11 @@ pub(super) fn rows_with_context(
             }
             row.text.push_str(text);
         }
-        if string(event, "type") == "image"
-            && string(event, "text").is_empty()
+        if (string(event, "type") == "image" && string(event, "text").is_empty()
+            || matches!(
+                string(event, "type"),
+                "agent_thought_chunk" | "user_message_chunk" | "agent_message_chunk"
+            ) && row.text.is_empty())
             && let Some(text) = mirror_parts
                 .get(&index)
                 .into_iter()

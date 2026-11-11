@@ -137,9 +137,13 @@ pub(super) fn append(
                 fact.actions.push(Action::Event(event));
             }
         }
-        "function_call_output" | "custom_tool_call_output" => {
-            output(fact, payload, kind == "function_call_output", work)?
-        }
+        "function_call_output" | "custom_tool_call_output" => output(
+            fact,
+            payload,
+            kind == "function_call_output",
+            "call_id",
+            work,
+        )?,
         _ => return Ok(false),
     }
     Ok(true)
@@ -183,13 +187,14 @@ fn write_tool_list(
     Ok(())
 }
 
-fn output(
+pub(super) fn output(
     fact: &mut Fact<'_>,
     payload: &Object<'_>,
     is_function: bool,
+    id_field: &str,
     work: &mut dyn Work,
 ) -> Result<(), SnapshotError> {
-    let (Some(call_id), Some(raw)) = (payload.optional_text("call_id"), payload.get("output"))
+    let (Some(call_id), Some(raw)) = (payload.optional_text(id_field), payload.get("output"))
     else {
         fact.push_unknown();
         return Ok(());

@@ -39,6 +39,12 @@ pub(super) struct Template {
 }
 
 impl Template {
+    pub(super) fn is_mirror(&self) -> bool {
+        self.fields["codex_mirror"] == true
+    }
+    pub(super) fn starts_turn(&self) -> bool {
+        self.kind == "turn_started"
+    }
     pub(super) fn new(kind: &'static str, fields: Value) -> Self {
         Self {
             kind,
@@ -78,8 +84,16 @@ impl Template {
 impl Fact<'_> {
     pub(super) fn mark_mirrors(&mut self, start: usize) {
         for action in &mut self.actions[start..] {
-            if let Action::Event(event) = action {
-                event.fields["codex_mirror"] = json!(true);
+            match action {
+                Action::Event(event) | Action::Open { event, .. } => {
+                    event.fields["codex_mirror"] = json!(true)
+                }
+                Action::Output { event, tail, .. } => {
+                    event.fields["codex_mirror"] = json!(true);
+                    for event in tail {
+                        event.fields["codex_mirror"] = json!(true);
+                    }
+                }
             }
         }
     }
@@ -137,6 +151,19 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
         "uuid": id, "timestamp": record.text("timestamp"),
         "parent_uuid": null, "source_tool_use_id": null,
     });
+    if matches!(
+        record_type.as_str(),
+        "token_usage_record"
+            | "world_state"
+            | "inter_agent_communication_metadata"
+            | "inter_agent_communication"
+            | "security_risk_score"
+            | "dynamic_tools_updated"
+            | "realtime_item"
+    ) {
+        fact.push_ignored(&record_type);
+        return Ok(fact);
+    }
     let Some(payload) = payload else {
         fact.push_unknown();
         return Ok(fact);
@@ -159,13 +186,6 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
             json!({"kind": "compaction", "text": payload.text("message")}),
         ),
         "retained_context" => fact.push_ignored(&format!("retained_context/{kind}")),
-        "token_usage_record"
-        | "world_state"
-        | "inter_agent_communication_metadata"
-        | "inter_agent_communication"
-        | "security_risk_score"
-        | "dynamic_tools_updated"
-        | "realtime_item" => fact.push_ignored(&record_type),
         "response_item" => match kind.as_str() {
             "ghost_snapshot" | "additional_tools" | "configuration_update" => {
                 fact.push_ignored(&kind)
@@ -360,48 +380,57 @@ fn message(
         if is_context {
             fact.push("system_message", json!({"kind": role, "text": text}));
         } else if role == "user" {
-            let trimmed = text.trim_start_matches([' ', '\t', '\r', '\n']);
-            if let Some((call_id, answers)) = codex_questions::reply(trimmed, work)? {
-                fact.push(
-                    "elicitation_result",
-                    json!({"tool_call_id": call_id, "answers": answers}),
-                );
-            } else if trimmed.starts_with("<hook_prompt ") || trimmed.starts_with("<hook_prompt>") {
-                let text = trimmed
-                    .split_once('>')
-                    .and_then(|(_, body)| body.strip_suffix("</hook_prompt>"))
-                    .unwrap_or(&text);
-                fact.push("system_message", json!({"kind":"hook_prompt", "text":text}));
-            } else if [
-                "<environment_context>",
-                "<user_instructions>",
-                "<permissions instructions>",
-                "<skill>",
-                "<user_shell_command>",
-                "<turn_aborted>",
-                "<recommended_plugins>",
-                "<subagent_notification>",
-                "<no retained transcript delta entries>",
-                "# AGENTS.md",
-            ]
-            .iter()
-            .any(|prefix| trimmed.starts_with(prefix))
-            {
-                fact.push("system_message", json!({"kind": "context", "text": text}));
-            } else if super::claude_meta::ring(&text) {
-                fact.push(
-                    "system_message",
-                    json!({"kind": "swarm_ring", "text": text}),
-                );
-            } else {
-                fact.push("user_message_chunk", json!({"text": text}));
-            }
+            user_text(fact, &text, work)?;
         } else {
             fact.push("agent_message_chunk", json!({"text": text}));
         }
     }
     if fact.actions.is_empty() {
         fact.push_unknown();
+    }
+    Ok(())
+}
+
+pub(super) fn user_text(
+    fact: &mut Fact<'_>,
+    text: &str,
+    work: &mut dyn Work,
+) -> Result<(), SnapshotError> {
+    let trimmed = text.trim_start_matches([' ', '\t', '\r', '\n']);
+    if let Some((call_id, answers)) = codex_questions::reply(trimmed, work)? {
+        fact.push(
+            "elicitation_result",
+            json!({"tool_call_id": call_id, "answers": answers}),
+        );
+    } else if trimmed.starts_with("<hook_prompt ") || trimmed.starts_with("<hook_prompt>") {
+        let text = trimmed
+            .split_once('>')
+            .and_then(|(_, body)| body.strip_suffix("</hook_prompt>"))
+            .unwrap_or(text);
+        fact.push("system_message", json!({"kind":"hook_prompt", "text":text}));
+    } else if [
+        "<environment_context>",
+        "<user_instructions>",
+        "<permissions instructions>",
+        "<skill>",
+        "<user_shell_command>",
+        "<turn_aborted>",
+        "<recommended_plugins>",
+        "<subagent_notification>",
+        "<no retained transcript delta entries>",
+        "# AGENTS.md",
+    ]
+    .iter()
+    .any(|prefix| trimmed.starts_with(prefix))
+    {
+        fact.push("system_message", json!({"kind": "context", "text": text}));
+    } else if super::claude_meta::ring(text) {
+        fact.push(
+            "system_message",
+            json!({"kind": "swarm_ring", "text": text}),
+        );
+    } else {
+        fact.push("user_message_chunk", json!({"text": text}));
     }
     Ok(())
 }

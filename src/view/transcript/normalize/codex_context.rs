@@ -10,6 +10,7 @@ use std::collections::HashMap;
 pub(crate) struct ReaderContext {
     session_id: String,
     questions: HashMap<String, Vec<String>>,
+    outputs: HashMap<String, bool>,
 }
 
 impl ReaderContext {
@@ -34,7 +35,12 @@ impl ReaderContext {
         for action in &fact.actions {
             work.check()?;
             match action {
-                Action::Event(event) => events.push(event.project(&meta)),
+                Action::Event(event) => {
+                    if event.starts_turn() {
+                        self.outputs.clear();
+                    }
+                    events.push(event.project(&meta));
+                }
                 Action::Open {
                     call_id,
                     ids,
@@ -49,6 +55,19 @@ impl ReaderContext {
                     event,
                     tail,
                 } => {
+                    let mirrored = event.is_mirror();
+                    if self
+                        .outputs
+                        .get(call_id)
+                        .is_some_and(|previous| *previous || mirrored)
+                    {
+                        events.push(
+                            fact.ignored("item_completed/FunctionCallOutput")
+                                .project(&meta),
+                        );
+                        continue;
+                    }
+                    self.outputs.insert(call_id.clone(), mirrored);
                     // Every valid string/array output consumes the call, even a custom output.
                     let ids = self.questions.remove(call_id);
                     match question {

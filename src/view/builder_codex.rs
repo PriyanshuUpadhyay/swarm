@@ -3,12 +3,14 @@
 use super::super::transcript::{Record, meta, string};
 use std::collections::HashMap;
 
-pub(super) fn thought_parts(records: &[Record], scopes: &[usize]) -> HashMap<usize, Vec<usize>> {
+pub(super) fn thought_parts(
+    records: &[Record],
+    scopes: &[usize],
+    joined: &std::collections::HashSet<usize>,
+) -> HashMap<usize, Vec<usize>> {
     let mut thoughts = HashMap::<(usize, &str), Vec<usize>>::new();
     for (index, record) in records.iter().enumerate() {
-        if string(&record.event, "type") == "agent_thought_chunk"
-            && record.event["codex_mirror"] != true
-        {
+        if string(&record.event, "type") == "agent_thought_chunk" && !joined.contains(&index) {
             thoughts
                 .entry((scopes[index], meta(&record.event, "session_id")))
                 .or_default()
@@ -79,6 +81,7 @@ pub(super) fn rolled_back(records: &[Record]) -> Vec<Record> {
             "user_message_chunk"
                 | "agent_message_chunk"
                 | "agent_thought_chunk"
+                | "agent_thought_part"
                 | "tool_call"
                 | "tool_call_update"
                 | "tool_diff"
@@ -121,38 +124,77 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
             scope += 1;
         }
     }
+    let mut identities = HashMap::<(usize, &str, &str, &str, &str), Vec<usize>>::new();
+    let mut texts = HashMap::<(usize, &str, &str, &str, &str), Vec<usize>>::new();
+    let mut idless_texts = HashMap::<(usize, &str, &str, &str, &str), Vec<usize>>::new();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
-        if event["codex_mirror"] != true
-            || string(event, "type") == "tool_call_update"
-            || string(event, "type") == "system_message" && string(event, "kind") == "compaction"
-        {
+        if event["codex_mirror"] == true || !mirror_kind(event) {
             continue;
         }
-        let candidate = records
-            .iter()
-            .enumerate()
-            .filter(|(other, candidate)| {
-                let target = &candidate.event;
-                *other != index
-                    && scopes[*other] == scopes[index]
-                    && target["codex_mirror"] != true
-                    && meta(target, "session_id") == meta(event, "session_id")
-                    && same_item(event, target)
-            })
-            .min_by_key(|(other, _)| other.abs_diff(index))
-            .map(|(other, _)| other);
-        if let Some(target) = candidate {
-            parts.entry(target).or_default().push(index);
+        let base = (
+            scopes[index],
+            meta(event, "session_id"),
+            string(event, "type"),
+            string(event, "kind"),
+        );
+        let id = item_id(event);
+        if !id.is_empty() {
+            identities
+                .entry((base.0, base.1, base.2, base.3, id))
+                .or_default()
+                .push(index);
+        }
+        let key = (base.0, base.1, base.2, base.3, string(event, "text"));
+        texts.entry(key).or_default().push(index);
+        if id.is_empty() {
+            idless_texts.entry(key).or_default().push(index);
         }
     }
-    let mut group = Vec::new();
+    for (index, record) in records.iter().enumerate() {
+        let event = &record.event;
+        if event["codex_mirror"] != true || !mirror_kind(event) {
+            continue;
+        }
+        let base = (
+            scopes[index],
+            meta(event, "session_id"),
+            string(event, "type"),
+            string(event, "kind"),
+        );
+        let id = item_id(event);
+        let identity = identities
+            .get(&(base.0, base.1, base.2, base.3, id))
+            .filter(|_| !id.is_empty());
+        let text = if id.is_empty() { &texts } else { &idless_texts };
+        let candidates = identity.or_else(|| {
+            if matches!(
+                base.2,
+                "tool_call" | "subagent_activity" | "elicitation_result"
+            ) {
+                None
+            } else {
+                text.get(&(base.0, base.1, base.2, base.3, string(event, "text")))
+            }
+        });
+        if let Some(target) =
+            candidates.and_then(|items| items.iter().min_by_key(|&&other| other.abs_diff(index)))
+        {
+            parts.entry(*target).or_default().push(index);
+        }
+    }
+    let mut group: Vec<usize> = Vec::new();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
         if string(event, "type") == "system_message" && string(event, "kind") == "compaction" {
+            if group.first().is_some_and(|&first| {
+                meta(&records[first].event, "session_id") != meta(event, "session_id")
+            }) {
+                join_compactions(records, &mut group, &mut parts);
+            }
             group.push(index);
-        } else if !matches!(string(event, "type"), "ignored" | "usage" | "session_info")
-            && !(string(event, "type") == "system_message"
+        } else if !(matches!(string(event, "type"), "ignored" | "usage" | "session_info")
+            || string(event, "type") == "system_message"
                 && matches!(string(event, "kind"), "developer" | "context"))
         {
             join_compactions(records, &mut group, &mut parts);
@@ -184,39 +226,25 @@ fn join_compactions(
     }
 }
 
-fn same_item(event: &serde_json::Value, target: &serde_json::Value) -> bool {
-    let kind = string(event, "type");
-    if kind != string(target, "type") {
-        return false;
+fn mirror_kind(event: &serde_json::Value) -> bool {
+    match string(event, "type") {
+        "tool_call"
+        | "subagent_activity"
+        | "elicitation_result"
+        | "user_message_chunk"
+        | "agent_message_chunk"
+        | "agent_thought_chunk"
+        | "image"
+        | "proposed_plan" => true,
+        "system_message" => string(event, "kind") != "compaction",
+        _ => false,
     }
-    if kind == "tool_call" {
-        let id = string(event, "tool_call_id");
-        return !id.is_empty() && id == string(target, "tool_call_id");
+}
+
+fn item_id(event: &serde_json::Value) -> &str {
+    match string(event, "type") {
+        "tool_call" | "elicitation_result" => string(event, "tool_call_id"),
+        "subagent_activity" => string(event, "agent_thread_id"),
+        _ => meta(event, "uuid"),
     }
-    if kind == "subagent_activity" {
-        return string(event, "agent_thread_id") == string(target, "agent_thread_id")
-            && string(event, "kind") == string(target, "kind");
-    }
-    if kind == "unknown" || kind == "tool_diff" {
-        return false;
-    }
-    if !matches!(
-        kind,
-        "user_message_chunk"
-            | "agent_message_chunk"
-            | "agent_thought_chunk"
-            | "image"
-            | "system_message"
-            | "proposed_plan"
-    ) {
-        return false;
-    }
-    if string(event, "kind") != string(target, "kind") {
-        return false;
-    }
-    let (id, target_id) = (meta(event, "uuid"), meta(target, "uuid"));
-    if !id.is_empty() && !target_id.is_empty() {
-        return id == target_id;
-    }
-    string(event, "text") == string(target, "text")
 }

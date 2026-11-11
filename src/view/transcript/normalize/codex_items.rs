@@ -27,7 +27,10 @@ pub(super) fn append(
                     work.check()?;
                     if let Some(part) = Object::parse(part) {
                         match part.text("type").as_str() {
-                            "text" | "Text" => fact.push(if user {"user_message_chunk"} else {"agent_message_chunk"}, json!({"text":part.text("text")})),
+                            "text" | "Text" => {
+                                if user { super::codex_facts::user_text(fact,&part.text("text"),work)?; }
+                                else { fact.push("agent_message_chunk",json!({"text":part.text("text")})); }
+                            }
                             "image" | "local_image" => fact.push("image", json!({"role":"user", "media_type":"image", "text":part.text("path")})),
                             _ => fact.push_unknown(),
                         }
@@ -62,11 +65,7 @@ pub(super) fn append(
             output(fact, &item, &id, item.text("aggregated_output"));
         }
         "FunctionCallOutput" => {
-            let content = item.optional_text("output").unwrap_or_else(|| {
-                item.get("output")
-                    .map_or(String::new(), |raw| raw.get().into())
-            });
-            output(fact, &item, &id, content);
+            super::codex_tools::output(fact, &item, true, "id", work)?;
         }
         "FileChange" => super::codex_changes::append(fact, &item, "id", work)?,
         "SubAgentActivity" => super::codex_facts::subagent_activity(fact, &item),
