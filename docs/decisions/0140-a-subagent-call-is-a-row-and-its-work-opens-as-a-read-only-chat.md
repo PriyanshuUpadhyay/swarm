@@ -10,7 +10,7 @@ informed-by:
   - 'research 2026-11-11: T3 Code shows a subagent item and opens its child thread with a bar that says it runs on its own and has "Open parent" (ProviderSubagentBar.tsx)'
   - 'Claude Code writes each subagent log to <session dir>/subagents/agent-<id>.jsonl with agent-<id>.meta.json that holds toolUseId (checked by the chair on a local session)'
   - 'Codex docs and source: a child is its own rollout file whose session_meta has source.subagent.thread_spawn.parent_thread_id (hexdocs Codex.Protocol.SubAgentSource)'
-  - 'AGY docs: the parent calls the invoke_subagent tool, and transcripts stay "readable in JSONL logs" with no path given'
+  - 'AGY docs: the parent calls the invoke_subagent tool; owner approved real AGY records on 2026-11-11 (tmp/ui-gaps/agy-pi-records.md): the result names conversationId, and the child log is brain/<conversationId>/.system_generated/logs/transcript_full.jsonl'
   - 'pi docs: no built-in subagent; the official extension example runs a separate pi process'
 ---
 
@@ -33,7 +33,9 @@ Chosen: the first option. The row is made in `src/view` from a call named `Agent
 
 A click opens the child chat. Its agent id is `<agent>~sub~<tool call id>`, so every route that takes an agent id (`/api/rows`, full tool output) reads the child's log. The server finds that log (`src/serve/subagent.rs`): for Claude by `toolUseId` in `agent-<id>.meta.json` and a check that the file stays in the session's `subagents` folder; for Codex by the id in the `spawn_agent` output and a check that the rollout names a `thread_spawn` parent. The child chat has no composer. Its bar says "Runs on its own" and has "Open parent".
 
-AGY shows the row, but its click shows the error "no subagent log", because its docs give no path. pi gets no row and no child chat, because it has no subagent tool. Both are named gaps, not guesses.
+AGY opens too. The result step of an `invoke_subagent` call holds the text `Created the following subagent:` and then a JSON object with `conversationId` (and `logAbsoluteUri`, which is not used as a path). The server reads `brain/<conversationId>/.system_generated/logs/transcript_full.jsonl` under the same `brain` folder as the parent log, checks that the id is a UUID and that the file stays in that folder, and reads it as an AGY log (record shape from local AGY logs of 2026-10-23, owner approved).
+
+pi gets no row and no child chat. It has no subagent tool: 212 local pi sessions use only `bash`, `read`, `edit`, and `write`, and the official subagent example runs a separate `pi` process.
 
 ### Consequences
 
@@ -41,7 +43,7 @@ AGY shows the row, but its click shows the error "no subagent log", because its 
 - Good: the child log path comes from the parent log and one folder check, never from the page.
 - Bad: the Claude folder layout is not documented by Claude, so an update can move it; the row stays and its click shows the chat error "no subagent log".
 - Bad: the Codex `spawn_agent` argument names changed across versions, so the task text falls back through `description`, `message`, `prompt`, and the first `items` text, and the child id is the first UUID in the output.
-- Bad: a child chat follows no stream; it reads its log again every 3 seconds while the subagent runs, and once when it has ended. It opens in a dialog, so Escape and focus work.
+- Bad: a child chat follows no stream; it reads its log again every 3 seconds until its last row ends the turn, and it tries again after a failed first read, because a new subagent may have no log yet. It opens in a dialog, so Escape and focus work.
 
 ## Links
 
