@@ -106,13 +106,7 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
             agent: agent.into(),
             provider: "claude",
             kind,
-            title: title
-                .lines()
-                .next()
-                .unwrap_or("")
-                .chars()
-                .take(TITLE_CHARS)
-                .collect(),
+            title: title_of(&title),
             status: String::new(),
             summary: None,
             started_at: record["timestamp"].as_str().map(str::to_string),
@@ -134,16 +128,21 @@ pub(super) fn tasks(agent: &str, log: &str) -> Vec<Task> {
 /// Every background terminal one live Codex agent's log names, oldest first. Codex unified exec
 /// answers a command that outlives its wait with `Process running with session ID <n>`; the
 /// session is running until a later `write_stdin` poll answers `Process exited with code <c>`.
+/// Only the header, the text before `Output:`, is read: the command's own output may print either
+/// phrase.
 pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
-    let mut commands: HashMap<String, String> = HashMap::new();
+    // The command and the log time of the call, which is the launch; its answer comes after the wait.
+    let mut commands: HashMap<String, (String, Option<String>)> = HashMap::new();
     let mut polls: HashMap<String, String> = HashMap::new();
     let mut found: Vec<Task> = Vec::new();
+
     for line in log.lines() {
         let Ok(record) = serde_json::from_str::<Value>(line) else {
             continue;
         };
         let payload = &record["payload"];
         let call = payload["call_id"].as_str().unwrap_or("");
+
         match payload["type"].as_str() {
             Some("function_call") => {
                 let args: Value = payload["arguments"]
@@ -153,7 +152,8 @@ pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
                 match payload["name"].as_str() {
                     Some("exec_command") => {
                         let cmd = args["cmd"].as_str().unwrap_or("");
-                        commands.insert(call.into(), cmd.into());
+                        let at = record["timestamp"].as_str().map(str::to_string);
+                        commands.insert(call.into(), (cmd.into(), at));
                     }
                     Some("write_stdin") => {
                         if let Some(id) = args["session_id"].as_i64() {
@@ -167,8 +167,10 @@ pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
                 let Some(text) = payload["output"].as_str() else {
                     continue;
                 };
-                if let Some(id) = session_id(text, "Process running with session ID ") {
-                    if let Some(cmd) = commands.get(call)
+                let header = text.split("Output:").next().unwrap_or(text);
+
+                if let Some(id) = number_after(header, "Process running with session ID ") {
+                    if let Some((cmd, started_at)) = commands.get(call)
                         && !found.iter().any(|task| task.id == id)
                     {
                         found.push(Task {
@@ -176,21 +178,15 @@ pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
                             agent: agent.into(),
                             provider: "codex",
                             kind: TaskKind::Shell,
-                            title: cmd
-                                .lines()
-                                .next()
-                                .unwrap_or("")
-                                .chars()
-                                .take(TITLE_CHARS)
-                                .collect(),
+                            title: title_of(cmd),
                             status: "running".into(),
                             summary: None,
-                            started_at: record["timestamp"].as_str().map(str::to_string),
+                            started_at: started_at.clone(),
                             output: None,
                         });
                     }
                 } else if let Some(id) = polls.get(call)
-                    && let Some(code) = session_id(text, "Process exited with code ")
+                    && let Some(code) = number_after(header, "Process exited with code ")
                     && let Some(task) = found.iter_mut().find(|task| task.id == *id)
                 {
                     task.status = if code == "0" { "completed" } else { "failed" }.into();
@@ -199,19 +195,26 @@ pub(super) fn codex_tasks(agent: &str, log: &str) -> Vec<Task> {
             _ => {}
         }
     }
+
     found
 }
 
-/// The run of digits (or a leading minus) after `label`.
-fn session_id(text: &str, label: &str) -> Option<String> {
-    let rest = &text[text.find(label)? + label.len()..];
-    let id: String = rest
+/// The first whitespace-separated word after `label`, when it is a number.
+fn number_after(text: &str, label: &str) -> Option<String> {
+    let word = text[text.find(label)? + label.len()..]
+        .split_whitespace()
+        .next()?;
+    word.parse::<i64>().ok().map(|n| n.to_string())
+}
+
+/// A task title keeps its first line, cut to `TITLE_CHARS` characters.
+fn title_of(text: &str) -> String {
+    text.lines()
+        .next()
+        .unwrap_or("")
         .chars()
-        .enumerate()
-        .take_while(|(i, c)| c.is_ascii_digit() || (*i == 0 && *c == '-'))
-        .map(|(_, c)| c)
-        .collect();
-    (!id.is_empty()).then_some(id)
+        .take(TITLE_CHARS)
+        .collect()
 }
 
 /// The text of a record that Claude Code writes for a task notification: the queued notice, the
@@ -402,49 +405,64 @@ mod tests {
 
     #[test]
     fn a_codex_log_names_a_running_background_terminal() {
-        let record = |payload: Value| {
-            line(
-                json!({"timestamp": "2026-11-11T10:00:00Z", "type": "response_item", "payload": payload}),
-            )
+        let record = |at: &str, payload: Value| {
+            line(json!({"timestamp": at, "type": "response_item", "payload": payload}))
         };
-        let call = |id: &str, name: &str, args: Value| {
+        let call = |at: &str, id: &str, name: &str, args: Value| {
             record(
+                at,
                 json!({"type": "function_call", "name": name, "arguments": args.to_string(), "call_id": id}),
             )
         };
-        let output = |id: &str, text: &str| {
-            record(json!({"type": "function_call_output", "call_id": id, "output": text}))
+        let output = |at: &str, id: &str, text: &str| {
+            record(
+                at,
+                json!({"type": "function_call_output", "call_id": id, "output": text}),
+            )
         };
+
         let log = [
-            call("c1", "exec_command", json!({"cmd": "npm run dev"})),
-            output("c1", "Chunk ID: 1\nWall time: 1.0 seconds\nProcess running with session ID 1001\nOutput:\nready"),
-            call("c2", "exec_command", json!({"cmd": "make build"})),
-            output("c2", "Wall time: 1.0 seconds\nProcess running with session ID 1002\nOutput:\n"),
-            call("c3", "write_stdin", json!({"session_id": 1002, "chars": ""})),
-            output("c3", "Wall time: 5.0 seconds\nProcess exited with code 0\nOutput:\ndone"),
-            call("c4", "exec_command", json!({"cmd": "ls"})),
-            output("c4", "Wall time: 0.1 seconds\nProcess exited with code 0\nOutput:\nfile"),
+            // The answer comes after the wait, so the task starts at the call's time.
+            call("2026-11-11T10:00:00Z", "c1", "exec_command", json!({"cmd": "npm run dev"})),
+            output("2026-11-11T10:00:10Z", "c1", "Chunk ID: 1\nWall time: 10.0 seconds\nProcess running with session ID 1001\nOutput:\nready"),
+            call("2026-11-11T10:01:00Z", "c2", "exec_command", json!({"cmd": "make build"})),
+            output("2026-11-11T10:01:10Z", "c2", "Wall time: 10.0 seconds\nProcess running with session ID 1002\nOutput:\n"),
+            call("2026-11-11T10:02:00Z", "c3", "write_stdin", json!({"session_id": 1002, "chars": ""})),
+            output("2026-11-11T10:02:05Z", "c3", "Wall time: 5.0 seconds\nProcess exited with code 0\nOutput:\ndone"),
+            // A command that exited, whose own output prints the running phrase, is no task.
+            call("2026-11-11T10:03:00Z", "c4", "exec_command", json!({"cmd": "rg session src"})),
+            output("2026-11-11T10:03:01Z", "c4", "Wall time: 0.1 seconds\nProcess exited with code 0\nOutput:\nProcess running with session ID 1003"),
         ]
         .concat();
+
         let found = codex_tasks("chair", &log);
         let brief: Vec<_> = found
             .iter()
             .map(|t| {
                 (
                     t.id.as_str(),
-                    t.provider,
                     t.title.as_str(),
                     t.status.as_str(),
+                    t.started_at.as_deref(),
                 )
             })
             .collect();
         assert_eq!(
             brief,
             [
-                ("1001", "codex", "npm run dev", "running"),
-                ("1002", "codex", "make build", "completed"),
+                (
+                    "1001",
+                    "npm run dev",
+                    "running",
+                    Some("2026-11-11T10:00:00Z")
+                ),
+                (
+                    "1002",
+                    "make build",
+                    "completed",
+                    Some("2026-11-11T10:01:00Z")
+                ),
             ]
         );
-        assert_eq!(found[0].started_at.as_deref(), Some("2026-11-11T10:00:00Z"));
     }
 }
