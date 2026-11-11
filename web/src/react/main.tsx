@@ -26,7 +26,7 @@ import { store } from "./store";
 import { TabStrip } from "./tabs";
 import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
 import { copyText } from "./copy";
-import { OPEN_BACKGROUND } from "../core/background";
+import { OPEN_BACKGROUND, type OpenBackgroundDetail } from "../core/background";
 import { writeStore } from "../core/app-types";
 import { watchUpdates } from "./update";
 
@@ -129,7 +129,7 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
   // The chat-end line's Open: show the panel on that task's row.
   useEffect(() => {
     const onOpen = (e: Event) => {
-      const { session, key } = (e as CustomEvent<{ session: string; key: string }>).detail;
+      const { session, key } = (e as CustomEvent<OpenBackgroundDetail>).detail;
       if (session !== openId) return;
       store.setItem(BACKGROUND_KEY, "1");
       // The panel reads its picked row when it mounts, so a new key remounts it on that row.

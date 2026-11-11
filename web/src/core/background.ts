@@ -36,23 +36,30 @@ export function taskStatus(status: string): PaneStatus {
   return "ended";
 }
 
-/** The chat-end line for the running tasks (ADR 0104): the newest task's label, how many run, when
- *  the newest started, and the Cmd+J row key that Open picks. `null` when none runs. */
+/** The Cmd+J row key of one background task. */
+export const taskKey = (agent: string, id: string) => `task:${agent}:${id}`;
+
+/** The chat-end line for the running tasks (ADR 0104): the label (the newest task's, or a count when
+ *  several run), when the newest started, and the Cmd+J row key that Open picks. The newest is the
+ *  latest start time, not the server's order, which lists one agent's tasks after another's. A task
+ *  with no start time counts as oldest, and the later one wins a tie. `null` when none runs. */
 export function runningLine(tasks: readonly BackgroundTask[]) {
   const running = tasks.filter((t) => t.status === "running");
-  const newest = running[running.length - 1];
+  const start = (t: BackgroundTask) => (t.started_at ? Date.parse(t.started_at) : NaN);
+  const time = (t: BackgroundTask) => (Number.isNaN(start(t)) ? -Infinity : start(t));
+  const newest = running.reduce<BackgroundTask | undefined>((best, t) => (!best || time(t) >= time(best) ? t : best), undefined);
   if (!newest) return null;
-  const started = newest.started_at ? Date.parse(newest.started_at) : NaN;
   return {
     label: running.length > 1 ? `${running.length} tasks` : newest.title || newest.id,
-    count: running.length,
-    startedAt: Number.isNaN(started) ? null : started,
-    key: `task:${newest.agent}:${newest.id}`,
+    startedAt: Number.isNaN(start(newest)) ? null : start(newest),
+    key: taskKey(newest.agent, newest.id),
   };
 }
 
 /** The line's Open asks the open chat to show the Cmd+J panel on this row key. */
 export const OPEN_BACKGROUND = "swarm:open-background";
+/** The detail of that event: the chat and the row key. */
+export type OpenBackgroundDetail = { session: string; key: string };
 
 /** `m:ss`, or `h:mm:ss` from an hour. */
 export function elapsed(ms: number): string {
@@ -76,7 +83,7 @@ export function backgroundRows(session: Session | undefined, agents: readonly Ag
     rows.push({ key: `agent:${a.id}`, type: "agent", agent: a.id, title: chair ? "Chat" : a.id, detail: chair ? a.id : a.role, status: paneStatus(a) });
     const own = tasks.filter((t) => t.agent === a.id);
     for (const t of [...own.filter((t) => t.status === "running"), ...own.filter((t) => t.status !== "running")])
-      rows.push({ key: `task:${a.id}:${t.id}`, type: "task", agent: a.id, task: t, status: taskStatus(t.status) });
+      rows.push({ key: taskKey(a.id, t.id), type: "task", agent: a.id, task: t, status: taskStatus(t.status) });
   }
   // A shell that waits at its prompt is a plain circle; a program in it spins.
   const idle = (command: string) => /^-?(zsh|bash|fish|sh|dash|ksh|tcsh|nu)$/.test(command);
