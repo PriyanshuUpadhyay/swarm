@@ -23,6 +23,7 @@ pub(super) fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log
     if let Some((parent, call)) = subagent::split(agent) {
         return subagent::child_log(&resolve_log(root, session, parent)?, call);
     }
+
     let connection = read_connection(root)
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
     let row = connection
