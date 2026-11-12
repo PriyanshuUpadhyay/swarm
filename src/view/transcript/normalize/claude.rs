@@ -234,7 +234,6 @@ fn messages(
     work: &mut dyn Work,
 ) -> Result<(), SnapshotError> {
     let Some(message) = rec.object("message") else {
-        events.push(unknown(line, meta));
         return Ok(());
     };
     if !is_user {

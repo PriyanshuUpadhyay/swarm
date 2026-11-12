@@ -150,8 +150,11 @@ impl ReaderRows {
         // Later canonical records and updates can change a join or replay a rollback again.
         // Keep rebuilding until a reindex no longer retains any cross-chunk joins.
         self.codex_joins |= self.is_codex
-            && (event["codex_mirror"] == true
-                || matches!(event_type, "subagent_activity" | "thread_rolled_back" | "agent_thought_part" | "image")
+            && (event[view::CODEX_MIRROR] == true
+                || matches!(
+                    event_type,
+                    "subagent_activity" | "thread_rolled_back" | "agent_thought_part" | "image"
+                )
                 || event_type == "system_message" && view::string(event, "kind") == "compaction");
         if event_type != "queue_operation" {
             self.rebuild |= self.codex_joins;

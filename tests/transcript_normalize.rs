@@ -144,3 +144,34 @@ fn codex_completed_plan_becomes_a_proposed_plan_row() {
     assert_eq!(result["rows"][0]["text"], "# Plan\n\n1. Add the row");
 }
 
+#[test]
+fn codex_hidden_output_copies_keep_their_source_kind() {
+    use common::{completed, event, response};
+    let call = response(
+        json!({"type":"function_call","call_id":"read","name":"exec_command","arguments":"{}"}),
+    );
+    let output = response(json!({"type":"function_call_output","call_id":"read","output":"done"}));
+    let copy = completed(json!({"type":"FunctionCallOutput","id":"read","output":"done"}));
+
+    for (first, second, kind) in [
+        (
+            output.clone(),
+            copy.clone(),
+            "item_completed/FunctionCallOutput",
+        ),
+        (copy, output, "response_item/function_call_output"),
+    ] {
+        let result = snapshot(
+            NativeFormat::Codex,
+            &[
+                event(json!({"type":"task_started"})),
+                call.clone(),
+                first,
+                second,
+            ],
+        );
+
+        assert_eq!(result["lines"][3]["events"][0]["type"], "ignored");
+        assert_eq!(result["lines"][3]["events"][0]["kind"], kind);
+    }
+}

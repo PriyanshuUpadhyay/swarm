@@ -238,8 +238,16 @@ fn patch(
         if old_count != old_lines || new_count != new_lines {
             return Ok(Err(()));
         }
-        hunks.push(json!({"old_start":old_start, "old_lines":old_lines,
-            "new_start":new_start, "new_lines":new_lines, "lines":text}));
+        hunks.push(
+            serde_json::to_value(crate::view::DiffHunk {
+                old_start,
+                old_lines,
+                new_start,
+                new_lines,
+                lines: text,
+            })
+            .expect("diff hunk is valid JSON"),
+        );
     }
     Ok(Ok(Some((path, hunks))))
 }

@@ -63,7 +63,7 @@ pub fn row(record: &Record) -> Option<Row> {
                 call_id: string(event, "agent_thread_id").into(),
                 agent_type: path.into(),
                 description: String::new(),
-                state: super::super::builder::subagent_state(
+                state: tool::subagent_state(
                     string(event, "kind"),
                     super::super::ToolState::Waiting,
                 ),

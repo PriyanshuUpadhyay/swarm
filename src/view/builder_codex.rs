@@ -1,6 +1,7 @@
-//! Match materialized item copies to the same rows from response items.
-
-use super::super::transcript::{Record, meta, string};
+//! Codex mirror and thought joins, and turn rollback replay.
+use super::super::transcript::{
+    CODEX_MIRROR, CONTEXT_COMPACTED, Record, RowKind, meta, row, string,
+};
 use std::collections::HashMap;
 
 pub(super) fn thought_parts(
@@ -8,23 +9,40 @@ pub(super) fn thought_parts(
     scopes: &[usize],
     joined: &std::collections::HashSet<usize>,
 ) -> HashMap<usize, Vec<usize>> {
-    let mut thoughts = HashMap::<(usize, &str), Vec<usize>>::new();
+    let mut steps = Vec::with_capacity(records.len());
+    let mut step = 0;
+
+    let mut thoughts = HashMap::<(usize, usize, &str), Vec<usize>>::new();
     for (index, record) in records.iter().enumerate() {
+        if !joined.contains(&index)
+            && row(record)
+                .is_some_and(|row| row.kind != RowKind::Thought && !super::is_collapsed(&row))
+        {
+            step += 1;
+        }
+        steps.push(step);
+
         if string(&record.event, "type") == "agent_thought_chunk" && !joined.contains(&index) {
             thoughts
-                .entry((scopes[index], meta(&record.event, "session_id")))
+                .entry((scopes[index], step, meta(&record.event, "session_id")))
                 .or_default()
                 .push(index);
         }
     }
+
     let mut parts = HashMap::<usize, Vec<usize>>::new();
     for (index, record) in records.iter().enumerate() {
         if string(&record.event, "type") != "agent_thought_part" {
             continue;
         }
         let entries = thoughts
-            .entry((scopes[index], meta(&record.event, "session_id")))
+            .entry((
+                scopes[index],
+                steps[index],
+                meta(&record.event, "session_id"),
+            ))
             .or_default();
+
         let target = entries
             .iter()
             .rev()
@@ -54,6 +72,7 @@ pub(super) fn rolled_back(records: &[Record]) -> Vec<Record> {
                 turns.push(std::mem::take(&mut current));
             }
             current.clear();
+
             let count = event["num_turns"]
                 .as_u64()
                 .and_then(|count| usize::try_from(count).ok())
@@ -64,9 +83,10 @@ pub(super) fn rolled_back(records: &[Record]) -> Vec<Record> {
             explicit = false;
             continue;
         }
+
         if kind == "turn_started"
             || kind == "page"
-            || kind == "user_message_chunk" && !explicit && visible && event["codex_mirror"] != true
+            || kind == "user_message_chunk" && !explicit && visible && event[CODEX_MIRROR] != true
         {
             if visible || explicit {
                 turns.push(std::mem::take(&mut current));
@@ -76,24 +96,11 @@ pub(super) fn rolled_back(records: &[Record]) -> Vec<Record> {
             visible = false;
         }
         current.push(index);
-        visible |= matches!(
-            kind,
-            "user_message_chunk"
-                | "agent_message_chunk"
-                | "agent_thought_chunk"
-                | "agent_thought_part"
-                | "tool_call"
-                | "tool_call_update"
-                | "tool_diff"
-                | "image"
-                | "proposed_plan"
-                | "subagent_activity"
-                | "error"
-        ) || kind == "system_message"
-            && !matches!(
-                string(event, "kind"),
-                "developer" | "context" | "injected" | "system"
-            );
+        visible |= !matches!(kind, "session_info" | "turn_ended")
+            && row(record).is_some_and(|row| {
+                !super::is_collapsed(&row) && row.system_kind.as_deref() != Some("system")
+            });
+
         if kind == "turn_ended" {
             if visible || explicit {
                 turns.push(std::mem::take(&mut current));
@@ -103,6 +110,7 @@ pub(super) fn rolled_back(records: &[Record]) -> Vec<Record> {
             visible = false;
         }
     }
+
     records
         .iter()
         .enumerate()
@@ -111,25 +119,15 @@ pub(super) fn rolled_back(records: &[Record]) -> Vec<Record> {
         .collect()
 }
 
-pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
+pub(super) fn mirror_parts(records: &[Record], scopes: &[usize]) -> HashMap<usize, Vec<usize>> {
     let mut parts = HashMap::<usize, Vec<usize>>::new();
-    let mut scopes = Vec::with_capacity(records.len());
-    let mut scope = 0;
-    for record in records {
-        if matches!(string(&record.event, "type"), "turn_started" | "page") {
-            scope += 1;
-        }
-        scopes.push(scope);
-        if string(&record.event, "type") == "turn_ended" {
-            scope += 1;
-        }
-    }
     let mut identities = HashMap::<(usize, &str, &str, &str, &str), Vec<usize>>::new();
     let mut texts = HashMap::<(usize, &str, &str, &str, &str), Vec<usize>>::new();
     let mut idless_texts = HashMap::<(usize, &str, &str, &str, &str), Vec<usize>>::new();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
-        if event["codex_mirror"] == true || !mirror_kind(event) {
+
+        if event[CODEX_MIRROR] == true || !mirror_kind(record) {
             continue;
         }
         let base = (
@@ -138,6 +136,7 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
             string(event, "type"),
             string(event, "kind"),
         );
+
         let id = item_id(event);
         if !id.is_empty() {
             identities
@@ -145,6 +144,7 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
                 .or_default()
                 .push(index);
         }
+
         let key = (base.0, base.1, base.2, base.3, string(event, "text"));
         texts.entry(key).or_default().push(index);
         if id.is_empty() {
@@ -156,7 +156,7 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
         let id = item_id(event);
-        if string(event, "type") == "image" && event["codex_mirror"] == true && !id.is_empty() {
+        if string(event, "type") == "image" && event[CODEX_MIRROR] == true && !id.is_empty() {
             identities
                 .entry((
                     scopes[index],
@@ -168,9 +168,10 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
                 .or_insert_with(|| vec![index]);
         }
     }
+
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
-        if event["codex_mirror"] != true || !mirror_kind(event) {
+        if event[CODEX_MIRROR] != true || !mirror_kind(record) {
             continue;
         }
         let base = (
@@ -179,6 +180,7 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
             string(event, "type"),
             string(event, "kind"),
         );
+
         let id = item_id(event);
         let identity = identities
             .get(&(base.0, base.1, base.2, base.3, id))
@@ -194,6 +196,7 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
                 text.get(&(base.0, base.1, base.2, base.3, string(event, "text")))
             }
         });
+
         if let Some(target) =
             candidates.and_then(|items| items.iter().min_by_key(|&&other| other.abs_diff(index)))
             && *target != index
@@ -201,6 +204,7 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
             parts.entry(*target).or_default().push(index);
         }
     }
+
     let mut group: Vec<usize> = Vec::new();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
@@ -219,6 +223,7 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
         }
     }
     join_compactions(records, &mut group, &mut parts);
+
     parts
 }
 
@@ -229,13 +234,15 @@ fn join_compactions(
 ) {
     let target = group.iter().copied().max_by_key(|&index| {
         let event = &records[index].event;
+
         let text = string(event, "text");
         (
-            !text.is_empty() && text != "Context compacted",
+            !text.is_empty() && text != CONTEXT_COMPACTED,
             !text.is_empty(),
-            event["codex_mirror"] != true,
+            event[CODEX_MIRROR] != true,
         )
     });
+
     if let Some(target) = target {
         parts
             .entry(target)
@@ -244,18 +251,22 @@ fn join_compactions(
     }
 }
 
-fn mirror_kind(event: &serde_json::Value) -> bool {
+fn mirror_kind(record: &Record) -> bool {
+    let event = &record.event;
     match string(event, "type") {
-        "tool_call"
-        | "subagent_activity"
-        | "elicitation_result"
-        | "user_message_chunk"
-        | "agent_message_chunk"
-        | "agent_thought_chunk"
-        | "image"
-        | "proposed_plan" => true,
+        "tool_call" | "elicitation_result" => true,
         "system_message" => string(event, "kind") != "compaction",
-        _ => false,
+        "agent_thought_part" => false,
+        _ => row(record).is_some_and(|row| {
+            matches!(
+                row.kind,
+                RowKind::User
+                    | RowKind::Assistant
+                    | RowKind::Thought
+                    | RowKind::Subagent
+                    | RowKind::ProposedPlan
+            ) || row.kind == RowKind::Notice && string(event, "type") == "image"
+        }),
     }
 }
 

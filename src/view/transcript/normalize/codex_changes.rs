@@ -1,9 +1,10 @@
 //! Saved Codex file changes join the patch call; no file is read or changed here.
 
 use super::claude_json::Object;
-use super::codex_facts::Fact;
+use super::codex_facts::{Fact, status};
 use super::{SnapshotError, Work};
-use serde_json::{Value, json};
+use crate::view::DiffHunk;
+use serde_json::json;
 
 pub(super) fn append(
     fact: &mut Fact<'_>,
@@ -12,13 +13,11 @@ pub(super) fn append(
     work: &mut dyn Work,
 ) -> Result<(), SnapshotError> {
     let id = payload.text(id_field);
-    let status = payload.text("status");
-    let failed = payload.boolean("success") == Some(false)
-        || matches!(status.as_str(), "failed" | "declined");
     fact.push("tool_call_update", json!({
-        "tool_call_id": id, "status": if failed { "failed" } else { "completed" },
+        "tool_call_id": id, "status": status(payload),
         "content": ([payload.text("stdout"), payload.text("stderr")].into_iter().filter(|text| !text.is_empty()).collect::<Vec<_>>().join("\n")),
     }));
+
     if let Some(changes) = payload.object("changes") {
         for (path, raw) in changes.fields() {
             work.check()?;
@@ -26,18 +25,31 @@ pub(super) fn append(
                 fact.push_unknown();
                 continue;
             };
+
             let hunks = match change.text("type").as_str() {
                 "add" | "delete" => {
                     let add = change.text("type") == "add";
                     change.optional_text("content").map(|text| {
-                        let lines: Vec<_> = text.lines().map(|line| format!("{}{line}", if add { '+' } else { '-' })).collect();
-                        vec![json!({"old_start":if add {0} else {1}, "old_lines":if add {0} else {lines.len()},
-                            "new_start":if add {1} else {0}, "new_lines":if add {lines.len()} else {0}, "lines":lines})]
+                        let lines: Vec<_> = text
+                            .lines()
+                            .map(|line| format!("{}{line}", if add { '+' } else { '-' }))
+                            .collect();
+                        vec![DiffHunk {
+                            old_start: if add { 0 } else { 1 },
+                            old_lines: if add { 0 } else { lines.len() as i64 },
+                            new_start: if add { 1 } else { 0 },
+                            new_lines: if add { lines.len() as i64 } else { 0 },
+                            lines,
+                        }]
                     })
                 }
                 "update" => unified(&change.text("unified_diff"), work)?,
                 _ => None,
             };
+
+            let path = change
+                .optional_text("move_path")
+                .map_or_else(|| path.to_owned(), |new| format!("{path} -> {new}"));
             if let Some(hunks) = hunks {
                 fact.push(
                     "tool_diff",
@@ -48,6 +60,7 @@ pub(super) fn append(
             }
         }
     }
+
     Ok(())
 }
 
@@ -58,7 +71,7 @@ fn range(text: &str, prefix: char) -> Option<(i64, i64)> {
     (start >= 0 && count >= 0).then_some((start, count))
 }
 
-fn unified(text: &str, work: &mut dyn Work) -> Result<Option<Vec<Value>>, SnapshotError> {
+fn unified(text: &str, work: &mut dyn Work) -> Result<Option<Vec<DiffHunk>>, SnapshotError> {
     let mut hunks = Vec::new();
     let mut hunk: Option<(i64, i64, i64, i64, Vec<String>)> = None;
     for line in text.lines() {
@@ -70,6 +83,7 @@ fn unified(text: &str, work: &mut dyn Work) -> Result<Option<Vec<Value>>, Snapsh
                 };
                 hunks.push(value);
             }
+
             let mut fields = header.split_whitespace();
             let parsed = fields
                 .next()
@@ -78,6 +92,7 @@ fn unified(text: &str, work: &mut dyn Work) -> Result<Option<Vec<Value>>, Snapsh
             let Some(((old_start, old_lines), (new_start, new_lines))) = parsed else {
                 return Ok(None);
             };
+
             if fields.next() != Some("@@") {
                 return Ok(None);
             }
@@ -95,6 +110,7 @@ fn unified(text: &str, work: &mut dyn Work) -> Result<Option<Vec<Value>>, Snapsh
             return Ok(None);
         }
     }
+
     if let Some(previous) = hunk {
         let Some(value) = finish(previous) else {
             return Ok(None);
@@ -106,7 +122,7 @@ fn unified(text: &str, work: &mut dyn Work) -> Result<Option<Vec<Value>>, Snapsh
 
 fn finish(
     (old_start, old_lines, new_start, new_lines, lines): (i64, i64, i64, i64, Vec<String>),
-) -> Option<Value> {
+) -> Option<DiffHunk> {
     if lines
         .iter()
         .filter(|line| line.starts_with([' ', '-']))
@@ -120,7 +136,12 @@ fn finish(
     {
         return None;
     }
-    Some(
-        json!({"old_start":old_start,"old_lines":old_lines,"new_start":new_start,"new_lines":new_lines,"lines":lines}),
-    )
+
+    Some(DiffHunk {
+        old_start,
+        old_lines,
+        new_start,
+        new_lines,
+        lines,
+    })
 }

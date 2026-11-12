@@ -202,7 +202,11 @@ fn live_chunks_match_full_frames_for_claude_and_codex() {
             json!({"type":"tool_call","tool_call_id":"hidden-101","name":"Read","input":{}}),
         ]);
         for (index, event) in events.into_iter().enumerate() {
-            incremental.ingest(index as u64 + 1, index as u64 + 2, std::slice::from_ref(&event));
+            incremental.ingest(
+                index as u64 + 1,
+                index as u64 + 2,
+                std::slice::from_ref(&event),
+            );
             if event["type"] == "queue_operation" {
                 assert!(!incremental.rebuild, "a queue edit rebuilt the open turn");
             }

@@ -54,34 +54,45 @@ pub(super) fn rows_with_context(
     } else {
         records
     };
+    let mut scope = 0;
+    let mut saw_tool = false;
+    let mut scopes = Vec::with_capacity(records.len());
+    for record in records {
+        let event_type = string(&record.event, "type");
+        if matches!(event_type, "page" | "turn_started")
+            || event_type == "user_message_chunk" && saw_tool
+        {
+            scope += 1;
+            saw_tool = false;
+        }
+        scopes.push(scope);
+        if matches!(event_type, "tool_call" | "tool_call_update" | "tool_diff") {
+            saw_tool = true;
+        }
+        if event_type == "turn_ended" {
+            scope += 1;
+            saw_tool = false;
+        }
+    }
+
     let mirror_parts = if is_codex {
-        codex::mirror_parts(records)
+        codex::mirror_parts(records, &scopes)
     } else {
         HashMap::new()
     };
     let mirror_joined: HashSet<_> = mirror_parts.values().flatten().copied().collect();
-    let mut scope = 0;
-    let mut saw_tool = false;
-    let mut scopes = Vec::new();
     let mut calls = HashMap::<String, Vec<Anchor>>::new();
     let mut skill_calls = HashMap::<String, Vec<Anchor>>::new();
     let mut commands = HashMap::<String, Vec<Anchor>>::new();
     let mut shells = HashMap::<String, Vec<Anchor>>::new();
     let mut endings = HashMap::new();
     for (index, record) in records.iter().enumerate() {
-        let event = &record.event;
-        let event_type = string(event, "type");
         if mirror_joined.contains(&index) {
-            scopes.push(scope);
             continue;
         }
-        if matches!(event_type, "page" | "turn_started")
-            || (event_type == "user_message_chunk" && saw_tool)
-        {
-            scope += 1;
-            saw_tool = false;
-        }
-        scopes.push(scope);
+        let event = &record.event;
+        let event_type = string(event, "type");
+        let scope = scopes[index];
         let anchor = Anchor {
             index,
             session: meta(event, "session_id").into(),
@@ -113,15 +124,11 @@ pub(super) fn rows_with_context(
                     .push(anchor);
             }
         }
-        if matches!(event_type, "tool_call" | "tool_call_update" | "tool_diff") {
-            saw_tool = true;
-        }
         if event_type == "turn_ended" {
             endings.insert(scope, string(event, "reason"));
-            scope += 1;
-            saw_tool = false;
         }
     }
+
     let mut updates = HashMap::<usize, Vec<usize>>::new();
     let mut diffs = HashMap::<usize, Vec<usize>>::new();
     let mut attached = HashMap::<usize, Vec<usize>>::new();
@@ -317,7 +324,7 @@ pub(super) fn rows_with_context(
                     .get(&index)
                     .and_then(|items| items.last())
                     .map_or(state, |index| {
-                        subagent_state(string(&records[*index].event, "kind"), state)
+                        tool::subagent_state(string(&records[*index].event, "kind"), state)
                     });
 
                 row.subagent = Some(SubagentRun {
@@ -461,15 +468,6 @@ pub(super) fn rows_with_context(
         }
     }
     rows
-}
-
-pub(super) fn subagent_state(kind: &str, fallback: ToolState) -> ToolState {
-    match kind {
-        "started" | "interacted" => ToolState::Waiting,
-        "interrupted" => ToolState::Interrupted,
-        "completed" => ToolState::Finished,
-        _ => fallback,
-    }
 }
 
 pub fn is_collapsed(row: &Row) -> bool {

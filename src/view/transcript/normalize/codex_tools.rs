@@ -22,10 +22,8 @@ pub(super) fn append(
                 fact.push_unknown();
                 return Ok(true);
             };
-            let Some(command) = action
-                .get("command")
-                .and_then(|raw| serde_json::from_str::<Vec<String>>(raw.get()).ok())
-            else {
+
+            let Some(command) = action.command("command") else {
                 fact.push_unknown();
                 return Ok(true);
             };
@@ -33,17 +31,18 @@ pub(super) fn append(
                 .optional_text("call_id")
                 .filter(|id| !id.is_empty())
                 .unwrap_or_else(|| payload.text("id"));
-            let mut event = Template::new(
-                "tool_call",
-                json!({
-                    "tool_call_id":id, "name":"exec_command", "status":if payload.text("status") == "completed" {"completed"} else {"pending"},
-                }),
+            fact.call(
+                &id,
+                "exec_command",
+                if payload.text("status") == "completed" {
+                    "completed"
+                } else {
+                    "pending"
+                },
+                Input::Scalar(json!({"cmd":command,"cwd":action.text("working_directory")})),
             );
-            event.input = Some(Input::Scalar(
-                json!({"cmd":command.join(" "),"cwd":action.text("working_directory")}),
-            ));
-            fact.actions.push(Action::Event(event));
         }
+
         "web_search_call" | "tool_search_call" => {
             let web = kind == "web_search_call";
             let raw = payload.get(if web { "action" } else { "arguments" });
@@ -51,21 +50,19 @@ pub(super) fn append(
                 Some(raw) => claude_input::parse(raw, 255, work)?,
                 None => Some(Input::Scalar(Value::Null)),
             };
+
             if let Some(input) = input {
-                let mut event = Template::new(
-                    "tool_call",
-                    json!({
-                        "tool_call_id": payload.text("call_id"),
-                        "name": if web { "web_search" } else { "tool_search" },
-                        "status": if web { "completed" } else { "pending" },
-                    }),
+                fact.call(
+                    &payload.text("call_id"),
+                    if web { "web_search" } else { "tool_search" },
+                    if web { "completed" } else { "pending" },
+                    input,
                 );
-                event.input = Some(input);
-                fact.actions.push(Action::Event(event));
             } else {
                 fact.push_unknown();
             }
         }
+
         "tool_search_output" => {
             let input = match payload.get("tools") {
                 Some(raw) => claude_input::parse(raw, 255, work)?,
@@ -83,6 +80,7 @@ pub(super) fn append(
                 fact.push_unknown();
             }
         }
+
         "function_call" | "custom_tool_call" => {
             let (Some(call_id), Some(name), Some(text)) = (
                 payload.optional_text("call_id"),
@@ -96,6 +94,7 @@ pub(super) fn append(
                 fact.push_unknown();
                 return Ok(true);
             };
+
             let raw = serde_json::from_str::<&RawValue>(&text).ok();
             let raw = match raw {
                 Some(raw) if claude_json::valid(raw, work)? => Some(raw),
@@ -105,6 +104,7 @@ pub(super) fn append(
                 Some(raw) => claude_input::parse(raw, 255, work)?,
                 None => Some(Input::Scalar(Value::String(text.clone()))),
             };
+
             let Some(input) = input else {
                 fact.push_unknown();
                 return Ok(true);
@@ -127,16 +127,10 @@ pub(super) fn append(
                     event,
                 });
             } else {
-                let mut event = Template::new(
-                    "tool_call",
-                    json!({
-                        "tool_call_id": call_id, "name": name, "status": "pending",
-                    }),
-                );
-                event.input = Some(input);
-                fact.actions.push(Action::Event(event));
+                fact.call(&call_id, &name, "pending", input);
             }
         }
+
         "function_call_output" | "custom_tool_call_output" => output(
             fact,
             payload,
@@ -146,6 +140,7 @@ pub(super) fn append(
         )?,
         _ => return Ok(false),
     }
+
     Ok(true)
 }
 
@@ -156,6 +151,7 @@ fn write_tool_list(
     work: &mut dyn Work,
 ) -> Result<(), SnapshotError> {
     work.check()?;
+
     match input {
         Input::Scalar(_) => {
             content.push_str(&serde_json::to_string(input).expect("validated tool list scalar"));
@@ -163,6 +159,7 @@ fn write_tool_list(
         Input::Number(raw) => content.push_str(raw.get()),
         Input::Array(items) => {
             content.push('[');
+
             for (index, item) in items.iter().enumerate() {
                 if index != 0 {
                     content.push(',');
@@ -173,6 +170,7 @@ fn write_tool_list(
         }
         Input::Object(fields) => {
             content.push('{');
+
             for (index, (key, value)) in fields.iter().enumerate() {
                 if index != 0 {
                     content.push(',');
@@ -184,6 +182,7 @@ fn write_tool_list(
             content.push('}');
         }
     }
+
     Ok(())
 }
 
@@ -230,6 +229,7 @@ pub(super) fn output(
             }
             has_unknown = true;
         }
+
         if has_unknown {
             tail.push(fact.unknown());
         }
@@ -238,21 +238,19 @@ pub(super) fn output(
         fact.push_unknown();
         return Ok(());
     };
-    let mut fields = json!({
-        "tool_call_id": call_id, "status": "completed", "content": content,
-    });
-    if let Some(agent_id) = serde_json::from_str::<Value>(&content)
-        .ok()
-        .and_then(|output| output["agent_id"].as_str().map(str::to_owned))
-    {
-        fields["agent_thread_id"] = json!(agent_id);
-    }
-    let event = Template::new("tool_call_update", fields);
+
+    let event = Template::new(
+        "tool_call_update",
+        json!({
+            "tool_call_id": call_id, "status": "completed", "content": content,
+        }),
+    );
     fact.actions.push(Action::Output {
         call_id,
         question,
         event,
         tail,
     });
+
     Ok(())
 }

@@ -89,6 +89,9 @@ pub const RECORD: &str = "record";
 /// `Row.system_kind` of a record no parser maps; the web counts these rows (ADR 0139).
 pub const UNMAPPED: &str = "unmapped";
 
+pub(crate) const CODEX_MIRROR: &str = "codex_mirror";
+pub(crate) const CONTEXT_COMPACTED: &str = "Context compacted";
+
 /// Absent fields have the same meaning as null, false, or an empty array.
 /// `id`, `kind`, `text`, and `order` are always present.
 #[derive(Clone, Debug, PartialEq, Serialize)]
