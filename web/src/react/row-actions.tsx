@@ -46,7 +46,7 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
   else if (r?.kind === "workspace" && (r.archived || archive))
     list = [
       { label: "Restore workspace", icon: ArchiveRestoreIcon, run: () => app.life.restoreWorkspace(r.id) },
-      { label: "Delete workspace…", icon: Trash2Icon, run: () => void app.life.deleteWorkspace(r.id) },
+      { label: "Remove worktree…", icon: Trash2Icon, run: () => void app.life.deleteWorkspace(r.id) },
     ];
   else if (r?.kind === "workspace") {
     const up = app.workspaceMoveTarget(r.id, -1);
@@ -60,7 +60,7 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
       { label: "Move Up", disabled: !up, run: () => up && void app.choose({ op: "reorder_workspace", workspace: r.id, target: up }) },
       { label: "Move Down", disabled: !down, run: () => down && void app.choose({ op: "reorder_workspace", workspace: r.id, target: down }) },
       { label: "Archive workspace", icon: ArchiveIcon, run: () => void app.life.archiveWorkspace(r.id) },
-      { label: "Delete workspace…", icon: Trash2Icon, run: () => void app.life.deleteWorkspace(r.id) },
+      { label: "Remove worktree…", icon: Trash2Icon, run: () => void app.life.deleteWorkspace(r.id) },
       r.missing && { label: "Prune worktree…", run: () => void app.life.pruneWorkspace(r.id, row.section.title) },
       // A folder has no header, so its project menu item is here.
       row.section.folder && { label: "Remove Project…", icon: FolderMinusIcon, run: () => app.life.removeProject(row.section.path ?? "", row.section.title) },

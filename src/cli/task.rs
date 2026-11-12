@@ -1,16 +1,37 @@
-//! `swarm task start <name> | land | drop [<branch>] | list` (ADR 0135): an agent's own task
+//! `swarm task start <name> | land | drop [<branch>] | list | sweep [--apply]`: an agent's own task
 //! worktree, made from the default branch by Worktrunk and landed by the swarm server.
 
 use super::*;
 use std::time::{Duration, Instant};
 
-const TASK_USAGE: &str = "usage: swarm task start <name> | land [<name>] | drop [<name>] | list";
+const TASK_USAGE: &str = "usage: swarm task start <name> | land [<name>] [--pr] | drop [<name>] | list | sweep [--apply]";
 /// A Claude shell call stops at 2 minutes, so land waits less, and running it again keeps waiting.
 const LAND_WAIT: Duration = Duration::from_secs(100);
 
 pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     let cwd = env::current_dir()?;
+    if let [verb, flags @ ..] = args
+        && verb == "sweep"
+        && (flags.is_empty() || matches!(flags, [flag] if flag == "--apply"))
+    {
+        let min_age = env::var("SWARM_TEST_SWEEP_MIN_AGE_SECONDS")
+            .ok()
+            .filter(|_| cfg!(debug_assertions))
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(3600);
+        let report =
+            swarm::task::sweep(&root, &cwd, !flags.is_empty(), Duration::from_secs(min_age))?;
+        print_json(&report)?;
+        if report
+            .worktrees
+            .iter()
+            .any(|entry| entry.verdict == "error")
+        {
+            return Err("swarm: some worktrees or task records could not be removed".into());
+        }
+        return Ok(());
+    }
     let wt = swarm::task::wt_program();
     let value = match args {
         [verb, name] if verb == "start" => {
@@ -21,9 +42,21 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let (task, warning) = swarm::task::start(&root, &wt, &cwd, name, owner)?;
             serde_json::json!({"branch": task.branch, "path": task.path, "warning": warning})
         }
-        [verb, rest @ ..] if verb == "land" && rest.len() <= 1 => {
-            let name = rest.first().map(String::as_str);
-            let (request, branch) = swarm::task::request_landing(&root, &cwd, name)?;
+        [verb, rest @ ..] if verb == "land" => {
+            let pr = rest.iter().any(|arg| arg == "--pr");
+            let names: Vec<_> = rest.iter().filter(|arg| arg.as_str() != "--pr").collect();
+            if names.len() > 1
+                || names.first().is_some_and(|name| name.starts_with('-'))
+                || rest.iter().filter(|arg| arg.as_str() == "--pr").count() > 1
+            {
+                return Err(TASK_USAGE.into());
+            }
+            let name = names.first().map(|name| name.as_str());
+            let (request, branch) = if pr {
+                swarm::task::request_pull_request(&root, &cwd, name)?
+            } else {
+                swarm::task::request_landing(&root, &cwd, name)?
+            };
             let deadline = Instant::now() + LAND_WAIT;
             loop {
                 if let Some(answer) = swarm::task::take_result(&request) {
@@ -43,7 +76,12 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                         "swarm is still landing it; to keep waiting, run"
                     };
                     // With the name, the command works again after the worktree is gone.
-                    return Err(format!("swarm: {why} `swarm task land {}` again", branch).into());
+                    return Err(format!(
+                        "swarm: {why} `swarm task land {}{}` again",
+                        branch,
+                        if pr { " --pr" } else { "" }
+                    )
+                    .into());
                 }
                 std::thread::sleep(Duration::from_millis(500));
             }

@@ -41,6 +41,13 @@ pub fn normalize(
 /// always get a decision, because `{}` makes it refuse every tool.
 pub fn render(provider: Provider, verdict: &Verdict) -> (String, String, i32) {
     match (provider, verdict) {
+        (Provider::Claude | Provider::Codex, Verdict::Warn(reason)) => (
+            serde_json::json!({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": reason}}).to_string() + "\n",
+            String::new(),
+            0,
+        ),
+        // AGY's reply contract has only a decision; pi's extension ignores successful output.
+        (Provider::Agy | Provider::Pi, Verdict::Warn(_)) => render(provider, &Verdict::Allow),
         (Provider::Claude | Provider::Codex | Provider::Pi, Verdict::Allow) => {
             (String::new(), String::new(), 0)
         }

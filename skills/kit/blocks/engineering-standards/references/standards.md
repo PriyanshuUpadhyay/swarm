@@ -2,6 +2,12 @@
 
 `blocks/engineering-standards/SKILL.md` (from the kit root) says how to read and apply a row.
 
+To add a row: it earns its place by stating a principle that stays true across engines and
+products. An engine or product name may appear in `Scope` or `Check` to say where a check runs, as
+SQLite does for D1. It may not appear in the rule text as the reason the rule holds. An incident
+belongs in `Source`, as evidence. A rule that is true only inside one product belongs in that
+product's repository instead of here.
+
 ## 1. API contract
 
 | # | Rule | Status | Scope | Check | Source |
@@ -28,7 +34,7 @@
 | D3 | Name the storage topology before choosing a key. A time-ordered key keeps inserts near the tail on one node, and the same key hotspots one shard when the store is sharded. | ADVICE | **forks: single-node vs sharded** | judgment | RFC 9562; Spanner guidance |
 
 Contested, so it gets no row. A `deleted` boolean does not scale, and neither does a large
-`DELETE`, yet a hard delete with an audit table breaks its own trade-off. Send it to section 5.
+`DELETE`, yet a hard delete with an audit table breaks its own trade-off. It is an open trade-off for the owner, as `blocks/decision-with-default/SKILL.md` says.
 
 A clean linter run does not prove normal form. Normalisation stays `judgment`.
 
@@ -52,4 +58,4 @@ A plan shows shape, never production cost, so P2 passing is not a benchmark.
 | J1 | Test and reserve against a limit in one statement, e.g. `UPDATE ... SET used = used + 1 WHERE used < limit`. A separate check then write lets two callers both pass, and a tally written after the work reserves nothing. | PROJECT | a counter or tally compared against a limit | judgment | local incident, `GET /usage` |
 
 Whether retry-with-backoff or backpressure and load-shedding should be the default primitive is
-**contested**. It gets no row. Send it to section 5.
+**contested**. It gets no row. It is an open trade-off for the owner, as `blocks/decision-with-default/SKILL.md` says.

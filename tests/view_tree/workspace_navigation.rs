@@ -77,7 +77,12 @@ fn bare_hub_removed_and_worktree_states() {
             json!({"path":"/repo/wt/locked","branch":"locked","locked":true}),
             json!({"path":"/repo/wt/detached","detached":true}),
         ]);
-    let tree = tree::build(&snap, &owner());
+    // The owner opened the locked and detached worktrees, so the sidebar lists them with no chat.
+    let mut owner = owner();
+    owner
+        .project_paths
+        .extend(["/repo/wt/locked".into(), "/repo/wt/detached".into()]);
+    let tree = tree::build(&snap, &owner);
     let removed = tree.workspace("/repo#removed").unwrap().1;
     assert!(removed.removed);
     assert_eq!(removed.chats.len(), 2);
@@ -85,7 +90,7 @@ fn bare_hub_removed_and_worktree_states() {
     assert!(tree.workspace("/repo/.bare").is_none());
     let rows = tree::sections(
         &tree,
-        &owner(),
+        &owner,
         &ViewState::default(),
         false,
         100,
@@ -216,4 +221,41 @@ fn independent_folds_and_case_keys() {
     );
     assert_eq!(navigation::title_key("Docs"), navigation::title_key("docs"));
     assert_ne!(navigation::title_key("dogs"), navigation::title_key("docs"));
+}
+#[test]
+fn agent_worktrees_wait_behind_one_more_worktrees_row() {
+    let mut snap = snapshot(vec![session("notes", "/repo/wt/feature", 1)], json!({}));
+    snap["projects"][0]["workspaces"]
+        .as_array_mut()
+        .unwrap()
+        .extend([
+            json!({"path":"/repo/wt/swarm-task-a","branch":"swarm/task-a"}),
+            json!({"path":"/repo/wt/swarm-task-b","branch":"swarm/task-b"}),
+        ]);
+    let rows = tree::sections(
+        &tree::build(&snap, &owner()),
+        &owner(),
+        &ViewState::default(),
+        false,
+        100,
+        &Default::default(),
+    )
+    .remove(0)
+    .rows;
+    let ids: Vec<_> = rows
+        .iter()
+        .filter(|r| r.depth == 0)
+        .map(|r| r.id.as_str())
+        .collect();
+    // Main, the worktree with a chat, and the one the owner opened stay; the agent ones wait.
+    assert_eq!(
+        ids,
+        [
+            "/repo/wt/main",
+            "/repo/wt/empty",
+            "/repo/wt/feature",
+            "worktrees:/repo"
+        ]
+    );
+    assert_eq!(rows.last().unwrap().title, "2 more worktrees");
 }

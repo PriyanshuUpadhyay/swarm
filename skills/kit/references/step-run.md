@@ -19,44 +19,16 @@ sees `02-local.md` done and `03-web.md` open, does the web step, and goes on to 
 
 ## Script
 
-A skill with a step table makes its folder with the kit's `references/step_run.py`, unless the skill
-names its own script. `start <folder> <SKILL.md>` writes one file per table row, with a todo for what
-the row holds and a `## Result` section. It skips a file that exists, so `amend` can add one step;
-`start_plan.py` refuses a re-approved plan whose existing steps changed, and its docstring owns that rule. A table can add a `Blocks` column; `blocks/blocks.toml`
-owns how those blocks become rules and evidence todos. A table with `Blocks` needs Python 3.11
-or later for `start`, because it reads TOML. `take <folder> <step> <agent>` marks a step `active <agent> #<n>` and fills
-its `Uses:` line; `<n>` counts the step's takes. `done <folder> <step> <n>` sets the step done only for
-that claim, when every todo is checked with its evidence after the last colon, and when no `Uses:`
-input changed after `take`, and when no done step on the chain before it is stale. It also runs each checked `block <id> script:` todo that
-`blocks/blocks.toml` calls runnable, and a failing one refuses. It prints `not run:` for the others,
-which keep their evidence. It never runs the evidence. `done` accepts no `--force`. `status <folder>` also names each stale step.
-`skip <folder> <step> <reason>` records a route skip.
-A plan run is one whose table has a `Writes` column. Its step files carry `Writes: <paths>` (or `none`) under
-`Uses:`, and `Optional: yes` for a row marked `(optional)`. In a plan run, `skip` refuses a step with no
-`Optional: yes`. `take` records the work tree as a `base <tree>` line in `events.log`, and `done` refuses a
-path changed since then outside the step's Writes, the Writes of the other active or done steps that it does
-not need and that were not done before its take, and the run folder. Take records a hash of `.blocks.toml`, so an
-ignored copy counts too. It also refuses a change to `.blocks.toml`, whose `[off]` table only the owner sets.
-Outside git it prints `not run: scope`. A failed git call, or a take with no base, refuses. `done` also runs the script checks of each block in the step's row of
-`<folder>/plan.md`, so removing the `Skills read:` line skips none. `start` links each block's rules instead
-of copying them: the `Skills read:` line names each block with the hash of its file, and `Rules from: <table>`
-names the table. `take` prints the step file with each block's Rules and Example in full, and refuses when a
-block, its hash, or the list differs, or the table is gone. Each judge question appears once in the todos.
-`take` of a step with the `change-review`
-block refuses an agent that took a writing step it reaches through `Uses:`.
-`amend <folder> <row> [--before <step>]` adds one plan row that writes `none`, while the count of `amend`
-lines in `events.log` is below the `Amend: <N>` line of `plan.md`. It checks the plan with `plan_chart.py`
-and restores `plan.md` on a refusal. `--before` adds the new step to the Needs of an open step.
-`block <folder> <step> <reason>` records a blocked step.
-Never set a step done by hand.
-Pass `<n>` as a bare number. An unquoted `#1` is a shell comment, so the shell drops it.
-`take` refuses a step active for another agent; use `--force` after confirming that run is gone.
-A dead run holds no lock; `--force` only overrides a stale `Status: active <agent> #<n>` line, and the next
-take gets a higher `<n>`, so the replaced agent's `done` is refused.
-`take`, `done`, `skip`, `block`, and `amend` add one line to `<folder>/events.log` with the time, the step, and the
-event, and `done` adds a `check <id> exit <code>` line for each check it runs, so the path of a run, and not only its last state, stays readable. A skill script with its
-own step graph or revision, such as the implement skill's `implement_run.py`, imports these
-functions and passes its own.
+A skill with a step table makes and moves its folder with
+`python3 <kit root>/references/step_run.py <start|status|take|done|skip|block|amend> ...`, unless the
+skill names its own script. `--help` lists the arguments, and each refusal prints its reason.
+
+- `take` prints the step file with each block's Rules and Example. Do the step from that print.
+- `done` needs every todo checked, with its evidence after the last colon. In a plan run, write
+  only the paths on the step's `Writes:` line.
+- Never set a step done by hand. Pass `<n>` as a bare number, because an unquoted `#1` is a shell
+  comment.
+- Use `take --force` only after you confirm that the other agent's run is gone.
 
 ## Status line
 

@@ -130,6 +130,9 @@ pub fn sections(
             }
         }
         archived_chats.sort_by_key(|(c, _)| std::cmp::Reverse(c.archived_at));
+        if !archive && project.hidden > 0 {
+            project_rows.push(worktrees_row(project));
+        }
         // A pinned workspace is listed under Pinned, so its project keeps the header.
         let folder = !archive
             && is_folder(project)
@@ -174,6 +177,42 @@ pub fn sections(
         });
     }
     sections
+}
+
+/// "N more worktrees": the worktrees the sidebar does not list. It opens "+" on Existing branch,
+/// where each one is marked open.
+fn worktrees_row(project: &Project) -> SidebarRow {
+    let title = format!(
+        "{} more worktree{}",
+        project.hidden,
+        if project.hidden == 1 { "" } else { "s" }
+    );
+    SidebarRow {
+        id: format!("worktrees:{}", project.path),
+        kind: "worktrees",
+        depth: 0,
+        parent_id: None,
+        expanded: false,
+        has_children: false,
+        children_summary: None,
+        title: title.clone(),
+        detail: String::new(),
+        status: None,
+        counts: Vec::new(),
+        age: None,
+        help: "Open a worktree that the sidebar does not list".into(),
+        pinned: false,
+        archived: false,
+        missing: false,
+        new_chat_enabled: false,
+        dimmed: false,
+        fields: vec![FieldValue {
+            field: "title".into(),
+            text: title,
+            status: None,
+        }],
+        selection: None,
+    }
 }
 
 /// A project that is not a Git repository: its one workspace is the folder itself.

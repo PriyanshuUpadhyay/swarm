@@ -5,7 +5,10 @@ export type Mode = "new-branch" | "existing-branch" | "pr" | "issue";
 /** `GET /api/workspace/new-options`. */
 export type NewOptions = {
   defaultBranch: string | null;
+  /** Free branches, which a new worktree checks out. */
   branches: string[];
+  /** Each checked-out branch but the default, with its worktree; picking one opens it. */
+  checkouts: Record<string, string>;
   bases: string[];
   folder: string;
   prefix: string;
@@ -35,7 +38,10 @@ export type SetupRun = {
   error: string | null;
 };
 
-export type Create = { state: "working" | "failed" | "kept"; error: string | null; workspace: string | null; setup: SetupRun | null };
+/** A New branch whose name was taken: its worktree, or null for a branch that has none. */
+export type Existing = { branch: string; path: string | null };
+
+export type Create = { state: "working" | "failed" | "kept" | "exists"; error: string | null; workspace: string | null; setup: SetupRun | null; existing?: Existing };
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -73,7 +79,7 @@ export type Profile = { name: string; runners: { provider: string; model?: strin
 
 export type LifeState = {
   /** The New Workspace dialog, on this project. */
-  newWorkspace: { project: string } | null;
+  newWorkspace: { project: string; mode?: Mode } | null;
   create: Create | null;
   project: "create" | "import" | null;
   /** The plain folder that Import asks about: Git or a plain folder. */

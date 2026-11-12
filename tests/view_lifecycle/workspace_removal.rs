@@ -279,7 +279,7 @@ isolated!(shared_defaults_decode_merge_and_seed_overrides, |f| {
         ),
     ] {
         let name = format!("Task {}", f.git(&["branch", "--list"]).lines().count());
-        let (path, settings) = lifecycle::create_workspace(
+        let (path, settings, _) = lifecycle::create_workspace(
             &f.home,
             &project,
             &f.owner,

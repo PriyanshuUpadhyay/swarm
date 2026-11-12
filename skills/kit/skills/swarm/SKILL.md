@@ -16,9 +16,9 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 
 ## Pick a preset
 
-This skill is the one workflow skill of the kit. Each verb is a preset folder in `<kit root>/presets/`. Match the
-task to one row, then read that `PRESET.md` in full before you plan, because it holds the verb's own
-rules next to its preset. "<verb> continue <folder>" picks up that verb's run. When no row fits, or
+Match the task to one row, then read the file that row names in full before you plan, because it
+holds the verb's own rules next to its preset. A row that names no file is the folder
+`<kit root>/presets/<verb>/PRESET.md`. "<verb> continue <folder>" picks up that verb's run. When no row fits, or
 the task mixes verbs, plan from the block catalog with no preset.
 
 | Preset | Use when the task is to |
@@ -35,8 +35,8 @@ the task mixes verbs, plan from the block catalog with no preset.
 
 ## Presets
 
-A preset is a verb's start list of steps and blocks. It is a `## Preset` section in the verb's
-`PRESET.md`, or in `references/<mode>.md` for a verb with modes. The section has one line
+A preset is a verb's start list of steps and blocks. It is a `## Preset` section in the file that the
+verb's row names, or in `references/<mode>.md` for a verb with modes. The section has one line
 `Stop: owner` or `Stop: chat`, an optional line `Start: <command>` for a verb that runs its own
 step run, an optional line `Offers: <block>, <block>` with the blocks that the planner may add for this
 verb (no step loads them; they are off by default), and one table in the plan step-table shape that `blocks/planner/SKILL.md` sets, with no

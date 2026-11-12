@@ -81,6 +81,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
             .any(|p| *p == fact.path || fact.workspaces.iter().any(|w| w.path == *p));
         let mut workspaces = Vec::new();
         let mut matched = BTreeSet::new();
+        let mut hidden = 0;
         for ws in fact.workspaces.iter().filter(|w| !w.bare) {
             let matching: Vec<_> = project_sessions
                 .iter()
@@ -105,7 +106,15 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                     .filter_map(|s| s["id"].as_str())
                     .map(str::to_owned),
             );
-            if matching.is_empty() && !ws.missing && !opened {
+            // An opened project lists main and the worktrees the owner made, opened, pinned, or
+            // archived; the rest, often agent task worktrees, wait behind "N more worktrees".
+            let kept = ws.path == fact.path
+                || matches!(ws.branch.as_deref(), Some("main" | "master"))
+                || owner.project_paths.contains(&ws.path)
+                || owner.pinned.contains(&ws.path)
+                || owner.archived.contains(&ws.path);
+            if matching.is_empty() && !ws.missing && !(opened && kept) {
+                hidden += usize::from(opened);
                 continue;
             }
             let (listed, unlisted) = chats(matching, snapshot, owner);
@@ -212,6 +221,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
             main_path,
             launch_directory: fact.launch_directory,
             workspaces,
+            hidden,
         });
     }
     projects.sort_by(|a, b| natural_cmp(&a.path, &b.path));

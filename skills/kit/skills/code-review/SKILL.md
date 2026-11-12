@@ -13,7 +13,8 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 
 ## Modes
 
-Ask the owner which mode to run, unless the request names it. The answer picks the preset.
+Ask the owner which mode to run, unless the request names it or the Activation section of
+`references/cleanup.md` starts cleanup at a delivery gate. The answer picks the preset.
 
 | Mode | Runs | Preset and rules |
 |---|---|---|

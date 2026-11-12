@@ -127,6 +127,8 @@ export class AppSidebar {
       if (row.kind === "chat" && sel.chat) this.app.navigation.openChat(sel.chat, e, { write: false });
       return;
     }
+    // "N more worktrees": "+" on Existing branch, where each hidden worktree is marked open.
+    if (row.kind === "worktrees") return this.app.life.newWorkspace(nav.section.path ?? undefined, "existing-branch");
     if (row.kind === "more") {
       const workspace = sel.workspace ?? row.parentId;
       if (workspace) void this.app.navigation.choose({ op: "expand_list", workspace });

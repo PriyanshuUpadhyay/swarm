@@ -16,7 +16,10 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
         (Ok(path), Ok(home)) => {
             let path = path.to_string_lossy();
             let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2));
-            match (std::fs::read_to_string(path.as_ref()), payload) {
+            let wall = payload
+                .as_ref()
+                .and_then(|payload| swarm::guard::wall(provider, event, payload));
+            let verdict = match (std::fs::read_to_string(path.as_ref()), payload) {
                 (_, None) => swarm::guard::Verdict::Deny(
                     "swarm guard: cannot read the hook payload on stdin within 2 s, so the call is blocked".into(),
                 ),
@@ -27,10 +30,10 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
                         "swarm guard: cannot read {path}: {error}, so the call is blocked"
                     ))
                 }
-                (_, Some(payload))
-                    if let Some(wall) = swarm::guard::wall(provider, event, &payload) =>
+                (_, Some(_))
+                    if let Some(swarm::guard::Verdict::Deny(reason)) = &wall =>
                 {
-                    wall
+                    swarm::guard::Verdict::Deny(reason.clone())
                 }
                 (_, Some(payload))
                     if swarm::host::is_worker(|name| env::var(name).ok())
@@ -50,6 +53,12 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
                     &home,
                     deadline,
                 ),
+            };
+            // A warning never skips the worker wall or the owner's rules.
+            if verdict == swarm::guard::Verdict::Allow {
+                wall.unwrap_or(verdict)
+            } else {
+                verdict
             }
         }
         _ => swarm::guard::Verdict::Deny(

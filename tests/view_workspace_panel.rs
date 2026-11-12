@@ -385,7 +385,7 @@ isolated!(
         .unwrap();
         choices::apply(&mut owner, &mut state, &tree, op, 100).unwrap();
         let request = serde_json::from_value(json!({"project":fixture.repo,"name":"task","mode":"new-branch","prefix":"","folder":"../workspaces"})).unwrap();
-        let (_, defaults) =
+        let (_, defaults, _) =
             lifecycle::create_workspace(&home, &tree.projects[0], &owner, &request).unwrap();
         assert_eq!(defaults["custom"], "keep");
         assert_eq!(defaults["setup_script"], "printf ready");

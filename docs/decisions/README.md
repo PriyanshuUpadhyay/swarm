@@ -5,6 +5,10 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0145 | A task lands on origin and local main together, or as a PR | 2 | accepted | 2026-11-12 | ↑0135 →0142 →0144 |
+| 0144 | Swarm task sweep removes merged worktrees and keeps branches | 2 | accepted | 2026-11-11 | ↑0055 ↑0135 →0134 →0142 |
+| 0143 | The main wall's shell part warns and never blocks | 2 | accepted | 2026-11-11 | ↑0135 →0040 |
+| 0142 | A taken branch opens or reopens, and the sidebar lists the worktrees in use | 2 | accepted | 2026-11-11 | ↑0135 ↑0055 →0049 |
 | 0141 | Reports live in one shared folder and pages have random IDs | 2 | accepted | 2026-11-11 | ↑0101 |
 | 0140 | A subagent call is a row, and its work opens as a read-only chat | 2 | accepted | 2026-11-11 | ↑0099 →0104 →0120 |
 | 0139 | The chat counts records no parser maps | 2 | accepted | 2026-11-11 | ↑0099 →0120 |

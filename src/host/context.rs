@@ -63,7 +63,8 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
     } else {
         return None;
     };
-    let mut context = match is_worker(&env) {
+    let is_seat = is_worker(&env);
+    let mut context = match is_seat {
         true => worker.to_string(),
         false => chair.to_string(),
     };
@@ -78,8 +79,9 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
             .unwrap_or_default();
         context.push_str(&format!("\n\n[swarm-seat]\nYou are seat `{agent}`{role} in swarm session `{session}`. Your chair is `orchestrator`.\nSend your final result to the chair with `swarm finish`, and a question with `swarm send orchestrator <kind>`, as the swarm-voice skill says."));
     }
-    // pi has no runtime lines in run-workers, so it gets only the host contract.
-    if !matches!(provider, "claude" | "codex" | "agy") {
+    // The runtime line tells a chair how to start workers. A worker is a leaf, and pi has no
+    // runtime line in run-workers, so both get only the host contract.
+    if is_seat || !matches!(provider, "claude" | "codex" | "agy") {
         return Some(context);
     }
     context.push_str(&format!("\n\n[agent-runtime: {provider}]\nBefore a plan step that requests workers, load `~/.swarm/kit/blocks/run-workers/SKILL.md` and follow its `{provider}` runtime line.\nThe active agent-host contract owns worker lifecycle and visibility."));

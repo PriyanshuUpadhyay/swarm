@@ -105,3 +105,25 @@ Verdict: keep. The latest result for each of the 12 pairs is 10 wins and 2 ties.
 the summary dropped it. Known side effect: the `TASTE-` upgrade also makes a fix of a note on a long
 function that was long before the change, if the note quotes an added line, and no refute seat
 checks those rows.
+
+
+Round 2026-11-11, prompt audit. The skill side is `f63f8338` (the audit cuts), the baseline is
+`9d924cfd`. Panes ran on `code.routine`; graders ran on the other provider, blind. A refute seat
+came from the chair.
+
+| date | skill commit | baseline | case | provider | result | grader note |
+|---|---|---|---|---|---|---|
+| 2026-11-11 | f63f8338 | 9d924cfd | test-misses-path | claude | void | the skill pane read the repo's own copy of the skill, not the brief's kit, and ran no script |
+| 2026-11-11 | f63f8338 | 9d924cfd | test-misses-path | codex | win | 2/2 vs 1/2; the baseline made the L-14 gap a note |
+| 2026-11-11 | f63f8338 | 9d924cfd | test-misses-path | claude (rerun) | win | 2/2 vs 1/2; the baseline reverted both code changes together |
+| 2026-11-11 | f63f8338 | 9d924cfd | test-misses-path | codex (rerun) | win | 2/2 vs 1/2; the baseline made the L-14 gap a note |
+| 2026-11-11 | f63f8338 | 9d924cfd | crlf-not-a-bug | claude | loss (narrow) | 2/2 each; the baseline tied its note to the existing frontmatter test |
+| 2026-11-11 | f63f8338 | 9d924cfd | crlf-not-a-bug | codex | loss (narrow) | 2/2 each; the baseline found one more valid optional note |
+| 2026-11-11 | f63f8338 | 9d924cfd | dup-helper | claude | win | 2/2 vs 1/2; the baseline named `read_parents`, not `preset.meta` |
+| 2026-11-11 | f63f8338 | 9d924cfd | dup-helper | codex | tie | 2/2 each |
+| 2026-11-11 | 6b0fccd1 | 9d924cfd | test-misses-path | claude | win | 2/2 vs 0/2; L-14 now reverts each code change alone |
+| 2026-11-11 | 6b0fccd1 | 9d924cfd | test-misses-path | codex | win | 2/2 vs 1/2 |
+
+Verdict 2026-11-11: keep the cuts. The two crlf losses are on optional notes only; both sides pass
+every expectation. Three of four baseline seats in test-misses-path reverted all code changes at
+once, so `L-14` now says to revert each one alone (`6b0fccd1`), and both reruns won.

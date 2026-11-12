@@ -10,7 +10,7 @@ export type Selection = { workspace: string | null; chat: string | null; agentSe
 
 export type SidebarRow = {
   id: string;
-  kind: "workspace" | "chat" | "child" | "more" | "archived" | "archived-chat";
+  kind: "workspace" | "chat" | "child" | "more" | "worktrees" | "archived" | "archived-chat";
   depth: number;
   parentId: string | null;
   expanded: boolean;

@@ -9,6 +9,8 @@ import { RunCatalog } from "./run-catalog";
 import type { SwitchCarry } from "./composer";
 import {
   type NewOptions,
+  type Existing,
+  type Mode,
   type Issue,
   type NewRequest,
   type SetupRun,
@@ -23,9 +25,9 @@ import {
   setupFailure,
   isSettled,
   endConfirm,
-  plural,
 } from "./lifecycle-state";
 import { message } from "./app-types";
+import { archiveWorkspace, deleteWorkspace, pruneWorkspace, type WorkspaceActions } from "./lifecycle-workspaces";
 
 export * from "./lifecycle-state";
 
@@ -147,13 +149,14 @@ export class Lifecycle {
 
   // ---- new workspace ----
 
-  /** ⌘N, a project's "+" and New Workspace…: the dialog on this project, else the current one. */
-  newWorkspace(project?: string) {
+  /** ⌘N, a project's "+" and New Workspace…: the dialog on this project, else the current one.
+   *  "N more worktrees" opens it on Existing branch, where each worktree is marked open. */
+  newWorkspace(project?: string, mode?: Mode) {
     const repos = this.projects().map((p) => p.path);
     const target = [project, this.projectOf(this.app.view.workspace)].find((p) => p && repos.includes(p)) ?? repos[0];
     if (!target) return this.app.notice("New Workspace needs a Git project. Import or create one first.");
     // A create still running keeps its progress, so the dialog shows it again.
-    this.set({ newWorkspace: { project: target }, create: this.state.create?.state === "working" ? this.state.create : null });
+    this.set({ newWorkspace: { project: target, mode }, create: this.state.create?.state === "working" ? this.state.create : null });
   }
 
   options(project: string): Promise<NewOptions> {
@@ -175,7 +178,7 @@ export class Lifecycle {
   async create(req: NewRequest) {
     if (this.state.create?.state === "working") return;
     this.set({ create: { state: "working", error: null, workspace: null, setup: null } });
-    let made: { workspace: string; setup?: Record<string, unknown>; issue?: Issue };
+    let made: { workspace: string; created?: boolean; setup?: Record<string, unknown>; issue?: Issue; existing?: Existing };
     try {
       made = await this.api.post("/api/workspace/new", req);
     } catch (err) {
@@ -183,7 +186,18 @@ export class Lifecycle {
       this.set({ create: { state: "failed", error: message(err), workspace: null, setup: null } });
       return;
     }
+    // The name is taken, and nothing changed: the dialog offers to open or reopen that branch.
+    if (made.existing) {
+      if (!this.state.newWorkspace) this.app.notice(`The branch ${made.existing.branch} already exists. Open it from New Workspace, Existing branch.`, true);
+      this.set({ create: { state: "exists", error: null, workspace: made.existing.path, setup: null, existing: made.existing } });
+      return;
+    }
     await this.app.refresh();
+    // An existing worktree was opened, not made, so no setup ran and no chat starts.
+    if (made.created === false) {
+      this.set({ newWorkspace: null, create: null });
+      return this.app.selectWorkspace(made.workspace);
+    }
     const closed = !this.state.newWorkspace;
     // The reply's terminal frame is the result; the streamed output stays.
     let setup: SetupRun | null = null;
@@ -202,6 +216,11 @@ export class Lifecycle {
     if (closed && !made.issue) return this.app.notice(`Created the workspace ${made.workspace}.`);
     await this.app.selectWorkspace(made.workspace);
     await this.app.startChat(made.workspace, {}, made.issue ? issuePrompt(made.issue) : "");
+  }
+
+  /** A new name clears the taken-name offer, so Create comes back. */
+  forgetExisting() {
+    if (this.state.create?.state === "exists") this.set({ create: null });
   }
 
   /** The kept workspace after a failed setup. */
@@ -322,84 +341,26 @@ export class Lifecycle {
     }
   }
 
-  // ---- workspaces ----
+  // ---- workspaces (lifecycle-workspaces.ts) ----
 
-  private impact(workspace: string) {
-    return this.api.get<{
-      liveAgents: number;
-      confirmationRequired: boolean;
-      dirtyFiles: string[];
-      ignoredCount: number;
-      firstIgnoredPath: string | null;
-      canDelete: boolean;
-      deleteBlocker: string | null;
-      prunePaths: string[];
-    }>("/api/workspace/impact", { workspace });
+  private get workspaceActions(): WorkspaceActions {
+    return { api: this.api, app: this.app, ask: (c) => this.ask(c), runAction: (run, leave) => this.runAction(run, null, leave) };
   }
 
-  /** Archive asks only while agents run, as Swift does; it keeps the folder. */
-  async archiveWorkspace(workspace: string) {
-    let impact;
-    try {
-      impact = await this.impact(workspace);
-    } catch (err) {
-      return this.app.notice(message(err), true);
-    }
-    const run = () => this.api.post("/api/workspace/archive", { workspace });
-    if (!impact.confirmationRequired) return void this.runAction(run, null, workspace);
-    void this.ask({
-      title: "Archive workspace?",
-      body: `${plural(impact.liveAgents, "agent")} still running. Archiving stops them and keeps the workspace folder.`,
-      action: "Archive Workspace",
-      run: async () => {
-        await run();
-        this.app.leaveWorkspace(workspace);
-      },
-    });
+  archiveWorkspace(workspace: string) {
+    return archiveWorkspace(this.workspaceActions, workspace);
   }
 
   restoreWorkspace(workspace: string) {
     void this.runAction(() => this.api.post("/api/workspace/restore", { workspace }));
   }
 
-  async deleteWorkspace(workspace: string) {
-    let impact;
-    try {
-      impact = await this.impact(workspace);
-    } catch (err) {
-      return this.app.notice(message(err), true);
-    }
-    if (!impact.canDelete) return this.app.notice(impact.deleteBlocker ?? "This workspace cannot be deleted.", true);
-    const lines = [`Delete the workspace folder at ${workspace}? Git refuses uncommitted changes or unpushed commits.`];
-    if (impact.confirmationRequired) lines.push(`${plural(impact.liveAgents, "agent")} still running. Deleting stops them before the folder is removed.`);
-    if (impact.ignoredCount) lines.push(`${plural(impact.ignoredCount, "ignored file")} will be deleted too, such as ${impact.firstIgnoredPath}.`);
-    if (impact.deleteBlocker) lines.push(impact.deleteBlocker);
-    void this.ask({
-      title: "Delete workspace?",
-      body: lines.join("\n\n"),
-      action: "Delete Workspace",
-      blocked: impact.deleteBlocker !== null,
-      cancelFirst: true,
-      run: async () => {
-        await this.api.post("/api/workspace/delete", { workspace });
-        this.app.leaveWorkspace(workspace);
-      },
-    });
+  deleteWorkspace(workspace: string) {
+    return deleteWorkspace(this.workspaceActions, workspace);
   }
 
-  async pruneWorkspace(workspace: string, project: string) {
-    let impact;
-    try {
-      impact = await this.impact(workspace);
-    } catch (err) {
-      return this.app.notice(message(err), true);
-    }
-    void this.ask({
-      title: "Prune missing worktrees?",
-      body: `Prune removes the worktree records for these missing folders in ${project}:\n\n${impact.prunePaths.join("\n")}`,
-      action: "Prune",
-      run: () => this.api.post("/api/workspace/prune", { workspace }),
-    });
+  pruneWorkspace(workspace: string, project: string) {
+    return pruneWorkspace(this.workspaceActions, workspace, project);
   }
 
   // ---- Archived chats ----

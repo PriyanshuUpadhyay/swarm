@@ -253,3 +253,72 @@ isolated!(refuses_existing_folder, |f| {
     );
     assert!(f.git(&["branch", "--list", "swarm/occupied"]).is_empty());
 });
+isolated!(a_taken_name_offers_its_worktree, |f| {
+    f.commit();
+    let path = f.create("Fix sidebar", json!({}));
+    // New branch on the same name: no git error, but the worktree that has it.
+    match lifecycle::create_workspace(
+        &f.home,
+        &f.project(),
+        &f.owner,
+        &f.request("Fix sidebar", json!({})),
+    ) {
+        Err(lifecycle::Error::Exists { branch, path: open }) => {
+            assert_eq!(branch, "swarm/fix-sidebar");
+            assert_eq!(open.as_deref(), Some(path.as_str()));
+        }
+        other => panic!("expected Exists, got {:?}", other.map(|r| r.0)),
+    }
+    // Existing branch on a checked-out branch opens that worktree and makes none.
+    let (opened, _, created) = lifecycle::create_workspace(
+        &f.home,
+        &f.project(),
+        &f.owner,
+        &f.request(
+            "Fix sidebar",
+            json!({"mode":"existing-branch","branch":"swarm/fix-sidebar"}),
+        ),
+    )
+    .unwrap();
+    assert_eq!((opened.as_str(), created), (path.as_str(), false));
+    // With the worktree gone, the branch is left; the dialog reopens it as an existing branch.
+    f.git(&["worktree", "remove", &path]);
+    assert!(matches!(
+        lifecycle::create_workspace(
+            &f.home,
+            &f.project(),
+            &f.owner,
+            &f.request("Fix sidebar", json!({}))
+        ),
+        Err(lifecycle::Error::Exists { path: None, .. })
+    ));
+    let reopened = f.create(
+        "Fix sidebar",
+        json!({"mode":"existing-branch","branch":"swarm/fix-sidebar"}),
+    );
+    assert_eq!(
+        lifecycle::check_git(&reopened, &["branch", "--show-current"]).unwrap(),
+        "swarm/fix-sidebar"
+    );
+});
+isolated!(a_new_branch_starts_from_a_fresh_origin_default, |f| {
+    f.commit();
+    let origin = f.root.join("origin").to_string_lossy().into_owned();
+    f.git(&["clone", "-q", &f.repo, &origin]);
+    f.git(&["remote", "add", "origin", &origin]);
+    f.git(&["fetch", "-q", "origin"]);
+    f.git(&["remote", "set-head", "origin", "main"]);
+    let refs = lifecycle::references(&format!("{}/.git", f.repo)).unwrap();
+    assert_eq!(refs.bases[0], "origin/main");
+    lifecycle::check_git(
+        &origin,
+        &["-c", "user.name=F", "-c", "user.email=f@e", "commit", "--allow-empty", "-qm", "new"],
+    )
+    .unwrap();
+    let path = f.create("Fresh", json!({"base":"origin/main"}));
+    assert_eq!(
+        lifecycle::check_git(&path, &["rev-parse", "HEAD"]).unwrap(),
+        lifecycle::check_git(&origin, &["rev-parse", "HEAD"]).unwrap()
+    );
+    assert!(lifecycle::check_git(&path, &["rev-parse", "--verify", "@{upstream}"]).is_err());
+});

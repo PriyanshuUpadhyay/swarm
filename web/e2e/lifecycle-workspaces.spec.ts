@@ -48,12 +48,14 @@ test("New workspace makes a new branch, an existing branch and a pull request wo
   const pr = (await workspace(tab, `pr-${b}`).getAttribute("data-id"))!;
   expect(readFileSync(join(pr, "review.md"), "utf8")).toBe("the change under review\n");
 
-  // A refusal stays in the dialog: the same name again has a folder already.
+  // The same name again offers the worktree that has its branch, and opens it with no new folder.
   await newWorkspace(tab, "proj-gh", async () => {
     await dialog.getByTestId("nw-name").fill(`nb-${b}`);
   });
-  await expect(dialog.getByTestId("dialog-error")).toContainText("already exists");
-  await tab.keyboard.press("Escape");
+  await expect(dialog.getByTestId("nw-existing")).toContainText("already open");
+  await dialog.getByTestId("nw-open-existing").click();
+  await expect(dialog).toBeHidden();
+  await expect(tab.getByTestId("workspace-landing")).toContainText(`nb-${b}`);
   expect(errors).toEqual([]);
 });
 
@@ -170,9 +172,9 @@ test("archive asks while agents run and restores; delete asks and removes the fo
   await tab.getByTestId("archive-toggle").click();
   await expect(row).toBeVisible();
 
-  await menu("Delete workspace…");
-  await expect(confirm).toContainText("Delete workspace?");
-  await expect(confirm.getByTestId("confirm-body")).toContainText(`Delete the workspace folder at ${path}?`);
+  await menu("Remove worktree…");
+  await expect(confirm).toContainText("Remove worktree?");
+  await expect(confirm.getByTestId("confirm-body")).toContainText(`Remove the worktree folder at ${path}? The branch stays`);
   await shoot(tab, "delete-confirm", b);
   await confirm.getByTestId("confirm-action").click();
   await expect(confirm).toBeHidden();

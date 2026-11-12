@@ -189,6 +189,8 @@ pub struct Project {
     pub main_path: Option<String>,
     pub launch_directory: String,
     pub workspaces: Vec<Workspace>,
+    /// Worktrees that the sidebar does not list; "N more worktrees" opens them from "+".
+    pub hidden: usize,
 }
 #[derive(Clone, Debug, Default)]
 pub struct Tree {

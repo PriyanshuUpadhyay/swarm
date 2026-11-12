@@ -227,6 +227,10 @@ def start_locked(target, *opts, ledger_home, ledger_writable):
         checklist[u["id"]] = {"rules": ids, "tool": tool, "refs": refs}
     seats = seat_map(checklist, catalog)
     (d / "checklist.json").write_text(json.dumps(checklist | {"seats": seats}, indent=2) + "\n", encoding="utf-8")
+    listed = {i for c in checklist.values() for i in c["rules"]}
+    # Seats read rule text here, so they do not pay for the lens files' Source citations.
+    (d / "rules.md").write_text("".join(f"- `{r['id']}` {r['text']}\n" for r in catalog if r["id"] in listed),
+                                encoding="utf-8")
     owned = sum(len(c["tool"]) for c in checklist.values())
     body = [f"Target: {target}", f"Base: {base}", f"Head: {head or 'working tree'}",
             f"Rules: {rules if rules.exists() else 'none'}", "",

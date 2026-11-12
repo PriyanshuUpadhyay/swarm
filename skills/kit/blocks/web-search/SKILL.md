@@ -10,7 +10,7 @@ metadata:
   gives: "a merged web report with a coverage table, and the seat reports"
   conflicts: ""
   users: "research, planner"
-  source: "skills/web-search/SKILL.md (the skill, made a block 2026-10-31); presets/research/PRESET.md (03-web triggers, moved here 2026-10-31)"
+  source: "skills/research/SKILL.md (03-web triggers)"
 ---
 
 ## Rules
@@ -106,18 +106,19 @@ when it gives nothing.
 
 **Depth, a hard rule.**
 
-The value of a seat is what sits below the famous answers. Every brief quotes the kit block
-`blocks/deep-search/SKILL.md` in full, with the known list and the seeds filled in, and adds the two
-seat rules below. The chair enforces all of them when each report arrives. The chair takes the seeds
+The value of a seat is what sits below the famous answers. Every brief gives the kit block
+`blocks/deep-search/SKILL.md` with the known list and the seeds filled in, and adds the two seat
+rules below. A seat of another provider than the chair gets each named block's Rules quoted, as
+`blocks/worker-brief/SKILL.md` says; a seat of the chair's provider gets the block paths. The chair enforces all of them when each report arrives. The chair takes the seeds
 from prior reports and its own knowledge at brief time. For later seeds from local sources, follow
-the `03-web` section of the research preset.
+the `03-web` section of `skills/research/SKILL.md`.
 
 1. **Yield** — at least five findings that are not on the known list, each with evidence, one
    honest weakness, a source-agreement tag by `blocks/cite-sources/SKILL.md`, and one line on why
    it is under-discussed (new, niche, no marketing, non-English community). Attribute and count
    sources by that same block. Fewer is a Coverage note that names the searches tried, never "nothing found".
-2. **Floor** — read at least ten threads or pages from the seat's own site set before the seat may
-   stop, and say the count in Coverage. A seat that finishes in five minutes has not searched.
+2. **Floor** — say in Coverage how many threads or pages from the seat's own site set it read. A
+   seat that read fewer than ten names why its site set ran dry.
 
 **The shared brief.**
 
@@ -128,13 +129,13 @@ section per seat, with these search-specific fields:
    says;
 2. the site set for that seat;
 3. an "already cited, do not re-cite" list;
-4. **depth** — the deep-search block and the Yield and Floor rules above, quoted in full, with the
-   known list and the seeds filled in;
+4. **depth** — the deep-search block and the Yield and Floor rules above, given as the Depth rule
+   says, with the known list and the seeds filled in;
 5. **method** — use your own native search and fetch tools and the Reach tools block; when a
    site blocks you, run the `reach.py` row for it, then try the search snippet, a public mirror,
-   and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` says, with that
-   block's Rules and the Rules of its parent `blocks/sources/SKILL.md` quoted; when the question is about how or why something works, follow each lead to
-   its origin as `blocks/primary-sources/SKILL.md` says, with that block's Rules quoted; stop after
+   and `archive.ph`; cite as `blocks/cite-sources/SKILL.md` and its parent
+   `blocks/sources/SKILL.md` say; when the question is about how or why something works, follow
+   each lead to its origin as `blocks/primary-sources/SKILL.md` says; stop after
    about 20 minutes;
 6. **blocked log** — a seat may call a site blocked only when its Coverage lists, for that site,
    each step it tried and the error each step gave, as the `blocked:` line of `reach.py` gives it,

@@ -35,8 +35,6 @@ These trial limits apply to each run, as set on 2026-10-09.
 - 3 shards per cheap review aspect.
 - 1 deep review seat.
 
-Each trial records elapsed awake time, chair tokens, and rework in its task file.
-
 ## Liveness
 
 The host owns liveness. Run `swarm sweep` as the `swarm-orchestrator` skill says.

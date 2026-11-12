@@ -10,7 +10,7 @@ use super::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Component, Path, PathBuf},
     process::{Command, Output},
 };
@@ -20,6 +20,11 @@ pub enum Error {
     Forbidden,
     Invalid(String),
     Failed(String),
+    /// A new branch's name is taken: by a worktree at `path`, or by a branch with none.
+    Exists {
+        branch: String,
+        path: Option<String>,
+    },
 }
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
@@ -31,6 +36,10 @@ impl std::fmt::Display for Error {
         match self {
             Self::Forbidden => f.write_str("path is outside the allowed project or workspace"),
             Self::Invalid(message) | Self::Failed(message) => f.write_str(message),
+            Self::Exists { branch, path } => match path {
+                Some(path) => write!(f, "The branch {branch} is already open at {path}"),
+                None => write!(f, "The branch {branch} already exists, with no worktree"),
+            },
         }
     }
 }
@@ -198,6 +207,8 @@ pub struct References {
     pub local: Vec<String>,
     pub remote: Vec<String>,
     pub held: BTreeSet<String>,
+    /// Each checked-out branch but the default, with its worktree, so "+" can open it.
+    pub checkouts: BTreeMap<String, String>,
     pub branches: Vec<String>,
     pub bases: Vec<String>,
 }
@@ -281,9 +292,12 @@ pub fn references(common: &str) -> Result<References> {
         output(listing)?;
         unreachable!();
     }
-    let held: BTreeSet<_> = discovery::parse_worktrees(&listing.stdout)
+    let worktrees = discovery::parse_worktrees(&listing.stdout);
+    let held: BTreeSet<_> = worktrees.iter().filter_map(|w| w.branch.clone()).collect();
+    let checkouts = worktrees
         .into_iter()
-        .filter_map(|w| w.branch)
+        .filter_map(|w| Some((w.branch?, w.path)))
+        .filter(|(branch, _)| Some(branch) != default_branch.as_ref())
         .collect();
     let branches = local
         .iter()
@@ -294,12 +308,18 @@ pub fn references(common: &str) -> Result<References> {
         }))
         .cloned()
         .collect();
-    let mut bases: Vec<String> = default_branch.clone().into_iter().collect();
+    // New work starts from origin's default branch, fetched at create, when origin has it.
+    let origin_default = default_branch
+        .as_ref()
+        .map(|b| format!("origin/{b}"))
+        .filter(|b| remote.contains(b));
+    let first = origin_default.or_else(|| default_branch.clone());
+    let mut bases: Vec<String> = first.clone().into_iter().collect();
     bases.extend(
         local
             .iter()
             .chain(&remote)
-            .filter(|b| Some(*b) != default_branch.as_ref())
+            .filter(|b| Some(*b) != first.as_ref())
             .cloned(),
     );
     Ok(References {
@@ -307,6 +327,7 @@ pub fn references(common: &str) -> Result<References> {
         local,
         remote,
         held,
+        checkouts,
         branches,
         bases,
     })
@@ -438,7 +459,7 @@ pub fn can_delete(project: &Project, workspace: &Workspace) -> bool {
 pub fn removal_blocker(path: &str) -> Result<Option<String>> {
     if !check_git(path, &["status", "--porcelain"])?.is_empty() {
         return Ok(Some(
-            "This workspace has uncommitted changes. Commit or remove them before deleting it."
+            "This worktree has uncommitted changes. Commit or discard them before removing it."
                 .into(),
         ));
     }
@@ -466,12 +487,12 @@ pub fn removal_blocker(path: &str) -> Result<Option<String>> {
         })?;
         if count > 0 {
             return Ok(Some(
-                "This workspace has unpushed commits. Push them before deleting it.".into(),
+                "This worktree has unpushed commits. Push them before removing it.".into(),
             ));
         }
     } else if !check_git(path, &["log", "--oneline", "HEAD", "--not", "--remotes"])?.is_empty() {
         return Ok(Some(
-            "This workspace has unpushed commits and no upstream. Push them before deleting it."
+            "This worktree has unpushed commits and no upstream. Push them before removing it."
                 .into(),
         ));
     }

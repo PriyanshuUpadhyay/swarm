@@ -39,10 +39,16 @@ pub(super) fn apply_lifecycle(
                 request.name = format!("{number}-{}", issue["title"].as_str().unwrap());
                 result["issue"] = issue;
             }
-            let (path, settings) =
-                lifecycle::create_workspace(&app.root, project, &saved.owner, &request)
-                    .map_err(lifecycle_error)?;
+            let (path, settings, created) =
+                match lifecycle::create_workspace(&app.root, project, &saved.owner, &request) {
+                    // A taken name changes nothing, so the dialog offers Open or Reopen instead.
+                    Err(lifecycle::Error::Exists { branch, path }) => {
+                        return Ok(json!({"ok":true,"existing":{"branch":branch,"path":path}}));
+                    }
+                    made => made.map_err(lifecycle_error)?,
+                };
             result["workspace"] = path.clone().into();
+            result["created"] = created.into();
             let recorded = choices_store::update(
                 &app.root,
                 None,
@@ -51,7 +57,9 @@ pub(super) fn apply_lifecycle(
                     owner
                         .project_defaults
                         .insert(project.path.clone(), settings);
-                    owner.names.insert(path.clone(), request.name.trim().into());
+                    if created {
+                        owner.names.insert(path.clone(), request.name.trim().into());
+                    }
                     state.selected_workspace = Some(path.clone());
                     state.selected_child = None;
                     Ok(())
@@ -87,7 +95,7 @@ pub(super) fn apply_lifecycle(
             if !lifecycle::can_delete(project, workspace) {
                 return Err(error(
                     StatusCode::BAD_REQUEST,
-                    "This workspace cannot be deleted",
+                    "This worktree cannot be removed",
                 ));
             }
             if let Some(blocker) =

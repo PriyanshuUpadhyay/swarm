@@ -136,18 +136,6 @@ Delivery
   README. Browsers block ES modules over `file://`, so serve it by the `serve-local` block with its dev or preview command.
 - Offline delivery: vendor dependencies explicitly, in a `vendor/` folder.
 
-Technical references
-- p5.js reference: https://p5js.org/reference/
-- p5.js `createGraphics`: https://p5js.org/reference/p5/createGraphics/
-- p5.js `noise`: https://p5js.org/reference/p5/noise/
-- p5.js `saveCanvas`: https://p5js.org/reference/p5/saveCanvas/
-- Canvas 2D transforms: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/setTransform
-- Browser animation timing: https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame
-- CCapture.js for fixed-timestep browser capture: https://github.com/spite/ccapture.js/
-
-Availability and browser support can change. Check the current official pages before choosing an
-export route for a live project.
-
 ## Example
 Initial state: a reel of five beats has the shot list, the `look` tokens, and one scene module per place.
 Action: the user asks for the storm to last two seconds longer. Edit only the `storm` entry's `dur` in the shot list, then render `?t=` at the storm key frame and at both transition midpoints with the stored seed.
