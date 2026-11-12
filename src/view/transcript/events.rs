@@ -134,15 +134,7 @@ pub fn row(record: &Record) -> Option<Row> {
             };
             let mut row = Row::new(
                 RowKind::Diff,
-                format!(
-                    "{} · +{} −{}",
-                    diff.old_path.as_ref().map_or_else(
-                        || tool::basename(&diff.path).to_owned(),
-                        |old| format!("{old} -> {}", diff.path),
-                    ),
-                    diff.added,
-                    diff.removed
-                ),
+                format!("{} · +{} −{}", diff.title, diff.added, diff.removed),
                 format!("{}:diff", string(event, "tool_call_id")),
             );
             row.detail = Some(diff.path.clone());

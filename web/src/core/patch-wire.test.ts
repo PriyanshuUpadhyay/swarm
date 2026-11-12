@@ -23,7 +23,7 @@ describe("patch wire", () => {
   it("keeps a frame entry on the preview that the chat paints", () => {
     const upsert: Row = {
       id: "edit", kind: "diff", text: "x", order: [1, 0],
-      diff: { id: "patch", path: "x", patch: "server text", added: 1, removed: 1,
+      diff: { id: "patch", path: "x", title: "x", patch: "server text", added: 1, removed: 1,
         omitted_lines: 0, shortened_lines: 0, full_lines: 7, full_bytes: 80 },
     };
     const chat = { id: "s", key: "s:chair", sessionId: "s", state: "ready", rows: [],
