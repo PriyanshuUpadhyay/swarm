@@ -190,7 +190,7 @@ pub(super) fn append(
             );
         }
 
-        "ContextCompaction" => fact.compaction(false),
+        "ContextCompaction" => fact.compaction(),
         _ => fact.push_unknown(),
     }
     if fact.actions.len() == start {

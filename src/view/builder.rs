@@ -292,6 +292,7 @@ pub(super) fn rows_with_context(
                 .unwrap_or_else(|| string(event, "status"));
             let state = match final_status {
                 "failed" => ToolState::Failed,
+                "interrupted" => ToolState::Interrupted,
                 "completed" if last_update.is_some() => ToolState::Finished,
                 _ => match endings.get(&scopes[index]).copied() {
                     Some("aborted") => ToolState::Interrupted,

@@ -148,15 +148,13 @@ impl Fact<'_> {
         self.actions.push(Action::Event(event));
     }
 
-    pub(super) fn compaction(&mut self, mirror: bool) {
+    pub(super) fn compaction(&mut self) {
         let start = self.actions.len();
         self.push(
             "system_message",
             json!({"kind":"compaction","text":CONTEXT_COMPACTED}),
         );
-        if mirror {
-            self.mark_mirrors(start);
-        }
+        self.mark_mirrors(start);
     }
 
     pub(super) fn review_mode(&mut self, entered: bool, hint: &str) {
@@ -276,7 +274,7 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
             "reasoning" => reasoning(&mut fact, &payload, work)?,
             "image_generation_call" => image_generation(&mut fact, &payload, "id"),
             "compaction" | "compaction_summary" | "context_compaction" => {
-                fact.compaction(true);
+                fact.compaction();
             }
 
             "agent_message" => {
@@ -561,11 +559,10 @@ fn reasoning(
 }
 
 pub(super) fn status(item: &Object<'_>) -> &'static str {
-    if item.boolean("success") == Some(false)
-        || matches!(
-            item.text("status").as_str(),
-            "failed" | "declined" | "interrupted"
-        )
+    if item.text("status") == "interrupted" {
+        "interrupted"
+    } else if item.boolean("success") == Some(false)
+        || matches!(item.text("status").as_str(), "failed" | "declined")
     {
         "failed"
     } else {

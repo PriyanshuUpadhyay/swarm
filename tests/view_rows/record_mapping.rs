@@ -1,4 +1,8 @@
 use super::*;
+use crate::common::{completed, event, response};
+
+#[path = "record_mapping/patch.rs"]
+mod patch;
 
 fn codex_rows(lines: Vec<Value>) -> Vec<Row> {
     let bytes = lines
@@ -10,52 +14,6 @@ fn codex_rows(lines: Vec<Value>) -> Vec<Row> {
     transcript::rows(&records(events, true), false, true)
 }
 
-use crate::common::{completed, event, response};
-
-fn apply_patch_call() -> Value {
-    response(
-        json!({"type":"custom_tool_call", "call_id":"patch", "name":"apply_patch", "input":"*** Begin Patch\n*** End Patch"}),
-    )
-}
-
-#[test]
-fn codex_file_changes_join_the_patch_call() {
-    for source in ["patch_apply_end", "FileChange"] {
-        let changes = json!({
-            "new.txt":{"type":"add","content":"new\n"},
-            "old.txt":{"type":"delete","content":"old\n"},
-            "edit.txt":{"type":"update","unified_diff":"@@ -2,1 +2,1 @@\n-before\n+after\n","move_path":"moved.txt"}
-        });
-
-        let update = if source == "FileChange" {
-            completed(
-                json!({"type":source,"id":"patch","status":"completed","changes":changes,"stdout":"done"}),
-            )
-        } else {
-            event(
-                json!({"type":source,"call_id":"patch","success":true,"status":"completed","changes":changes,"stdout":"done"}),
-            )
-        };
-
-        let rows = codex_rows(vec![apply_patch_call(), update]);
-        assert_eq!(rows.len(), 1, "{source}");
-        let tool = tool(&rows[0]);
-        assert_eq!(tool.state, ToolState::Finished);
-        assert_eq!(
-            tool.diffs
-                .iter()
-                .map(|diff| (diff.path.as_str(), diff.added, diff.removed))
-                .collect::<Vec<_>>(),
-            [
-                ("new.txt", 1, 0),
-                ("old.txt", 0, 1),
-                ("edit.txt -> moved.txt", 1, 1)
-            ]
-        );
-
-        assert!(tool.diffs[2].patch.contains("-before\n+after"));
-    }
-}
 
 #[test]
 fn codex_subagent_activity_updates_the_spawn_row() {
@@ -544,3 +502,4 @@ fn codex_empty_plans_stay_hidden() {
         );
     }
 }
+

@@ -136,7 +136,10 @@ pub fn row(record: &Record) -> Option<Row> {
                 RowKind::Diff,
                 format!(
                     "{} · +{} −{}",
-                    tool::basename(&diff.path),
+                    diff.old_path.as_ref().map_or_else(
+                        || tool::basename(&diff.path).to_owned(),
+                        |old| format!("{old} -> {}", diff.path),
+                    ),
                     diff.added,
                     diff.removed
                 ),

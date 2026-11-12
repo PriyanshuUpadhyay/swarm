@@ -47,13 +47,13 @@ pub(super) fn append(
                 _ => None,
             };
 
-            let path = change
-                .optional_text("move_path")
-                .map_or_else(|| path.to_owned(), |new| format!("{path} -> {new}"));
+            let moved = change.optional_text("move_path");
+            let old_path = moved.as_ref().map(|_| path);
+            let path = moved.as_deref().unwrap_or(path);
             if let Some(hunks) = hunks {
                 fact.push(
                     "tool_diff",
-                    json!({"tool_call_id":id,"path":path,"hunks":hunks}),
+                    json!({"tool_call_id":id,"path":path,"old_path":old_path,"hunks":hunks}),
                 );
             } else {
                 fact.push_unknown();

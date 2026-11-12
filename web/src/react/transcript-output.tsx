@@ -91,11 +91,11 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
   const f = full.get(diff.id);
   const patch = f?.state === "ready" ? f.text : diff.patch;
   const capped = diff.omitted_lines > 0 || diff.shortened_lines > 0;
-  const name = diff.path.slice(diff.path.lastIndexOf("/") + 1);
+  const name = diff.old_path ? `${diff.old_path} -> ${diff.path}` : diff.path.slice(diff.path.lastIndexOf("/") + 1);
   return (
     <div className="diff" data-testid="diff" data-preview={diff.id} data-split={split}>
       <div className="diff-head">
-        <span className="font-medium" title={diff.path}>
+        <span className="font-medium" title={name}>
           {name}
         </span>
         <span className="font-mono text-xs">
