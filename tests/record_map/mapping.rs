@@ -17,6 +17,9 @@ pub(super) enum Part {
 // NotKnown keeps an already hidden Claude kind hidden. It does not claim CLI display evidence.
 // The four retained Claude rows with unconfirmed display are away_summary, scheduled_task_fire,
 // stop_hook_summary, and hook_permission_decision (chair answer, 2026-11-12).
+// Join entries assume the linked records are within the page's supplied byte range.
+// ADR 0139 owns the known window-edge limit for mirror copies, image or compaction pairs,
+// subagent activity, and rollback. Live chats rebuild all retained records for these joins.
 pub(super) const RECORD_MAP: &[(&str, &str, End)] = &[
     ("claude", "user", End::Row),
     ("claude", "assistant", End::Row),

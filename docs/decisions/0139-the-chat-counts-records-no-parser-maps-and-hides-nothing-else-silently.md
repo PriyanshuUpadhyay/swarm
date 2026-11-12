@@ -9,6 +9,7 @@ informed-by:
   - 'research 2026-11-11: T3 Code drops unknown item types on decode, and Swarm hid them too'
   - 'owner, 2026-11-11: approved the record-map audit build; every record must have an explicit end state'
   - 'owner, 2026-11-12: approved rows for Codex Extension Sleep, WebSearch, and ImageGeneration'
+  - 'owner, 2026-11-12: accepted the supplied-byte-range limit for independent SnapshotReader windows (B-182)'
 ---
 
 # 0139. The chat counts records no parser maps
@@ -39,6 +40,10 @@ maps, and 0099 hid it like any other bookkeeping, so an update went unnoticed. A
 - The web shows one quiet line at the end of the chat, "N items this app does not show yet". It opens
   each record's raw JSON. With none, there is no line.
 - The count covers the rows the chat has loaded; an older page adds its records when it loads.
+- An independent `SnapshotReader` page uses only its supplied byte range. A join whose records
+  cross a window edge is not joined in that page. This limit covers mirror copies, image or
+  compaction pairs, subagent activity, and rollback. Live chats rebuild all retained records,
+  so joins among those records are correct.
 - This line keeps 0120's promise with a web line, not a `_swarm/unmapped` event.
 - A CLI item that the CLI draws on its own screen gets a row, not a count. Pi bookkeeping entries that
   its session-format doc keeps out of model context are ignored on purpose, so they do not count.
