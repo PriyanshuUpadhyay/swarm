@@ -10,17 +10,7 @@ fn codex_rows(lines: Vec<Value>) -> Vec<Row> {
     transcript::rows(&records(events, true), false, true)
 }
 
-fn response(payload: Value) -> Value {
-    json!({"type":"response_item", "payload":payload})
-}
-
-fn event(payload: Value) -> Value {
-    json!({"type":"event_msg", "payload":payload})
-}
-
-fn completed(item: Value) -> Value {
-    event(json!({"type":"item_completed", "item":item}))
-}
+use crate::common::{completed, event, response};
 
 fn apply_patch_call() -> Value {
     response(

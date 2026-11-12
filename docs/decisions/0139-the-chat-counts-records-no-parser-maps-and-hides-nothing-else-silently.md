@@ -23,7 +23,8 @@ maps, and 0099 hid it like any other bookkeeping, so an update went unnoticed. A
   that gives no events is unmapped. Copies of an item join its row; they do not add a second row.
 - `tests/record_map/mapping.rs` owns `RECORD_MAP`, the table of CLI kinds and their end states.
   Its guard in `tests/record_map.rs`
-  reads the reader sources with `include_str!`, rejects a named kind with no table entry, and
+  reads every provider file in `src/view/transcript/normalize/`, rejects a CLI and full group/kind
+  path with no table entry, and
   replays every row or part entry through the public `SnapshotReader`. Run `cargo test --test record_map`.
   `NotKnown` keeps a hidden Claude kind hidden when its CLI display is not confirmed. The four
   existing rows `away_summary`, `scheduled_task_fire`, `stop_hook_summary`, and

@@ -1,3 +1,5 @@
+mod common;
+
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
@@ -72,22 +74,11 @@ fn shell_output(output: &str, parent: &str) -> Value {
     system("shell_output", output, "", parent)
 }
 fn translated(format: &str, path: &Path, bytes: &[u8]) -> Vec<Value> {
-    use transcript::source::{
-        EndPolicy, NativeFormat, SnapshotError, SnapshotReader, SourceMeta, Work,
-    };
-    struct Ready;
-    impl Work for Ready {
-        fn check(&mut self) -> Result<(), SnapshotError> {
-            Ok(())
-        }
-    }
-    let mut reader = SnapshotReader::with_open_path(
-        SourceMeta {
-            source_id: "fixture".into(),
-        },
-        0,
-        EndPolicy::SnapshotEof,
+    use common::Ready;
+    use transcript::source::NativeFormat;
+    let mut reader = common::reader(
         NativeFormat::from_name(format).expect("fixture format"),
+        "fixture",
         path.to_str().unwrap(),
     );
     reader.push(bytes, &mut Ready).unwrap();

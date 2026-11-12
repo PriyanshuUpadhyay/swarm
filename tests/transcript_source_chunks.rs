@@ -8,16 +8,10 @@
 use std::path::PathBuf;
 
 use serde_json::Value;
-use swarm::view::transcript::source::{EndPolicy, SnapshotError, SnapshotReader, SourceMeta, Work};
+use swarm::view::transcript::source::{EndPolicy, SnapshotReader, SourceMeta};
 
-/// A budget that never runs out. It stands in for the clock boundary, not for the domain.
-struct Unlimited;
-
-impl Work for Unlimited {
-    fn check(&mut self) -> Result<(), SnapshotError> {
-        Ok(())
-    }
-}
+mod common;
+use common::Ready as Unlimited;
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

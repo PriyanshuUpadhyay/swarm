@@ -1,24 +1,20 @@
+use super::mapping::{End, RECORD_MAP};
 use serde_json::{Value, json};
 
-fn response(payload: Value) -> Value {
-    json!({"type":"response_item","payload":payload})
-}
-fn event(payload: Value) -> Value {
-    json!({"type":"event_msg","payload":payload})
-}
-fn item(payload: Value) -> Value {
-    event(json!({"type":"item_completed","item":payload}))
-}
+use crate::common::{completed as item, event, response};
+
 fn codex_call(name: &str) -> Value {
     response(
         json!({"type":"function_call","call_id":"call","name":name,"arguments":"{\"cmd\":\"pwd\",\"message\":\"Check it\"}"}),
     )
 }
+
 fn codex_message(role: &str, part: &str) -> Value {
     response(
         json!({"type":"message","id":"message","role":role,"content":[{"type":part,"text":"Message","media_type":"image/png"}]}),
     )
 }
+
 fn spawn() -> Vec<Value> {
     vec![
         codex_call("spawn_agent"),
@@ -27,6 +23,7 @@ fn spawn() -> Vec<Value> {
         ),
     ]
 }
+
 fn patch(change: &str) -> Value {
     let value = match change {
         "add" => json!({"type":"add","content":"new\n"}),
@@ -35,12 +32,15 @@ fn patch(change: &str) -> Value {
     };
     json!({"file.txt":value})
 }
+
 fn agy(kind: &str, step: u64, status: &str) -> Value {
     json!({"type":kind,"step_index":step,"created_at":"2026-11-11T12:00:00Z","status":status,"source":"agent","content":"Message","error":"Error"})
 }
+
 fn claude_tool() -> Value {
     json!({"type":"assistant","message":{"content":[{"type":"tool_use","id":"call","name":"Read","input":{"file_path":"file.txt"}}]}})
 }
+
 fn pi_tool() -> Value {
     json!({"type":"message","id":"call-row","message":{"role":"assistant","content":[{"type":"toolCall","id":"call","name":"read","arguments":{"path":"file.txt"}}]}})
 }
@@ -52,6 +52,7 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
             "attachment" => vec![
                 json!({"type":"attachment","attachment":{"type":name,"hookName":"SessionStart","decision":"allow","prompt":"Message","origin":{"kind":"human"},"identity":{"modelId":"model"}}}),
             ],
+
             "system" => vec![
                 json!({"type":"system","subtype":name,"content":"Message","durationMs":20,"error":{"message":"Error"}}),
             ],
@@ -86,6 +87,7 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
                 _ => json!({"type":name}),
             }],
         },
+
         "codex" => match group {
             "response_item" => match name {
                 "message" => vec![codex_message("user", "input_text")],
@@ -120,6 +122,7 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
                     json!({"type":name,"id":"image","call_id":"call","status":"completed","action":{"query":"rust"},"arguments":{},"result":"image"}),
                 )],
             },
+
             "message" => vec![
                 if matches!(name, "user" | "assistant" | "developer" | "system") {
                     codex_message(
@@ -134,6 +137,7 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
                     codex_message("user", name)
                 },
             ],
+
             "local_shell" => fixture("codex", "response_item/local_shell_call"),
             "file_change" => vec![
                 codex_call("apply_patch"),
@@ -141,6 +145,7 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
                     json!({"type":"patch_apply_end","call_id":"call","status":"completed","changes":patch(name)}),
                 ),
             ],
+
             "item_content" => vec![item(
                 json!({"type":if name=="Text" {"AgentMessage"} else {"UserMessage"},"id":"message","content":[{"type":name,"text":"Message","path":"/tmp/image.png"}]}),
             )],
@@ -177,6 +182,7 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
                 })));
                 lines
             }
+
             "event_msg" => match name {
                 "agent_reasoning_raw_content" => vec![
                     fixture("codex", "response_item/reasoning").remove(0),
@@ -228,6 +234,7 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
                 _ => vec![json!({"type":name,"payload":{"model":"model","cwd":"/work"}})],
             },
         },
+
         "pi" => match group {
             "block" => vec![
                 json!({"type":"message","message":{"role":if name=="image" {"user"} else {"assistant"},"content":[{"type":name,"text":"Message","thinking":"Thought","mimeType":"image/png","id":"call","name":"read","arguments":{}}]}}),
@@ -247,22 +254,12 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
                 json!({"type":name,"id":"entry","cwd":"/work","modelId":"model","name":"Title","summary":"Summary","content":"Message","display":true})
             }],
         },
+
         "agy" => {
             let name = if group == "status" { "GENERIC" } else { name };
-            let mut lines = if group == "status"
-                || matches!(
-                    name,
-                    "GENERIC"
-                        | "VIEW_FILE"
-                        | "RUN_COMMAND"
-                        | "GREP_SEARCH"
-                        | "CODE_ACTION"
-                        | "LIST_DIRECTORY"
-                        | "READ_URL_CONTENT"
-                        | "SEARCH_WEB"
-                        | "MCP_TOOL"
-                        | "INVOKE_SUBAGENT"
-                ) {
+            let mut lines = if RECORD_MAP.iter().any(|&(cli, kind, end)| {
+                cli == "agy" && kind == name && matches!(end, End::Part(_))
+            }) {
                 let mut planner = agy("PLANNER_RESPONSE", 0, "RUNNING");
                 planner["content"] = json!("");
                 planner["tool_calls"] = json!([{"name":"read","args":{"path":"file.txt"}}]);

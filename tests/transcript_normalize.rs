@@ -1,36 +1,17 @@
 //! Local transcript behaviors through the public Rust snapshot reader.
 
 use serde_json::{Value, json};
-use swarm::view::transcript::source::{
-    EndPolicy, NativeFormat, SnapshotError, SnapshotReader, SourceMeta, Work,
-};
-
-struct Unlimited;
-impl Work for Unlimited {
-    fn check(&mut self) -> Result<(), SnapshotError> {
-        Ok(())
-    }
-}
+use swarm::view::transcript::source::NativeFormat;
+mod common;
 
 fn snapshot(format: NativeFormat, lines: &[Value]) -> Value {
-    let mut reader = SnapshotReader::with_open_path(
-        SourceMeta {
-            source_id: "local-behaviors".into(),
-        },
-        0,
-        EndPolicy::SnapshotEof,
+    serde_json::to_value(common::snapshot(
         format,
+        "local-behaviors",
         "chair.jsonl",
-    );
-    let text = lines
-        .iter()
-        .map(Value::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-    reader
-        .push(text.as_bytes(), &mut Unlimited)
-        .expect("push source");
-    serde_json::to_value(reader.finish(&mut Unlimited).expect("snapshot")).expect("JSON snapshot")
+        lines,
+    ))
+    .unwrap()
 }
 
 #[test]
@@ -162,3 +143,4 @@ fn codex_completed_plan_becomes_a_proposed_plan_row() {
     assert_eq!(result["rows"][0]["kind"], "proposedPlan");
     assert_eq!(result["rows"][0]["text"], "# Plan\n\n1. Add the row");
 }
+
