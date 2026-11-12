@@ -259,9 +259,7 @@ fn planner(
         ("content", "agent_message_chunk"),
     ] {
         work.check()?;
-        if let Some(raw) = record.get(field)
-            && raw.get() != "null"
-        {
+        if record.non_null(field).is_some() {
             if let Some(text) = record.optional_text(field) {
                 if !text.is_empty() {
                     fact.push(event_kind, meta, json!({"text": text}));
@@ -272,7 +270,7 @@ fn planner(
             }
         }
     }
-    if let Some(raw) = record.get("tool_calls") {
+    if let Some(raw) = record.non_null("tool_calls") {
         if let Some(calls) = claude_json::array(raw) {
             for (index, call) in calls.iter().enumerate() {
                 work.check()?;
@@ -312,7 +310,7 @@ fn planner(
                 });
                 has_tool_call = true;
             }
-        } else if raw.get() != "null" {
+        } else {
             has_unknown = true;
         }
     }

@@ -45,6 +45,7 @@ export type ToolState = "waiting" | "finished" | "failed" | "interrupted" | "unr
 export type TextPreview = { id: string; text: string; is_truncated?: boolean; full_lines: number; full_bytes: number; hidden_lines: number };
 
 export type DiffPreview = {
+  old_path?: string;
   id: string;
   path: string;
   patch: string;

@@ -176,7 +176,10 @@ pub(crate) fn parse_fact(line: &[u8], work: &mut dyn Work) -> Result<Fact, Snaps
         ),
         "custom_message" => {
             let text = pi_text::join_text(record.get("content"), work)?;
-            fact.push("system_message", json!({"kind": "injected", "text": text}));
+            fact.push("system_message", json!({"kind": if record.boolean("display") == Some(true) { "custom_message" } else { "injected" }, "text": text}));
+            if record.boolean("display") == Some(true) {
+                pi_text::append_images(&mut fact, record.get("content"), "custom", work)?;
+            }
         }
         "thinking_level_change"
         | "custom"
@@ -198,6 +201,9 @@ pub(crate) fn parse_fact(line: &[u8], work: &mut dyn Work) -> Result<Fact, Snaps
             }
         }
         _ => fact.unknown(line),
+    }
+    if fact.events.is_empty() {
+        fact.unknown(line);
     }
     Ok(fact)
 }
@@ -347,10 +353,7 @@ fn parse_assistant(
                 _ => has_unknown = true,
             }
         }
-    } else if message
-        .get("content")
-        .is_some_and(|raw| raw.get() != "null")
-    {
+    } else if message.non_null("content").is_some() {
         has_unknown = true;
     }
     if has_unknown {

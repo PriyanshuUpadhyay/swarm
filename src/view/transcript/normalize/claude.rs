@@ -48,6 +48,9 @@ pub(super) fn line(
         "user" | "assistant" => messages(&rec, &meta, kind == "user", line, &mut events, work)?,
         _ => events.push(unknown(line, &meta)),
     }
+    if events.is_empty() {
+        events.push(unknown(line, &meta));
+    }
     Ok(events)
 }
 
@@ -90,18 +93,16 @@ fn attachment(rec: &Object<'_>, meta: &Value, line: &[u8]) -> NormalizedEvent {
     };
     let kind = attachment.text("type");
     match kind.as_str() {
-        "hook_success"
-        | "hook_non_blocking_error"
-        | "hook_blocking_error"
-        | "hook_cancelled"
-        | "hook_additional_context" => event(
-            "hook_result",
-            meta,
-            json!({
-                "kind":kind, "hook_event":attachment.text("hookEvent"), "hook_name":attachment.text("hookName"),
-                "tool_call_id":attachment.text("toolUseID"), "exit_code":attachment.integer("exitCode"),
-            }),
-        ),
+        "hook_success" | "hook_non_blocking_error" | "hook_blocking_error" | "hook_cancelled" => {
+            event(
+                "hook_result",
+                meta,
+                json!({
+                    "kind":kind, "hook_event":attachment.text("hookEvent"), "hook_name":attachment.text("hookName"),
+                    "tool_call_id":attachment.text("toolUseID"), "exit_code":attachment.integer("exitCode"),
+                }),
+            )
+        }
         "hook_permission_decision" => event(
             "permission_decision",
             meta,
@@ -126,6 +127,8 @@ fn attachment(rec: &Object<'_>, meta: &Value, line: &[u8]) -> NormalizedEvent {
             json!({"kind":"model", "value":attachment.object("identity").map_or(String::new(), |obj| obj.text("modelId"))}),
         ),
         "total_tokens_reminder"
+        | "hook_additional_context"
+        | "sandbox_instructions"
         | "bash_output_audience_note"
         | "batching_reminder_sent"
         | "silent_turn_reminder"
@@ -276,6 +279,10 @@ fn messages(
     for raw in content {
         work.check()?;
         let Some(block) = Object::parse(raw) else {
+            if !has_unknown {
+                events.push(unknown(line, meta));
+                has_unknown = true;
+            }
             continue;
         };
         let kind = block.text("type");

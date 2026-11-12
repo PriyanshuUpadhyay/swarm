@@ -82,12 +82,16 @@ pub struct Diff {
     #[serde(default)]
     pub tool_call_id: String,
     pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub old_path: Option<String>,
     pub hunks: Vec<DiffHunk>,
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct DiffPreview {
     pub id: String,
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_path: Option<String>,
     pub patch: String,
     pub full_lines: usize,
     pub full_bytes: usize,
@@ -104,6 +108,7 @@ impl DiffPreview {
         Self {
             id: String::new(),
             path: diff.path.clone(),
+            old_path: diff.old_path.clone(),
             patch,
             full_lines: diff.hunks.iter().map(|hunk| hunk.lines.len()).sum(),
             full_bytes: full.len(),
@@ -124,7 +129,11 @@ pub fn diff_counts(diff: &Diff) -> (usize, usize) {
     })
 }
 pub fn diff_patch(diff: &Diff, full: bool) -> (String, usize, usize) {
-    let old = serde_json::to_string(&format!("a/{}", diff.path)).unwrap();
+    let old = serde_json::to_string(&format!(
+        "a/{}",
+        diff.old_path.as_deref().unwrap_or(&diff.path)
+    ))
+    .unwrap();
     let new = serde_json::to_string(&format!("b/{}", diff.path)).unwrap();
     let mut output = format!("diff --git {old} {new}\n--- {old}\n+++ {new}\n");
     let mut remaining = if full { usize::MAX } else { 200 };

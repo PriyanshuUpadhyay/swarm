@@ -89,6 +89,9 @@ pub const RECORD: &str = "record";
 /// `Row.system_kind` of a record no parser maps; the web counts these rows (ADR 0139).
 pub const UNMAPPED: &str = "unmapped";
 
+pub(crate) const CODEX_MIRROR: &str = "codex_mirror";
+pub(crate) const CONTEXT_COMPACTED: &str = "Context compacted";
+
 /// Absent fields have the same meaning as null, false, or an empty array.
 /// `id`, `kind`, `text`, and `order` are always present.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -254,7 +257,7 @@ impl Row {
 fn is_record(event: &Value) -> bool {
     matches!(
         string(event, "type"),
-        "ignored" | "unknown" | "usage" | "queue_operation" | "turn_started"
+        "ignored" | "unknown" | "usage" | "queue_operation" | "turn_started" | "thread_rolled_back"
     ) || (string(event, "type") == "session_info" && string(event, "kind") == "agent_name")
 }
 /// The whole record: the source line of an ignored or unknown event, else the event itself.

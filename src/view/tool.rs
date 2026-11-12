@@ -11,6 +11,15 @@ pub enum ToolState {
     Interrupted,
     Unreported,
 }
+pub(super) fn subagent_state(kind: &str, fallback: ToolState) -> ToolState {
+    match kind {
+        "started" | "interacted" => ToolState::Waiting,
+        "interrupted" => ToolState::Interrupted,
+        "completed" => ToolState::Finished,
+        _ => fallback,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ToolActivity {
     pub name: String,

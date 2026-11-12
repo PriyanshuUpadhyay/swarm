@@ -1,36 +1,17 @@
 //! Local transcript behaviors through the public Rust snapshot reader.
 
 use serde_json::{Value, json};
-use swarm::view::transcript::source::{
-    EndPolicy, NativeFormat, SnapshotError, SnapshotReader, SourceMeta, Work,
-};
-
-struct Unlimited;
-impl Work for Unlimited {
-    fn check(&mut self) -> Result<(), SnapshotError> {
-        Ok(())
-    }
-}
+use swarm::view::transcript::source::NativeFormat;
+mod common;
 
 fn snapshot(format: NativeFormat, lines: &[Value]) -> Value {
-    let mut reader = SnapshotReader::with_open_path(
-        SourceMeta {
-            source_id: "local-behaviors".into(),
-        },
-        0,
-        EndPolicy::SnapshotEof,
+    serde_json::to_value(common::snapshot(
         format,
+        "local-behaviors",
         "chair.jsonl",
-    );
-    let text = lines
-        .iter()
-        .map(Value::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-    reader
-        .push(text.as_bytes(), &mut Unlimited)
-        .expect("push source");
-    serde_json::to_value(reader.finish(&mut Unlimited).expect("snapshot")).expect("JSON snapshot")
+        lines,
+    ))
+    .unwrap()
 }
 
 #[test]
@@ -161,4 +142,37 @@ fn codex_completed_plan_becomes_a_proposed_plan_row() {
     assert_eq!(result["lines"][0]["events"][0]["type"], "proposed_plan");
     assert_eq!(result["rows"][0]["kind"], "proposedPlan");
     assert_eq!(result["rows"][0]["text"], "# Plan\n\n1. Add the row");
+}
+
+#[test]
+fn codex_hidden_output_copies_keep_their_source_kind() {
+    use common::{completed, event, response};
+    let call = response(
+        json!({"type":"function_call","call_id":"read","name":"exec_command","arguments":"{}"}),
+    );
+    let output = response(json!({"type":"function_call_output","call_id":"read","output":"done"}));
+    let copy = completed(json!({"type":"FunctionCallOutput","id":"read","output":"done"}));
+
+    let orders = [
+        (
+            output.clone(),
+            copy.clone(),
+            "item_completed/FunctionCallOutput",
+        ),
+        (copy, output, "response_item/function_call_output"),
+    ];
+
+    for (first, second, kind) in orders {
+        let lines = [
+            event(json!({"type":"task_started"})),
+            call.clone(),
+            first,
+            second,
+        ];
+
+        let result = snapshot(NativeFormat::Codex, &lines);
+
+        assert_eq!(result["lines"][3]["events"][0]["type"], "ignored");
+        assert_eq!(result["lines"][3]["events"][0]["kind"], kind);
+    }
 }

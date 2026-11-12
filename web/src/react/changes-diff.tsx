@@ -29,7 +29,7 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
       <SurfaceFind surface={surface} scope="diff" search={search} />
       {data && (
         <div className="diff-head">
-          <span className="min-w-0 truncate font-medium" title={data.path} data-testid="diff-path">
+          <span className="diff-name font-medium" title={data.path} data-testid="diff-path">
             {data.path}
           </span>
           <span className="shrink-0 font-mono text-xs" data-testid="diff-counts">

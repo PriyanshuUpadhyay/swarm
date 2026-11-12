@@ -52,7 +52,10 @@ impl Record {
         if let Some(field) = field {
             let text = string(&event, field);
             if field == "content" {
-                output_exit_code = tool::exit_code(Some(text), Some(""), is_codex);
+                output_exit_code = event["exit_code"]
+                    .as_i64()
+                    .filter(|code| *code != 0)
+                    .or_else(|| tool::exit_code(Some(text), Some(""), is_codex));
                 output_failed = tool::reports_failure(Some(text), Some(""), is_codex);
             }
             let mut preview = TextPreview::new(text, 120);

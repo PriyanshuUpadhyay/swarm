@@ -390,6 +390,15 @@ pre.plain {
   border-bottom: 1px solid var(--border);
   font-size: 12px;
 }
+.diff-head > :not(.diff-name) {
+  flex-shrink: 0;
+}
+.diff-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .seg {
   display: inline-flex;
   border: 1px solid var(--border-strong);

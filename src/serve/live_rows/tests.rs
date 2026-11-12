@@ -140,8 +140,8 @@ async fn partial_append_and_overlapping_page_keep_one_question() {
 #[test]
 fn live_chunks_match_full_frames_for_claude_and_codex() {
     for codex in [false, true] {
-        let mut incremental = LiveRows::empty(0, codex);
-        let mut reference = LiveRows::empty(0, codex);
+        let mut incremental = LiveRows::empty(1, codex);
+        let mut reference = LiveRows::empty(1, codex);
         let mut events = (0..320)
             .map(|number| synthetic_event(number, true))
             .collect::<Vec<_>>();
@@ -171,6 +171,36 @@ fn live_chunks_match_full_frames_for_claude_and_codex() {
             json!({"type":"system_message","kind":"shell_output","text":"<bash-stdout>second</bash-stdout>","meta":{"parent_uuid":"shell"}}),
 
         ]);
+        if codex {
+            events.extend([
+                json!({"type":"agent_message_chunk","text":"mirrored answer"}),
+                json!({"type":"agent_message_chunk","text":"mirrored answer","codex_mirror":true,"meta":{"uuid":"mirror"}}),
+                json!({"type":"agent_message_chunk","text":"copy first","codex_mirror":true,"meta":{"uuid":"copy-first"}}),
+                json!({"type":"agent_message_chunk","text":"copy first"}),
+                json!({"type":"agent_thought_chunk","text":"thought"}),
+                json!({"type":"agent_thought_part","text":"raw thought"}),
+                json!({"type":"tool_call","tool_call_id":"spawn","name":"spawn_agent","input":{"message":"Check"}}),
+                json!({"type":"tool_call_update","tool_call_id":"spawn","status":"completed","content":"done","agent_thread_id":"child"}),
+                json!({"type":"subagent_activity","agent_thread_id":"child","agent_path":"/worker","kind":"started"}),
+                json!({"type":"subagent_activity","agent_thread_id":"child","agent_path":"/worker","kind":"completed","codex_mirror":true}),
+                json!({"type":"tool_call","tool_call_id":"late-spawn","name":"spawn_agent","input":{"message":"Check later"}}),
+                json!({"type":"agent_message_chunk","text":"An activity arrived before its tool result"}),
+                json!({"type":"subagent_activity","agent_thread_id":"late-child","agent_path":"/later","kind":"started"}),
+                json!({"type":"tool_call_update","tool_call_id":"late-spawn","status":"completed","content":"done","agent_thread_id":"late-child"}),
+                json!({"type":"image","text":"/tmp/a.png","meta":{"uuid":"ig1"}}),
+                json!({"type":"image","text":"/tmp/a.png","meta":{"uuid":"ig1"},"codex_mirror":true}),
+                json!({"type":"system_message","kind":"compaction","text":"Context compacted","codex_mirror":true}),
+                json!({"type":"system_message","kind":"compaction","text":"Summary text"}),
+                json!({"type":"turn_ended","reason":"completed"}),
+                json!({"type":"turn_started"}),
+                json!({"type":"agent_thought_part","text":"reasoning before summary"}),
+                json!({"type":"agent_thought_chunk","text":"later summary"}),
+                json!({"type":"user_message_chunk","text":"rolled back question"}),
+                json!({"type":"agent_message_chunk","text":"rolled back answer"}),
+                json!({"type":"turn_ended","reason":"completed"}),
+                json!({"type":"thread_rolled_back","num_turns":1}),
+            ]);
+        }
         events.extend((0..99).map(|number|json!({"type":"session_info","kind":"title","value":"hidden","meta":{"uuid":format!("hidden-{number}")}})));
         events.extend([
             json!({"type":"tool_call","tool_call_id":"hidden-100","name":"Read","input":{}}),
@@ -178,11 +208,15 @@ fn live_chunks_match_full_frames_for_claude_and_codex() {
             json!({"type":"tool_call","tool_call_id":"hidden-101","name":"Read","input":{}}),
         ]);
         for (index, event) in events.into_iter().enumerate() {
-            incremental.ingest(index as u64, index as u64 + 1, std::slice::from_ref(&event));
+            incremental.ingest(
+                index as u64 + 1,
+                index as u64 + 2,
+                std::slice::from_ref(&event),
+            );
             if event["type"] == "queue_operation" {
                 assert!(!incremental.rebuild, "a queue edit rebuilt the open turn");
             }
-            reference.ingest(index as u64, index as u64 + 1, &[event]);
+            reference.ingest(index as u64 + 1, index as u64 + 2, &[event]);
             let expected = reference_delta(&mut reference, "chat");
             let actual = without_body(
                 serde_json::from_str(&row_frame("chat", incremental.delta()).data).unwrap(),

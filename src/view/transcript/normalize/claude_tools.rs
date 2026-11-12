@@ -179,12 +179,9 @@ fn patch(
     result_count: usize,
     work: &mut dyn Work,
 ) -> Result<Patch, SnapshotError> {
-    let Some(raw) = result.get("structuredPatch") else {
+    let Some(raw) = result.non_null("structuredPatch") else {
         return Ok(Ok(None));
     };
-    if raw.get() == "null" {
-        return Ok(Ok(None));
-    }
     let Some(items) = claude_json::array(raw) else {
         return Ok(Err(()));
     };
@@ -238,8 +235,16 @@ fn patch(
         if old_count != old_lines || new_count != new_lines {
             return Ok(Err(()));
         }
-        hunks.push(json!({"old_start":old_start, "old_lines":old_lines,
-            "new_start":new_start, "new_lines":new_lines, "lines":text}));
+        hunks.push(
+            serde_json::to_value(crate::view::DiffHunk {
+                old_start,
+                old_lines,
+                new_start,
+                new_lines,
+                lines: text,
+            })
+            .expect("diff hunk is valid JSON"),
+        );
     }
     Ok(Ok(Some((path, hunks))))
 }

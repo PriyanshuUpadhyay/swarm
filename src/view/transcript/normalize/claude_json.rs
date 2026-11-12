@@ -45,11 +45,21 @@ impl<'a> Object<'a> {
             .find(|(name, _)| name == key)
             .map(|(_, raw)| *raw)
     }
+    pub(super) fn non_null(&self, key: &str) -> Option<&'a RawValue> {
+        self.get(key).filter(|raw| raw.get() != "null")
+    }
     pub(super) fn text(&self, key: &str) -> String {
         self.optional_text(key).unwrap_or_default()
     }
     pub(super) fn optional_text(&self, key: &str) -> Option<String> {
         serde_json::from_str(self.get(key)?.get()).ok()
+    }
+    pub(super) fn strings(&self, key: &str) -> Option<Vec<String>> {
+        serde_json::from_str(self.get(key)?.get()).ok()
+    }
+    pub(super) fn command(&self, key: &str) -> Option<String> {
+        self.optional_text(key)
+            .or_else(|| self.strings(key).map(|parts| parts.join(" ")))
     }
     pub(super) fn object(&self, key: &str) -> Option<Self> {
         Self::parse(self.get(key)?)

@@ -152,7 +152,7 @@ function RowBody(ctx: Ctx) {
     case "toolResult":
       return (
         <div className="grid gap-1">
-          <OutputBox app={app} preview={row.output ?? textPreview(row)} full={ctx.full} title={row.tool_status === "failed" ? "Failed tool result" : "Tool result"} />
+          <OutputBox app={app} preview={row.output ?? textPreview(row)} full={ctx.full} title={row.tool_status === "interrupted" ? "Interrupted tool result" : row.tool_status === "failed" ? "Failed tool result" : "Tool result"} />
         </div>
       );
     case "toolUse":

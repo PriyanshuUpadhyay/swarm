@@ -145,9 +145,11 @@ impl ReaderRows {
     fn append(&mut self, position: Position) {
         let event = &self.records[&position].event;
         let event_type = view::string(event, "type");
-        if matches!(event_type, "page" | "turn_started")
-            || (event_type == "user_message_chunk" && self.saw_tool)
-        {
+        // Rebuild only a batch with a join participant, including a later canonical copy.
+        self.rebuild |=
+            self.is_codex && crate::view::builder::codex::needs_join(&self.records[&position]);
+
+        if crate::view::builder::starts_scope(event_type, self.saw_tool) {
             self.scope_start = position;
             self.saw_tool = false;
             self.anchors.clear();
@@ -282,7 +284,7 @@ impl ReaderRows {
             }
             anchors.push(position);
         }
-        if matches!(event_type, "tool_call" | "tool_call_update" | "tool_diff") {
+        if crate::view::builder::is_tool_event(event_type) {
             self.saw_tool = true;
         }
         if event_type == "turn_ended" {

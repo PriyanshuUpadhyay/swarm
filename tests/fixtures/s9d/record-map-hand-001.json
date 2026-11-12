@@ -1,0 +1,298 @@
+{
+  "out-1/direct/stored-worker/rows-full.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/21/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/21/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      }
+    ]
+  },
+  "out-1/native/follow/page-final.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/21/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/21/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      }
+    ]
+  },
+  "out-1/native/follow/page-reopen.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/21/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/21/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      }
+    ]
+  },
+  "out-1/native/follow/raw-final.txt": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      },
+      {
+        "path": "/events/26/kind",
+        "old": "injected",
+        "new": "custom_message"
+      }
+    ]
+  },
+  "out-1/native/follow/rest-03.json": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/0/data/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/0/data/upsert/0/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/0/data/upsert/0/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      },
+      {
+        "path": "/raw/0/data/events/0/kind",
+        "old": "injected",
+        "new": "custom_message"
+      }
+    ]
+  },
+  "out-1/native/follow/rest-19.json": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/0/data/upsert/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/raw/0/data/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      }
+    ]
+  },
+  "out-1/native/follow/second-rest-03.json": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/0/data/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/0/data/upsert/0/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/0/data/upsert/0/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      },
+      {
+        "path": "/raw/0/data/events/0/kind",
+        "old": "injected",
+        "new": "custom_message"
+      }
+    ]
+  },
+  "out-1/native/follow/second-rest-19.json": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/0/data/upsert/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/raw/0/data/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      }
+    ]
+  },
+  "out-1/native/overlap-0/initial.json": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/1/data/upsert/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/rows/1/data/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/1/data/upsert/21/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/1/data/upsert/21/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      },
+      {
+        "path": "/raw/0/data/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      },
+      {
+        "path": "/raw/0/data/events/26/kind",
+        "old": "injected",
+        "new": "custom_message"
+      }
+    ]
+  },
+  "out-1/native/overlap-1265/initial.json": {
+    "note": "HAND: tmp/build-brief.md items 9 and 12; ADR 0139 record-end rule; chair rounds 3 and 4, 2026-11-12. bytes and sha256 still describe the ORIGINAL capture. Only the listed approved values change.",
+    "changes": [
+      {
+        "path": "/rows/1/data/upsert/-",
+        "old": "absent",
+        "new": "hidden unmapped row record-raw-4056-0@raw-4056-0"
+      },
+      {
+        "path": "/rows/1/data/find/c1:system@raw-2375-0",
+        "old": "absent",
+        "new": [
+          {
+            "f": "text"
+          },
+          {
+            "f": "output.text",
+            "p": "raw-2375-0:output"
+          }
+        ]
+      },
+      {
+        "path": "/rows/1/data/upsert/12/system_kind",
+        "old": "injected",
+        "new": "custom_message"
+      },
+      {
+        "path": "/rows/1/data/upsert/12/collapsed",
+        "old": true,
+        "new": "absent (visible)"
+      },
+      {
+        "path": "/raw/0/data/events/-",
+        "old": "absent",
+        "new": "unknown event for z2"
+      },
+      {
+        "path": "/raw/0/data/events/13/kind",
+        "old": "injected",
+        "new": "custom_message"
+      }
+    ]
+  }
+}

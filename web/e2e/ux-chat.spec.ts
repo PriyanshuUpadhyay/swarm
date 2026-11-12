@@ -1,3 +1,4 @@
+import "./ux-chat-records";
 import "./ux-chat-images";
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";

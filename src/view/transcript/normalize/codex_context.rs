@@ -4,12 +4,14 @@ use super::codex_facts::{Action, Fact, Template};
 use super::codex_questions::QuestionOutput;
 use super::{NormalizedEvent, SnapshotError, Work};
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Default)]
 pub(crate) struct ReaderContext {
     session_id: String,
     questions: HashMap<String, Vec<String>>,
+    output_was_mirror: HashMap<String, bool>,
+    spawn_calls: HashSet<String>,
 }
 
 impl ReaderContext {
@@ -34,7 +36,16 @@ impl ReaderContext {
         for action in &fact.actions {
             work.check()?;
             match action {
-                Action::Event(event) => events.push(event.project(&meta)),
+                Action::Event(event) => {
+                    if event.starts_turn() {
+                        self.output_was_mirror.clear();
+                        self.spawn_calls.clear();
+                    }
+                    if let Some(call_id) = event.spawn_call() {
+                        self.spawn_calls.insert(call_id.to_owned());
+                    }
+                    events.push(event.project(&meta));
+                }
                 Action::Open {
                     call_id,
                     ids,
@@ -49,6 +60,16 @@ impl ReaderContext {
                     event,
                     tail,
                 } => {
+                    let mirrored = event.is_mirror();
+                    if self
+                        .output_was_mirror
+                        .get(call_id)
+                        .is_some_and(|previous| *previous || mirrored)
+                    {
+                        events.push(fact.ignored(&fact.source_kind).project(&meta));
+                        continue;
+                    }
+                    self.output_was_mirror.insert(call_id.clone(), mirrored);
                     // Every valid string/array output consumes the call, even a custom output.
                     let ids = self.questions.remove(call_id);
                     match question {
@@ -75,7 +96,11 @@ impl ReaderContext {
                             );
                         }
                         _ => {
-                            events.push(event.project(&meta));
+                            events.push(if self.spawn_calls.remove(call_id) {
+                                event.project_spawn_output(&meta, work)?
+                            } else {
+                                event.project(&meta)
+                            });
                             for event in tail {
                                 work.check()?;
                                 events.push(event.project(&meta));

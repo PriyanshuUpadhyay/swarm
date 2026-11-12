@@ -8,6 +8,9 @@ use super::{TextPreview, ToolActivity, ToolState};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
+#[path = "builder_codex.rs"]
+pub(super) mod codex;
+
 #[derive(Clone)]
 struct Anchor {
     index: usize,
@@ -31,6 +34,14 @@ fn anchor_match(
     let first = matches.next()?;
     matches.next().is_none().then_some(first.index)
 }
+pub(super) fn starts_scope(kind: &str, saw_tool: bool) -> bool {
+    matches!(kind, "page" | "turn_started") || kind == "user_message_chunk" && saw_tool
+}
+
+pub(super) fn is_tool_event(kind: &str) -> bool {
+    matches!(kind, "tool_call" | "tool_call_update" | "tool_diff")
+}
+
 pub fn rows(records: &[Record], has_older: bool, is_codex: bool) -> Vec<Row> {
     rows_with_context(records, has_older, is_codex, None)
 }
@@ -40,24 +51,54 @@ pub(super) fn rows_with_context(
     is_codex: bool,
     context: Option<(bool, bool)>,
 ) -> Vec<Row> {
+    let replay;
+    let records = if is_codex
+        && records
+            .iter()
+            .any(|record| string(&record.event, "type") == "thread_rolled_back")
+    {
+        replay = codex::rolled_back(records);
+        replay.as_slice()
+    } else {
+        records
+    };
     let mut scope = 0;
     let mut saw_tool = false;
-    let mut scopes = Vec::new();
+    let mut scopes = Vec::with_capacity(records.len());
+    for record in records {
+        let event_type = string(&record.event, "type");
+        if starts_scope(event_type, saw_tool) {
+            scope += 1;
+            saw_tool = false;
+        }
+        scopes.push(scope);
+        if is_tool_event(event_type) {
+            saw_tool = true;
+        }
+        if event_type == "turn_ended" {
+            scope += 1;
+            saw_tool = false;
+        }
+    }
+
+    let mirror_parts = if is_codex {
+        codex::mirror_parts(records, &scopes)
+    } else {
+        HashMap::new()
+    };
+    let mirror_joined: HashSet<_> = mirror_parts.values().flatten().copied().collect();
     let mut calls = HashMap::<String, Vec<Anchor>>::new();
     let mut skill_calls = HashMap::<String, Vec<Anchor>>::new();
     let mut commands = HashMap::<String, Vec<Anchor>>::new();
     let mut shells = HashMap::<String, Vec<Anchor>>::new();
     let mut endings = HashMap::new();
     for (index, record) in records.iter().enumerate() {
+        if mirror_joined.contains(&index) {
+            continue;
+        }
         let event = &record.event;
         let event_type = string(event, "type");
-        if matches!(event_type, "page" | "turn_started")
-            || (event_type == "user_message_chunk" && saw_tool)
-        {
-            scope += 1;
-            saw_tool = false;
-        }
-        scopes.push(scope);
+        let scope = scopes[index];
         let anchor = Anchor {
             index,
             session: meta(event, "session_id").into(),
@@ -89,24 +130,54 @@ pub(super) fn rows_with_context(
                     .push(anchor);
             }
         }
-        if matches!(event_type, "tool_call" | "tool_call_update" | "tool_diff") {
-            saw_tool = true;
-        }
         if event_type == "turn_ended" {
             endings.insert(scope, string(event, "reason"));
-            scope += 1;
-            saw_tool = false;
         }
     }
+
     let mut updates = HashMap::<usize, Vec<usize>>::new();
     let mut diffs = HashMap::<usize, Vec<usize>>::new();
     let mut attached = HashMap::<usize, Vec<usize>>::new();
-    let mut joined = HashSet::new();
+    let mut activity = HashMap::<usize, Vec<usize>>::new();
+    let mut agents = HashMap::<String, Vec<Anchor>>::new();
     for (index, record) in records.iter().enumerate() {
+        let event = &record.event;
+        let agent_id = string(event, "agent_thread_id");
+        if string(event, "type") == "tool_call_update"
+            && !agent_id.is_empty()
+            && let Some(call) =
+                anchor_match(string(event, "tool_call_id"), event, scopes[index], &calls)
+        {
+            let entries = agents.entry(agent_id.into()).or_default();
+            if !entries.iter().any(|anchor| anchor.index == call) {
+                entries.push(Anchor {
+                    index: call,
+                    session: meta(event, "session_id").into(),
+                    scope: 0,
+                });
+            }
+        }
+    }
+    let mut joined = mirror_joined;
+    let thought_parts = if is_codex {
+        codex::thought_parts(records, &scopes, &joined)
+    } else {
+        HashMap::new()
+    };
+    joined.extend(thought_parts.values().flatten().copied());
+    for (index, record) in records.iter().enumerate() {
+        if joined.contains(&index) {
+            continue;
+        }
         let event = &record.event;
         let scope = scopes[index];
         let kind = string(event, "kind");
         let target = match string(event, "type") {
+            "subagent_activity" => {
+                anchor_match(string(event, "agent_thread_id"), event, 0, &agents).inspect(|&call| {
+                    activity.entry(call).or_default().push(index);
+                })
+            }
             "tool_call_update" => anchor_match(string(event, "tool_call_id"), event, scope, &calls)
                 .inspect(|&call| {
                     updates.entry(call).or_default().push(index);
@@ -175,6 +246,27 @@ pub(super) fn rows_with_context(
         let Some(mut row) = row(record) else {
             continue;
         };
+        for part in thought_parts.get(&index).into_iter().flatten() {
+            let text = string(&records[*part].event, "text");
+            if !row.text.is_empty() && !text.is_empty() {
+                row.text.push('\n');
+            }
+            row.text.push_str(text);
+        }
+        if (string(event, "type") == "image" && string(event, "text").is_empty()
+            || matches!(
+                string(event, "type"),
+                "agent_thought_chunk" | "user_message_chunk" | "agent_message_chunk"
+            ) && row.text.is_empty())
+            && let Some(text) = mirror_parts
+                .get(&index)
+                .into_iter()
+                .flatten()
+                .map(|index| string(&records[*index].event, "text"))
+                .find(|text| !text.is_empty())
+        {
+            row.text = text.into();
+        }
         let last_update = updates
             .get(&index)
             .and_then(|updates| updates.last())
@@ -206,6 +298,7 @@ pub(super) fn rows_with_context(
                 .unwrap_or_else(|| string(event, "status"));
             let state = match final_status {
                 "failed" => ToolState::Failed,
+                "interrupted" => ToolState::Interrupted,
                 "completed" if last_update.is_some() => ToolState::Finished,
                 _ => match endings.get(&scopes[index]).copied() {
                     Some("aborted") => ToolState::Interrupted,
@@ -234,6 +327,12 @@ pub(super) fn rows_with_context(
             };
             if row.kind == RowKind::Subagent {
                 let (agent_type, description) = subagent_labels(&input, name);
+                let state = activity
+                    .get(&index)
+                    .and_then(|items| items.last())
+                    .map_or(state, |index| {
+                        tool::subagent_state(string(&records[*index].event, "kind"), state)
+                    });
 
                 row.subagent = Some(SubagentRun {
                     call_id: string(event, "tool_call_id").into(),
@@ -324,6 +423,9 @@ pub(super) fn rows_with_context(
         sources.extend(updates.get(&index).into_iter().flatten());
         sources.extend(diffs.get(&index).into_iter().flatten());
         sources.extend(attached.get(&index).into_iter().flatten());
+        sources.extend(activity.get(&index).into_iter().flatten());
+        sources.extend(mirror_parts.get(&index).into_iter().flatten());
+        sources.extend(thought_parts.get(&index).into_iter().flatten());
         sources.sort_unstable();
         row.source_ids = sources
             .iter()
