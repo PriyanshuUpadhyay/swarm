@@ -8,6 +8,7 @@ test("a long moved-file header keeps its controls in view", async ({ page: tab }
   moved.diff = { id: "move-diff", old_path: old, path, patch: "", full_lines: 0, full_bytes: 0, omitted_lines: 0, shortened_lines: 0, added: 0, removed: 0 };
   await mockRows(tab, [moved]);
   await open(tab);
+
   const diff = tab.getByTestId("diff");
   await diff.evaluate((el: HTMLElement) => { el.style.width = "480px"; });
   const name = diff.locator(".diff-head > span").first();

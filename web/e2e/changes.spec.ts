@@ -77,6 +77,22 @@ test("Changes lists local layers and branch commits, and keys move the file list
   expect(errors).toEqual([]);
 });
 
+test("a long Changes path keeps the Diff and File buttons in view", async ({ page: tab }) => {
+  await openGitChat(tab);
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "README.md").click();
+  await expect(diffPath(tab)).toHaveText("README.md");
+  const pane = tab.getByTestId("diff-pane");
+  const fit = await pane.evaluate((el: HTMLElement) => {
+    el.style.width = "420px";
+    el.querySelector('[data-testid="diff-path"]')!.textContent = "docs/".repeat(40) + "README.md";
+    const head = el.querySelector(".diff-head")!;
+    const right = head.getBoundingClientRect().right;
+    return [...head.querySelectorAll("button")].every((button) => button.getBoundingClientRect().right <= right);
+  });
+  expect(fit).toBe(true);
+});
+
 test("a 20,000-line diff opens capped", async ({ page: tab }) => {
   const errors = await openGitChat(tab);
   await tab.getByTestId("show-changes").click();
