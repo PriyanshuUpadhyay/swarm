@@ -138,7 +138,13 @@ fn codex_batches_without_joins_keep_the_prepared_tail() {
     );
     rows.delta();
 
-    rows.ingest(2, 3, &[json!({"type":"usage"})]);
+    rows.ingest(2, 3, &[
+        json!({"type":"usage"}),
+        json!({"type":"agent_message_chunk","text":"Ready"}),
+        json!({"type":"tool_call","tool_call_id":"read","name":"Read","input":{"file_path":"a.rs"}}),
+        json!({"type":"tool_call_update","tool_call_id":"read","status":"completed","content":"contents"}),
+        json!({"type":"tool_diff","tool_call_id":"read","path":"a.rs","hunks":[]}),
+    ]);
     assert_eq!(rows.tail(1).unwrap()[0].text, "Read the code");
     rows.delta();
     assert_eq!(rows.rows(), rows.rows_full());

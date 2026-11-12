@@ -42,6 +42,29 @@ pub(super) fn is_tool_event(kind: &str) -> bool {
     matches!(kind, "tool_call" | "tool_call_update" | "tool_diff")
 }
 
+pub(super) fn record_scopes(records: &[Record]) -> Vec<usize> {
+    let mut scope = 0;
+    let mut saw_tool = false;
+    let mut scopes = Vec::with_capacity(records.len());
+    for record in records {
+        let event_type = string(&record.event, "type");
+        if starts_scope(event_type, saw_tool) {
+            scope += 1;
+            saw_tool = false;
+        }
+        scopes.push(scope);
+        if is_tool_event(event_type) {
+            saw_tool = true;
+        }
+        if event_type == "turn_ended" {
+            scope += 1;
+            saw_tool = false;
+        }
+    }
+
+    scopes
+}
+
 pub fn rows(records: &[Record], has_older: bool, is_codex: bool) -> Vec<Row> {
     rows_with_context(records, has_older, is_codex, None)
 }
@@ -62,24 +85,7 @@ pub(super) fn rows_with_context(
     } else {
         records
     };
-    let mut scope = 0;
-    let mut saw_tool = false;
-    let mut scopes = Vec::with_capacity(records.len());
-    for record in records {
-        let event_type = string(&record.event, "type");
-        if starts_scope(event_type, saw_tool) {
-            scope += 1;
-            saw_tool = false;
-        }
-        scopes.push(scope);
-        if is_tool_event(event_type) {
-            saw_tool = true;
-        }
-        if event_type == "turn_ended" {
-            scope += 1;
-            saw_tool = false;
-        }
-    }
+    let scopes = record_scopes(records);
 
     let mirror_parts = if is_codex {
         codex::mirror_parts(records, &scopes)
@@ -142,9 +148,7 @@ pub(super) fn rows_with_context(
     let mut agents = HashMap::<String, Vec<Anchor>>::new();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
-        let agent_id = string(event, "agent_thread_id");
-        if string(event, "type") == "tool_call_update"
-            && !agent_id.is_empty()
+        if let Some(agent_id) = codex::agent_update(event)
             && let Some(call) =
                 anchor_match(string(event, "tool_call_id"), event, scopes[index], &calls)
         {
