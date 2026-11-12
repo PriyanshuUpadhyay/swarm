@@ -9,8 +9,14 @@ struct Hub {
 }
 
 impl Hub {
-    fn new() -> Self {
+    /// None when Worktrunk is not installed, as on the CI runner; the test then passes without running.
+    fn new() -> Option<Self> {
         use std::os::unix::fs::{PermissionsExt, symlink};
+        let wt = PathBuf::from(std::env::var_os("HOME").unwrap()).join(".cargo/bin/wt");
+        if !wt.is_file() {
+            eprintln!("skipped: Worktrunk is not installed at {}", wt.display());
+            return None;
+        }
         let dir = std::env::temp_dir().join(format!("swarm-land-origin-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir_all(&dir).unwrap();
         let dir = std::fs::canonicalize(dir).unwrap();
@@ -48,20 +54,18 @@ impl Hub {
         let root = dir.join("home/.swarm");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(dir.join("bin")).unwrap();
-        let wt = PathBuf::from(std::env::var_os("HOME").unwrap()).join(".cargo/bin/wt");
-        assert!(wt.is_file(), "Worktrunk is required for this test");
         symlink(&wt, dir.join("bin/wt")).unwrap();
         let gh = dir.join("bin/gh");
         std::fs::write(&gh, format!(
             "#!/bin/sh\nif [ \"$2\" = list ]; then exit 0; fi\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' 'https://github.com/test/repo/pull/1'\n", dir.join("gh-args").display()
         )).unwrap();
         std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-        Self {
+        Some(Self {
             dir,
             main,
             root,
             wt,
-        }
+        })
     }
 
     fn cli(&self, args: &[&str], serve: bool) -> Output {
@@ -134,7 +138,7 @@ fn commit(path: &Path, name: &str) {
 
 #[test]
 fn direct_land_updates_origin_and_local_main_together() {
-    let hub = Hub::new();
+    let Some(hub) = Hub::new() else { return };
     let path = hub.task("direct");
     commit(&path, "landed");
     // Origin advances while this task is open, so land must fetch and rebase it.
@@ -172,7 +176,7 @@ fn direct_land_updates_origin_and_local_main_together() {
 fn pr_land_pushes_the_task_and_opens_a_pr_into_the_default() {
     // The server needs a process-local fake gh; other tests keep their original PATH.
     let Some(dir) = std::env::var_os("SWARM_TEST_PR_HUB") else {
-        let hub = Hub::new();
+        let Some(hub) = Hub::new() else { return };
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -219,7 +223,7 @@ fn pr_land_pushes_the_task_and_opens_a_pr_into_the_default() {
 
 #[test]
 fn task_start_fast_forwards_local_main_after_a_pr_merge() {
-    let hub = Hub::new();
+    let Some(hub) = Hub::new() else { return };
     let updater = hub.task("updater");
     commit(&updater, "merged-on-github");
     git(&updater, &["push", "-q", "origin", "HEAD:refs/heads/main"]);
@@ -232,7 +236,7 @@ fn task_start_fast_forwards_local_main_after_a_pr_merge() {
 #[test]
 fn a_refused_origin_push_keeps_main_and_the_task() {
     use std::os::unix::fs::PermissionsExt;
-    let hub = Hub::new();
+    let Some(hub) = Hub::new() else { return };
     let path = hub.task("refused");
     commit(&path, "keep-this-work");
     let initial = git(&hub.main, &["rev-parse", "HEAD"]);
