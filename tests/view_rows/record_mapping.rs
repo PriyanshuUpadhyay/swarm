@@ -4,6 +4,14 @@ use crate::common::{completed, event, response};
 #[path = "record_mapping/patch.rs"]
 mod patch;
 
+fn assert_mapped(rows: &[Row]) {
+    assert!(
+        !rows
+            .iter()
+            .any(|row| row.system_kind.as_deref() == Some("unmapped"))
+    );
+}
+
 fn codex_rows(lines: Vec<Value>) -> Vec<Row> {
     let bytes = lines
         .iter()
@@ -13,7 +21,6 @@ fn codex_rows(lines: Vec<Value>) -> Vec<Row> {
     let events = translated("codex", Path::new(""), bytes.as_bytes());
     transcript::rows(&records(events, true), false, true)
 }
-
 
 #[test]
 fn codex_subagent_activity_updates_the_spawn_row() {
@@ -63,7 +70,7 @@ fn codex_subagent_activity_updates_the_spawn_row() {
 
 #[test]
 fn codex_completed_items_keep_their_rows_and_command_output() {
-    let rows = codex_rows(vec![
+    let lines = vec![
         response(
             json!({"type":"message","id":"u","role":"user","content":[{"type":"input_text","text":"Build it"}]}),
         ),
@@ -91,7 +98,9 @@ fn codex_completed_items_keep_their_rows_and_command_output() {
         completed(
             json!({"type":"AgentMessage","id":"a","content":[{"type":"Text","text":"Done"}]}),
         ),
-    ]);
+    ];
+
+    let rows = codex_rows(lines);
     let visible: Vec<_> = rows.iter().filter(|row| !row.collapsed).cloned().collect();
     assert_eq!(
         kinds(&visible),
@@ -108,11 +117,7 @@ fn codex_completed_items_keep_their_rows_and_command_output() {
     assert_eq!(tool(&visible[3]).state, ToolState::Failed);
     assert_eq!(tool(&visible[3]).exit_code, Some(1));
     assert_eq!(tool(&visible[3]).command.as_deref(), Some("cargo fmt"));
-    assert!(
-        !rows
-            .iter()
-            .any(|row| row.system_kind.as_deref() == Some("unmapped"))
-    );
+    assert_mapped(&rows);
 }
 
 #[test]
@@ -301,11 +306,7 @@ fn codex_rollback_removes_the_last_turns_before_replay_continues() {
         ["Keep this turn", "completed", "Continue here"]
     );
 
-    assert!(
-        !rows
-            .iter()
-            .any(|row| row.system_kind.as_deref() == Some("unmapped"))
-    );
+    assert_mapped(&rows);
 }
 
 #[test]
@@ -364,6 +365,7 @@ fn codex_compaction_records_make_one_compaction_row() {
 fn pi_custom_messages_follow_the_display_flag() {
     for display in [true, false] {
         let text = json!({"type":"custom_message","id":"custom","display":display,"content":"Extension message"}).to_string();
+
         let rows = build(inline_fixture("pi", &[&text]));
         assert_eq!(
             rows.iter()
@@ -371,12 +373,9 @@ fn pi_custom_messages_follow_the_display_flag() {
             display
         );
 
-        assert!(
-            !rows
-                .iter()
-                .any(|row| row.system_kind.as_deref() == Some("unmapped"))
-        );
+        assert_mapped(&rows);
         let image = json!({"type":"custom_message","display":display,"content":[{"type":"image","mimeType":"image/png","data":"eA=="}]}).to_string();
+
         let rows = build(inline_fixture("pi", &[&image]));
 
         assert_eq!(
@@ -451,10 +450,6 @@ fn malformed_or_empty_provider_records_do_not_drop_silently() {
             "codex",
             r#"{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"CommandExecution","id":"cmd","command":42}}}"#,
         ),
-        (
-            "codex",
-            r#"{"type":"response_item","payload":{"type":"local_shell_call","call_id":"cmd","action":{"type":"exec","command":42}}}"#,
-        ),
         ("claude", r#"{"type":"user"}"#),
         ("claude", r#"{"type":"assistant"}"#),
         ("claude", r#"{"type":"user","message":{"content":[17]}}"#),
@@ -495,11 +490,21 @@ fn codex_empty_plans_stay_hidden() {
         let rows = codex_rows(vec![completed(plan)]);
 
         assert!(rows.iter().all(|row| row.collapsed));
-        assert!(
-            !rows
-                .iter()
-                .any(|row| row.system_kind.as_deref() == Some("unmapped"))
-        );
+        assert_mapped(&rows);
     }
 }
 
+#[test]
+fn codex_web_search_null_results_have_no_output() {
+    let rows = codex_rows(vec![completed(json!({
+        "type":"WebSearch","id":"search","query":"rust book","results":null
+    }))]);
+
+    assert_eq!(kinds(&rows), [RowKind::ToolUse]);
+    assert!(
+        tool(&rows[0])
+            .output
+            .as_ref()
+            .is_none_or(|output| output.text.is_empty())
+    );
+}

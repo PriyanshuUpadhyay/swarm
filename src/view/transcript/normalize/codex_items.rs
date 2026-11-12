@@ -100,9 +100,8 @@ pub(super) fn append(
             }
 
             let content = item
-                .get("result")
-                .filter(|raw| raw.get() != "null")
-                .or_else(|| item.get("content_items").filter(|raw| raw.get() != "null"))
+                .non_null("result")
+                .or_else(|| item.non_null("content_items"))
                 .map_or_else(
                     || {
                         item.object("error")
@@ -207,7 +206,7 @@ fn web_search(
     id: &str,
     work: &mut dyn Work,
 ) -> Result<(), SnapshotError> {
-    let input = match item.get("action").filter(|raw| raw.get() != "null") {
+    let input = match item.non_null("action") {
         Some(raw) => claude_input::parse(raw, 255, work)?,
         None => Some(Input::Scalar(json!({"query":item.text("query")}))),
     };
@@ -220,7 +219,7 @@ fn web_search(
         fact,
         item,
         id,
-        item.get("results")
+        item.non_null("results")
             .map_or(String::new(), |raw| raw.get().into()),
     );
 

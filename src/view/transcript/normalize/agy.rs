@@ -259,9 +259,7 @@ fn planner(
         ("content", "agent_message_chunk"),
     ] {
         work.check()?;
-        if let Some(raw) = record.get(field)
-            && raw.get() != "null"
-        {
+        if record.non_null(field).is_some() {
             if let Some(text) = record.optional_text(field) {
                 if !text.is_empty() {
                     fact.push(event_kind, meta, json!({"text": text}));

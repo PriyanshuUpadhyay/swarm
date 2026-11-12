@@ -179,12 +179,9 @@ fn patch(
     result_count: usize,
     work: &mut dyn Work,
 ) -> Result<Patch, SnapshotError> {
-    let Some(raw) = result.get("structuredPatch") else {
+    let Some(raw) = result.non_null("structuredPatch") else {
         return Ok(Ok(None));
     };
-    if raw.get() == "null" {
-        return Ok(Ok(None));
-    }
     let Some(items) = claude_json::array(raw) else {
         return Ok(Err(()));
     };

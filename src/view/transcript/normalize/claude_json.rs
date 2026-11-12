@@ -45,6 +45,9 @@ impl<'a> Object<'a> {
             .find(|(name, _)| name == key)
             .map(|(_, raw)| *raw)
     }
+    pub(super) fn non_null(&self, key: &str) -> Option<&'a RawValue> {
+        self.get(key).filter(|raw| raw.get() != "null")
+    }
     pub(super) fn text(&self, key: &str) -> String {
         self.optional_text(key).unwrap_or_default()
     }

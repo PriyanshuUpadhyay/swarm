@@ -353,10 +353,7 @@ fn parse_assistant(
                 _ => has_unknown = true,
             }
         }
-    } else if message
-        .get("content")
-        .is_some_and(|raw| raw.get() != "null")
-    {
+    } else if message.non_null("content").is_some() {
         has_unknown = true;
     }
     if has_unknown {

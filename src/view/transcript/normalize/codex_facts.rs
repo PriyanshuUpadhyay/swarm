@@ -528,8 +528,8 @@ fn reasoning(
     payload: &Object<'_>,
     work: &mut dyn Work,
 ) -> Result<(), SnapshotError> {
-    let summary = payload.get("summary");
-    if summary.is_none_or(|raw| raw.get() == "null") {
+    let summary = payload.non_null("summary");
+    if summary.is_none() {
         fact.push("agent_thought_chunk", json!({"text":""}));
         return Ok(());
     }
