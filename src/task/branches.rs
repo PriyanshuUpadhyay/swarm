@@ -41,21 +41,25 @@ pub fn branch_state(dir: &Path, branch: &str) -> BranchState {
 /// new work starts from the local default branch. A failed fetch is an error, so new work never
 /// starts from an old base without a word.
 pub fn fresh_origin_base(dir: &Path, default: &str) -> Result<Option<String>, String> {
-    let remote = format!("refs/remotes/origin/{default}");
-    if git(dir, &["show-ref", "--verify", "--quiet", &remote]).is_none() {
+    if git(dir, &["remote", "get-url", "origin"]).is_none() {
         return Ok(None);
     }
     let fetched = Command::new("git")
         .arg("-C")
         .arg(dir)
-        .args(["fetch", "--quiet", "origin", default])
+        .args([
+            "fetch",
+            "--quiet",
+            "origin",
+            &format!("+refs/heads/{default}:refs/remotes/origin/{default}"),
+        ])
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
         .output()
         .map_err(|error| format!("git fetch did not start: {error}"))?;
     if !fetched.status.success() {
         return Err(format!(
-            "git could not fetch origin/{default}, so no new branch was made; try again: {}",
+            "git could not fetch origin/{default}, so the task operation stopped; try again: {}",
             String::from_utf8_lossy(&fetched.stderr).trim()
         ));
     }

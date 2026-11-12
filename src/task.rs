@@ -279,6 +279,10 @@ pub fn start(
     let hub = hub(cwd).ok_or("this folder is not in a worktree hub (a bare .bare with wt/)")?;
     let branch = format!("{PREFIX}{slug}");
     let repo = hub.common.to_string_lossy().into_owned();
+    let base = fresh_origin_base(&hub.common, &hub.default)?;
+    let sync_warning = base
+        .as_ref()
+        .and_then(|base| origin::sync_default(&hub, base, false).err());
     let created = match branch_state(&hub.common, &branch) {
         BranchState::Checkout(path) => {
             let mine = read_record(root, &repo, &branch).filter(|task| {
@@ -288,7 +292,7 @@ pub fn start(
                         == resolve(Path::new("/"), &path)
             });
             return match mine {
-                Some(task) => Ok((task, None)),
+                Some(task) => Ok((task, sync_warning)),
                 None => Err(format!(
                     "{branch} is already checked out at {}, and this session did not start it there; pick another name, or ask the owner",
                     path.display()
@@ -302,8 +306,7 @@ pub fn start(
             false,
         )?,
         BranchState::Absent => {
-            let base = fresh_origin_base(&hub.common, &hub.default)?
-                .unwrap_or_else(|| hub.default.clone());
+            let base = base.unwrap_or_else(|| hub.default.clone());
             run(
                 wt,
                 &hub.main,
@@ -333,7 +336,11 @@ pub fn start(
         let _ = run(wt, &hub.main, &["remove", &branch, "--foreground"], false);
         return Err(format!("cannot write the task record: {error}"));
     }
-    Ok((task, install_hook(&hub)))
+    let warnings: Vec<_> = [sync_warning, install_hook(&hub)]
+        .into_iter()
+        .flatten()
+        .collect();
+    Ok((task, (!warnings.is_empty()).then(|| warnings.join("; "))))
 }
 
 /// The task worktree that holds `cwd`, with its record.
@@ -437,7 +444,9 @@ mod hook;
 pub use hook::install_hook;
 #[path = "task/landing.rs"]
 mod landing;
-pub use landing::{request_landing, serve_landings, take_result};
+pub use landing::{request_landing, request_pull_request, serve_landings, take_result};
+#[path = "task/origin.rs"]
+mod origin;
 
 #[path = "task/sweep.rs"]
 mod sweep;
