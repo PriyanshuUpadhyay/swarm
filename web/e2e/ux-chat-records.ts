@@ -5,7 +5,7 @@ test("a long moved-file header keeps its controls in view", async ({ page: tab }
   const old = "src/view/transcript/normalize/" + "previous_location/".repeat(8) + "codex_changes.rs";
   const path = "src/view/transcript/normalize/" + "next_location/".repeat(8) + "codex_changes_old.rs";
   const moved = row("move", "move", "diff");
-  moved.diff = { id: "move-diff", title: `${old} -> ${path}`, old_path: old, path, patch: "", full_lines: 0, full_bytes: 0, omitted_lines: 0, shortened_lines: 0, added: 0, removed: 0 };
+  moved.diff = { id: "move-diff", old_path: old, path, patch: "", full_lines: 0, full_bytes: 0, omitted_lines: 0, shortened_lines: 0, added: 0, removed: 0 };
   await mockRows(tab, [moved]);
   await open(tab);
   const diff = tab.getByTestId("diff");

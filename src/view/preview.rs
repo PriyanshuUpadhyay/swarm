@@ -90,7 +90,6 @@ pub struct Diff {
 pub struct DiffPreview {
     pub id: String,
     pub path: String,
-    pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub old_path: Option<String>,
     pub patch: String,
@@ -109,10 +108,6 @@ impl DiffPreview {
         Self {
             id: String::new(),
             path: diff.path.clone(),
-            title: diff.old_path.as_ref().map_or_else(
-                || super::tool::basename(&diff.path).to_owned(),
-                |old| format!("{old} -> {}", diff.path),
-            ),
             old_path: diff.old_path.clone(),
             patch,
             full_lines: diff.hunks.iter().map(|hunk| hunk.lines.len()).sum(),

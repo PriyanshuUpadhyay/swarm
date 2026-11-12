@@ -201,7 +201,7 @@ test("returning to a chat keeps its reading position", async ({ page: tab }) => 
 
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
   const r = row("d1", "", "diff");
-  r.diff = { id: "patch-output", path: "app.ts", title: "app.ts", patch: "@@ -1 +1 @@\n-old\n+preview", added: 1, removed: 1, omitted_lines: 900, shortened_lines: 0, full_lines: 1001, full_bytes: 20000 };
+  r.diff = { id: "patch-output", path: "app.ts", patch: "@@ -1 +1 @@\n-old\n+preview", added: 1, removed: 1, omitted_lines: 900, shortened_lines: 0, full_lines: 1001, full_bytes: 20000 };
   await mockRows(tab, [r], 0, previewPatch as Record<string, PatchInfo>, { d1: [{ f: "diff.patch", p: "patch-output" }] });
   const patch = ["@@ -1,1000 +1,1000 @@", ...Array.from({ length: 1000 }, (_, i) => ` ${i === 100 || i === 900 ? "repeated needle" : `line ${i}`}`)].join("\n");
   await tab.route("**/api/tool-output?*", (route) => route.fulfill({ json: { text: patch, patch: { lines: fullLines0.concat(fullLines1, fullLines2), split: fullSplit0 } } }));
@@ -251,7 +251,7 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
   });
   const fence = row("fence1", "raw Markdown deliberately differs from display");
   const tool = row("tool2", "", "diff");
-  tool.diff = { id: "fence-tool", path: "x", title: "x", patch: "@@ -1 +1 @@\n-tool-raw\n+tool-raw\n", added: 1, removed: 1, omitted_lines: 0, shortened_lines: 0, full_lines: 5, full_bytes: 48 };
+  tool.diff = { id: "fence-tool", path: "x", patch: "@@ -1 +1 @@\n-tool-raw\n+tool-raw\n", added: 1, removed: 1, omitted_lines: 0, shortened_lines: 0, full_lines: 5, full_bytes: 48 };
   const page = rows([fence, tool], 0, { "fence-tool": fencePainter.patch as PatchInfo });
   page.display![fence.id] = structuredClone(fencePainter.display) as Display;
   page.display![fence.id].blocks.push({ type: "code", value: {
