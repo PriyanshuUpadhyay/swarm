@@ -149,12 +149,10 @@ impl Fact<'_> {
     }
 
     pub(super) fn compaction(&mut self) {
-        let start = self.actions.len();
         self.push(
             "system_message",
             json!({"kind":"compaction","text":CONTEXT_COMPACTED}),
         );
-        self.mark_mirrors(start);
     }
 
     pub(super) fn review_mode(&mut self, entered: bool, hint: &str) {
@@ -274,7 +272,9 @@ pub(super) fn parse<'a>(line: &'a [u8], work: &mut dyn Work) -> Result<Fact<'a>,
             "reasoning" => reasoning(&mut fact, &payload, work)?,
             "image_generation_call" => image_generation(&mut fact, &payload, "id"),
             "compaction" | "compaction_summary" | "context_compaction" => {
+                let start = fact.actions.len();
                 fact.compaction();
+                fact.mark_mirrors(start);
             }
 
             "agent_message" => {
@@ -528,13 +528,12 @@ fn reasoning(
     payload: &Object<'_>,
     work: &mut dyn Work,
 ) -> Result<(), SnapshotError> {
-    let summary = payload.non_null("summary");
-    if summary.is_none() {
+    let Some(summary) = payload.non_null("summary") else {
         fact.push("agent_thought_chunk", json!({"text":""}));
         return Ok(());
-    }
+    };
 
-    let Some(parts) = summary.and_then(claude_json::array) else {
+    let Some(parts) = claude_json::array(summary) else {
         fact.push_unknown();
         return Ok(());
     };

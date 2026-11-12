@@ -136,6 +136,9 @@ fn tokens(mut text: &str) -> Vec<Token> {
     tokens
 }
 
+const NON_KIND_NAMES: &[&str] = &["status", "command", "stop", "error", "name"];
+const DISCRIMINATOR_KEYS: &[&str] = &["type", "kind", "status"];
+
 fn subject(tokens: &[Token]) -> Option<String> {
     let mut tokens = tokens;
     if tokens.len() >= 4
@@ -148,10 +151,9 @@ fn subject(tokens: &[Token]) -> Option<String> {
     }
 
     let last = tokens.last()?;
-    if matches!(
-        last.text.as_str(),
-        "kind" | "role" | "record_type" | "status" | "command" | "stop" | "error" | "name"
-    ) && !last.quoted
+    if (matches!(last.text.as_str(), "kind" | "role" | "record_type")
+        || NON_KIND_NAMES.contains(&last.text.as_str()))
+        && !last.quoted
     {
         if tokens.len() >= 3 && tokens[tokens.len() - 2].text == "." {
             return Some(format!("{}.{}", tokens[tokens.len() - 3].text, last.text));
@@ -164,7 +166,7 @@ fn subject(tokens: &[Token]) -> Option<String> {
         if tail[1].text == "["
             && tail[2].quoted
             && tail[3].text == "]"
-            && matches!(tail[2].text.as_str(), "type" | "kind" | "status")
+            && DISCRIMINATOR_KEYS.contains(&tail[2].text.as_str())
         {
             return Some(format!("{}.{}", tail[0].text, tail[2].text));
         }
@@ -177,7 +179,7 @@ fn subject(tokens: &[Token]) -> Option<String> {
             && tail[3].text == "("
             && tail[5].text == ")"
             && tail[4].quoted
-            && matches!(tail[4].text.as_str(), "type" | "kind" | "status")
+            && DISCRIMINATOR_KEYS.contains(&tail[4].text.as_str())
         {
             return Some(format!("{}.{}", tail[0].text, tail[4].text));
         }
@@ -189,7 +191,7 @@ fn subject(tokens: &[Token]) -> Option<String> {
 // An unrecognized discriminator fails closed, so moving one needs an explicit group here.
 fn group(cli: &str, file: &str, function: &str, subject: &str) -> Option<&'static str> {
     match (cli, subject) {
-        (_, "record_type" | "value.type") => Some(""),
+        (_, "record_type") => Some(""),
 
         ("claude", "block.type" | "part.type") => Some("block"),
         ("claude", "kind") => Some(match function {
@@ -222,8 +224,8 @@ fn group(cli: &str, file: &str, function: &str, subject: &str) -> Option<&'stati
 
         ("agy", "status") => Some("status"),
         (_, field) if field.ends_with(".status") => None,
-        (_, "status" | "command" | "stop" | "error" | "name" | "self.kind")
-        | ("claude", "origin.kind") => None,
+        (_, field) if NON_KIND_NAMES.contains(&field) => None,
+        (_, "self.kind") | ("claude", "origin.kind") => None,
         _ => panic!("unclassified discriminator {cli}/{file}/{function}/{subject}"),
     }
 }

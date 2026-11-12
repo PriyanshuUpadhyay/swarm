@@ -270,7 +270,7 @@ fn planner(
             }
         }
     }
-    if let Some(raw) = record.get("tool_calls") {
+    if let Some(raw) = record.non_null("tool_calls") {
         if let Some(calls) = claude_json::array(raw) {
             for (index, call) in calls.iter().enumerate() {
                 work.check()?;
@@ -310,7 +310,7 @@ fn planner(
                 });
                 has_tool_call = true;
             }
-        } else if raw.get() != "null" {
+        } else {
             has_unknown = true;
         }
     }

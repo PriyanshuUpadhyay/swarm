@@ -127,7 +127,7 @@ pub(super) fn append(
                 .into_iter()
                 .next();
             let content = item
-                .get("agents_states")
+                .non_null("agents_states")
                 .map_or(String::new(), |raw| raw.get().into());
             fact.push("tool_call_update", json!({"tool_call_id":id,"status":status(&item),"content":content,"agent_thread_id":agent_id}));
         }
