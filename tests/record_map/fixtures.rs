@@ -145,6 +145,13 @@ pub(super) fn fixture(cli: &str, kind: &str) -> Vec<Value> {
                 json!({"type":if name=="Text" {"AgentMessage"} else {"UserMessage"},"id":"message","content":[{"type":name,"text":"Message","path":"/tmp/image.png"}]}),
             )],
             "item_completed" => {
+                if let Some(kind) = name.strip_prefix("Extension/") {
+                    return vec![item(json!({
+                        "type":"Extension","kind":kind,"id":"extension","durationMs":1000,
+                        "query":"rust","action":null,"results":[{"title":"Rust","url":"https://www.rust-lang.org/"}],
+                        "status":"completed","result":"cG5n","savedPath":"/tmp/image.png"
+                    }))];
+                }
                 let mut lines = match name {
                     "UserMessage" => vec![codex_message("user", "input_text")],
                     "AgentMessage" => vec![codex_message("assistant", "output_text")],

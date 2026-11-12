@@ -106,24 +106,29 @@ pub(super) fn append(
                 .map_or(String::new(), |raw| raw.get().into());
             fact.push("tool_call_update", json!({"tool_call_id":id,"status":status(&item),"content":content,"agent_thread_id":agent_id}));
         }
-        "WebSearch" => {
-            let input = match item.get("action") {
-                Some(raw) => claude_input::parse(raw, 255, work)?,
-                None => Some(Input::Scalar(json!({"query":item.text("query")}))),
-            };
-            if let Some(input) = input {
-                call(fact, &id, "web_search", input);
-            } else {
-                fact.push_unknown();
+        "WebSearch" => web_search(fact, &item, &id, work)?,
+        "Extension" => match item.text("kind").as_str() {
+            "clock.sleep" => {
+                let duration = item.token("durationMs").or_else(|| {
+                    payload
+                        .token("completed_at_ms")?
+                        .checked_sub(payload.token("started_at_ms")?)
+                        .filter(|duration| *duration >= 0)
+                });
+                if let Some(duration) = duration {
+                    let duration = crate::view::duration_label(duration as f64 / 1000.0);
+                    fact.push(
+                        "system_message",
+                        json!({"kind":"sleep","text":format!("Waited {duration}")}),
+                    );
+                } else {
+                    fact.push_unknown();
+                }
             }
-            output(
-                fact,
-                &item,
-                &id,
-                item.get("results")
-                    .map_or(String::new(), |raw| raw.get().into()),
-            );
-        }
+            "web.search" => web_search(fact, &item, &id, work)?,
+            "image_gen.generation" => super::codex_facts::image_generation(fact, &item, "id", true),
+            _ => fact.push_unknown(),
+        },
         "EnteredReviewMode" | "ExitedReviewMode" => {
             let text = if item.text("type") == "ExitedReviewMode" {
                 "Exited review mode".into()
@@ -162,13 +167,37 @@ pub(super) fn append(
             "system_message",
             json!({"kind":"compaction","text":"Context compacted"}),
         ),
-        // Extension schemas belong to their writers; unknown variants must stay counted.
         _ => fact.push_unknown(),
     }
     if fact.actions.len() == start {
         fact.push_unknown();
     }
     fact.mark_mirrors(start);
+    Ok(())
+}
+
+fn web_search(
+    fact: &mut Fact<'_>,
+    item: &Object<'_>,
+    id: &str,
+    work: &mut dyn Work,
+) -> Result<(), SnapshotError> {
+    let input = match item.get("action").filter(|raw| raw.get() != "null") {
+        Some(raw) => claude_input::parse(raw, 255, work)?,
+        None => Some(Input::Scalar(json!({"query":item.text("query")}))),
+    };
+    if let Some(input) = input {
+        call(fact, id, "web_search", input);
+    } else {
+        fact.push_unknown();
+    }
+    output(
+        fact,
+        item,
+        id,
+        item.get("results")
+            .map_or(String::new(), |raw| raw.get().into()),
+    );
     Ok(())
 }
 

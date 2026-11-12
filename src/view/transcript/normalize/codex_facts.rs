@@ -322,7 +322,7 @@ pub(super) fn image_generation(
     let start = fact.actions.len();
     fact.push(
         "image",
-        json!({"role":"agent", "media_type":"image", "text":payload.text("saved_path")}),
+        json!({"role":"agent", "media_type":"image", "text":payload.optional_text("saved_path").or_else(|| payload.optional_text("savedPath")).unwrap_or_default()}),
     );
     if mirror {
         fact.mark_mirrors(start);

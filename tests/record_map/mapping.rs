@@ -164,6 +164,13 @@ pub(super) const RECORD_MAP: &[(&str, &str, End)] = &[
     ("codex", "item_completed/SubAgentActivity", End::Part),
     ("codex", "item_completed/FileChange", End::Part),
     ("codex", "item_completed/Extension", End::NotKnown),
+    ("codex", "item_completed/Extension/clock.sleep", End::Row),
+    ("codex", "item_completed/Extension/web.search", End::Row),
+    (
+        "codex",
+        "item_completed/Extension/image_gen.generation",
+        End::Row,
+    ),
     ("codex", "item_content/Text", End::Row),
     ("codex", "item_content/image", End::Row),
     ("codex", "item_content/local_image", End::Row),

@@ -206,6 +206,77 @@ fn codex_image_generation_copies_make_one_image_row() {
 }
 
 #[test]
+fn codex_extension_sleep_shows_the_wait_duration() {
+    for duration in [
+        json!({"item":{"type":"Extension","kind":"clock.sleep","id":"sleep","durationMs":1250}}),
+        json!({"item":{"type":"Extension","kind":"clock.sleep","id":"sleep"},"started_at_ms":2000,"completed_at_ms":3250}),
+    ] {
+        let mut payload = duration;
+        payload["type"] = json!("item_completed");
+        let rows = codex_rows(vec![event(payload)]);
+        assert_eq!(kinds(&rows), [RowKind::System]);
+        assert!(!rows[0].collapsed);
+        assert!(rows[0].text.contains("1.2s"));
+        assert!(!rows[0].opens_turn());
+    }
+}
+
+#[test]
+fn codex_extension_web_search_shows_the_query_and_results() {
+    for action in [Value::Null, json!({"type":"search","query":"rust book"})] {
+        let rows = codex_rows(vec![completed(json!({
+            "type":"Extension","kind":"web.search","id":"search","query":"rust book",
+            "action":action,"results":[{"title":"The Rust Book","url":"https://doc.rust-lang.org/book/"}]
+        }))]);
+        assert_eq!(kinds(&rows), [RowKind::ToolUse]);
+        let search = tool(&rows[0]);
+        assert_eq!(search.name, "web_search");
+        assert_eq!(search.input["query"], "rust book");
+        assert_eq!(search.state, ToolState::Finished);
+        assert!(
+            search
+                .output
+                .as_ref()
+                .unwrap()
+                .text
+                .contains("The Rust Book")
+        );
+    }
+}
+
+#[test]
+fn codex_extension_image_generation_joins_its_paired_image() {
+    let image = completed(json!({
+        "type":"Extension","kind":"image_gen.generation","id":"image","status":"completed",
+        "result":"cG5n","savedPath":"/tmp/extension-image.png"
+    }));
+    for paired in [
+        None,
+        Some(response(
+            json!({"type":"image_generation_call","id":"image","status":"completed","result":"cG5n"}),
+        )),
+        Some(event(
+            json!({"type":"image_generation_end","call_id":"image","status":"completed","saved_path":"/tmp/extension-image.png"}),
+        )),
+        Some(completed(
+            json!({"type":"ImageGeneration","id":"image","status":"completed","saved_path":"/tmp/extension-image.png"}),
+        )),
+    ] {
+        for reverse in [false, true] {
+            let mut lines = vec![image.clone()];
+            lines.extend(paired.clone());
+            if reverse {
+                lines.reverse();
+            }
+            let rows = codex_rows(lines);
+            assert_eq!(kinds(&rows), [RowKind::Notice]);
+            assert!(!rows[0].collapsed);
+            assert!(rows[0].text.contains("/tmp/extension-image.png"));
+        }
+    }
+}
+
+#[test]
 fn codex_local_shell_calls_show_the_command_and_output() {
     let rows = codex_rows(vec![
         response(

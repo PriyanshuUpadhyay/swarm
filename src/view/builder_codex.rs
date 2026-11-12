@@ -151,6 +151,23 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
             idless_texts.entry(key).or_default().push(index);
         }
     }
+    // An extension image can have only completion copies, with no response item.
+    // Use the first copy as its row when no canonical image has this identity.
+    for (index, record) in records.iter().enumerate() {
+        let event = &record.event;
+        let id = item_id(event);
+        if string(event, "type") == "image" && event["codex_mirror"] == true && !id.is_empty() {
+            identities
+                .entry((
+                    scopes[index],
+                    meta(event, "session_id"),
+                    "image",
+                    string(event, "kind"),
+                    id,
+                ))
+                .or_insert_with(|| vec![index]);
+        }
+    }
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
         if event["codex_mirror"] != true || !mirror_kind(event) {
@@ -179,6 +196,7 @@ pub(super) fn mirror_parts(records: &[Record]) -> HashMap<usize, Vec<usize>> {
         });
         if let Some(target) =
             candidates.and_then(|items| items.iter().min_by_key(|&&other| other.abs_diff(index)))
+            && *target != index
         {
             parts.entry(*target).or_default().push(index);
         }

@@ -8,6 +8,7 @@ informed-by:
   - 'owner, 2026-11-11: approved plan tmp/flow/2026-11-11-ui-unmapped-items/plan.md on its Plannotator page with no notes, so every recommended default stands'
   - 'research 2026-11-11: T3 Code drops unknown item types on decode, and Swarm hid them too'
   - 'owner, 2026-11-11: approved the record-map audit build; every record must have an explicit end state'
+  - 'owner, 2026-11-12: approved rows for Codex Extension Sleep, WebSearch, and ImageGeneration'
 ---
 
 # 0139. The chat counts records no parser maps
@@ -26,8 +27,11 @@ maps, and 0099 hid it like any other bookkeeping, so an update went unnoticed. A
   replays every row or part entry through the public `SnapshotReader`. Run `cargo test --test record_map`.
   `NotKnown` keeps a hidden Claude kind hidden when its CLI display is not confirmed. The four
   existing rows `away_summary`, `scheduled_task_fire`, `stop_hook_summary`, and
-  `hook_permission_decision` keep their rows until the owner checks the CLI. Codex `Extension`
-  items stay unmapped until their display contract is chosen.
+  `hook_permission_decision` keep their rows until the owner checks the CLI.
+- Codex `Extension` items map by their `kind`. Sleep (`clock.sleep`) shows the wait duration.
+  WebSearch (`web.search`) shows a `web_search` tool row with its query and results.
+  ImageGeneration (`image_gen.generation`) joins the image row from its paired records.
+  Other extension kinds stay unmapped.
 - A record no parser maps (event `unknown`, or a contract event the view does not know) becomes a
   hidden row with `system_kind` `unmapped`. An `ignored` event stays `record`, because ignoring is
   a decision, not a loss.
