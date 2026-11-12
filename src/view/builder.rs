@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 #[path = "builder_codex.rs"]
-mod codex;
+pub(super) mod codex;
 
 #[derive(Clone)]
 struct Anchor {
@@ -34,6 +34,14 @@ fn anchor_match(
     let first = matches.next()?;
     matches.next().is_none().then_some(first.index)
 }
+pub(super) fn starts_scope(kind: &str, saw_tool: bool) -> bool {
+    matches!(kind, "page" | "turn_started") || kind == "user_message_chunk" && saw_tool
+}
+
+pub(super) fn is_tool_event(kind: &str) -> bool {
+    matches!(kind, "tool_call" | "tool_call_update" | "tool_diff")
+}
+
 pub fn rows(records: &[Record], has_older: bool, is_codex: bool) -> Vec<Row> {
     rows_with_context(records, has_older, is_codex, None)
 }
@@ -59,14 +67,12 @@ pub(super) fn rows_with_context(
     let mut scopes = Vec::with_capacity(records.len());
     for record in records {
         let event_type = string(&record.event, "type");
-        if matches!(event_type, "page" | "turn_started")
-            || event_type == "user_message_chunk" && saw_tool
-        {
+        if starts_scope(event_type, saw_tool) {
             scope += 1;
             saw_tool = false;
         }
         scopes.push(scope);
-        if matches!(event_type, "tool_call" | "tool_call_update" | "tool_diff") {
+        if is_tool_event(event_type) {
             saw_tool = true;
         }
         if event_type == "turn_ended" {

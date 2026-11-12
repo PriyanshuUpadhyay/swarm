@@ -4,6 +4,17 @@ use super::super::transcript::{
 };
 use std::collections::HashMap;
 
+pub(crate) fn needs_join(record: &Record) -> bool {
+    let event = &record.event;
+    event[CODEX_MIRROR] == true
+        || matches!(
+            string(event, "type"),
+            "agent_thought_part" | "thread_rolled_back" | "tool_call_update" | "tool_diff"
+        )
+        || string(event, "type") == "system_message" && string(event, "kind") == "compaction"
+        || mirror_kind(record)
+}
+
 pub(super) fn thought_parts(
     records: &[Record],
     scopes: &[usize],
@@ -253,6 +264,7 @@ fn join_compactions(
 
 fn mirror_kind(record: &Record) -> bool {
     let event = &record.event;
+
     match string(event, "type") {
         "tool_call" | "elicitation_result" => true,
         "system_message" => string(event, "kind") != "compaction",

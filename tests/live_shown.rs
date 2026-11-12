@@ -127,3 +127,19 @@ fn a_thought_inside_a_fold_hides_the_live_thought() {
         .unwrap();
     assert!(frame.hide_thinking);
 }
+
+#[test]
+fn codex_batches_without_joins_keep_the_prepared_tail() {
+    let mut rows = ReaderRows::empty(1, true);
+    rows.ingest(
+        1,
+        2,
+        &[json!({"type":"agent_thought_part","text":"Read the code"})],
+    );
+    rows.delta();
+
+    rows.ingest(2, 3, &[json!({"type":"usage"})]);
+    assert_eq!(rows.tail(1).unwrap()[0].text, "Read the code");
+    rows.delta();
+    assert_eq!(rows.rows(), rows.rows_full());
+}
