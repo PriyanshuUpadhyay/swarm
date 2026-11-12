@@ -9,7 +9,7 @@ pub(super) fn readers() -> Vec<(String, String, String)> {
         let path = entry.unwrap().path();
         let file = path.file_name().unwrap().to_str().unwrap();
         let cli = file.split(['_', '.']).next().unwrap();
-        if matches!(cli, "claude" | "codex" | "agy" | "pi")
+        if swarm::view::transcript::source::NativeFormat::from_name(cli).is_some()
             && path.extension().is_some_and(|ext| ext == "rs")
         {
             readers.push((
@@ -24,10 +24,51 @@ pub(super) fn readers() -> Vec<(String, String, String)> {
     readers
 }
 
-fn literal(text: &str) -> Option<(String, &str)> {
+fn literal(text: &str) -> (String, &str) {
     let mut stream = serde_json::Deserializer::from_str(text).into_iter::<String>();
-    let value = stream.next()?.ok()?;
-    Some((value, &text[stream.byte_offset()..]))
+    let value = stream
+        .next()
+        .expect("record-map lexer: missing string literal")
+        .expect("record-map lexer: unsupported string literal; use JSON-compatible escapes");
+    (value, &text[stream.byte_offset()..])
+}
+
+// Character tokens must not expose braces or quotes to the discriminator scan.
+fn character(text: &str) -> Option<&str> {
+    let rest = text.strip_prefix('\'')?;
+    let first = rest
+        .chars()
+        .next()
+        .expect("record-map lexer: unfinished character");
+    let mut end = first.len_utf8();
+
+    if first == '\\' {
+        let escaped = rest[end..]
+            .chars()
+            .next()
+            .expect("record-map lexer: unfinished escape");
+        assert!(
+            matches!(escaped, '\\' | '\'' | '"' | 'n' | 'r' | 't' | '0'),
+            "record-map lexer: unsupported character escape"
+        );
+        end += escaped.len_utf8();
+    }
+
+    if rest[end..].starts_with('\'') {
+        return Some(&rest[end + 1..]);
+    }
+    if first.is_ascii_alphabetic() || first == '_' {
+        // A lifetime has no closing quote, such as 'a or '_ .
+        let end = rest
+            .find(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+            .unwrap_or(rest.len());
+        assert!(
+            !rest[end..].starts_with('\''),
+            "record-map lexer: unsupported character literal"
+        );
+        return None;
+    }
+    panic!("record-map lexer: unsupported character literal");
 }
 
 #[derive(Debug)]
@@ -49,12 +90,30 @@ fn tokens(mut text: &str) -> Vec<Token> {
             break;
         }
 
-        if text.starts_with('"')
-            && let Some((value, rest)) = literal(text)
-        {
+        let raw = text.strip_prefix("br").or_else(|| text.strip_prefix('r'));
+        assert!(
+            !raw.is_some_and(|rest| rest.trim_start_matches('#').starts_with('"')),
+            "record-map lexer: unsupported raw string literal"
+        );
+        assert!(
+            !text.starts_with("/*"),
+            "record-map lexer: unsupported block comment"
+        );
+
+        if text.starts_with('"') {
+            let (value, rest) = literal(text);
             tokens.push(Token {
                 text: value,
                 quoted: true,
+            });
+            text = rest;
+            continue;
+        }
+
+        if let Some(rest) = character(text) {
+            tokens.push(Token {
+                text: "<char>".into(),
+                quoted: false,
             });
             text = rest;
             continue;
@@ -91,13 +150,24 @@ fn subject(tokens: &[Token]) -> Option<String> {
     let last = tokens.last()?;
     if matches!(
         last.text.as_str(),
-        "kind" | "role" | "record_type" | "status"
+        "kind" | "role" | "record_type" | "status" | "command" | "stop" | "error" | "name"
     ) && !last.quoted
-        && tokens
-            .get(tokens.len().wrapping_sub(2))
-            .is_none_or(|token| token.text != ".")
     {
+        if tokens.len() >= 3 && tokens[tokens.len() - 2].text == "." {
+            return Some(format!("{}.{}", tokens[tokens.len() - 3].text, last.text));
+        }
         return Some(last.text.clone());
+    }
+
+    if tokens.len() >= 4 {
+        let tail = &tokens[tokens.len() - 4..];
+        if tail[1].text == "["
+            && tail[2].quoted
+            && tail[3].text == "]"
+            && matches!(tail[2].text.as_str(), "type" | "kind" | "status")
+        {
+            return Some(format!("{}.{}", tail[0].text, tail[2].text));
+        }
     }
 
     if tokens.len() >= 6 {
@@ -107,7 +177,7 @@ fn subject(tokens: &[Token]) -> Option<String> {
             && tail[3].text == "("
             && tail[5].text == ")"
             && tail[4].quoted
-            && matches!(tail[4].text.as_str(), "type" | "kind")
+            && matches!(tail[4].text.as_str(), "type" | "kind" | "status")
         {
             return Some(format!("{}.{}", tail[0].text, tail[4].text));
         }
@@ -119,7 +189,8 @@ fn subject(tokens: &[Token]) -> Option<String> {
 // An unrecognized discriminator fails closed, so moving one needs an explicit group here.
 fn group(cli: &str, file: &str, function: &str, subject: &str) -> Option<&'static str> {
     match (cli, subject) {
-        (_, "record_type") => Some(""),
+        (_, "record_type" | "value.type") => Some(""),
+
         ("claude", "block.type" | "part.type") => Some("block"),
         ("claude", "kind") => Some(match function {
             "line" => "",
@@ -128,6 +199,7 @@ fn group(cli: &str, file: &str, function: &str, subject: &str) -> Option<&'stati
             "messages" => "block",
             _ => panic!("unclassified discriminator {file}/{function}/{subject}"),
         }),
+
         ("codex", "role") | ("pi", "role") => Some("message"),
         ("codex", "kind") => Some(match function {
             "parse" | "append" => "response_item",
@@ -144,10 +216,14 @@ fn group(cli: &str, file: &str, function: &str, subject: &str) -> Option<&'stati
         }),
         ("codex", "change.type") => Some("file_change"),
         ("codex", "action.type") => Some("local_shell"),
+
         ("pi", "kind") | ("agy", "kind") => Some(""),
         ("pi", "block.type") => Some("block"),
+
         ("agy", "status") => Some("status"),
-        (_, "status") | ("claude", "origin.kind") => None,
+        (_, field) if field.ends_with(".status") => None,
+        (_, "status" | "command" | "stop" | "error" | "name" | "self.kind")
+        | ("claude", "origin.kind") => None,
         _ => panic!("unclassified discriminator {cli}/{file}/{function}/{subject}"),
     }
 }
@@ -159,6 +235,28 @@ fn add(kinds: &mut BTreeSet<String>, group: &str, name: &str) {
         } else {
             format!("{group}/{name}")
         });
+    }
+}
+
+fn add_patterns(
+    kinds: &mut BTreeSet<String>,
+    context: (&str, &str, &str),
+    input: &[Token],
+    patterns: &[Token],
+) {
+    let names: Vec<_> = patterns.iter().filter(|token| token.quoted).collect();
+    if names.is_empty() {
+        return;
+    }
+
+    let (cli, file, function) = context;
+    let subject = subject(input).unwrap_or_else(|| {
+        panic!("record-map guard: unreadable matches! discriminator in {cli}/{file}/{function}")
+    });
+    if let Some(group) = group(cli, file, function, &subject) {
+        for token in names {
+            add(kinds, group, &token.text);
+        }
     }
 }
 
@@ -175,13 +273,16 @@ pub(super) fn reader_kinds(cli: &str, file: &str, source: &str) -> BTreeSet<Stri
         if text == "fn" && !token.quoted {
             function = &tokens[index + 1].text;
         }
+
         if text == "match"
             && !token.quoted
             && let Some(end) =
                 (index + 1..tokens.len()).find(|&i| tokens[i].text == "{" && !tokens[i].quoted)
-            && let Some(subject) = subject(&tokens[index + 1..end])
         {
-            matches.insert(end, group(cli, file, function, &subject));
+            let group = subject(&tokens[index + 1..end]).map_or(Some("<unreadable>"), |subject| {
+                group(cli, file, function, &subject)
+            });
+            matches.insert(end, group);
         }
 
         if text == "{" && !token.quoted {
@@ -189,7 +290,11 @@ pub(super) fn reader_kinds(cli: &str, file: &str, source: &str) -> BTreeSet<Stri
         } else if text == "}" && !token.quoted {
             braces.pop();
         }
+
         if token.quoted
+            && tokens
+                .get(index.wrapping_sub(1))
+                .is_none_or(|token| token.text != "==")
             && let Some(Some(group)) = braces.last()
         {
             let mut end = index + 1;
@@ -202,6 +307,11 @@ pub(super) fn reader_kinds(cli: &str, file: &str, source: &str) -> BTreeSet<Stri
                 .get(end)
                 .is_some_and(|token| matches!(token.text.as_str(), "=>" | "if"))
             {
+                assert_ne!(
+                    *group, "<unreadable>",
+                    "record-map guard: unreadable discriminator in {cli}/{file}/{function}"
+                );
+
                 for token in tokens[index..end].iter().filter(|token| token.quoted) {
                     add(&mut kinds, group, &token.text);
                 }
@@ -230,20 +340,22 @@ pub(super) fn reader_kinds(cli: &str, file: &str, source: &str) -> BTreeSet<Stri
             if tokens[end].quoted {
                 continue;
             }
+
             match tokens[end].text.as_str() {
                 "(" => depth += 1,
                 ")" => {
                     depth -= 1;
+
                     if depth == 0 {
-                        if let Some(comma) = comma
-                            && let Some(subject) = subject(&tokens[index + 3..comma])
-                            && let Some(group) = group(cli, file, function, &subject)
-                        {
-                            for token in tokens[comma + 1..end].iter().filter(|token| token.quoted)
-                            {
-                                add(&mut kinds, group, &token.text);
-                            }
+                        if let Some(comma) = comma {
+                            add_patterns(
+                                &mut kinds,
+                                (cli, file, function),
+                                &tokens[index + 3..comma],
+                                &tokens[comma + 1..end],
+                            );
                         }
+
                         break;
                     }
                 }
