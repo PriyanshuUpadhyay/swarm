@@ -95,7 +95,7 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
   return (
     <div className="diff" data-testid="diff" data-preview={diff.id} data-split={split}>
       <div className="diff-head">
-        <span className="font-medium" title={name}>
+        <span className="font-medium" title={diff.old_path ? name : diff.path}>
           {name}
         </span>
         <span className="font-mono text-xs">
