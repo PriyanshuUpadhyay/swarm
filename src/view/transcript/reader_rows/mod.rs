@@ -34,6 +34,7 @@ pub struct ReaderRows {
     record_chunks: HashMap<Position, usize>,
     pub dirty: HashSet<usize>,
     pub rebuild: bool,
+    codex_joins: bool,
     pub initialized: bool,
     context: (bool, bool),
     contexts: HashMap<Position, (bool, bool)>,
@@ -77,6 +78,7 @@ impl ReaderRows {
             record_chunks: HashMap::new(),
             dirty: HashSet::new(),
             rebuild: false,
+            codex_joins: false,
             initialized: false,
             context: (from == 0, from > 0),
             contexts: HashMap::new(),
@@ -145,6 +147,16 @@ impl ReaderRows {
     fn append(&mut self, position: Position) {
         let event = &self.records[&position].event;
         let event_type = view::string(event, "type");
+        // Later canonical records and updates can change a join or replay a rollback again.
+        // Keep rebuilding until a reindex no longer retains any cross-chunk joins.
+        self.codex_joins |= self.is_codex
+            && (event["codex_mirror"] == true
+                || matches!(event_type, "subagent_activity" | "thread_rolled_back" | "agent_thought_part" | "image")
+                || event_type == "system_message" && view::string(event, "kind") == "compaction");
+        if event_type != "queue_operation" {
+            self.rebuild |= self.codex_joins;
+        }
+
         if matches!(event_type, "page" | "turn_started")
             || (event_type == "user_message_chunk" && self.saw_tool)
         {
