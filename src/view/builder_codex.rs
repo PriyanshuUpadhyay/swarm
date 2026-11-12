@@ -4,73 +4,15 @@ use super::super::transcript::{
 };
 use std::collections::HashMap;
 
-pub(crate) fn needs_join<'a>(
-    record: &'a Record,
-    retained: impl Iterator<Item = &'a Record> + Clone,
-) -> bool {
+pub(crate) fn needs_join(record: &Record) -> bool {
     let event = &record.event;
-    if event[CODEX_MIRROR] == true
-        || is_thought_part(record)
+    event[CODEX_MIRROR] == true
         || matches!(
             string(event, "type"),
-            "thread_rolled_back" | "subagent_activity"
+            "agent_thought_part" | "thread_rolled_back" | "tool_call_update" | "tool_diff"
         )
-    {
-        return true;
-    }
-
-    if let Some(agent_id) = agent_update(event)
-        && retained.clone().any(|other| {
-            string(&other.event, "type") == "subagent_activity"
-                && string(&other.event, "agent_thread_id") == agent_id
-        })
-    {
-        return true;
-    }
-
-    let candidate = retained.clone().any(|other| {
-        let prior = &other.event;
-        record.source_id != other.source_id
-            && ((is_thought_part(other) && is_thought_chunk(record))
-                || (prior[CODEX_MIRROR] == true || is_compaction(prior) && is_compaction(event))
-                    && string(prior, "type") == string(event, "type")
-                    && meta(prior, "session_id") == meta(event, "session_id"))
-    });
-    if !candidate {
-        return false;
-    }
-
-    // Let the joiner decide identity, text fallback, scope, and compaction adjacency.
-    let index = retained
-        .clone()
-        .position(|other| record.source_id == other.source_id)
-        .expect("retained records include the appended record");
-    let records: Vec<_> = retained.cloned().collect();
-    let scopes = super::record_scopes(&records);
-    let parts = mirror_parts(&records, &scopes);
-    let joined = parts.values().flatten().copied().collect();
-    let thoughts = thought_parts(&records, &scopes, &joined);
-    [&parts, &thoughts].into_iter().any(|parts| {
-        parts.get(&index).is_some_and(|parts| !parts.is_empty())
-            || parts.values().any(|parts| parts.contains(&index))
-    })
-}
-
-pub(super) fn agent_update(event: &serde_json::Value) -> Option<&str> {
-    let id = string(event, "agent_thread_id");
-    (string(event, "type") == "tool_call_update" && !id.is_empty()).then_some(id)
-}
-
-fn is_thought_part(record: &Record) -> bool {
-    string(&record.event, "type") == "agent_thought_part"
-}
-
-fn is_thought_chunk(record: &Record) -> bool {
-    string(&record.event, "type") == "agent_thought_chunk"
-}
-
-fn is_compaction(event: &serde_json::Value) -> bool {
-    string(event, "type") == "system_message" && string(event, "kind") == "compaction"
+        || string(event, "type") == "system_message" && string(event, "kind") == "compaction"
+        || mirror_kind(record)
 }
 
 pub(super) fn thought_parts(
@@ -91,7 +33,7 @@ pub(super) fn thought_parts(
         }
         steps.push(step);
 
-        if is_thought_chunk(record) && !joined.contains(&index) {
+        if string(&record.event, "type") == "agent_thought_chunk" && !joined.contains(&index) {
             thoughts
                 .entry((scopes[index], step, meta(&record.event, "session_id")))
                 .or_default()
@@ -101,7 +43,7 @@ pub(super) fn thought_parts(
 
     let mut parts = HashMap::<usize, Vec<usize>>::new();
     for (index, record) in records.iter().enumerate() {
-        if !is_thought_part(record) {
+        if string(&record.event, "type") != "agent_thought_part" {
             continue;
         }
         let entries = thoughts
@@ -277,7 +219,7 @@ pub(super) fn mirror_parts(records: &[Record], scopes: &[usize]) -> HashMap<usiz
     let mut group: Vec<usize> = Vec::new();
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
-        if is_compaction(event) {
+        if string(event, "type") == "system_message" && string(event, "kind") == "compaction" {
             if group.first().is_some_and(|&first| {
                 meta(&records[first].event, "session_id") != meta(event, "session_id")
             }) {
@@ -325,7 +267,7 @@ fn mirror_kind(record: &Record) -> bool {
 
     match string(event, "type") {
         "tool_call" | "elicitation_result" => true,
-        "system_message" => !is_compaction(event),
+        "system_message" => string(event, "kind") != "compaction",
         "agent_thought_part" => false,
         _ => row(record).is_some_and(|row| {
             matches!(

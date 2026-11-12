@@ -138,14 +138,37 @@ fn codex_batches_without_joins_keep_the_prepared_tail() {
     );
     rows.delta();
 
-    rows.ingest(2, 3, &[
-        json!({"type":"usage"}),
-        json!({"type":"agent_message_chunk","text":"Ready"}),
-        json!({"type":"tool_call","tool_call_id":"read","name":"Read","input":{"file_path":"a.rs"}}),
-        json!({"type":"tool_call_update","tool_call_id":"read","status":"completed","content":"contents"}),
-        json!({"type":"tool_diff","tool_call_id":"read","path":"a.rs","hunks":[]}),
-    ]);
+    rows.ingest(2, 3, &[json!({"type":"usage"})]);
     assert_eq!(rows.tail(1).unwrap()[0].text, "Read the code");
+    rows.delta();
+    assert_eq!(rows.rows(), rows.rows_full());
+}
+
+#[test]
+fn a_codex_result_after_its_mirror_call_keeps_live_rows_equal_to_full_rows() {
+    let session = |mut event: Value| {
+        event["meta"]["session_id"] = json!("s");
+        event
+    };
+    let mut rows = ReaderRows::empty(1, true);
+    rows.ingest(1, 2, &[
+        session(json!({"type":"turn_started"})),
+        session(json!({"type":"user_message_chunk","text":"go"})),
+        session(json!({"type":"tool_call","tool_call_id":"call","name":"exec_command","status":"pending","input":{"cmd":"pwd"}})),
+    ]);
+    rows.delta();
+
+    // An item_completed command: a mirror call and its mirror result.
+    rows.ingest(2, 3, &[
+        session(json!({"type":"tool_call","tool_call_id":"call","name":"exec_command","status":"pending","input":{"cmd":"pwd"},"codex_mirror":true})),
+        session(json!({"type":"tool_call_update","tool_call_id":"call","status":"completed","content":"Result","codex_mirror":true})),
+    ]);
+    rows.delta();
+
+    // The canonical function_call_output arrives in a later read.
+    rows.ingest(3, 4, &[session(
+        json!({"type":"tool_call_update","tool_call_id":"call","status":"completed","content":"Result"}),
+    )]);
     rows.delta();
     assert_eq!(rows.rows(), rows.rows_full());
 }

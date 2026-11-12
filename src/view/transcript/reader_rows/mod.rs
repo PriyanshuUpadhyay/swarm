@@ -146,11 +146,8 @@ impl ReaderRows {
         let event = &self.records[&position].event;
         let event_type = view::string(event, "type");
         // Rebuild only a batch with a join participant, including a later canonical copy.
-        self.rebuild |= self.is_codex
-            && crate::view::builder::codex::needs_join(
-                &self.records[&position],
-                self.records.values(),
-            );
+        self.rebuild |=
+            self.is_codex && crate::view::builder::codex::needs_join(&self.records[&position]);
 
         if crate::view::builder::starts_scope(event_type, self.saw_tool) {
             self.scope_start = position;
