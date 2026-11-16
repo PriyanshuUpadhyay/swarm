@@ -214,6 +214,26 @@ def test_rust_function_range():
 
 
 
+def test_ruff_gate():
+    """A ruff config in pyproject.toml decides which Python rule IDs the build owns, file by file."""
+    with scratch_repo():
+        rules = Path.home() / ".review-check" / "rules" / f"{Path.cwd().name}.md"
+        rules.parent.mkdir(parents=True, exist_ok=True)
+        rules.write_text("CI: `Lint` runs `ruff check`; config `.oxlintrc.json, pyproject.toml`\n")
+        toml = '[tool.ruff.lint]\nselect = ["E", "BLE"]\n[tool.ruff.lint.per-file-ignores]\n"tests/*" = ["BLE001"]\n'
+        code = "def f(job):\n    try:\n        job()\n    except:\n        pass\n    try:\n        job()\n    except Exception:\n        pass\n"
+        base = commit({"pyproject.toml": toml, ".oxlintrc.json": "{}", "a.py": "\n", "tests/t.py": "\n"}, "ruff base")
+        head = commit({"a.py": code, "tests/t.py": code}, "ruff change")
+        rc.start(f"{base}..{head}")
+        run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
+        units = {u["file"]: u["id"] for u in json.loads((run / "units.json").read_text())}
+        checklist = load_checklist(run)
+        a, t = checklist[units["a.py"]], checklist[units["tests/t.py"]]
+        assert {"PY-7", "PY-29"} <= set(a["tool"]) and not {"PY-7", "PY-29"} & set(a["rules"]), a
+        assert "PY-7" in t["tool"] and "PY-29" in t["rules"], "a per-file ignore keeps that ID with the seats"
+
+
+
 def test_catalog():
     """Rule IDs are unique, every regex compiles, and every `Check:` has bad, good, and exception fixtures."""
     catalog = rc.load_rules(sorted((HERE.parent / "references").glob("lens*.md")))
@@ -224,24 +244,27 @@ def test_catalog():
         for c in r["check"]:
             tool, _, name = c.partition(":")
             fixtures = HERE.parent / "fixtures" / tool / name
-            assert tool == "oxlint" and all(list(fixtures.glob(f"{k}.*")) for k in ("bad", "good", "exception")), c
+            assert tool in ("oxlint", "ruff") and all(list(fixtures.glob(f"{k}.*")) for k in ("bad", "good", "exception")), c
 
 
 
 def test_fixtures():
-    """Each `Check:` rule hits every `// expect` line of bad.* and nothing in good.* or exception.*, with the
-    oxlint on PATH (for a repo's own version: PATH=<repo>/node_modules/.bin:$PATH)."""
-    if not shutil.which("oxlint"):
-        print("fixtures skipped: oxlint is not on PATH")
-        return
-    root = HERE.parent / "fixtures" / "oxlint"
+    """Each `Check:` rule hits every `// expect` (or `# expect`) line of bad.* and nothing in good.* or
+    exception.*, with the tool on PATH (for a repo's own oxlint: PATH=<repo>/node_modules/.bin:$PATH)."""
+    lines = {"oxlint": lambda out: {d["labels"][0]["span"]["line"] for d in json.loads(out)["diagnostics"]},
+             "ruff": lambda out: {d["location"]["row"] for d in json.loads(out)}}
     for r in rc.load_rules(sorted((HERE.parent / "references").glob("lens*.md"))):
         for c in r["check"]:
-            rule = c.partition(":")[2]
+            tool, _, rule = c.partition(":")
+            if not shutil.which(tool):
+                print(f"fixtures skipped: {tool} is not on PATH ({r['id']})")
+                continue
+            root = HERE.parent / "fixtures" / tool
             for f in sorted((root / rule).iterdir()):
-                out = subprocess.run(["oxlint", "--type-aware", "-A", "all", "-D", rule, "-f", "json", str(f)],
-                                     cwd=root, capture_output=True, text=True).stdout
-                hits = {d["labels"][0]["span"]["line"] for d in json.loads(out)["diagnostics"]}
-                want = {i for i, l in enumerate(f.read_text().splitlines(), 1) if "// expect" in l}
-                assert hits == want, (r["id"], f.name, hits, want)
+                cmd = ["oxlint", "--type-aware", "-A", "all", "-D", rule, "-f", "json", str(f)] if tool == "oxlint" else \
+                    ["ruff", "check", "--isolated", "--no-cache", "--select", rule, "--output-format", "json", str(f)]
+                out = subprocess.run(cmd, cwd=root, capture_output=True, text=True).stdout
+                marker = "# expect" if tool == "ruff" else "// expect"
+                want = {i for i, l in enumerate(f.read_text().splitlines(), 1) if marker in l}
+                assert lines[tool](out) == want, (r["id"], f.name, lines[tool](out), want)
 

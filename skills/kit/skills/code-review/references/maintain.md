@@ -13,14 +13,17 @@ doubt. `Scope: added` matches `Applies:` against the unit's added lines only. Us
 token on the added line is the defect itself, never for a rule about callers, aliases, or data
 flow. Add a `lens-<name>.md` for a new language or platform in the same shape.
 
-`Check: <tool>:<rule>` names the lint rule that proves the whole rule text. The build gate owns
-the ID for a unit only when the repo's `CI:` line names a lint config that runs that rule at
-error level, with no options, on the unit's file, and not as a type-aware rule on a JS file. Else
-the seat owns it. A rule that a tool covers only in part splits into two IDs, one with `Check:`
+`Check: <tool>:<rule>` names the lint rule that proves the whole rule text. The tool is `oxlint`
+or `ruff`. The build gate owns the ID for a unit only when the repo's `CI:` line names a lint
+config that runs that rule on the unit's file. For oxlint the rule runs at error level, with no
+options, and not as a type-aware rule on a JS file. For ruff the config selects the code, no
+ignore, per-file ignore, or exclude can cover it, and the config has no `extend`. Use `ruff` only
+for a rule that has no ruff setting and is not a preview rule. Else the seat owns it. A rule that a tool covers only in part splits into two IDs, one with `Check:`
 and one for the seat, as TS-1 and TS-33 do. Every `Check:` needs `fixtures/<tool>/<rule>/` with
-`bad`, `good`, and `exception` files, where each `// expect` line of `bad` is a hit and the other
-files have none. `scripts/test_review_check.py` runs them with the oxlint on PATH, so run it with
-`PATH=<repo>/node_modules/.bin:$PATH` to test the repo's own version before you add a `Check:`.
+`bad`, `good`, and `exception` files, where each `// expect` (ruff: `# expect`) line of `bad` is a
+hit and the other files have none. `scripts/test_review_check.py` runs them with the oxlint and
+ruff on PATH, so run it with `PATH=<repo>/node_modules/.bin:$PATH` to test the repo's own version
+before you add a `Check:`. Type-aware oxlint rules also need `oxlint-tsgolint` on that PATH.
 
 ## Rules for each repo
 
@@ -32,7 +35,9 @@ review raises the same point on a third PR.
 
 A rules file may have one line ``CI: `<check name>` runs `<command>`; config `<lint config>` ``.
 `<check name>` is the GitHub check that `build` reads, `<command>` is what `build --run` runs from
-the repo root, and the JSON lint config decides which `Check:` IDs the build owns. The command
+the repo root, and the lint config decides which `Check:` IDs the build owns. The config may list
+several files with commas, such as `config `.oxlintrc.json, pyproject.toml``. A `.json` file is
+the oxlint config, and a `.toml` file is the ruff config (`[tool.ruff]` in `pyproject.toml`). The command
 must not write files, so check that its type checker sets `noEmit`.
 
 ## Script limits

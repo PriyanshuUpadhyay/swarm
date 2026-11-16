@@ -1,5 +1,5 @@
 # Rule loading, tool ownership, and review seat assignment.
-import fnmatch, json, re
+import fnmatch, json, re, tomllib
 from pathlib import Path
 
 
@@ -65,15 +65,21 @@ def ci_of(rules_file):
 
 
 def lint_config(ci, head):
+    """{tool: parsed config} for each file in the `config` list: a `.json` file is oxlint, a `.toml` file is ruff."""
     from review_check import git
-    if not ci or not ci["config"]:
-        return None
-    text = git("show", f"{head}:{ci['config']}", check=False) if head else \
-        (Path(ci["config"]).read_text(encoding="utf-8") if Path(ci["config"]).exists() else "")
-    try:
-        return json.loads(text)
-    except ValueError:  # a JSONC config with comments leaves every rule with the seats
-        return None
+    configs = {}
+    for name in (n.strip() for n in ci["config"].split(",")) if ci and ci["config"] else []:
+        text = git("show", f"{head}:{name}", check=False) if head else \
+            (Path(name).read_text(encoding="utf-8") if Path(name).exists() else "")
+        try:
+            if name.endswith(".json"):
+                configs["oxlint"] = json.loads(text)
+            elif name.endswith(".toml"):
+                data = tomllib.loads(text)
+                configs["ruff"] = data.get("tool", {}).get("ruff") if Path(name).name == "pyproject.toml" else data
+        except ValueError:  # a JSONC config with comments, or bad TOML, leaves that tool's rules with the seats
+            pass
+    return configs
 
 
 
@@ -83,10 +89,13 @@ def lint_name(name):
 
 
 def tool_owned(cfg, check, path):
-    """True when the repo's oxlint config runs `check` on `path` at error level with default options.
-    The fixtures run with default options, so a rule with options stays with the seats."""
+    """True when the repo's lint config for the check's tool runs `check` on `path` at error level with default
+    options. The fixtures run with default options, so a rule with options stays with the seats."""
     from review_check import glob_match, lint_name
     tool, _, rule = check.partition(":")
+    if tool == "ruff" and cfg.get("ruff"):
+        return ruff_owned(cfg["ruff"], rule, path)
+    cfg = cfg.get("oxlint")
     if tool != "oxlint" or cfg is None:
         return False
     if rule.startswith("typescript/") and Path(path).suffix not in (".ts", ".tsx", ".mts", ".cts"):
@@ -99,6 +108,37 @@ def tool_owned(cfg, check, path):
                                            if glob_match(path, o.get("files", []))]:
         level = next((v for k, v in block.items() if lint_name(k) == lint_name(rule)), level)
     return level in ("error", "deny", 2)
+
+
+
+RUFF_DEFAULT = ["E4", "E7", "E9", "F"]  # ruff's own default `select`
+
+
+def ruff_owned(cfg, code, path):
+    """True when the ruff config selects `code` for `path`. Every doubt leaves the rule with the seats: an
+    `extend` base we cannot read, an ignore that may cover the code, and a path glob that may cover the file."""
+    from review_check import glob_match
+    lint = {**cfg, **cfg.get("lint", {})}  # top-level keys are ruff's older spelling of the `lint` keys
+    if cfg.get("extend") or Path(path).suffix not in (".py", ".pyi"):
+        return False
+
+    def near(globs):  # ruff reads a glob with no "/" against any folder, so match it there too
+        return [x for g in globs for x in (g, f"**/{g}", g.rstrip("/") + "/**", f"**/{g.rstrip('/')}/**")]
+
+    if glob_match(path, near(cfg.get("exclude", []) + cfg.get("extend-exclude", []))):
+        return False
+    letters, digits = re.fullmatch(r"([A-Z]+)(\d+)", code).groups()
+
+    def selects(s):  # "SIM" and "SIM1" select SIM116; "PL" is a group we do not expand, so it does not
+        m = re.fullmatch(r"([A-Z]+)(\d*)", s)
+        return s == "ALL" or bool(m and m.group(1) == letters and digits.startswith(m.group(2)))
+
+    ignores = lint.get("ignore", []) + lint.get("extend-ignore", [])
+    for key in ("per-file-ignores", "extend-per-file-ignores"):
+        ignores += [s for g, codes in lint.get(key, {}).items() if glob_match(path, near([g])) for s in codes]
+    if any(s == "ALL" or code.startswith(s) for s in ignores):
+        return False
+    return any(selects(s) for s in lint.get("select", RUFF_DEFAULT) + lint.get("extend-select", []))
 
 
 

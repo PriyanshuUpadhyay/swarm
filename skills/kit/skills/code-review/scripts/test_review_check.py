@@ -160,6 +160,7 @@ if __name__ == "__main__":
     test_loop_deleted_run_budget()
     test_shards()
     test_rust_function_range()
+    test_ruff_gate()
     test_catalog()
     test_fixtures()
     # Each legacy case is a separate task on the same default branch key, and some need many starts.
