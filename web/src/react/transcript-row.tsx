@@ -1,8 +1,10 @@
 // Transcript rows, message bubbles, and disclosures.
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, LoaderCircleIcon, MailIcon, PencilIcon } from "lucide-react";
+import { useState } from "react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
 import { duration, imagesOf, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
+import { fold, type FoldLevel } from "../core/fold-display";
 import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
 import { MarkdownView } from "./markdown-view";
@@ -50,6 +52,39 @@ function MdBody({ row }: { row: Row }) {
     case "tree":
       return <div className="md"><MarkdownView display={body.display} /></div>;
   }
+}
+
+// The level each reply is read at, by row id. Rows remount as the transcript scrolls, so a
+// component state alone would lose the reader's choice.
+const foldLevels = new Map<string, FoldLevel>();
+const FOLD_LEVELS: { level: FoldLevel; label: string }[] = [
+  { level: "full", label: "Full" },
+  { level: "points", label: "Points" },
+  { level: "outline", label: "Outline" },
+];
+
+/** A long reply with a Full, Points, and Outline switch; a reply that a fold would barely shorten has none. */
+function FoldableBody({ row }: { row: Row }) {
+  const [level, setLevel] = useState<FoldLevel>(() => foldLevels.get(row.id) ?? "full");
+  const body = paintBodyOf(row);
+  if (body.kind !== "tree") return <MdBody row={row} />;
+  const offered = FOLD_LEVELS.filter(({ level: l }) => fold(body.display, l) !== null);
+  if (offered.length < 2) return <MdBody row={row} />;
+  const shown = fold(body.display, level) ?? body.display;
+  const pick = (next: FoldLevel) => {
+    foldLevels.set(row.id, next);
+    setLevel(next);
+  };
+  return (
+    <>
+      <div className="seg fold-levels" role="group" aria-label="Reply detail">
+        {offered.map(({ level: l, label }) => (
+          <button key={l} type="button" aria-pressed={l === level} onClick={() => pick(l)}>{label}</button>
+        ))}
+      </div>
+      <div className="md"><MarkdownView display={shown} /></div>
+    </>
+  );
 }
 
 function RowBody(ctx: Ctx) {
@@ -134,7 +169,7 @@ function RowBody(ctx: Ctx) {
     return (
       <div className="msg">
         <CopyMessage row={row} />
-        <MdBody row={row} />
+        <FoldableBody row={row} />
       </div>
     );
   const label = <div className="row-label">{LABEL[row.kind] ?? row.kind}</div>;

@@ -127,6 +127,15 @@
 .copy-msg:focus-visible {
   opacity: 1;
 }
+/* The detail switch of a long reply sits above it, quiet until the reader uses it. */
+.fold-levels {
+  margin-bottom: 6px;
+  opacity: 0.7;
+}
+.fold-levels:hover,
+.fold-levels:focus-within {
+  opacity: 1;
+}
 .bubble-row {
   display: flex;
   justify-content: flex-end;
