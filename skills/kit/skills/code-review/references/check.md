@@ -57,6 +57,7 @@ reviewed head. The live checkout can move while the build runs. `build --run` re
 the scratch verify worktree before checkout; ignored files stay. A `local` build uses the live tree and prints that limit.
 If CI needs untracked files (`node_modules`, `.env`, generated code), use `build <run>` or install them in `tmp/review-check/verify` once; only ignored files stay between builds.
 Build may run while seats work, because seats never judge build-gate IDs.
+Test gates use the proof commands owned by `blocks/prove-it-works/SKILL.md`; build records their result in `build.json` and keeps the full runner log in `build-tests.log`. Compile-only and lint-only gates keep their existing build scope. For a change that must keep behavior, include that block's canary evidence in the review input. Expected-output comparisons also follow that block.
 `build --run --force` is refused; wait for the running build to release its lock.
 A CI descendant that starts its own session escapes the group kill and must be stopped by hand.
 

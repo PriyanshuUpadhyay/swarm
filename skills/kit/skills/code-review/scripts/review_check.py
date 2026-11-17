@@ -40,6 +40,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "references"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "blocks/prove-it-works/scripts"))
+import proof  # noqa: E402
 import step_run  # noqa: E402
 from review_check_start import start_lock, start, start_locked
 from review_check_rules import expand, glob_match, globs_of, load_rules, ci_of, lint_config, lint_name, tool_owned, seat_map

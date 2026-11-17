@@ -57,10 +57,10 @@ def load_rules(files, repo_files=()):
 
 
 def ci_of(rules_file):
-    """{name, cmd, config} from the line ``CI: `<check name>` runs `<command>`; config `<file>` ``."""
-    m = re.search(r"^CI: `([^`]+)` runs `([^`]+)`(?:; config `([^`]+)`)?", rules_file.read_text(encoding="utf-8"), re.M) \
+    """Read the CI command, lint config, and optional test-gate marker."""
+    m = re.search(r"^CI: `([^`]+)` runs `([^`]+)`(?:; config `([^`]+)`)?(?P<tests>; tests)?", rules_file.read_text(encoding="utf-8"), re.M) \
         if rules_file.exists() else None
-    return {"name": m.group(1), "cmd": m.group(2), "config": m.group(3)} if m else None
+    return {"name": m.group(1), "cmd": m.group(2), "config": m.group(3), **({"tests": True} if m["tests"] else {})} if m else None
 
 
 

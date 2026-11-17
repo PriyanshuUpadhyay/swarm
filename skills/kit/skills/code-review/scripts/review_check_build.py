@@ -41,7 +41,7 @@ def build_signals():
 
 def build(name, *opts):
     """Write build.json from CI or a command on the reviewed commit's verify worktree."""
-    from review_check import BUILD_TIMEOUT, CLEANUP_SECONDS, build_signals, home, step_run, tree_digest, verify_tree
+    from review_check import BUILD_TIMEOUT, CLEANUP_SECONDS, build_signals, git, home, proof, step_run, tree_digest, verify_tree
     if opts not in ((), ("--run",)):
         raise SystemExit("build accepts only --run; --force cannot override a running build")
     d = home() / name
@@ -49,6 +49,8 @@ def build(name, *opts):
     ci, head = t["ci"], t["head"]
     if not ci:
         raise SystemExit("the repo rules file has no `CI:` line, so this run has no build gate")
+    test_gate = ci.get("tests", False) or proof.runs_tests(ci["cmd"])
+    test_proof, test_error = None, None
     cwd = Path.cwd()
     if opts[:1] == ("--run",):
         if not head:
@@ -70,6 +72,17 @@ def build(name, *opts):
                         signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
                     stdout, stderr = process.communicate(timeout=BUILD_TIMEOUT)
                     conclusion, tail = ("success" if process.returncode == 0 else "failure"), (stdout + stderr).splitlines()[-40:]
+                    if test_gate:
+                        log = d / "build-tests.log"
+                        log.write_text(stdout + stderr, encoding="utf-8")
+                        sources = [cwd / p for p in git("-C", str(cwd), "ls-files", "-z").split("\0") if p and (cwd / p).is_file()]
+                        try:
+                            counts = proof.test_result(log, sources)
+                            test_proof = {"path": log.name, **counts}
+                        except (OSError, ValueError) as error:
+                            test_error = str(error)
+                            if conclusion == "success":
+                                conclusion = "incomplete"
                 except (subprocess.TimeoutExpired, KeyboardInterrupt, SystemExit) as error:
                     if process is None:
                         raise
@@ -122,7 +135,14 @@ def build(name, *opts):
         last = found[-1]
         result = {"source": "check-run", "name": ci["name"],
                   "conclusion": "success" if last["conclusion"] == "success" else "failure", "tail": [last["html_url"]]}
+        if test_gate and result["conclusion"] == "success":
+            result["conclusion"] = "incomplete"
+            test_error = "CI status has no parsed runner log; use `build <run> --run` for test proof"
+    if test_gate:
+        result |= {"tests": test_proof, "test_error": test_error}
     result |= {"head": head, "digest": None if head else tree_digest()}
     (d / "build.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"build: {result['conclusion']} ({result['source']} `{result['name']}`)")
+    if test_error:
+        print(f"tests: {test_error}")
 
