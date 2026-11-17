@@ -16,6 +16,9 @@ The kit root, with its `blocks/` and `references/` folders, is two folders up fr
 
 ## Pick a preset
 
+For a teaching session, read `skills/socratic-tutor/SKILL.md` and follow its session loop directly.
+That skill owns tutoring intent and resume; it needs no preset or plan approval.
+
 Match the task to one row, then read the file that row names in full before you plan, because it
 holds the verb's own rules next to its preset. A row that names no file is the folder
 `<kit root>/presets/<verb>/PRESET.md`. "<verb> continue <folder>" picks up that verb's run. When no row fits, or
