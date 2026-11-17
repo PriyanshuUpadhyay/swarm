@@ -298,26 +298,16 @@ async fn drop_unnamed_chats(app: &App, folders: Vec<PathBuf>, archived: Vec<Stri
     }
 }
 
-/// The worktree top of each folder that sits in a chat worktree, once each. Only a path with a
-/// `chat-` part costs a git call, so an archive of plain chats makes none.
+/// The chat worktree top of each folder, once each (ADR 0146).
 fn chat_tops(folders: &[PathBuf]) -> Vec<String> {
+    let mut folders = folders.to_vec();
+    folders.sort();
+    folders.dedup();
+
+    // Two subfolders of one worktree give the same top.
     let mut tops: Vec<String> = folders
         .iter()
-        .filter(|folder| {
-            folder.components().any(|part| {
-                part.as_os_str()
-                    .to_string_lossy()
-                    .starts_with(swarm::task::CHAT_NAME)
-            })
-        })
-        .filter_map(|folder| {
-            lifecycle::check_git(&folder.to_string_lossy(), &["rev-parse", "--show-toplevel"]).ok()
-        })
-        .filter(|top| {
-            Path::new(top)
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().starts_with(swarm::task::CHAT_NAME))
-        })
+        .filter_map(|folder| swarm::task::chat_top(folder))
         .collect();
     tops.sort();
     tops.dedup();

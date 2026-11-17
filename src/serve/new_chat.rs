@@ -138,6 +138,7 @@ async fn forget_chat(app: &App, cwd: &str, session: Option<&str>) {
         }
     })
     .await;
+
     if let Err(err) = removed {
         eprintln!("swarm: the cleanup of a chat that did not start failed: {err}");
     }

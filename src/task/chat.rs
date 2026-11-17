@@ -4,8 +4,7 @@
 use super::*;
 
 /// A chat worktree's placeholder name is this and `CHAT_ID_LEN` hex digits.
-/// The folder and branch name start of a chat worktree before its first prompt.
-pub const CHAT_NAME: &str = "chat-";
+const CHAT_NAME: &str = "chat-";
 const CHAT_ID_LEN: usize = 8;
 /// The most words of a first prompt that go into a branch name.
 const SLUG_WORDS: usize = 5;
@@ -165,6 +164,24 @@ fn claim_record(
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),
         Err(error) => Err(format!("cannot write the task record: {error}")),
     }
+}
+
+/// The top folder of the chat worktree that `folder` sits in, or None for any other folder.
+/// Only a path with a `chat-` part costs a git call.
+pub fn chat_top(folder: &Path) -> Option<String> {
+    let in_chat = |path: &Path| {
+        path.components()
+            .any(|part| part.as_os_str().to_string_lossy().starts_with(CHAT_NAME))
+    };
+    if !in_chat(folder) {
+        return None;
+    }
+
+    let top = git(folder, &["rev-parse", "--show-toplevel"])?;
+    Path::new(&top)
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with(CHAT_NAME))
+        .then_some(top)
 }
 
 /// Removes a chat worktree that a failed chat start left, and its record, through Worktrunk, so

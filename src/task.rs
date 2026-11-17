@@ -1,6 +1,7 @@
 //! Agent task worktrees (ADR 0135, ADR 0146). A hub is a repository whose git common dir is bare,
 //! with each branch in its own worktree. Its main worktree, the one with the default branch, is
-//! read-only for agents: each new chat on it gets its own worktree, and swarm lands and removes it.
+//! read-only for agents: each new chat on it gets its own worktree unless it asks to stay there,
+//! and swarm lands and removes that worktree.
 
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -354,7 +355,7 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Ta
 #[path = "task/chat.rs"]
 mod chat;
 pub use chat::{
-    CHAT_NAME, chat_placeholder, drop_unnamed_chat, name_chat, record_chat, remove_failed_chat,
+    chat_placeholder, chat_top, drop_unnamed_chat, name_chat, record_chat, remove_failed_chat,
     unnamed_chat,
 };
 #[path = "task/branches.rs"]
