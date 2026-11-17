@@ -28,9 +28,11 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     }
     let snapshot_app = app.clone();
     let allowed_cwd = body.cwd.clone();
-    tokio::task::spawn_blocking(move || {
+    let here = body.here;
+    let main_of = tokio::task::spawn_blocking(move || {
         let (tree, saved) = fresh_lifecycle_tree(&snapshot_app)?;
-        let workspace = tree.workspace(&allowed_cwd).map(|(_, w)| w);
+        let found = tree.workspace(&allowed_cwd);
+        let workspace = found.map(|(_, w)| w);
         if workspace.is_none() && !tree.projects.iter().any(|p| p.path == allowed_cwd) {
             return Err(error(
                 StatusCode::FORBIDDEN,
@@ -41,13 +43,20 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
         if is_read_only(&tree, &saved, &allowed_cwd) {
             return Err(read_only_error("chat"));
         }
-        Ok(())
+        Ok(found
+            .filter(|_| !here && hub_main(Path::new(&allowed_cwd)))
+            .map(|(project, _)| project.path.clone()))
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))??;
+    let own_worktree = main_of.is_some();
+    let cwd = match main_of {
+        Some(project) => chat_worktree(app, project).await?,
+        None => body.cwd,
+    };
     let mut call = CliCall {
         args: Vec::new(),
-        cwd: body.cwd.into(),
+        cwd: cwd.clone().into(),
         session: None,
         adapter: "tmux-swarm".into(),
     };
@@ -63,6 +72,15 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     }
     call.session = Some(session.to_owned());
     drop(create);
+    if own_worktree {
+        let (root, path, id) = (app.root.clone(), cwd.clone(), session.to_owned());
+        tokio::task::spawn_blocking(move || {
+            swarm::task::record_chat(&root, Path::new(&path), Some(id))
+        })
+        .await
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "chat record task failed"))?
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+    }
     call.args = vec!["launch".into(), "orchestrator".into(), role.to_owned()];
     for (flag, value) in [
         ("--provider", body.provider.as_deref()),
@@ -77,7 +95,53 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     let output = run_cli(app, call, None).await?;
     let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
-    Ok(json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane}))
+    Ok(
+        json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane, "workspace": cwd}),
+    )
+}
+
+/// True when `cwd` is the default-branch checkout of a worktree hub.
+fn hub_main(cwd: &Path) -> bool {
+    swarm::task::hub(cwd)
+        .is_some_and(|hub| std::fs::canonicalize(cwd).is_ok_and(|cwd| cwd == hub.main))
+}
+
+/// A new worktree for one chat on `swarm/chat-<8 hex>`, made by the New workspace path, so it
+/// starts from a fresh origin and runs the project's setup script. The first prompt names the
+/// branch (ADR 0146). A failed setup starts no chat (ADR 0097).
+async fn chat_worktree(app: &App, project: String) -> Result<String, ApiError> {
+    let id = uuid::Uuid::new_v4().simple().to_string();
+    let request = lifecycle::NewWorkspace {
+        project,
+        name: format!("chat-{}", &id[..8]),
+        folder: None,
+        prefix: Some(swarm::task::PREFIX.into()),
+        mode: lifecycle::Mode::NewBranch,
+        base: None,
+        branch: None,
+        pr: None,
+        issue: None,
+    };
+    let made = execute_lifecycle(app, LifecycleAction::New(request)).await?;
+    let path = made["workspace"]
+        .as_str()
+        .filter(|_| made["created"] == true)
+        .ok_or_else(|| {
+            error(
+                StatusCode::CONFLICT,
+                "Swarm made no worktree for the chat; try again",
+            )
+        })?;
+    match made["setup"]["state"].as_str() {
+        None | Some("completed") => Ok(path.to_owned()),
+        Some(state) => Err(error(
+            StatusCode::BAD_GATEWAY,
+            &format!(
+                "The setup script of the new chat worktree {path} ended with {state}, so no chat started. {}",
+                made["setup"]["error"].as_str().unwrap_or_default()
+            ),
+        )),
+    }
 }
 
 /// True when the workspace that holds `cwd` is archived, missing, or removed. That is the deepest

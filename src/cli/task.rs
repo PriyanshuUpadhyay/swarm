@@ -4,7 +4,8 @@
 use super::*;
 use std::time::{Duration, Instant};
 
-const TASK_USAGE: &str = "usage: swarm task land [<name>] [--pr] | drop [<name>] | list | sweep [--apply]";
+const TASK_USAGE: &str =
+    "usage: swarm task land [<name>] [--pr] | drop [<name>] | list | sweep [--apply]";
 /// A Claude shell call stops at 2 minutes, so land waits less, and running it again keeps waiting.
 const LAND_WAIT: Duration = Duration::from_secs(100);
 

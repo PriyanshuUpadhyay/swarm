@@ -69,10 +69,19 @@ fn chat(root: &Path, main: &Path, name: &str, session: Option<&str>) -> Task {
     let branch = format!("{PREFIX}{name}");
     git(
         main,
-        &["worktree", "add", "-q", "-b", &branch, path.to_str().unwrap()],
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            &branch,
+            path.to_str().unwrap(),
+        ],
     )
     .unwrap();
-    record_chat(root, &path, session.map(String::from)).unwrap().0
+    record_chat(root, &path, session.map(String::from))
+        .unwrap()
+        .0
 }
 
 #[test]
