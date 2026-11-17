@@ -224,9 +224,11 @@ async fn name_chat_worktree(app: &App, cwd: PathBuf, prompt: String) {
             return Ok(());
         };
 
-        // Only the placeholder name goes; a name the owner gave the row stays.
-        let path = cwd.to_string_lossy().into_owned();
-        let placeholder = cwd
+        // The row is the worktree's, also for a chat in a subfolder. Only the placeholder name
+        // goes; a name the owner gave the row stays.
+        let path = lifecycle::check_git(&cwd.to_string_lossy(), &["rev-parse", "--show-toplevel"])
+            .map_err(|err| format!("{branch} is named, but its worktree is unknown: {err}"))?;
+        let placeholder = Path::new(&path)
             .file_name()
             .map(|name| name.to_string_lossy().into_owned());
         let name = branch.trim_start_matches(swarm::task::PREFIX).to_owned();
@@ -250,28 +252,25 @@ async fn name_chat_worktree(app: &App, cwd: PathBuf, prompt: String) {
 }
 
 /// Removes the worktree of each archived chat that never got a prompt (ADR 0146), unless a chat
-/// that is not archived still runs in it, and ends the app's shells in it. A worktree with
-/// changes or commits stays, and the refusal only logs.
+/// that is not archived still runs in it or below it, and ends the app's shells in it. A worktree
+/// with changes or commits stays, and the refusal only logs.
 async fn drop_unnamed_chats(app: &App, folders: Vec<PathBuf>, archived: Vec<String>) {
     let app = app.clone();
     let dropped = tokio::task::spawn_blocking(move || {
         let wt = swarm::task::wt_program();
         let connection = read_connection(&app.root).map_err(|err| err.to_string())?;
-        for folder in folders {
-            let folder_text = folder.to_string_lossy();
-            let below = format!("{}/%", folder_text.trim_end_matches('/'));
+        for top in chat_tops(&folders) {
+            let below = format!("{}/%", top.trim_end_matches('/'));
 
             // The ids of this call count as archived, so the check does not hang on how the CLI
-            // writes the row. A chat in a subfolder runs in the worktree too.
+            // writes the row.
             let mut statement = connection
                 .prepare(
                     "SELECT id FROM session WHERE (cwd = ?1 OR cwd LIKE ?2) AND archived_at IS NULL",
                 )
                 .map_err(|err| err.to_string())?;
             let live = statement
-                .query_map([folder_text.as_ref(), below.as_str()], |row| {
-                    row.get::<_, String>(0)
-                })
+                .query_map([top.as_str(), below.as_str()], |row| row.get::<_, String>(0))
                 .map_err(|err| err.to_string())?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|err| err.to_string())?;
@@ -279,13 +278,13 @@ async fn drop_unnamed_chats(app: &App, folders: Vec<PathBuf>, archived: Vec<Stri
                 continue;
             }
 
-            match swarm::task::drop_unnamed_chat(&app.root, &wt, &folder) {
+            match swarm::task::drop_unnamed_chat(&app.root, &wt, Path::new(&top)) {
                 Ok(Some(_)) => {
-                    shells::close_all(&app, &folder_text);
-                    forget_folder(&app.root, &folder_text);
+                    shells::close_all(&app, &top);
+                    forget_folder(&app.root, &top);
                 }
                 Ok(None) => {}
-                Err(err) => eprintln!("swarm: kept the chat worktree {folder_text}: {err}"),
+                Err(err) => eprintln!("swarm: kept the chat worktree {top}: {err}"),
             }
         }
         Ok::<_, String>(())
@@ -299,18 +298,36 @@ async fn drop_unnamed_chats(app: &App, folders: Vec<PathBuf>, archived: Vec<Stri
     }
 }
 
+/// The worktree top of each folder that sits in a chat worktree, once each. Only a path with a
+/// `chat-` part costs a git call, so an archive of plain chats makes none.
+fn chat_tops(folders: &[PathBuf]) -> Vec<String> {
+    let mut tops: Vec<String> = folders
+        .iter()
+        .filter(|folder| {
+            folder.components().any(|part| {
+                part.as_os_str()
+                    .to_string_lossy()
+                    .starts_with(swarm::task::CHAT_NAME)
+            })
+        })
+        .filter_map(|folder| {
+            lifecycle::check_git(&folder.to_string_lossy(), &["rev-parse", "--show-toplevel"]).ok()
+        })
+        .filter(|top| {
+            Path::new(top)
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with(swarm::task::CHAT_NAME))
+        })
+        .collect();
+    tops.sort();
+    tops.dedup();
+    tops
+}
+
 /// Clears the owner choices of a removed chat worktree, as the app's own Remove does.
-pub(super) fn forget_folder(root: &std::path::Path, folder: &str) {
+pub(super) fn forget_folder(root: &Path, folder: &str) {
     let cleared = choices_store::update(root, None, |owner, state| {
-        owner.pinned.remove(folder);
-        owner.archived.remove(folder);
-        owner.names.remove(folder);
-        owner.tabs.remove(folder);
-        owner.project_paths.retain(|path| path != folder);
-        for order in owner.workspace_order.values_mut() {
-            order.retain(|path| path != folder);
-        }
-        lifecycle::clear_selection(state, folder);
+        lifecycle::forget_workspace(owner, state, folder);
         Ok(())
     });
     if let Err(err) = cleared {

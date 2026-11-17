@@ -4,7 +4,8 @@
 use super::*;
 
 /// A chat worktree's placeholder name is this and `CHAT_ID_LEN` hex digits.
-const CHAT_NAME: &str = "chat-";
+/// The folder and branch name start of a chat worktree before its first prompt.
+pub const CHAT_NAME: &str = "chat-";
 const CHAT_ID_LEN: usize = 8;
 /// The most words of a first prompt that go into a branch name.
 const SLUG_WORDS: usize = 5;
@@ -151,6 +152,7 @@ fn claim_record(
         .write(true)
         .create_new(true)
         .open(&path);
+
     match file {
         Ok(mut file) => match std::io::Write::write_all(&mut file, text.as_bytes()) {
             Ok(()) => Ok(Some((name, path))),

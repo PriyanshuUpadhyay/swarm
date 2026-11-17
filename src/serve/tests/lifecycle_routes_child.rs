@@ -542,8 +542,8 @@ esac
         assert!(!Path::new(&folders[0]).exists());
         assert!(Path::new(&folders[1]).is_dir());
 
-        // A second chat in the same unused worktree, here in a subfolder of it, keeps it when the
-        // first chat is archived.
+        // A live chat at the top of an unused worktree keeps it when a chat in a subfolder of it is
+        // archived.
         let first = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
             .await
             .unwrap()
@@ -556,8 +556,9 @@ esac
             .0;
 
         assert_eq!(second["workspace"], json!(shared));
-        let id = chat_session(&first, &shared);
-        chat_session(&second, &format!("{shared}/sub"));
+        std::fs::create_dir(Path::new(&shared).join("sub")).unwrap();
+        let id = chat_session(&first, &format!("{shared}/sub"));
+        chat_session(&second, &shared);
         let _ = call_action(&fixture, "/api/sessions/archive", json!({"ids":[id]}))
             .await
             .unwrap();

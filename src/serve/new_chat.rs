@@ -114,25 +114,32 @@ async fn forget_chat(app: &App, cwd: &str, session: Option<&str>) {
             return;
         }
 
+        // A session that stays must keep its folder.
         if let Err(err) = run_cli(app, call.args(&["session", "archive", session]), None).await {
             eprintln!(
-                "swarm: the session {session} of a chat that did not start stays: {}",
+                "swarm: kept the chat worktree {cwd}, because its session {session} stays: {}",
                 shells::api_text(&err)
             );
+            return;
         }
     }
 
-    let (root, path) = (app.root.clone(), PathBuf::from(cwd));
+    let (app, cwd) = (app.clone(), cwd.to_owned());
     let removed = tokio::task::spawn_blocking(move || {
-        swarm::task::remove_failed_chat(&root, &swarm::task::wt_program(), &path)
+        let path = PathBuf::from(&cwd);
+        match swarm::task::remove_failed_chat(&app.root, &swarm::task::wt_program(), &path) {
+            Ok(()) => {
+                shells::close_all(&app, &cwd);
+                action_execute::forget_folder(&app.root, &cwd);
+            }
+            Err(err) => {
+                eprintln!("swarm: kept the chat worktree {cwd} of a chat that did not start: {err}")
+            }
+        }
     })
     .await;
-    if matches!(removed, Ok(Ok(()))) {
-        shells::close_all(app, cwd);
-        action_execute::forget_folder(&app.root, cwd);
-    }
-    if !matches!(removed, Ok(Ok(()))) {
-        eprintln!("swarm: kept the chat worktree {cwd} of a chat that did not start: {removed:?}");
+    if let Err(err) = removed {
+        eprintln!("swarm: the cleanup of a chat that did not start failed: {err}");
     }
 }
 

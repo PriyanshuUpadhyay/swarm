@@ -122,6 +122,7 @@ impl Hub {
                 "origin/main",
             ],
         );
+
         let (_, warning) = swarm::task::record_chat(&self.root, &path, None).unwrap();
         assert_eq!(warning, None);
         path

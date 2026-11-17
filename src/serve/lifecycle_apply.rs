@@ -111,18 +111,10 @@ pub(super) fn apply_lifecycle(
             // A refused removal keeps the workspace, so its shells end only after the removal ran.
             shells::close_all(app, &p.workspace);
             choices_store::update(&app.root, None, |owner, state| {
-                owner.pinned.remove(&p.workspace);
-                owner.archived.remove(&p.workspace);
-                owner.names.remove(&p.workspace);
-                owner.tabs.remove(&p.workspace);
-                owner.project_paths.retain(|path| path != &p.workspace);
+                lifecycle::forget_workspace(owner, state, &p.workspace);
                 if !owner.project_paths.contains(&project.path) {
                     owner.project_paths.push(project.path.clone());
                 }
-                if let Some(order) = owner.workspace_order.get_mut(&project.path) {
-                    order.retain(|path| path != &p.workspace);
-                }
-                lifecycle::clear_selection(state, &p.workspace);
                 Ok(())
             })
             .map_err(choice_error)?;
