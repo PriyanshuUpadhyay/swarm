@@ -121,6 +121,11 @@ export function NewChatMenu({ app, open }: { app: App; open: RefObject<((anchor:
           <DropdownMenuItem onSelect={() => void app.startChat(anchor.workspace.id, {})}>
             <PlusIcon /> Default profile
           </DropdownMenuItem>
+          {anchor.workspace.startsChatWorktree && (
+            <DropdownMenuItem data-testid="new-chat-here" onSelect={() => void app.startChat(anchor.workspace.id, { here: true })}>
+              <PlusIcon /> Default profile, no new worktree
+            </DropdownMenuItem>
+          )}
           {profiles === null && <DropdownMenuItem disabled>Reading profiles…</DropdownMenuItem>}
           {typeof profiles === "string" && <DropdownMenuItem disabled>Profiles unavailable: {profiles}</DropdownMenuItem>}
           {Array.isArray(profiles) &&

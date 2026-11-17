@@ -1,6 +1,7 @@
-//! Agent task worktrees (ADR 0135). A hub is a repository whose git common dir is bare, with each
-//! branch in its own worktree. Its main worktree, the one with the default branch, is read-only
-//! for agents: an agent makes a task worktree with Worktrunk, and swarm lands and removes it.
+//! Agent task worktrees (ADR 0135, ADR 0146). A hub is a repository whose git common dir is bare,
+//! with each branch in its own worktree. Its main worktree, the one with the default branch, is
+//! read-only for agents: each new chat on it gets its own worktree unless it asks to stay there,
+//! and swarm lands and removes that worktree.
 
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -18,6 +19,11 @@ pub struct Hub {
     pub default: String,
     /// The worktree that has the default branch checked out, canonical.
     pub main: PathBuf,
+}
+
+/// True when `reference`, a full ref name, exists in the repository at `dir`.
+fn ref_exists(dir: &Path, reference: &str) -> bool {
+    git(dir, &["show-ref", "--verify", "--quiet", reference]).is_some()
 }
 
 fn git(dir: &Path, args: &[&str]) -> Option<String> {
@@ -253,96 +259,6 @@ fn now() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-/// `swarm task start <slug>`: a worktree on `swarm/<slug>` from a fresh `origin/<default>` (or the
-/// local default branch with no origin), its record, and the ref hook. A left-over `swarm/<slug>`
-/// with no worktree is reopened at its own commit; one that this session's record names returns
-/// that record; one that another worktree holds is refused with its path. Returns the record and a
-/// warning when the hook could not be set.
-pub fn start(
-    root: &Path,
-    wt: &Path,
-    cwd: &Path,
-    slug: &str,
-    owner: (Option<String>, Option<String>),
-) -> Result<(Task, Option<String>), String> {
-    // A leading `-` would read as an option, so `start --help` makes no task.
-    if slug.is_empty()
-        || slug.starts_with('-')
-        || !slug
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    {
-        return Err(format!(
-            "task name {slug:?} must use a-z, 0-9, and -, start with a letter or digit, like fix-login"
-        ));
-    }
-    let hub = hub(cwd).ok_or("this folder is not in a worktree hub (a bare .bare with wt/)")?;
-    let branch = format!("{PREFIX}{slug}");
-    let repo = hub.common.to_string_lossy().into_owned();
-    let base = fresh_origin_base(&hub.common, &hub.default)?;
-    let sync_warning = base
-        .as_ref()
-        .and_then(|base| origin::sync_default(&hub, base, false).err());
-    let created = match branch_state(&hub.common, &branch) {
-        BranchState::Checkout(path) => {
-            let mine = read_record(root, &repo, &branch).filter(|task| {
-                owner.0.is_some()
-                    && task.session == owner.0
-                    && resolve(Path::new("/"), Path::new(&task.path))
-                        == resolve(Path::new("/"), &path)
-            });
-            return match mine {
-                Some(task) => Ok((task, sync_warning)),
-                None => Err(format!(
-                    "{branch} is already checked out at {}, and this session did not start it there; pick another name, or ask the owner",
-                    path.display()
-                )),
-            };
-        }
-        BranchState::Free => run(
-            wt,
-            &hub.main,
-            &["switch", &branch, "--no-cd", "--format", "json"],
-            false,
-        )?,
-        BranchState::Absent => {
-            let base = base.unwrap_or_else(|| hub.default.clone());
-            run(
-                wt,
-                &hub.main,
-                &[
-                    "switch", "--create", &branch, "--base", &base, "--no-cd", "--format", "json",
-                ],
-                false,
-            )?
-        }
-    };
-    let path = created
-        .lines()
-        .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .and_then(|value| value["path"].as_str().map(str::to_string))
-        .ok_or_else(|| format!("Worktrunk did not report a path: {created}"))?;
-    let task = Task {
-        branch: branch.clone(),
-        path,
-        repo: repo.clone(),
-        default: hub.default.clone(),
-        session: owner.0,
-        agent: owner.1,
-        created_unix_s: now(),
-    };
-    if let Err(error) = write_json(&record_path(root, &repo, &branch), &task) {
-        // A worktree with no record could not be landed or dropped, so it goes too.
-        let _ = run(wt, &hub.main, &["remove", &branch, "--foreground"], false);
-        return Err(format!("cannot write the task record: {error}"));
-    }
-    let warnings: Vec<_> = [sync_warning, install_hook(&hub)]
-        .into_iter()
-        .flatten()
-        .collect();
-    Ok((task, (!warnings.is_empty()).then(|| warnings.join("; "))))
-}
-
 /// The task worktree that holds `cwd`, with its record.
 fn task_here(root: &Path, cwd: &Path) -> Result<(Hub, Task), String> {
     let hub = hub(cwd).ok_or("this folder is not in a worktree hub")?;
@@ -354,7 +270,7 @@ fn task_here(root: &Path, cwd: &Path) -> Result<(Hub, Task), String> {
         .filter(|task| {
             resolve(Path::new("/"), Path::new(&task.path)) == resolve(cwd, Path::new(&top))
         })
-        .ok_or_else(|| format!("{top} is not a task worktree that `swarm task start` made"))?;
+        .ok_or_else(|| format!("{top} is not a chat worktree that swarm made"))?;
     Ok((hub, task))
 }
 
@@ -376,7 +292,7 @@ fn find_task(root: &Path, cwd: &Path, name: Option<&str>) -> Result<(Hub, Task),
     let branch = branch_name(name);
     let hub = hub(cwd).ok_or("this folder is not in a worktree hub")?;
     let task = read_record(root, &hub.common.to_string_lossy(), &branch)
-        .ok_or_else(|| format!("{branch} is not a task that `swarm task start` made here"))?;
+        .ok_or_else(|| format!("{branch} is not a chat worktree that swarm made here"))?;
     Ok((hub, task))
 }
 
@@ -436,6 +352,12 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Ta
     Ok(task)
 }
 
+#[path = "task/chat.rs"]
+mod chat;
+pub use chat::{
+    chat_placeholder, chat_top, drop_unnamed_chat, name_chat, record_chat, remove_failed_chat,
+    unnamed_chat,
+};
 #[path = "task/branches.rs"]
 mod branches;
 pub use branches::{BranchState, branch_state, fresh_origin_base};

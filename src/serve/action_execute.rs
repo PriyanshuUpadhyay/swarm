@@ -46,6 +46,8 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
     };
     let interrupt = matches!(action, Action::Interrupt(_));
     let archive = matches!(action, Action::Archive(_));
+    let mut archived_folders = Vec::new();
+    let mut archived_ids = Vec::new();
     let (call, text) = match action {
         Action::Send(body) => {
             if body.text.trim().is_empty() {
@@ -61,6 +63,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
             if text.trim().is_empty() {
                 return Err(error(StatusCode::BAD_REQUEST, "swarm: empty text"));
             }
+            name_chat_worktree(app, call.cwd.clone(), text.clone()).await;
             (call.args(&["type", &agent]), Some(text))
         }
         Action::Interrupt(body) if interrupt_clears_box(app, &body)? => {
@@ -104,8 +107,9 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
                 return Err(error(StatusCode::BAD_REQUEST, "session ids required"));
             }
             for id in &body.ids {
-                action_session(app, id)?;
+                archived_folders.push(action_session(app, id)?.cwd);
             }
+            archived_ids.clone_from(&body.ids);
             let mut call = default_call().args(&["session", verb]);
             call.args.extend(body.ids);
             (call, None)
@@ -191,6 +195,9 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
         }
     };
     run_cli(app, call, text).await?;
+    if archive {
+        drop_unnamed_chats(app, archived_folders, archived_ids).await;
+    }
     Ok(json!({"ok": true}))
 }
 
@@ -206,6 +213,116 @@ fn archived_titles(snapshot: &Value, owner: &choices::OwnerChoices) -> BTreeMap<
         .flat_map(|workspace| tree::archived_chats(snapshot, workspace, owner))
         .map(|chat| (chat.id, chat.title))
         .collect()
+}
+
+/// Names a chat worktree's branch from the chat's first prompt, and its sidebar row with it
+/// (ADR 0146). A failure only logs, because the prompt must still go.
+async fn name_chat_worktree(app: &App, cwd: PathBuf, prompt: String) {
+    let root = app.root.clone();
+    let named = tokio::task::spawn_blocking(move || {
+        let Some(branch) = swarm::task::name_chat(&root, &cwd, &prompt)? else {
+            return Ok(());
+        };
+
+        // The row is the worktree's, also for a chat in a subfolder. Only the placeholder name
+        // goes; a name the owner gave the row stays.
+        let path = lifecycle::check_git(&cwd.to_string_lossy(), &["rev-parse", "--show-toplevel"])
+            .map_err(|err| format!("{branch} is named, but its worktree is unknown: {err}"))?;
+        let placeholder = Path::new(&path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
+        let name = branch.trim_start_matches(swarm::task::PREFIX).to_owned();
+
+        choices_store::update(&root, None, |owner, _| {
+            if owner.names.get(&path) == placeholder.as_ref() {
+                owner.names.insert(path.clone(), name.clone());
+            }
+            Ok(())
+        })
+        .map(|_| ())
+        .map_err(|err| format!("{branch} is named, but its sidebar row kept its old name: {err}"))
+    })
+    .await;
+
+    match named {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => eprintln!("swarm: chat worktree name: {err}"),
+        Err(err) => eprintln!("swarm: chat worktree name task failed: {err}"),
+    }
+}
+
+/// Removes the worktree of each archived chat that never got a prompt (ADR 0146), unless a chat
+/// that is not archived still runs in it or below it, and ends the app's shells in it. A worktree
+/// with changes or commits stays, and the refusal only logs.
+async fn drop_unnamed_chats(app: &App, folders: Vec<PathBuf>, archived: Vec<String>) {
+    let app = app.clone();
+    let dropped = tokio::task::spawn_blocking(move || {
+        let wt = swarm::task::wt_program();
+        let connection = read_connection(&app.root).map_err(|err| err.to_string())?;
+        for top in chat_tops(&folders) {
+            let below = format!("{}/%", top.trim_end_matches('/'));
+
+            // The ids of this call count as archived, so the check does not hang on how the CLI
+            // writes the row.
+            let mut statement = connection
+                .prepare(
+                    "SELECT id FROM session WHERE (cwd = ?1 OR cwd LIKE ?2) AND archived_at IS NULL",
+                )
+                .map_err(|err| err.to_string())?;
+            let live = statement
+                .query_map([top.as_str(), below.as_str()], |row| row.get::<_, String>(0))
+                .map_err(|err| err.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|err| err.to_string())?;
+            if live.iter().any(|id| !archived.contains(id)) {
+                continue;
+            }
+
+            match swarm::task::drop_unnamed_chat(&app.root, &wt, Path::new(&top)) {
+                Ok(Some(_)) => {
+                    shells::close_all(&app, &top);
+                    forget_folder(&app.root, &top);
+                }
+                Ok(None) => {}
+                Err(err) => eprintln!("swarm: kept the chat worktree {top}: {err}"),
+            }
+        }
+        Ok::<_, String>(())
+    })
+    .await;
+
+    match dropped {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => eprintln!("swarm: archived chat worktrees were not checked: {err}"),
+        Err(err) => eprintln!("swarm: archived chat worktree task failed: {err}"),
+    }
+}
+
+/// The chat worktree top of each folder, once each (ADR 0146).
+fn chat_tops(folders: &[PathBuf]) -> Vec<String> {
+    let mut folders = folders.to_vec();
+    folders.sort();
+    folders.dedup();
+
+    // Two subfolders of one worktree give the same top.
+    let mut tops: Vec<String> = folders
+        .iter()
+        .filter_map(|folder| swarm::task::chat_top(folder))
+        .collect();
+    tops.sort();
+    tops.dedup();
+    tops
+}
+
+/// Clears the owner choices of a removed chat worktree, as the app's own Remove does.
+pub(super) fn forget_folder(root: &Path, folder: &str) {
+    let cleared = choices_store::update(root, None, |owner, state| {
+        lifecycle::forget_workspace(owner, state, folder);
+        Ok(())
+    });
+    if let Err(err) = cleared {
+        eprintln!("swarm: the sidebar choices of {folder} stay: {err}");
+    }
 }
 
 #[cfg(test)]

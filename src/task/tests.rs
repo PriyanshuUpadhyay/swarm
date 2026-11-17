@@ -63,8 +63,30 @@ fn commit(dir: &Path, file: &str) {
     }
 }
 
+/// A chat worktree on `swarm/<name>` from local main, with its record as the app writes it.
+fn chat(root: &Path, main: &Path, name: &str, session: Option<&str>) -> Task {
+    let path = main.parent().unwrap().join(name);
+    let branch = format!("{PREFIX}{name}");
+
+    git(
+        main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            &branch,
+            path.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    record_chat(root, &path, session.map(String::from))
+        .unwrap()
+        .0
+}
+
 #[test]
-fn a_task_starts_lands_into_main_and_is_removed() {
+fn a_chat_worktree_lands_into_main_and_is_removed() {
     let Some(wt) = real_wt() else {
         eprintln!("skipped: Worktrunk is not installed");
         return;
@@ -72,7 +94,7 @@ fn a_task_starts_lands_into_main_and_is_removed() {
     let dir = hub_fixture("land");
     let root = dir.join("home");
     let main = dir.join("wt/main");
-    let (task, _) = start(&root, &wt, &main, "fix-x", (Some("s1".into()), None)).unwrap();
+    let task = chat(&root, &main, "fix-x", Some("s1"));
     assert_eq!(task.branch, "swarm/fix-x");
     assert_eq!(records(&root), vec![task.clone()]);
     let path = PathBuf::from(&task.path);
@@ -102,7 +124,7 @@ fn drop_refuses_a_task_with_commits_main_lacks() {
     };
     let dir = hub_fixture("drop");
     let root = dir.join("home");
-    let (task, _) = start(&root, &wt, &dir.join("wt/main"), "keep", (None, None)).unwrap();
+    let task = chat(&root, &dir.join("wt/main"), "keep", None);
     commit(Path::new(&task.path), "c.txt");
     let refused = drop(&root, &wt, &dir.join("wt/main"), Some("keep")).unwrap_err();
     assert!(refused.contains("1 commit(s)"), "{refused}");
@@ -134,59 +156,50 @@ fn the_ref_hook_stops_an_agent_shell_from_moving_main() {
     assert!(move_main(false).status.success());
 }
 
-fn rev(dir: &Path, name: &str) -> String {
-    git(dir, &["rev-parse", name]).unwrap()
-}
-
 #[test]
-fn a_left_over_task_branch_reopens_instead_of_failing() {
+fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
     let Some(wt) = real_wt() else {
         eprintln!("skipped: Worktrunk is not installed");
         return;
     };
-    let dir = hub_fixture("reopen");
+    let dir = hub_fixture("name");
     let root = dir.join("home");
     let main = dir.join("wt/main");
-    let mine = (Some("s1".to_string()), None);
-    let (task, _) = start(&root, &wt, &main, "fix-y", mine.clone()).unwrap();
-    commit(Path::new(&task.path), "y.txt");
-    let head = rev(Path::new(&task.path), "HEAD");
-    // The same session asks again: it gets its own worktree back.
-    assert_eq!(start(&root, &wt, &main, "fix-y", mine).unwrap().0, task);
-    // Another session is refused while the worktree holds the branch.
-    let other = (Some("s2".to_string()), None);
-    assert!(start(&root, &wt, &main, "fix-y", other.clone()).is_err());
-    // The worktree goes and the branch stays, as Remove worktree and the sweep leave it.
-    git(&main, &["worktree", "remove", &task.path]).unwrap();
-    let (reopened, _) = start(&root, &wt, &main, "fix-y", other).unwrap();
-    assert_eq!(rev(Path::new(&reopened.path), "HEAD"), head);
-    assert_eq!(reopened.session.as_deref(), Some("s2"));
-}
+    let task = chat(&root, &main, "chat-0123abcd", Some("s1"));
+    let path = PathBuf::from(&task.path);
 
-#[test]
-fn a_new_task_starts_from_a_fresh_origin_default() {
-    let Some(wt) = real_wt() else {
-        eprintln!("skipped: Worktrunk is not installed");
-        return;
+    // A local branch has the name and origin has -2, so this chat gets -3.
+    let expected = "swarm/fix-the-login-redirect-bug-3";
+    git(&main, &["branch", "swarm/fix-the-login-redirect-bug"]).unwrap();
+    let origin_ref = "refs/remotes/origin/swarm/fix-the-login-redirect-bug-2";
+    git(&main, &["update-ref", origin_ref, "HEAD"]).unwrap();
+    let prompt = "Fix the login redirect bug now please";
+    let named = name_chat(&root, &path, prompt).unwrap();
+    assert_eq!(named.as_deref(), Some(expected));
+    assert_eq!(name_chat(&root, &path, "a second prompt").unwrap(), None);
+
+    let saved = records(&root);
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].branch, expected);
+    assert_eq!(saved[0].session.as_deref(), Some("s1"));
+    let dropped = drop(&root, &wt, &path, None).unwrap();
+    assert_eq!(dropped.branch, expected);
+    assert!(!path.exists());
+    assert!(records(&root).is_empty());
+
+    // A prompt with no ASCII word still names the chat, so archive never reads it as unused.
+    let other = chat(&root, &main, "chat-89abcdef", None);
+    let named = name_chat(&root, Path::new(&other.path), "🙂").unwrap();
+    assert_eq!(named.as_deref(), Some("swarm/untitled-89abcdef"));
+
+    // A record that names another branch, as an agent could write it, renames nothing.
+    let forged = chat(&root, &main, "chat-aaaabbbb", None);
+    let record = record_path(&root, &forged.repo, &forged.branch);
+    let other = Task {
+        branch: "main".into(),
+        ..forged.clone()
     };
-    let dir = hub_fixture("origin");
-    let main = dir.join("wt/main");
-    let upstream = dir.join("upstream");
-    let sh = |script: &str| {
-        let status = Command::new("/bin/sh")
-            .args(["-c", script])
-            .current_dir(&dir)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .status()
-            .unwrap();
-        assert!(status.success(), "{script}");
-    };
-    sh(
-        "git clone -q .bare upstream && git -C .bare remote add origin \"$PWD/upstream\" \
-        && git -C .bare fetch -q origin && git -C .bare remote set-head origin main",
-    );
-    // origin moves on after the last fetch; the task must start from that new commit.
-    commit(&upstream, "new.txt");
-    let (task, _) = start(&dir.join("home"), &wt, &main, "fresh", (None, None)).unwrap();
-    assert_eq!(rev(Path::new(&task.path), "HEAD"), rev(&upstream, "HEAD"));
+    write_json(&record, &other).unwrap();
+    let named = name_chat(&root, Path::new(&forged.path), "rename main please").unwrap();
+    assert_eq!(named, None);
 }

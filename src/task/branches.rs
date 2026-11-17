@@ -1,11 +1,11 @@
 //! What a branch name meets in a hub, and the base new work starts from (ADR 0142).
 
-use super::git;
+use super::{git, ref_exists};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// What a branch name meets in a repository. Both create paths, the sidebar "+" and
-/// `swarm task start`, decide from this, so a left-over branch opens or reopens instead of failing.
+/// What a branch name meets in a repository. The sidebar "+" decides from this, so a left-over
+/// branch opens or reopens instead of failing, and a chat's branch rename skips a taken name.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BranchState {
     /// No local branch has this name.
@@ -18,7 +18,7 @@ pub enum BranchState {
 
 pub fn branch_state(dir: &Path, branch: &str) -> BranchState {
     let reference = format!("refs/heads/{branch}");
-    if git(dir, &["show-ref", "--verify", "--quiet", &reference]).is_none() {
+    if !ref_exists(dir, &reference) {
         return BranchState::Absent;
     }
     let listing = git(dir, &["worktree", "list", "--porcelain"]).unwrap_or_default();

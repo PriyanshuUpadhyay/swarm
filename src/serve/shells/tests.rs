@@ -238,6 +238,7 @@ fn a_close_of_a_dropped_workspace_ends_only_its_own_shells() {
         missing: false,
         mark: None,
         removed: false,
+        hub_main: false,
         chats: Vec::new(),
         unlisted: Vec::new(),
         archived: Vec::new(),

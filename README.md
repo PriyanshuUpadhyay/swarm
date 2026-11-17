@@ -205,7 +205,7 @@ reload or a new tab needs no link. The URL names the open chat as `/chat/<id>`, 
 beside the tab strip copies the full id.
 
 1. Click **Import Project…** and type the folder's full path. Swarm adds and selects the project without
-   starting an agent. Click **New chat** to start the `chat` profile. A folder that is not a Git repository gets an offer to run `git init`.
+   starting an agent. Click **New chat** to start the `chat` profile. In a worktree hub, a new chat on main gets its own worktree, named from its first prompt (ADR 0146). A folder that is not a Git repository gets an offer to run `git init`.
    The **+** on a project's header makes a workspace (a branch in its own worktree) there.
 2. To use another model, click **Switch model** in the chat.
 3. Type your task. When the chair launches a worker, the worker's pane opens as a column to the

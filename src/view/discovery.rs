@@ -168,6 +168,25 @@ fn id_for(path: &str, common: Option<&str>) -> String {
     common.map_or_else(|| format!("folder:{path}"), |c| format!("repository:{c}"))
 }
 
+/// Marks the default-branch checkout of a worktree hub, a bare repository with linked
+/// worktrees. `new_chat` reads this mark, so the menu and the server agree on where a new chat
+/// gets its own worktree (ADR 0146). The default is origin's HEAD, else the bare HEAD, as in
+/// `task::default_branch`; each git call has the 5 s limit of the others here.
+fn mark_hub_main(common: &str, workspaces: &mut [WorkspaceFact]) {
+    if !workspaces.iter().any(|w| w.bare) {
+        return;
+    }
+    let default = git(
+        common,
+        &["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .and_then(|name| name.split_once('/').map(|(_, branch)| branch.to_owned()))
+    .or_else(|| git(common, &["symbolic-ref", "-q", "--short", "HEAD"]));
+    for workspace in workspaces.iter_mut() {
+        workspace.hub_main = !workspace.bare && default.is_some() && workspace.branch == default;
+    }
+}
+
 pub fn parse_worktrees(bytes: &[u8]) -> Vec<WorkspaceFact> {
     let mut result = Vec::new();
     let mut current: Option<WorkspaceFact> = None;
@@ -246,13 +265,15 @@ impl Discovery {
                 let id = id_for(&path, common.as_deref());
                 let project = projects.entry(id.clone()).or_insert_with(|| {
                     let workspaces = if let Some(common) = &common {
-                        run(
+                        let mut workspaces = run(
                             "git",
                             &["-C", common, "worktree", "list", "--porcelain", "-z"],
                             5,
                         )
                         .map(|b| parse_worktrees(&b))
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                        mark_hub_main(common, &mut workspaces);
+                        workspaces
                     } else {
                         vec![WorkspaceFact {
                             path: path.clone(),

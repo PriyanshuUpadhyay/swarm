@@ -4,7 +4,7 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -277,6 +277,11 @@ export default async function setup() {
   git(ghProject, "remote", "add", "origin", "https://github.com/acme/demo.git");
   git(dir, "clone", "-q", origin, prProject);
 
+  // proj-hub is a worktree hub, a bare `.bare` with main in `wt/main`, where a new chat gets its own worktree (ADR 0146).
+  const hubMain = join(dir, "proj-hub", "wt", "main");
+  git(dir, "clone", "-q", "--bare", origin, join(dir, "proj-hub", ".bare"));
+  git(join(dir, "proj-hub", ".bare"), "worktree", "add", "-q", hubMain, "main");
+
   server = spawn(swarm, ["serve", "--port", "0", "--assets", resolve(import.meta.dirname, "../dist")], {
     env,
     stdio: ["ignore", "pipe", "inherit"],
@@ -288,7 +293,7 @@ export default async function setup() {
   process.env.SWARM_SERVE_URL = first.trim();
   const url = new URL(first.trim());
   const token = new URLSearchParams(url.hash.slice(1)).get("token");
-  for (const path of [ghProject, prProject]) {
+  for (const path of [ghProject, prProject, hubMain]) {
     const res = await fetch(`${url.origin}/api/project/import`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -302,6 +307,7 @@ export default async function setup() {
   process.env.SWARM_E2E_NOTIFY_APP = env.SWARM_NOTIFY_APP;
   process.env.SWARM_E2E_LIVE = liveSession;
   process.env.SWARM_E2E_DIR = dir;
+  process.env.SWARM_E2E_HUB_MAIN = realpathSync(hubMain);
   return async () => {
     server?.kill();
     try {

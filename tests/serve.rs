@@ -401,7 +401,8 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
     );
     let created = post(
         "/api/chat/new",
-        json!({"cwd": env!("CARGO_MANIFEST_DIR"), "provider":"agy", "model":"flash", "account":"auto"}),
+        // `here` keeps a run from a hub's main checkout from making a chat worktree (ADR 0146).
+        json!({"cwd": env!("CARGO_MANIFEST_DIR"), "here": true, "provider":"agy", "model":"flash", "account":"auto"}),
     );
     let session = created["session"].as_str().unwrap();
     assert_ne!(session, server.session);
@@ -418,7 +419,10 @@ fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
         Some("fixture-new")
     );
     assert!(actions().contains(&format!("spawn {session} orchestrator tmux-swarm\n")));
-    post("/api/chat/new", json!({"cwd": env!("CARGO_MANIFEST_DIR")}));
+    post(
+        "/api/chat/new",
+        json!({"cwd": env!("CARGO_MANIFEST_DIR"), "here": true}),
+    );
 }
 
 #[path = "serve/chat.rs"]

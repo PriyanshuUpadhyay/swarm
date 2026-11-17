@@ -188,7 +188,7 @@ fn takings(dir: &Path) -> Vec<PathBuf> {
 fn land(root: &Path, wt: &Path, request: &Path) -> Result<(Task, String, bool), String> {
     let text = std::fs::read_to_string(request).map_err(|error| error.to_string())?;
     let asked: LandingRequest = serde_json::from_str(&text).map_err(|error| error.to_string())?;
-    // Only a task that `swarm task start` recorded lands, and only from its own folder.
+    // Only a chat worktree that swarm recorded lands, and only from its own folder.
     let task = read_record(root, &asked.task.repo, &asked.task.branch)
         .filter(|task| task.path == asked.task.path && task.branch.starts_with(PREFIX))
         .ok_or("no task record matches this request")?;

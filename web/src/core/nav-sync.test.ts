@@ -7,7 +7,7 @@ const workspace = "/r/app";
 const row: SidebarRow = {
   id: workspace, kind: "workspace", depth: 0, parentId: null, expanded: true, hasChildren: false,
   childrenSummary: null, title: "app", detail: "", status: null, counts: [], age: null, help: "app",
-  pinned: false, archived: false, missing: false, newChatEnabled: true, dimmed: false, fields: [],
+  pinned: false, archived: false, missing: false, newChatEnabled: true, startsChatWorktree: false, dimmed: false, fields: [],
   selection: { workspace, chat: null, agentSession: null, agent: null },
 };
 const tree: TreeView = {

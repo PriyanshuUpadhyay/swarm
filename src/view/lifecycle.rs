@@ -441,6 +441,19 @@ pub fn remove_project(
         clear_selection(state, path);
     }
 }
+/// Forgets the owner choices and the selection of a removed worktree.
+pub fn forget_workspace(owner: &mut OwnerChoices, state: &mut ViewState, workspace: &str) {
+    owner.pinned.remove(workspace);
+    owner.archived.remove(workspace);
+    owner.names.remove(workspace);
+    owner.tabs.remove(workspace);
+    owner.project_paths.retain(|path| path != workspace);
+    for order in owner.workspace_order.values_mut() {
+        order.retain(|path| path != workspace);
+    }
+    clear_selection(state, workspace);
+}
+
 pub fn clear_selection(state: &mut ViewState, workspace: &str) {
     if state.selected_workspace.as_deref() == Some(workspace) {
         state.selected_workspace = None;

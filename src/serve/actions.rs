@@ -49,6 +49,10 @@ pub(super) struct NewChat {
     pub(super) model: Option<String>,
     pub(super) account: Option<String>,
     pub(super) effort: Option<String>,
+    /// Start in `cwd` itself, even on a hub's main checkout, which otherwise gets a new chat
+    /// worktree (ADR 0146).
+    #[serde(default)]
+    pub(super) here: bool,
 }
 
 #[derive(Deserialize)]

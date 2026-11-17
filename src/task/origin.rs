@@ -2,7 +2,7 @@
 
 use super::*;
 
-pub(super) fn sync_default(hub: &Hub, target: &str, scrub: bool) -> Result<(), String> {
+pub(super) fn sync_default(hub: &Hub, target: &str) -> Result<(), String> {
     let local =
         git(&hub.main, &["rev-parse", &hub.default]).ok_or("cannot read local default branch")?;
     let remote =
@@ -31,7 +31,8 @@ pub(super) fn sync_default(hub: &Hub, target: &str, scrub: bool) -> Result<(), S
         Path::new("git"),
         &hub.main,
         &["merge", "--ff-only", &remote],
-        scrub,
+        // Every caller is the server or a landing, so agent markers go.
+        true,
     )
     .map(|_| ())
     .map_err(|error| format!("local {} could not fast-forward: {error}", hub.default))
@@ -53,7 +54,7 @@ fn remote_git(path: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 pub(super) fn land(task: &Task, hub: &Hub, wt: &Path, base: &str) -> Result<String, String> {
-    sync_default(hub, base, true)?;
+    sync_default(hub, base)?;
     let path = Path::new(&task.path);
     let fetched = git(path, &["rev-parse", base]).ok_or("cannot read fetched origin commit")?;
     // Worktrunk must run its merge hooks before the push, without moving main first.
@@ -85,7 +86,7 @@ pub(super) fn land(task: &Task, hub: &Hub, wt: &Path, base: &str) -> Result<Stri
         // Explicit refspec and no force: a concurrent remote update must refuse this push.
         remote_git(path, &["push", "origin", &format!("{landed}:refs/heads/{}", hub.default)])
             .map_err(|error| format!("origin push was refused; the task stays and local {} was not advanced to the task; run `swarm task land` again: {error}", hub.default))?;
-        sync_default(hub, &landed, true)
+        sync_default(hub, &landed)
             .map_err(|error| format!("origin accepted {landed}, but local sync failed; the task stays; land again: {error}"))?;
         let removed = run(
             wt,
@@ -113,7 +114,7 @@ pub(super) fn land(task: &Task, hub: &Hub, wt: &Path, base: &str) -> Result<Stri
 }
 
 pub(super) fn pull_request(task: &Task, hub: &Hub, base: &str) -> Result<String, String> {
-    let warning = sync_default(hub, base, true).err();
+    let warning = sync_default(hub, base).err();
     let path = Path::new(&task.path);
     remote_git(path, &["push", "--set-upstream", "origin", &task.branch])?;
     let gh = |args: &[&str]| -> Result<String, String> {

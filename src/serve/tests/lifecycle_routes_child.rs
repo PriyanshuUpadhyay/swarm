@@ -437,5 +437,138 @@ esac
             .project_paths
             .contains(&target)
     );
-}
 
+    // ADR 0146: a new chat on a hub's main checkout runs in its own new worktree, after setup.
+    let hub = root.join("hub");
+    std::fs::create_dir(&hub).unwrap();
+    let sh = |script: &str| {
+        let status = std::process::Command::new("/bin/sh")
+            .args(["-c", script])
+            .current_dir(&hub)
+            .status()
+            .unwrap();
+        assert!(status.success(), "{script}");
+    };
+    sh("git init -q --bare .bare && git -C .bare symbolic-ref HEAD refs/heads/main \
+        && git --git-dir=.bare worktree add -q --orphan -b main wt/main \
+        && echo a > wt/main/a.txt && git -C wt/main add a.txt && git -C wt/main commit -q -m a \
+        && echo setup-ran >> .bare/info/exclude");
+
+    // Setup output is ignored, as `node_modules` is; a file git sees would keep the worktree.
+    let cli = r#"#!/bin/sh
+printf '%s\n' "$PWD|$*" >> "$SWARM_HOME/actions"
+case "$1 $2" in
+'session new') /usr/bin/uuidgen | /usr/bin/tr A-Z a-z ;;
+'launch orchestrator') printf 'fixture-pane\n' ;;
+esac
+"#;
+    std::fs::write(&fixture.app.cli, cli).unwrap();
+
+    let hub_path = hub.to_string_lossy().into_owned();
+    let main = hub.join("wt/main").to_string_lossy().into_owned();
+    choices_store::update(&fixture.app.root, None, |owner, _| {
+        lifecycle::remember(owner, &hub_path, &hub_path);
+        owner
+            .project_defaults
+            .insert(hub_path.clone(), json!({"setup_script":"touch setup-ran"}));
+        Ok(())
+    })
+    .unwrap();
+
+    let started = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
+        .await
+        .unwrap_or_else(|e| panic!("{e:?} {}", action_calls(&fixture)))
+        .0;
+
+    let chat = started["workspace"].as_str().unwrap().to_owned();
+    let branch = lifecycle::check_git(&chat, &["branch", "--show-current"]).unwrap();
+    assert!(swarm::task::unnamed_chat(&branch), "{chat} {branch}");
+    assert!(Path::new(&chat).join("setup-ran").is_file());
+    assert!(swarm::task::records(&fixture.app.root).iter().any(|task| {
+        task.path == chat && task.session.as_deref() == started["session"].as_str()
+    }));
+
+    let calls = action_calls(&fixture);
+    assert!(calls.lines().last().unwrap().contains(&format!("{chat}|launch orchestrator chat")), "{calls}");
+
+    // The fake CLI makes no session row, so the test adds the one `swarm session new` would.
+    let chat_session = |started: &Value, cwd: &str| {
+        let id = started["session"].as_str().unwrap().to_owned();
+        connection
+            .execute(
+                "INSERT INTO session (id, talk_mode, cwd, adapter) VALUES (?1, 'lane', ?2, 'tmux-swarm')",
+                (&id, cwd),
+            )
+            .unwrap();
+        swarm::store::add_agent(&connection, &id, "orchestrator", "chat").unwrap();
+        id
+    };
+
+    let id = chat_session(&started, &chat);
+    let send = json!({"session":id,"agent":"orchestrator","text":"Fix the login redirect bug now please"});
+    let _ = call_action(&fixture, "/api/chat/send", send).await.unwrap();
+
+    assert_eq!(
+        lifecycle::check_git(&chat, &["branch", "--show-current"]).unwrap(),
+        "swarm/fix-the-login-redirect-bug"
+    );
+    assert_eq!(
+        choices_store::load(&fixture.app.root, true).unwrap().owner.names[&chat],
+        "fix-the-login-redirect-bug"
+    );
+
+    // An archived chat that got no prompt takes its empty worktree with it; one with a commit stays.
+    if !root.join("bin/wt").is_file() {
+        eprintln!("skipped: archive of a chat worktree, because Worktrunk is not installed");
+    } else {
+        let mut folders = Vec::new();
+        for work in [false, true] {
+            let started = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
+                .await
+                .unwrap()
+                .0;
+
+            let folder = started["workspace"].as_str().unwrap().to_owned();
+            if work {
+                sh(&format!("cd {folder} && echo b > b.txt && git add b.txt && git commit -q -m b"));
+            }
+
+            let id = chat_session(&started, &folder);
+            let _ = call_action(&fixture, "/api/sessions/archive", json!({"ids":[id]}))
+                .await
+                .unwrap();
+            folders.push(folder);
+        }
+        assert!(!Path::new(&folders[0]).exists());
+        assert!(Path::new(&folders[1]).is_dir());
+
+        // A live chat at the top of an unused worktree keeps it when a chat in a subfolder of it is
+        // archived.
+        let first = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
+            .await
+            .unwrap()
+            .0;
+
+        let shared = first["workspace"].as_str().unwrap().to_owned();
+        let second = call_action(&fixture, "/api/chat/new", json!({"cwd":shared}))
+            .await
+            .unwrap()
+            .0;
+
+        assert_eq!(second["workspace"], json!(shared));
+        std::fs::create_dir(Path::new(&shared).join("sub")).unwrap();
+        let id = chat_session(&first, &format!("{shared}/sub"));
+        chat_session(&second, &shared);
+        let _ = call_action(&fixture, "/api/sessions/archive", json!({"ids":[id]}))
+            .await
+            .unwrap();
+        assert!(Path::new(&shared).is_dir());
+    }
+
+    // New chat in main keeps the chat in main.
+    let kept = call_action(&fixture, "/api/chat/new", json!({"cwd":main,"here":true}))
+        .await
+        .unwrap()
+        .0;
+    assert_eq!(kept["workspace"], json!(main));
+}

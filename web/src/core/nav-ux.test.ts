@@ -7,7 +7,7 @@ const workspace = "/project/work";
 const ws: SidebarRow = {
   id: workspace, kind: "workspace", depth: 0, parentId: null, expanded: false, hasChildren: true,
   childrenSummary: null, title: "Work", detail: "", status: null, counts: [], age: null, help: "",
-  pinned: false, archived: false, missing: false, newChatEnabled: true, dimmed: false, fields: [],
+  pinned: false, archived: false, missing: false, newChatEnabled: true, startsChatWorktree: false, dimmed: false, fields: [],
   selection: { workspace, chat: null, agentSession: null, agent: null },
 };
 const chat = (id: string): SidebarRow => ({ ...ws, id: `chat:${id}`, kind: "chat", title: id,

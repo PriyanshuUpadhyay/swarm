@@ -26,6 +26,8 @@ pub struct SidebarRow {
     pub archived: bool,
     pub missing: bool,
     pub new_chat_enabled: bool,
+    /// A new chat on this row gets its own worktree (ADR 0146).
+    pub starts_chat_worktree: bool,
     pub dimmed: bool,
     pub fields: Vec<FieldValue>,
     pub selection: Option<Selection>,
@@ -205,6 +207,7 @@ fn worktrees_row(project: &Project) -> SidebarRow {
         archived: false,
         missing: false,
         new_chat_enabled: false,
+        starts_chat_worktree: false,
         dimmed: false,
         fields: vec![FieldValue {
             field: "title".into(),
@@ -301,6 +304,7 @@ fn rows(
         archived,
         missing: workspace.missing,
         new_chat_enabled: !workspace.missing && !workspace.removed && !archived,
+        starts_chat_worktree: workspace.hub_main,
         dimmed: false,
         fields: context.with_status(status).values(&owner.fields.workspace),
         selection: Some(Selection {
@@ -380,6 +384,7 @@ fn rows(
             archived,
             missing: false,
             new_chat_enabled: false,
+            starts_chat_worktree: false,
             dimmed: false,
             fields: context.with_status(status).values(&owner.fields.chat),
             selection: Some(Selection {
@@ -417,6 +422,7 @@ fn rows(
                     archived,
                     missing: false,
                     new_chat_enabled: false,
+                    starts_chat_worktree: false,
                     dimmed: matches!(status, AgentStatus::Done | AgentStatus::Ended),
                     fields: context.values(&owner.fields.chat),
                     selection: Some(Selection {
@@ -449,6 +455,7 @@ fn rows(
             archived,
             missing: false,
             new_chat_enabled: false,
+            starts_chat_worktree: false,
             dimmed: false,
             fields: vec![FieldValue {
                 field: "title".into(),
@@ -508,6 +515,7 @@ fn archived_fold(
         archived,
         missing: false,
         new_chat_enabled: false,
+        starts_chat_worktree: false,
         dimmed: true,
         fields: vec![FieldValue {
             field: "title".into(),
@@ -536,6 +544,7 @@ fn archived_fold(
                 archived,
                 missing: false,
                 new_chat_enabled: false,
+                starts_chat_worktree: false,
                 dimmed: true,
                 fields: vec![FieldValue {
                     field: "title".into(),

@@ -246,7 +246,7 @@ export class App {
     return this.navigation.selectWorkspace(path, e);
   }
 
-  startChat(workspace = this.workspace, launch: { role?: string } = {}, draft = "") {
+  startChat(workspace = this.workspace, launch: { role?: string; here?: boolean } = {}, draft = "") {
     return this.actions.startChat(workspace, launch, draft);
   }
 
