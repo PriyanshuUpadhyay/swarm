@@ -386,7 +386,7 @@ fn with_no_file_the_built_in_profiles_show_and_nothing_is_written() {
     let bin = clis(&home, &["codex", "claude", "agy"]);
     for (role, model, effort) in [
         ("search.web", "gpt-6.1-terra", "medium"),
-        ("code.small", "gpt-6.1-sol", "high"),
+        ("code.small", "gpt-6.2-sol", "high"),
         ("council.gemini", "gpt-6.1-sol", "high"),
     ] {
         let profile = profiles.iter().find(|p| p["name"] == role).unwrap();
