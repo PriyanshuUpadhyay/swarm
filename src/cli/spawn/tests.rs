@@ -7,6 +7,24 @@ mod cases {
     use crate::cli::test_support::*;
 
     #[test]
+    fn the_session_link_names_a_cellar_swarm_through_opt() {
+        let root = std::env::temp_dir().join(format!("swarm-bin-opt-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("Cellar/swarm/0.0.9/bin")).unwrap();
+        std::fs::write(root.join("Cellar/swarm/0.0.9/bin/swarm"), "").unwrap();
+        std::fs::create_dir_all(root.join("opt")).unwrap();
+        std::os::unix::fs::symlink("../Cellar/swarm/0.0.9", root.join("opt/swarm")).unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
+        let exe = root.join("Cellar/swarm/0.0.9/bin/swarm");
+        let dir = swarm_bin(&root, "0199a000-0000-7000-8000-000000000001", &exe).unwrap();
+        assert_eq!(
+            std::fs::read_link(dir.join("swarm")).unwrap(),
+            root.join("opt/swarm/bin/swarm")
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn a_run_script_refuses_an_agent_id_that_leaves_runs() {
         let root =
             std::env::temp_dir().join(format!("swarm-script-escape-test-{}", std::process::id()));

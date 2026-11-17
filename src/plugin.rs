@@ -108,12 +108,7 @@ pub fn steps(link: &Path, kit: &Path, found: &[&str], codex_homes: &[CodexHome])
 /// `<prefix>/Cellar/swarm/<version>` on upgrade, and `<prefix>/opt/swarm` always names the current
 /// version, so a kit in the Cellar is named through `opt` when that resolves to the same folder.
 pub fn stable_kit(kit: &Path) -> PathBuf {
-    let opt = crate::hud::stable_path(kit);
-    if std::fs::canonicalize(&opt).is_ok_and(|resolved| resolved == kit) {
-        opt
-    } else {
-        kit.to_path_buf()
-    }
+    crate::hud::stable_same(kit)
 }
 
 /// The root of the `swarm` marketplace in the output of `codex plugin marketplace list --json`.

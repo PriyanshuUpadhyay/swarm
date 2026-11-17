@@ -39,6 +39,17 @@ pub fn stable_path(path: &Path) -> PathBuf {
     prefix.join("opt/swarm").join(rest)
 }
 
+/// `path` named through `<prefix>/opt/swarm` when that resolves to the same file or folder, else
+/// `path`. `opt` names another version while an upgrade is half done, and the Cellar path stays.
+pub fn stable_same(path: &Path) -> PathBuf {
+    let opt = stable_path(path);
+    if std::fs::canonicalize(&opt).is_ok_and(|resolved| resolved == path) {
+        opt
+    } else {
+        path.to_path_buf()
+    }
+}
+
 /// `<prefix>` when `path` is `<prefix>/Cellar/swarm/...`, else None, as for a cargo or checkout
 /// build.
 pub fn cellar_prefix(path: &Path) -> Option<PathBuf> {
