@@ -61,6 +61,10 @@ behavior, because the task commands and the main wall exist only in hubs.
 - Archive and the first send wait for `wt remove` and `git branch -m` with no time limit. The
   owner accepted this as a known limit (2026-11-17); a project hook that never ends holds
   the reply.
+- A new chat on a hub's main runs the fetch, the worktree add and the setup script (up to 600 s)
+  in the action lane that pin, rename and archive share, as the "+" path does, so they wait for
+  it. The owner accepted this as a known limit (2026-11-17). The shared lane also keeps a new
+  chat from starting in a folder that archive removes.
 
 - One create path, swarm's own, makes every worktree. Worktrunk still merges and removes.
 - The edit wall on main stays (ADR 0135), and its block and its warning (ADR 0143) tell the
