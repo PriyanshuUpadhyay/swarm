@@ -323,6 +323,7 @@ fn named_event(reader: &mut BufReader<TcpStream>, wanted: &str) -> Value {
     }
 }
 
+
 #[path = "serve/chat.rs"]
 mod chat;
 #[path = "serve/choices.rs"]

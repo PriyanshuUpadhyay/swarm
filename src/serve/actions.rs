@@ -51,13 +51,13 @@ pub(super) struct NewChat {
     pub(super) effort: Option<String>,
     /// The first prompt, sent once the chair is ready. It names a new chat worktree (ADR 0147).
     pub(super) prompt: Option<String>,
-    /// Where the chat runs; absent is `new`.
+    /// Where the chat runs. Absent keeps ADR 0146: a hub's main makes the chat's own worktree.
     pub(super) place: Option<Place>,
 }
 
-/// Where a new chat runs (ADR 0147). `new` on a hub's main checkout makes the chat its own
-/// worktree, and elsewhere starts in `cwd`, as `here` always does. `branch`, `pr` and `issue`
-/// make or open a worktree in `cwd`'s project, as New workspace did.
+/// Where a new chat runs (ADR 0147). `new` makes the chat its own worktree in `cwd`'s git
+/// project, and `here` starts it in `cwd`. `branch`, `pr` and `issue` make or open a worktree in
+/// `cwd`'s project, as New workspace did.
 #[derive(Deserialize, Clone)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum Place {
