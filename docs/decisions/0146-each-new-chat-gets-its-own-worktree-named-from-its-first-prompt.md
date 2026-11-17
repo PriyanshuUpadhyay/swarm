@@ -65,6 +65,9 @@ behavior, because the task commands and the main wall exist only in hubs.
   in the action lane that pin, rename and archive share, as the "+" path does, so they wait for
   it. The owner accepted this as a known limit (2026-11-17). The shared lane also keeps a new
   chat from starting in a folder that archive removes.
+- When the default-branch read fails or takes over 5 s, no row is marked as a hub's main until
+  the next tree refresh, so a new chat on main starts in the main checkout and says nothing. The
+  owner accepted this as a known limit (2026-11-17).
 
 - One create path, swarm's own, makes every worktree. Worktrunk still merges and removes.
 - The edit wall on main stays (ADR 0135), and its block and its warning (ADR 0143) tell the
