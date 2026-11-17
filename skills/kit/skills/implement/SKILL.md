@@ -14,6 +14,7 @@ The kit's `references/run-folder.md` owns the run and settings paths.
 
 ## Entry and lanes
 
+Run Align from `skills/pair-programming/SKILL.md` before plan approval, in either build mode.
 Run the front door in `skills/swarm/SKILL.md` with the preset below. After the owner approves the
 plan, start the run with the preset's `Start:` command, then do `01-frame.md` first. The plan may
 add blocks to a step but keeps the preset's steps and Needs, because `start` refuses any other. Then pick

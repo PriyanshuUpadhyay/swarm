@@ -31,7 +31,7 @@ Keep the task file as the kit block `blocks/task-file/SKILL.md` says, at
   `Status:` and denies Edit and Write inside that repository while the status is active, so a chunk
   can land only through `patch`;
 - `Base: <upstream ref> <short hash>`, from the base check below;
-- the align answers as numbered lines `A1..An`, each marked `typed` or `default`;
+- the Align record from the section below;
 - `Acceptance:` and `Not built:`, from the align section below;
 - the behaviors as the block's steps, each one testable sentence;
 - a chunk log with the chunk number, its intent, its `file:line`, and its outcome
@@ -56,9 +56,11 @@ When the fetch fails, say so in one line and go on.
 
 ## Align in rounds
 
-Read the code the task touches first. Then ask the questions that change what gets built. Each
-round is one numbered list of every open direction-changing question whose prerequisites are
-settled, each with a default that `yes` accepts. There is no limit on rounds or questions.
+This section owns Align for standalone pairs and for plans, including `implement` in either mode.
+Run it before plan approval or, for a standalone pair, before approval of the behavior list.
+Read the request, the code, and the available task records first. Then ask only unresolved choices
+that change behavior. Keep each round short. Group independent questions whose prerequisites are
+settled, and give each a recommended answer. A plain `yes` accepts the recommendations in that round.
 
 - Never ask what the code or the task already answers; look it up. A question that restates the
   task text, or a choice already recorded as an A-line, is never asked. When the task text states a
@@ -80,8 +82,10 @@ settled, each with a default that `yes` accepts. There is no limit on rounds or 
   After `enough`, the open choices stay listed in the task file, and they block the behaviors that
   depend on them.
 
-Write the answers in the task file as `A1..An`, each marked `typed` (the user wrote it) or
-`default` (the user accepted it), and a `Not built:` list.
+Write the answers as `A1..An`, each marked `typed` (the user wrote it) or `default` (the user
+accepted the recommendation). Keep a reference to the owner's message for each answer, including
+answers reused from the request. Resolve an accepted recommendation to its actual answer, with
+the owner's `yes` message as its source.
 
 When Align had at least one open choice, ask the user, before the behavior list, to write one
 acceptance example (start state, action, expected result) and one exclusion, in their own words.
@@ -89,8 +93,17 @@ The agent never drafts them. When the task text already holds such an example, q
 only for what is missing. Record them under `Acceptance:` and `Not built:`. They keep a run of
 `yes` answers from standing in for the user's intent.
 
+For a plan, save these answers, the acceptance example, and the exclusion in one short `## Align`
+section in `plan.md`. Use the required-answer table shown in the docstring of
+`blocks/plan-review/scripts/start_plan.py`; its `Owner message` cells point to chat message ids or
+saved owner messages. Keep open choices in that table until the owner answers. Then show that
+version for approval through `blocks/plan-review/SKILL.md`. Run
+`python3 -I <kit root>/blocks/plan-review/scripts/start_plan.py <run>` to start it.
+For a standalone pair, keep the A-lines, `Acceptance:`, and `Not built:` in its task file.
+
 Small task. When, after reading the code, no direction-changing choice is open, Align is one short
-block in the same reply as the behavior list, with no question round:
+block in the same reply as the behavior list, with no question round. A plan for such a task omits
+the required-answer section and keeps its existing acceptance result and scope:
 
 ```
 Align: no open choice
@@ -116,8 +129,9 @@ task file is a record, not the reply. No design essay, no option survey.
 
 When an `implement` run calls this skill for its build step, take the behaviors from the done-when
 of its `01-frame.md` and the contracts in its `03-contracts.md`, and hold its build step. Before the
-first chunk, apply the rules and the todo list in its `05-build.md`. In that case, skip Align, the
-acceptance example, and Verify, review, ship, because the run's frame and review steps own them.
+first chunk, apply the rules and the todo list in its `05-build.md`. Reuse Align and the acceptance
+example from its approved `plan.md`, without a second exchange. Also skip
+Verify, review, ship, because the run's review steps own them.
 
 Every behavior ends with `Standards: <row ids>` or `Standards: none`. Select them using
 the kit's `blocks/engineering-standards/SKILL.md`. The agent checks this selection against the
