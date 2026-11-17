@@ -58,7 +58,7 @@ export async function deleteWorkspace(a: WorkspaceActions, workspace: string) {
   const found = await impact(a, workspace);
   if (!found) return;
   if (!found.canDelete) return a.app.notice(found.deleteBlocker ?? "This worktree cannot be removed.", true);
-  const lines = [`Remove the worktree folder at ${workspace}? The branch stays, so New Workspace can reopen it. Git refuses uncommitted changes or unpushed commits.`];
+  const lines = [`Remove the worktree folder at ${workspace}? The branch stays, so a new chat on Existing branch can reopen it. Git refuses uncommitted changes or unpushed commits.`];
   if (found.confirmationRequired) lines.push(`${plural(found.liveAgents, "agent")} still running. Removing stops them before the folder goes.`);
   if (found.ignoredCount) lines.push(`${plural(found.ignoredCount, "ignored file")} will be deleted too, such as ${found.firstIgnoredPath}.`);
   if (found.deleteBlocker) lines.push(found.deleteBlocker);

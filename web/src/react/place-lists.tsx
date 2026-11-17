@@ -1,5 +1,5 @@
 // The place menu of the new chat composer (ADR 0147): a new worktree, an existing branch, a pull
-// request, an issue, or the folder itself. Its lists came from the New workspace dialog.
+// request, an issue, or the folder itself. Its lists replace the old new workspace dialog.
 
 import { LoaderCircleIcon } from "lucide-react";
 import { useEffect, useState, type KeyboardEvent } from "react";

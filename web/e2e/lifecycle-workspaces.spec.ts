@@ -35,14 +35,14 @@ test("⌘Enter makes a worktree named from the prompt and shows each start step 
     // The card names the branch before the send.
     await expect(composer.getByTestId("preview-branch")).toHaveText(branch);
     await expect(composer.getByTestId("preview-setup")).toContainText("echo setup-started");
-    await shoot(tab, "new-chat-composer", b);
+    await shoot(tab, "new-chat-composer", info.project.name);
     await composer.getByTestId("new-chat-prompt").press("Meta+Enter");
 
     const start = tab.getByTestId("starting-chat");
     await expect(start).toContainText(`Fix the flaky smoke ${b}`);
     await expect(start.getByTestId("start-steps")).toContainText(`Make the worktree: ${branch}`);
     await expect(start.getByTestId("setup-output")).toContainText("setup-started");
-    await shoot(tab, "new-chat-starting", b);
+    await shoot(tab, "new-chat-starting", info.project.name);
     writeFileSync(gate, "");
     await expect(start).toHaveAttribute("data-state", "failed");
     await expect(start.getByTestId("setup-output")).toContainText("to-stderr");
@@ -74,7 +74,7 @@ test("the place menu sends a branch, a pull request or an issue as the chat's pl
     await composer.getByTestId("place-branch-filter").fill(`topic-${b}`);
     await composer.getByTestId("place-branch-filter").press("Enter");
     await expect(composer.getByTestId("chip-place")).toHaveText(`Branch topic-${b}`);
-    await shoot(tab, "place-menu", b);
+    await shoot(tab, "place-menu", info.project.name);
     await composer.getByTestId("new-chat-start").click();
     await expect.poll(() => bodies.length).toBe(1);
     expect(bodies[0]).toMatchObject({ prompt: "Review the topic", place: { kind: "branch", branch: `topic-${b}` } });
@@ -140,7 +140,7 @@ test("archive asks while agents run and restores; delete asks and removes the fo
   await menu("Remove worktree…");
   await expect(confirm).toContainText("Remove worktree?");
   await expect(confirm.getByTestId("confirm-body")).toContainText(`Remove the worktree folder at ${path}? The branch stays`);
-  await shoot(tab, "delete-confirm", b);
+  await shoot(tab, "delete-confirm", info.project.name);
   await confirm.getByTestId("confirm-action").click();
   await expect(confirm).toBeHidden();
   await expect(row).toBeHidden();

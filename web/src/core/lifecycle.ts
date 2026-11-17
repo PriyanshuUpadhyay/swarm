@@ -77,18 +77,6 @@ export class Lifecycle {
 
   // ---- projects ----
 
-  /** Project sections of the tree, for the project picker. */
-  /** The projects that New Workspace can use: a plain folder has no Git branches. */
-  projects(): { path: string; title: string }[] {
-    return (this.app.view.tree?.sections ?? []).filter((s) => s.kind === "project" && s.path && !s.folder).map((s) => ({ path: s.path!, title: s.title }));
-  }
-
-  /** The project of a workspace: the section that lists it. */
-  projectOf(workspace: string | null): string | null {
-    const s = this.app.view.tree?.sections.find((s) => s.kind === "project" && s.rows.some((r) => r.id === workspace));
-    return s?.path ?? null;
-  }
-
   openProject(mode: "create" | "import", path = "") {
     this.set({ project: mode, importChoice: null, projectPath: path, existing: null });
   }

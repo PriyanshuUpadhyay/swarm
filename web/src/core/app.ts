@@ -37,7 +37,7 @@ export class App {
   readonly actions = new AppActions(this);
 
   readonly registry = new Registry();
-  /** New workspace, switch model, archive, delete and Archived chats (S3). */
+  /** Projects, switch model, archive, delete and Archived chats (S3). */
   readonly life = new Lifecycle(this);
   /** Usage meters and Settings (S5). */
   readonly settings = new Settings(this);

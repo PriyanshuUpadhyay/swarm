@@ -256,14 +256,16 @@ function PreviewCard({ target, place, preview }: { target: Target; place: Place;
         ]
       : place.kind === "new" && target.worktree
         ? [["Branch", "Reading…"]]
-        : [["Folder", place.kind === "here" || !target.git ? target.cwd : placeLabel(place, target)]];
+        : place.kind === "here" || !target.git
+          ? [["Folder", target.cwd]]
+          : [["Starts on", placeLabel(place, target)]];
   return (
     <aside className="grid content-start gap-1.5 rounded-xl border border-border p-3 text-sm" aria-label="What starts" data-testid="new-chat-preview">
       <h3 className="text-xs font-medium text-muted-foreground">{place.kind === "new" && target.worktree ? "A new worktree" : "Where the chat runs"}</h3>
       {rows.map(([k, v]) => (
-        <div key={k} className="grid grid-cols-[64px_1fr] gap-2">
+        <div key={k} className="grid grid-cols-[72px_1fr] gap-2">
           <span className="text-muted-foreground">{k}</span>
-          <span className="truncate font-mono text-xs leading-5" data-testid={`preview-${k.toLowerCase()}`} title={v}>
+          <span className="truncate font-mono text-xs leading-5" data-testid={`preview-${k.toLowerCase().replace(" ", "-")}`} title={v}>
             {v}
           </span>
         </div>
@@ -284,7 +286,7 @@ export function StartingView({ app, start }: { app: App; start: Starting }) {
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto p-6" data-testid="starting-chat" data-state={start.error ? "failed" : "starting"}>
       <div className="grid w-full max-w-[720px] gap-3">
         <h2 className="truncate text-lg font-semibold">{start.title}</h2>
-        {start.prompt && <p className="line-clamp-4 text-sm whitespace-pre-wrap text-muted-foreground">{start.prompt}</p>}
+        {start.prompt && start.prompt !== start.title && <p className="line-clamp-4 text-sm whitespace-pre-wrap text-muted-foreground">{start.prompt}</p>}
         <ol className="grid gap-1.5" aria-label="Start steps" data-testid="start-steps">
           {steps.length === 0 && !start.error && <Step state="running" text="Getting ready" />}
           {steps.map((s) => (
