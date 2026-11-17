@@ -239,7 +239,7 @@ describe("a new chat", () => {
       tabs: async () => {
         throw new ApiError(404, "unknown workspace");
       },
-      post: async () => ({ session: "new" }),
+      post: async () => ({ start: "s1" }),
       choice: async (rev: string, op: { op: string; chat?: string }) => {
         writes.push({ op: op.op, chat: op.chat });
         if (!withNew.sections[0].rows.some((r) => r.selection?.chat === op.chat)) throw new ApiError(400, "unknown chat in workspace");
@@ -250,6 +250,7 @@ describe("a new chat", () => {
     app.notice = () => {};
     await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
     await app.startChat("/r/app");
+    await app.newChat.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "new" });
     expect(reads).toBeGreaterThan(2);
     expect(app.view.openId).toBe("new");
     expect(writes.filter((w) => w.chat === "new").map((w) => w.op)).toContain("open_tab");
@@ -266,7 +267,7 @@ describe("a chat started from the tab strip", () => {
       snapshot: async (): Promise<Snapshot> => ({ version: 1, sessions: [], agents: {} }),
       tree: async () => withNew,
       tabs: async (workspace: string) => ({ version: 1, revision: "rev-1", view: { workspace, tabs: [tab], history: [], selectedChat: "new", previousRecent: null, nextRecent: null, stepTargets: {} } }),
-      post: async () => ({ session: "new" }),
+      post: async () => ({ start: "s1" }),
       action: async (path: string, body: unknown) => void actions.push({ path, body }),
       choice: async (rev: string, op: Record<string, unknown>) => {
         writes.push(op);
@@ -277,6 +278,7 @@ describe("a chat started from the tab strip", () => {
     app.notice = () => {};
     await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
     await app.startChat("/r/app");
+    await app.newChat.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "new" });
     expect(writes.find((w) => w.op === "open_tab")).toEqual({ op: "open_tab", workspace: "/r/app", chat: "new" });
     await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
     await app.closeTab("new");

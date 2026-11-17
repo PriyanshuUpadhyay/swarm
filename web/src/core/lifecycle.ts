@@ -1,5 +1,5 @@
-// Workspace and chat lifecycle (S3): new workspace in four modes with its setup script, projects,
-// new chat with a profile, switch model, archive, delete, prune and Archived chats, on the P3a, P3b
+// Workspace and chat lifecycle (S3): projects, the
+// composer's place lists, switch model, archive, delete, prune and Archived chats, on the P3a, P3b
 // and S2 routes. Framework-free; the dialogs read `state`, which is a new object after each change.
 
 import { ApiError, sleep } from "./api";
@@ -9,20 +9,13 @@ import { RunCatalog } from "./run-catalog";
 import type { SwitchCarry } from "./composer";
 import {
   type NewOptions,
-  type Existing,
-  type Mode,
   type Issue,
-  type NewRequest,
-  type SetupRun,
   type Confirm,
   type ClosedChat,
   type ImportableChat,
   type Profile,
   type LifeState,
   type Handoff,
-  issuePrompt,
-  setupFrame,
-  setupFailure,
   isSettled,
   endConfirm,
 } from "./lifecycle-state";
@@ -33,7 +26,7 @@ export * from "./lifecycle-state";
 
 
 export class Lifecycle {
-  state: LifeState = { newWorkspace: null, create: null, project: null, importChoice: null, projectPath: "", existing: null, setupScript: null, switchModel: null, handoffs: {}, confirm: null, closed: false, imports: false };
+  state: LifeState = { project: null, importChoice: null, projectPath: "", existing: null, setupScript: null, switchModel: null, handoffs: {}, confirm: null, closed: false, imports: false };
   private listeners = new Set<() => void>();
   /** The CLIs, models and accounts that the run chip and Switch model offer. */
   readonly runs: RunCatalog;
@@ -62,13 +55,8 @@ export class Lifecycle {
     return this.app.api;
   }
 
-  /** `setup` and `handoff` stream frames. */
+  /** `handoff` stream frames. */
   onFrame(event: string, data: Record<string, unknown>) {
-    const c = this.state.create;
-    if (event === "setup" && c?.state === "working") {
-      const setup = setupFrame(c.setup, data);
-      if (setup !== c.setup) this.set({ create: { ...c, setup } });
-    }
     const h = event === "handoff" ? this.state.handoffs[String(data.old_session)] : undefined;
     if (h && !isSettled(h.phase)) {
       const phase = String(data.phase);
@@ -147,17 +135,7 @@ export class Lifecycle {
     return saved;
   }
 
-  // ---- new workspace ----
-
-  /** ⌘N, a project's "+" and New Workspace…: the dialog on this project, else the current one.
-   *  "N more worktrees" opens it on Existing branch, where each worktree is marked open. */
-  newWorkspace(project?: string, mode?: Mode) {
-    const repos = this.projects().map((p) => p.path);
-    const target = [project, this.projectOf(this.app.view.workspace)].find((p) => p && repos.includes(p)) ?? repos[0];
-    if (!target) return this.app.notice("New Workspace needs a Git project. Import or create one first.");
-    // A create still running keeps its progress, so the dialog shows it again.
-    this.set({ newWorkspace: { project: target, mode }, create: this.state.create?.state === "working" ? this.state.create : null });
-  }
+  // ---- the composer's place lists ----
 
   options(project: string): Promise<NewOptions> {
     return this.api.get("/api/workspace/new-options", { project });
@@ -170,64 +148,6 @@ export class Lifecycle {
 
   async issues(project: string): Promise<Issue[]> {
     return (await this.api.get<{ issues: Issue[] }>("/api/issues", { project })).issues;
-  }
-
-  /** Creates the workspace and waits for its setup script. A failed setup keeps the workspace and
-   *  the dialog, which says so; otherwise the dialog closes on the new workspace and starts a chat,
-   *  with the issue in its draft for a workspace from an issue. With the dialog closed, a notice reports. */
-  async create(req: NewRequest) {
-    if (this.state.create?.state === "working") return;
-    this.set({ create: { state: "working", error: null, workspace: null, setup: null } });
-    let made: { workspace: string; created?: boolean; setup?: Record<string, unknown>; issue?: Issue; existing?: Existing };
-    try {
-      made = await this.api.post("/api/workspace/new", req);
-    } catch (err) {
-      if (!this.state.newWorkspace) this.app.notice(message(err), true);
-      this.set({ create: { state: "failed", error: message(err), workspace: null, setup: null } });
-      return;
-    }
-    // The name is taken, and nothing changed: the dialog offers to open or reopen that branch.
-    if (made.existing) {
-      if (!this.state.newWorkspace) this.app.notice(`The branch ${made.existing.branch} already exists. Open it from New Workspace, Existing branch.`, true);
-      this.set({ create: { state: "exists", error: null, workspace: made.existing.path, setup: null, existing: made.existing } });
-      return;
-    }
-    await this.app.refresh();
-    // An existing worktree was opened, not made, so no setup ran and no chat starts.
-    if (made.created === false) {
-      this.set({ newWorkspace: null, create: null });
-      return this.app.selectWorkspace(made.workspace);
-    }
-    const closed = !this.state.newWorkspace;
-    // The reply's terminal frame is the result; the streamed output stays.
-    let setup: SetupRun | null = null;
-    if (made.setup) {
-      const streamed = this.state.create?.setup;
-      const output = streamed?.workspace === made.workspace ? streamed.output : "";
-      setup = setupFrame({ workspace: made.workspace, state: "running", output, exitCode: null, error: null }, { ...made.setup, workspace: made.workspace });
-    }
-    if (setup && setup.state !== "completed") {
-      if (closed) this.app.notice(setupFailure(setup), true);
-      this.set({ create: closed ? null : { state: "kept", error: null, workspace: made.workspace, setup } });
-      return;
-    }
-    this.set({ newWorkspace: null, create: null });
-    if (setup) this.app.notice("The setup script finished.");
-    if (closed && !made.issue) return this.app.notice(`Created the workspace ${made.workspace}.`);
-    await this.app.selectWorkspace(made.workspace);
-    await this.app.startChat(made.workspace, {}, made.issue ? issuePrompt(made.issue) : "");
-  }
-
-  /** A new name clears the taken-name offer, so Create comes back. */
-  forgetExisting() {
-    if (this.state.create?.state === "exists") this.set({ create: null });
-  }
-
-  /** The kept workspace after a failed setup. */
-  async openKept() {
-    const workspace = this.state.create?.workspace;
-    this.set({ newWorkspace: null, create: null });
-    if (workspace) await this.app.selectWorkspace(workspace);
   }
 
   // ---- chats ----

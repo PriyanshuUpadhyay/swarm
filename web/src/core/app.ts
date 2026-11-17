@@ -14,6 +14,7 @@ import { type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
 import { Skills } from "./skills";
 import { Notices } from "./notices";
+import { NewChat } from "./new-chat";
 import { chatRows, type ChoiceOp, type NavRow, type PaletteItem, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
 import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS, SIDEBAR_VIEW_KEY, readStore } from "./app-types";
 import { AppNavigation } from "./app-navigation";
@@ -42,6 +43,8 @@ export class App {
   readonly settings = new Settings(this);
   /** The kit's blocks and skills (ADR 0111). */
   readonly skills = new Skills(this);
+  /** The new chat composer and the chats it starts (ADR 0147). */
+  readonly newChat = new NewChat(this);
   /** Whether macOS lets swarm's notices through (ADR 0102). */
   readonly notices = new Notices(this);
   view: View;
@@ -73,7 +76,6 @@ export class App {
   urlFollowed = false;
   /** Bumped by each move between chats, so a slow workspace step does not undo a newer one. */
   navSeq = 0;
-  starting = false;
   paletteOpen = false;
   branchPicking = false;
   asking: Ask | null = null;
@@ -246,8 +248,8 @@ export class App {
     return this.navigation.selectWorkspace(path, e);
   }
 
-  startChat(workspace = this.workspace, launch: { role?: string; here?: boolean } = {}, draft = "") {
-    return this.actions.startChat(workspace, launch, draft);
+  startChat(workspace = this.workspace, role?: string) {
+    return this.actions.startChat(workspace, role);
   }
 
   markedChats(): string[] {

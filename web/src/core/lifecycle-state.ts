@@ -1,7 +1,5 @@
 import type { SwitchCarry } from "./composer";
 
-export type Mode = "new-branch" | "existing-branch" | "pr" | "issue";
-
 /** `GET /api/workspace/new-options`. */
 export type NewOptions = {
   defaultBranch: string | null;
@@ -17,18 +15,6 @@ export type NewOptions = {
 
 export type Issue = { number: number; title: string; body: string; url?: string; labels?: { name: string }[] };
 
-export type NewRequest = {
-  project: string;
-  name: string;
-  mode: Mode;
-  base?: string;
-  branch?: string;
-  pr?: number;
-  issue?: number;
-  folder?: string;
-  prefix?: string;
-};
-
 /** One setup script run, from its `setup` stream frames and the create reply. */
 export type SetupRun = {
   workspace: string | null;
@@ -37,11 +23,6 @@ export type SetupRun = {
   exitCode: number | null;
   error: string | null;
 };
-
-/** A New branch whose name was taken: its worktree, or null for a branch that has none. */
-export type Existing = { branch: string; path: string | null };
-
-export type Create = { state: "working" | "failed" | "kept" | "exists"; error: string | null; workspace: string | null; setup: SetupRun | null; existing?: Existing };
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -78,9 +59,6 @@ export type ImportableChat = { id: string; workspace: string; title: string; pro
 export type Profile = { name: string; runners: { provider: string; model?: string }[] };
 
 export type LifeState = {
-  /** The New Workspace dialog, on this project. */
-  newWorkspace: { project: string; mode?: Mode } | null;
-  create: Create | null;
   project: "create" | "import" | null;
   /** The plain folder that Import asks about: Git or a plain folder. */
   importChoice: string | null;
@@ -101,11 +79,7 @@ export type LifeState = {
 // ponytail: the dialog keeps the last 256 KiB of setup output; a log view if scripts get chatty.
 const OUTPUT_CAP = 256 * 1024;
 
-/** The first prompt of a chat started from an issue: its title, then its body. */
-export const issuePrompt = (issue: Issue) => `Issue #${issue.number}: ${issue.title}${issue.body.trim() ? `\n\n${issue.body.trim()}` : ""}`;
-
-/** Applies one `setup` frame. A run follows the first workspace that starts while a create waits,
- *  because the create reply names the workspace only after setup ends. */
+/** Applies one `setup` frame. A run follows the first workspace that starts while it waits. */
 export function setupFrame(run: SetupRun | null, frame: Record<string, unknown>): SetupRun | null {
   const workspace = String(frame.workspace);
   if (!run) return frame.state === "running" ? { workspace, state: "running", output: "", exitCode: null, error: null } : null;
@@ -119,8 +93,8 @@ export function setupFrame(run: SetupRun | null, frame: Record<string, unknown>)
   return run;
 }
 
-/** The setup line under a kept workspace: what failed, and that the folder stays. */
+/** What a failed setup script did. */
 export function setupFailure(run: SetupRun): string {
   const why = run.state === "timeout" ? "timed out" : run.exitCode !== null ? `failed with exit code ${run.exitCode}` : `failed: ${run.error ?? "unknown error"}`;
-  return `The setup script ${why}. The workspace was kept${run.workspace ? ` at ${run.workspace}` : ""}.`;
+  return `The setup script ${why}.`;
 }

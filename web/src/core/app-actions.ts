@@ -3,7 +3,7 @@ import { type Command } from "./commands";
 import { whenPainted } from "./perf";
 import { isChair, paneStatus } from "./panes";
 import { chatRows, nextBlocked, paletteSources, recency, workspaceOf, workspaceRow, type PaletteItem } from "./nav";
-import { type Ask, SIDEBAR_VIEWS, PROMPT_JUMP, message } from "./app-types";
+import { type Ask, SIDEBAR_VIEWS, PROMPT_JUMP } from "./app-types";
 import type { App } from "./app";
 
 /** A new chat waits up to LIST_POLLS * LIST_POLL_MS (5 s) for the server's tree to list it. */
@@ -13,25 +13,12 @@ const LIST_POLL_MS = 250;
 export class AppActions {
   constructor(private readonly app: App) {}
 
-  /** ⌘T, a "+" and New chat: starts a profile (the default one unless `launch` names it) in the
-   *  workspace. On a hub's main checkout the server makes the chat its own worktree, unless
-   *  `launch.here` is set (ADR 0146). A notice shows while `swarm launch` runs; `draft` goes into
-   *  the new chat's composer. */
-  async startChat(workspace = this.app.workspace, launch: { role?: string; here?: boolean } = {}, draft = "") {
+  /** ⌘T and a row's New chat: a chat in `workspace` itself at once, with no prompt and no new
+   *  worktree, also on a hub's main (ADR 0147). It opens when its `chat-start` frames end. */
+  async startChat(workspace = this.app.workspace, role = "chat") {
     const reason = this.newChatReason(workspace);
     if (reason || !workspace) return this.app.notice(reason ?? "Pick a workspace to start a chat.");
-    if (this.app.starting) return;
-    this.app.starting = true;
-    this.app.notice("Starting a chat…");
-    try {
-      const started = await this.app.api.post<{ session: string }>("/api/chat/new", { cwd: workspace, ...launch });
-      if (draft) this.app.composing.setDraft(started.session, draft);
-      await this.openNew(started.session);
-    } catch (err) {
-      this.app.notice(message(err), true);
-    } finally {
-      this.app.starting = false;
-    }
+    await this.app.newChat.start(workspace, "", { kind: "here" }, { role, run: null });
   }
 
   private newChatReason(workspace = this.app.workspace): string | null {
@@ -41,14 +28,15 @@ export class AppActions {
   }
 
   /** The server's tree lists a new chat after its agent poll sees the chair's pane, about a second
-   *  later, and opening the chat writes a tab that the server checks against that tree. */
-  private async openNew(session: string) {
+   *  later, and opening the chat writes a tab that the server checks against that tree. With
+   *  `open` false the chat only gets listed, because the owner moved on while it started. */
+  async openNew(session: string, open = true) {
     for (let i = 0; i < LIST_POLLS; i++) {
       await this.app.navigation.refreshSnapshot();
       if (this.app.listsChat(session)) break;
       await sleep(LIST_POLL_MS);
     }
-    this.app.navigation.openChat(session);
+    if (open) this.app.navigation.openChat(session);
   }
 
   /** Branch from here: a new chat with the conversation before user row `row` of chat `session`,
@@ -203,10 +191,10 @@ export class AppActions {
     });
     const chat = () => this.app.openId !== null;
     const cmds: Command[] = [
-      { id: "workspace.new", title: "New Workspace", chord: "Meta+N", run: () => this.app.life.newWorkspace() },
+      { id: "chat.compose", title: "New Chat…", chord: "Meta+N", run: () => this.app.newChat.open() },
       {
         id: "chat.new",
-        title: "New Chat",
+        title: "New Chat Here",
         chord: "Meta+T",
         disabledReason: () => this.newChatReason(),
         // A held key must not start one chat per repeat.

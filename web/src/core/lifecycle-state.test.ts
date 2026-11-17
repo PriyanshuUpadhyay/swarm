@@ -12,7 +12,7 @@ describe("setup frames", () => {
     run = setupFrame(run, { workspace: NEW_WORKSPACE, state: "output", channel: "stderr", text: "warn\n" });
     run = setupFrame(run, { workspace: NEW_WORKSPACE, state: "failed", exit_code: 3 });
     expect(run).toEqual({ workspace: NEW_WORKSPACE, state: "failed", output: "installing\nwarn\n", exitCode: 3, error: null });
-    expect(setupFailure(run!)).toBe(`The setup script failed with exit code 3. The workspace was kept at ${NEW_WORKSPACE}.`);
+    expect(setupFailure(run!)).toBe("The setup script failed with exit code 3.");
   });
 
   it("ignores output before a run starts, and keeps only the newest output past the cap", () => {

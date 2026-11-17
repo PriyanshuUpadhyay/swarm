@@ -4,16 +4,13 @@
 import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { accountCli, accountColor, applyBlock, applyLabel, CARRY_OPTIONS, chooseModel, cliName, levelWord, limitText, modelLevels, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
+import { accountColor, applyBlock, applyLabel, CARRY_OPTIONS, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
-import type { ModelInfo } from "../core/run-catalog";
-import type { Account, ProviderInfo } from "../core/settings";
 import { Button } from "../components/ui/button";
-import { FIELD, message, useLife, ErrorLine } from "./lifecycle-shared";
+import { useLife, ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
 import { Segmented } from "./settings-shared";
-import { modelPickerKey } from "./model-picker";
-import { meterTone } from "./usage-meters";
+import { RunPicker, runModel, useRunCatalog } from "./run-picker";
 
 export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
   const chosen = useLife(app, "switchModel");
@@ -93,77 +90,13 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const provider = current.provider;
   const [draft, setDraft] = useState<Run>(current);
   const [carry, setCarry] = useState<Carry>(saved);
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [models, setModels] = useState<Record<string, ModelInfo[] | string>>({});
-  const [accounts, setAccounts] = useState<Pick<Account, "name" | "email" | "summary">[]>([]);
-  const usage = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.usage);
-  const meters = usage.state === "ready" ? usage.data.meters : [];
-  const [query, setQuery] = useState("");
-  const anchorId = `run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const [error, setError] = useState<string | null>(null);
+  const catalog = useRunCatalog(app, provider);
   const running = handoff !== undefined && !isSettled(handoff.phase);
 
-  // The meters are a cached read with no provider call; Settings may not have read them yet.
-  useEffect(() => {
-    // loadUsage keeps its own error in state.usage, so nothing waits for it.
-    void app.settings.loadUsage();
-  }, [app]);
-
-  useEffect(() => {
-    let live = true;
-    const read = (id: string) =>
-      app.life.runs.models(id).then(
-        (m) => live && setModels((all) => ({ ...all, [id]: m.models })),
-        (err) => live && setModels((all) => ({ ...all, [id]: `Could not read the models: ${message(err)}` })),
-      );
-    app.life.runs.providers().then(
-      ({ providers }) => {
-        if (!live) return;
-        setProviders(providers);
-        for (const p of providers) void read(p.id);
-      },
-      (err) => {
-        if (!live) return;
-        // The chat's own CLI still lists its models, and a typed id still works.
-        setError(`Could not read the CLIs: ${message(err)}`);
-        void read(provider);
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [app, provider]);
-
-  const info = providers.find((p) => p.id === draft.provider);
-  const accountInfo = providers.find((p) => p.id === accountCli(draft.provider, draft.model));
-  useEffect(() => {
-    let live = true;
-    setAccounts([]);
-    if (accountInfo?.accounts)
-      app.life.runs.accounts(accountInfo.id).then(
-        (a) => live && setAccounts(a.accounts),
-        () => {}, // Accounts are optional; the default account starts.
-      );
-    return () => {
-      live = false;
-    };
-  }, [app, accountInfo]);
-
-  const list = models[draft.provider];
-  const model = Array.isArray(list) ? list.find((m) => m.id === draft.model) : undefined;
-  const levels = modelLevels(info?.efforts ?? [], model?.efforts);
-  const defaultLevel = model?.default_effort ?? info?.default_effort;
+  const { label } = runModel(catalog, draft);
   const outcome = switchOutcome(current, draft);
-  const q = query.trim().toLowerCase();
   const blocked = applyBlock(chair, draft);
-  // A failed accounts read still shows the chat's own account, which Apply sends.
-  const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null, summary: null }, ...accounts] : accounts;
-  const label = model?.label ?? draft.model ?? "";
-
-  const choose = (provider: string, m: ModelInfo | string) => {
-    const cli = providers.find((x) => x.id === provider) ?? { id: provider, efforts: [], default_effort: "" };
-    setDraft(chooseModel(current, draft, cli, m));
-  };
+  const error = catalog.error;
 
   const apply = () => {
     if (!draft.model || outcome === "none") return;
@@ -174,110 +107,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
 
   return (
     <div className="grid gap-3">
-      <fieldset disabled={running} className="grid grid-cols-2 gap-3">
-        <div className="grid min-w-0 gap-1" onKeyDown={(e) => modelPickerKey(e, query)}>
-          <input className={FIELD} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <div data-testid="run-models" className="max-h-[260px] overflow-y-auto">
-            {(providers.length ? providers : [{ id: current.provider }]).map((p) => {
-              const ms = models[p.id];
-              const shown = Array.isArray(ms) ? ms.filter((m) => !q || m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) : [];
-              // A typed model id still works when the list could not be read.
-              const custom = q && ms !== undefined && !(Array.isArray(ms) && ms.some((m) => m.id.toLowerCase() === q)) ? query.trim() : null;
-              return (
-                <div key={p.id} role="group" aria-labelledby={`${anchorId}-${p.id}`} data-provider={p.id}>
-                  <div id={`${anchorId}-${p.id}`} className="flex gap-2 px-2 pt-2 pb-1 text-xs text-muted-foreground">
-                    <span className="flex-1 font-medium">{cliName(p.id)}</span>
-                    {p.id !== current.provider && <span>{carry === "summary" ? "new chat + summary" : "new chat"}</span>}
-                  </div>
-                  {ms === undefined && <p className="px-2 py-1 text-xs text-muted-foreground">Reading models…</p>}
-                  {Array.isArray(ms) && !ms.length && <p className="px-2 py-1 text-xs text-muted-foreground">No models listed. Type a model id.</p>}
-                  {typeof ms === "string" && (
-                    <p className="line-clamp-2 px-2 py-1 text-xs break-words text-failed" title={ms}>
-                      {ms}
-                    </p>
-                  )}
-                  {shown.map((m) => {
-                    const on = draft.provider === p.id && draft.model === m.id;
-                    return (
-                      <button key={m.id} data-model-id={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, m)}>
-                        <Radio on={on} />
-                        <span className="min-w-0 truncate">{m.label}</span>
-                        <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground" title={m.note}>{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
-                      </button>
-                    );
-                  })}
-                  {custom && (
-                    <button type="button" aria-pressed={draft.provider === p.id && draft.model === custom} data-model-id={custom} data-testid={`run-custom-${p.id}`} className="flex w-full min-w-0 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, custom)}>
-                      <span className="truncate">Use “{custom}”</span>
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <div className="grid content-start gap-3">
-          <div className="grid gap-1.5" role="group" aria-label="Thinking" data-testid="run-thinking">
-            <div className="flex gap-2 text-xs text-muted-foreground">
-              <span className="flex-1 font-medium">Thinking</span>
-              {levels.length > 0 && label && <span className="truncate">levels {label} allows</span>}
-            </div>
-            {levels.length ? (
-              <div className="flex flex-wrap gap-1">
-                {levels.map((l) => (
-                  <button
-                    key={l}
-                    type="button"
-                    aria-pressed={draft.effort === l}
-                    className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-hover aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background"
-                    onClick={() => setDraft({ ...draft, effort: l })}
-                  >
-                    {levelWord(l)}
-                    {l === defaultLevel && <span className="text-[10px] opacity-70">default</span>}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">This model sets its own thinking.</p>
-            )}
-          </div>
-          <div className="grid gap-1" role="group" aria-label="Account" data-testid="run-account">
-            <div className="flex gap-2 text-xs text-muted-foreground">
-              <span className="flex-1 font-medium">Account</span>
-              {accountInfo?.accounts && <span>limit left</span>}
-            </div>
-            {accountInfo?.accounts ? (
-              [{ name: null, email: null, summary: null }, ...accountRows].map((a) => {
-                const on = draft.account === a.name;
-                const limit = a.name ? limitText(meters, accountInfo.id, a.name, a.summary ?? null) : null;
-                return (
-                  <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
-                    <Radio on={on} />
-                    {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
-                    <span className="min-w-0 truncate">{a.name ?? (draft.provider === "codex" && current.provider === "codex" && current.account ? `Keep current account (${current.account})` : "CLI default")}</span>
-                    {limit?.text && (
-                      <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
-                        {limit.left !== null && (
-                          <span aria-hidden className="h-1 w-6 shrink-0 overflow-hidden rounded-full bg-border">
-                            <span className={`block h-full ${meterTone(limit.left)}`} style={{ width: `${limit.left}%` }} />
-                          </span>
-                        )}
-                        <span className="truncate">{limit.text}</span>
-                      </span>
-                    )}
-                  </button>
-                );
-              })
-            ) : (
-              <span className="px-2 text-sm">{cliName(draft.provider)} login</span>
-            )}
-            {accountInfo?.accounts && <div className="text-xs text-muted-foreground">
-              <span>{meters.filter((m) => m.provider === accountInfo.id).map((m) => m.as_of_seconds).filter((t): t is number => t !== null).sort((a, b) => a - b).slice(0, 1).map((t) => `Limits checked ${new Date(t * 1000).toLocaleString()}`).join("") || "No cached limit time"}</span>
-              <Button type="button" variant="ghost" size="sm" onClick={() => void app.settings.refreshUsage(accountInfo.id)}>Refresh limits</Button>
-            </div>}
-          </div>
-        </div>
-      </fieldset>
+      <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={setDraft} disabled={running} note={(p) => (p !== current.provider ? (carry === "summary" ? "new chat + summary" : "new chat") : null)} />
       {outcome === "handoff" && !running && (
         <div className="flex flex-wrap items-center gap-2" data-testid="run-carry">
           <span className="text-xs text-muted-foreground">Bring over</span>
@@ -319,9 +149,4 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
       </div>
     </div>
   );
-}
-
-/** A radio mark for a pick row; the row's aria-pressed carries the state. */
-function Radio({ on }: { on: boolean }) {
-  return <span aria-hidden className={`size-3 shrink-0 rounded-full border ${on ? "border-[4px] border-foreground" : "border-border-strong"}`} />;
 }

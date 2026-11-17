@@ -46,7 +46,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, a
           {chev()}
           <span className="flex-1" />
           {s.kind === "project" && !archive && (
-            <button tabIndex={-1} className="row-btn" data-action="new-workspace" aria-label={`New workspace in ${s.title}`} title="New workspace (⌘N)">
+            <button tabIndex={-1} className="row-btn" data-action="new-chat-project" aria-label={`New chat in ${s.title}`} title="New chat (⌘N)">
               <PlusIcon />
             </button>
           )}

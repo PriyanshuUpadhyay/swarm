@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./api";
 import type { App } from "./app";
-import { issuePrompt, Lifecycle } from "./lifecycle";
-
-const NEW_WORKSPACE = "/work/proj-worktrees/fix";
+import { Lifecycle } from "./lifecycle";
 
 /** An App stand-in that records what Lifecycle asks of it. `post` answers by path. */
 function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<unknown>, agents: { id: string; alive: boolean; state?: string }[] = [], importable: { id: string; workspace: string }[] = []) {
@@ -24,7 +22,6 @@ function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<
     refresh: async () => {},
     listsChat: (session: string) => !importable.some((c) => c.id === session),
     selectWorkspace: async (path: string) => void calls.push(`select ${path}`),
-    startChat: async (workspace: string, _launch: unknown, draft: string) => void calls.push(`chat ${workspace} ${draft}`),
     openChat: (session: string) => calls.push(`open ${session}`),
     agentsOf: () => ({ info: { id: "chat-1", chair_id: null }, agents }),
     chatTitle: () => "Fix the sidebar",
@@ -42,72 +39,6 @@ describe("reopen", () => {
     const own = fakeApp(async () => ({}));
     await own.life.reopen("own");
     expect(own.calls).toEqual(['/api/sessions/unarchive {"ids":["own"]}', "open own"]);
-  });
-});
-
-describe("new workspace", () => {
-  it("offers only Git projects, so a plain folder never opens the dialog", () => {
-    const section = (path: string, folder: boolean) => ({ id: path, kind: "project", path, folder, title: path.slice(1), rows: [{ kind: "workspace", id: path }] });
-    const { life, calls } = fakeApp(async () => ({}));
-    const view = (life as unknown as { app: { view: { tree: unknown; workspace: string | null } } }).app.view;
-    view.tree = { sections: [section("/notes", true), section("/repo", false)] };
-    view.workspace = "/notes";
-    expect(life.projects().map((p) => p.path)).toEqual(["/repo"]);
-    life.newWorkspace();
-    expect(life.state.newWorkspace).toEqual({ project: "/repo" });
-    view.tree = { sections: [section("/notes", true)] };
-    life.state = { ...life.state, newWorkspace: null };
-    life.newWorkspace();
-    expect(life.state.newWorkspace).toBeNull();
-    expect(calls).toEqual(["notice New Workspace needs a Git project. Import or create one first."]);
-  });
-
-  it("keeps the dialog on a failed setup, with the streamed output and the reply's exit code", async () => {
-    let reply!: (value: unknown) => void;
-    const { life, calls } = fakeApp(() => new Promise((ok) => (reply = ok)));
-    life.state = { ...life.state, newWorkspace: { project: "/work/proj" } };
-    const done = life.create({ project: "/work/proj", name: "Fix", mode: "new-branch", base: "main" });
-    life.onFrame("setup", { workspace: NEW_WORKSPACE, state: "running" });
-    life.onFrame("setup", { workspace: NEW_WORKSPACE, state: "output", text: "boom\n" });
-    reply({ workspace: NEW_WORKSPACE, setup: { workspace: NEW_WORKSPACE, state: "failed", exit_code: 9 } });
-    await done;
-    expect(life.state.newWorkspace).not.toBeNull();
-    expect(life.state.create).toMatchObject({ state: "kept", workspace: NEW_WORKSPACE, setup: { output: "boom\n", exitCode: 9 } });
-    expect(calls.filter((c) => c.startsWith("select"))).toEqual([]);
-    await life.openKept();
-    expect(calls).toContain(`select ${NEW_WORKSPACE}`);
-    expect(life.state.newWorkspace).toBeNull();
-  });
-
-  it("closes on success and starts an empty chat in the new workspace", async () => {
-    const { life, calls } = fakeApp(async () => ({ workspace: NEW_WORKSPACE }));
-    life.state = { ...life.state, newWorkspace: { project: "/work/proj" } };
-    await life.create({ project: "/work/proj", name: "Fix", mode: "new-branch", base: "main" });
-    expect(calls.slice(-2)).toEqual([`select ${NEW_WORKSPACE}`, `chat ${NEW_WORKSPACE} `]);
-  });
-
-  it("closes on success and starts a chat with the issue's title and body in its draft", async () => {
-    const issue = { number: 7, title: "Fix Sidebar", body: "Use less space" };
-    const { life, calls } = fakeApp(async () => ({ workspace: NEW_WORKSPACE, issue }));
-    await life.create({ project: "/work/proj", name: "", mode: "issue", issue: 7 });
-    expect(life.state.create).toBeNull();
-    expect(calls.slice(-2)).toEqual([`select ${NEW_WORKSPACE}`, `chat ${NEW_WORKSPACE} Issue #7: Fix Sidebar\n\nUse less space`]);
-    expect(issuePrompt({ ...issue, body: "  " })).toBe("Issue #7: Fix Sidebar");
-  });
-
-  it("reports a failed setup in a notice when the dialog was closed", async () => {
-    const { life, calls } = fakeApp(async () => ({ workspace: NEW_WORKSPACE, setup: { workspace: NEW_WORKSPACE, state: "timeout", exit_code: null } }));
-    await life.create({ project: "/work/proj", name: "Fix", mode: "new-branch" });
-    expect(life.state.create).toBeNull();
-    expect(calls).toContain(`notice The setup script timed out. The workspace was kept at ${NEW_WORKSPACE}.`);
-  });
-
-  it("shows the server's refusal and keeps the form", async () => {
-    const { life } = fakeApp(async () => {
-      throw new ApiError(400, "A folder already exists at /work/proj-worktrees/fix");
-    });
-    await life.create({ project: "/work/proj", name: "Fix", mode: "new-branch" });
-    expect(life.state.create).toEqual({ state: "failed", error: "A folder already exists at /work/proj-worktrees/fix", workspace: null, setup: null });
   });
 });
 

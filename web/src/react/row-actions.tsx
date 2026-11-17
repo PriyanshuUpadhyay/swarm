@@ -33,7 +33,7 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
   if (!r && row.kind === "project") {
     const { path, title } = row.section;
     list = [
-      !archive && !!path && { label: "New Workspace…", icon: PlusIcon, run: () => app.life.newWorkspace(path) },
+      !archive && !!path && { label: "New Chat…", icon: PlusIcon, run: () => app.newChat.open(path) },
       { label: "Rename Project…", icon: PencilIcon, run: () => app.renameProject(path ?? "", title) },
       !archive && !!path && { label: "Setup script…", icon: TerminalIcon, run: () => app.life.editSetupScript(path, title) },
       !!path && { label: "Remove Project…", icon: FolderMinusIcon, run: () => app.life.removeProject(path, title) },
@@ -52,7 +52,7 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
     const up = app.workspaceMoveTarget(r.id, -1);
     const down = app.workspaceMoveTarget(r.id, 1);
     list = [
-      { label: "New chat", icon: PlusIcon, disabled: !r.newChatEnabled, run: () => void app.startChat(r.id) },
+      { label: "New Chat…", icon: PlusIcon, disabled: !r.newChatEnabled, run: () => app.newChat.open(r.id) },
       r.pinned
         ? { label: "Unpin workspace", icon: PinOffIcon, run: () => void app.choose({ op: "unpin", workspace: r.id }) }
         : { label: "Pin workspace", icon: PinIcon, run: () => void app.pin(r.id) },

@@ -1,14 +1,12 @@
-// One context menu, one tooltip, one hover card and one new-chat menu for a whole list of plain rows
+// One context menu, one tooltip and one hover card for a whole list of plain rows
 // (decision 3). A Radix root per row would cost every key move and scroll frame. These components keep
 // their own state, so a hover or a menu never re-renders the rows; they find the row from the DOM event.
 
-import { ArchiveIcon, CopyIcon, PlusIcon, SquareIcon } from "lucide-react";
+import { ArchiveIcon, CopyIcon, SquareIcon } from "lucide-react";
 import { useEffect, useState, type RefObject } from "react";
 import type { App } from "../core/app";
-import type { Profile } from "../core/lifecycle";
 import type { NavRow, SidebarRow } from "../core/nav";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../components/ui/hover-card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/tooltip";
 import { copyText as copy } from "./copy";
@@ -94,50 +92,6 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
         ),
       )}
     </ContextMenuContent>
-  );
-}
-
-export type NewChatAnchor = { rect: DOMRect; workspace: SidebarRow };
-
-/** The list's one "+" menu (NewChatProfileMenu): the default profile, then each saved profile. */
-export function NewChatMenu({ app, open }: { app: App; open: RefObject<((anchor: NewChatAnchor) => void) | null> }) {
-  const [anchor, setAnchor] = useState<NewChatAnchor | null>(null);
-  const [profiles, setProfiles] = useState<Profile[] | string | null>(null);
-  useEffect(() => {
-    open.current = setAnchor;
-    return () => {
-      open.current = null;
-    };
-  }, [open]);
-  useEffect(() => {
-    if (anchor) app.life.profiles().then(setProfiles, (err) => setProfiles(String(err instanceof Error ? err.message : err)));
-  }, [app, anchor]);
-  return (
-    <DropdownMenu open={anchor !== null} onOpenChange={(o) => !o && setAnchor(null)}>
-      <DropdownMenuTrigger asChild>{anchor ? <Ghost rect={anchor.rect} /> : <span hidden />}</DropdownMenuTrigger>
-      {anchor && (
-        <DropdownMenuContent align="start" data-testid="new-chat-menu">
-          <DropdownMenuLabel className="max-w-[240px] truncate normal-case">New chat in {anchor.workspace.title}</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={() => void app.startChat(anchor.workspace.id, {})}>
-            <PlusIcon /> Default profile
-          </DropdownMenuItem>
-          {anchor.workspace.startsChatWorktree && (
-            <DropdownMenuItem data-testid="new-chat-here" onSelect={() => void app.startChat(anchor.workspace.id, { here: true })}>
-              <PlusIcon /> Default profile, no new worktree
-            </DropdownMenuItem>
-          )}
-          {profiles === null && <DropdownMenuItem disabled>Reading profiles…</DropdownMenuItem>}
-          {typeof profiles === "string" && <DropdownMenuItem disabled>Profiles unavailable: {profiles}</DropdownMenuItem>}
-          {Array.isArray(profiles) &&
-            profiles.map((p) => (
-              <DropdownMenuItem key={p.name} data-testid="profile-item" onSelect={() => void app.startChat(anchor.workspace.id, { role: p.name })}>
-                <span className="flex-1">{p.name}</span>
-                {p.runners[0] && <span className="text-xs text-faint-foreground">{[p.runners[0].provider, p.runners[0].model].filter(Boolean).join(" ")}</span>}
-              </DropdownMenuItem>
-            ))}
-        </DropdownMenuContent>
-      )}
-    </DropdownMenu>
   );
 }
 

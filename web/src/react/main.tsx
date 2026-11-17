@@ -15,6 +15,7 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import "../styles.css";
 import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
+import { ComposerOverlay, StartingView } from "./composer-new";
 import { LifecycleDialogs } from "./lifecycle";
 import { SettingsDialog } from "./settings";
 import { LoadFailed } from "./load-failed";
@@ -100,6 +101,9 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
 /** The open chat, else the selected workspace's landing, else Home; the workspace panel beside it. */
 function Main({ app, changes }: { app: App; changes: Changes }) {
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
+  // A starting chat shows its steps until the owner moves away (ADR 0147).
+  useSyncExternalStore(app.subscribe, () => app.navSeq);
+  const start = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.shown());
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   const reconnecting = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
   return (
@@ -114,7 +118,10 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">{openId ? <ChatColumn app={app} openId={openId} /> : workspace ? <WorkspaceLanding app={app} /> : <Home app={app} />}</div>
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {start ? <StartingView app={app} start={start} /> : openId ? <ChatColumn app={app} openId={openId} /> : workspace ? <WorkspaceLanding app={app} /> : <Home app={app} />}
+          {openId && !start && <ComposerOverlay app={app} />}
+        </div>
         <WorkspacePanel app={app} changes={changes} />
       </div>
     </div>

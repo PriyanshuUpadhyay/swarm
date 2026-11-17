@@ -126,8 +126,14 @@ export class AppStream {
         if (typeof data.session === "string") void this.show(data.session);
         break;
       case "setup":
+        void this.app.newChat.onFrame(e.event, data);
+        this.app.life.onFrame(e.event, data);
+        break;
       case "handoff":
         this.app.life.onFrame(e.event, data);
+        break;
+      case "chat-start":
+        void this.app.newChat.onFrame(e.event, data);
         break;
     }
   }

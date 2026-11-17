@@ -10,6 +10,7 @@ import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { StatusGlyph } from "./status";
 import { NoticesCard } from "./notices";
+import { ComposerPage } from "./composer-new";
 
 export function Home({ app }: { app: App }) {
   const view = useSyncExternalStore(app.subscribe, () => app.view);
@@ -37,6 +38,9 @@ export function Home({ app }: { app: App }) {
   };
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" data-testid="home">
+      <div className="flex justify-center pt-8">
+        <ComposerPage app={app} />
+      </div>
       <div className="mx-auto grid max-w-[760px] gap-8 px-8 py-8">
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => app.life.openProject("import")}>
@@ -78,7 +82,7 @@ export function Home({ app }: { app: App }) {
             {doctor.state === "error" && <p className="text-sm text-failed">Could not check setup. Open Setup &amp; doctor to try again.</p>}
             <Step done={hasProject} title="Import a project" run={() => app.life.openProject("import")} />
             <Step done={hasAccount} title="Sign in to an account" run={() => app.settings.show("accounts")} />
-            <Step done={hasChat} title="Start a chat" run={hasProject ? () => app.life.newWorkspace() : undefined} />
+            <Step done={hasChat} title="Start a chat" run={hasProject ? () => app.newChat.open() : undefined} />
           </section>
         )}
         <section className="grid gap-1" aria-label="Recent work">
@@ -129,8 +133,9 @@ export function WorkspaceLanding({ app }: { app: App }) {
   const row = workspaceRow(view.tree, view.workspace);
   const chats = recentWork(view.tree, app.snapshot, Infinity).filter((chat) => chat.workspacePath === view.workspace);
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4" data-testid="workspace-landing">
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto py-6" data-testid="workspace-landing">
       <h2 className="text-lg font-semibold">{row?.title ?? view.workspace?.split("/").pop()}</h2>
+      {row?.newChatEnabled && <ComposerPage app={app} />}
       <p className="text-muted-foreground">{view.tabs?.tabs.some((tab) => tab.pending === null) ? "Pick a tab, or start a new chat." : "This workspace has no open chats."}</p>
       {chats.length > 0 && <div className="grid w-full max-w-lg gap-1 px-4" aria-label="Workspace chats">
         {chats.map((chat) => <button key={chat.session} data-testid="workspace-chat" onClick={() => app.openChat(chat.session)}
@@ -139,10 +144,7 @@ export function WorkspaceLanding({ app }: { app: App }) {
           <span className="text-xs text-muted-foreground">{chat.age}</span>
         </button>)}
       </div>}
-      <Button title="New chat (⌘T)" size="sm" disabled={!row?.newChatEnabled} onClick={() => void app.startChat()}>
-        New chat
-      </Button>
-      <p className="text-xs text-muted-foreground">Reopen the last closed tab with ⇧⌘T.</p>
+      <p className="text-xs text-muted-foreground">⌘T starts a chat here with no prompt. Reopen the last closed tab with ⇧⌘T.</p>
       {row && !row.newChatEnabled && <p className="text-sm text-muted-foreground">{row.archived ? "This workspace is archived." : "This workspace is read-only."}</p>}
     </div>
   );

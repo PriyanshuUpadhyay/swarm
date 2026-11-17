@@ -9,7 +9,7 @@ import { archivedSession, currentRow, type SidebarRow } from "../core/nav";
 import { Button } from "../components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
-import { NewChatMenu, RowHints, RowMenu, type NewChatAnchor } from "./row-overlays";
+import { RowHints, RowMenu } from "./row-overlays";
 import { RecentMenu, RowBar, recentTarget, treeTarget } from "./row-actions";
 import { StatusGlyph } from "./status";
 import { RowView, RecentRow } from "./sidebar-row";
@@ -52,7 +52,6 @@ function WorkspaceList({ app }: { app: App }) {
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   const listRef = useRef<HTMLDivElement>(null);
-  const newChat = useRef<((anchor: NewChatAnchor) => void) | null>(null);
   const dragged = useRef<SidebarRow | null>(null);
   const [dragging, setDragging] = useState(false);
   const archive = treeName === "archived";
@@ -66,8 +65,8 @@ function WorkspaceList({ app }: { app: App }) {
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
     if (action === "toggle") app.toggle(row.id);
     else if (action === "unarchive") app.unarchive(archivedSession(row.id));
-    else if (action === "new-chat" && row.row) newChat.current?.({ rect: (e.target as Element).closest("[data-action]")!.getBoundingClientRect(), workspace: row.row });
-    else if (action === "new-workspace") app.life.newWorkspace(row.section.path ?? undefined);
+    else if (action === "new-chat" && row.row) app.newChat.open(row.row.id);
+    else if (action === "new-chat-project") app.newChat.open(row.section.path ?? undefined);
     else app.clickRow(row.id, e.metaKey || e.ctrlKey ? "toggle" : e.shiftKey ? "range" : null);
   };
 
@@ -153,7 +152,6 @@ function WorkspaceList({ app }: { app: App }) {
         <RowMenu app={app} listRef={listRef} />
       </ContextMenu>
       <RowHints app={app} listRef={listRef} />
-      <NewChatMenu app={app} open={newChat} />
       {(error || tree?.choicesError) && rows.length > 0 && (
         <div role="status" className="flex items-center gap-2 border-t border-border px-3 py-2 text-xs text-muted-foreground">
           <TriangleAlertIcon className="size-3.5 shrink-0 text-failed" />

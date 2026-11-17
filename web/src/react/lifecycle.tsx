@@ -1,4 +1,4 @@
-// The lifecycle dialogs (S3): New Workspace with its setup output, Create and Import Project, the
+// The lifecycle dialogs (S3): Create and Import Project, the
 // project setup script, Switch model with its progress, one confirm dialog, and Archived chats.
 // Each reads only its own field of `app.life.state`.
 
@@ -7,7 +7,6 @@ import { useEffect, useState } from "react";
 import type { App } from "../core/app";
 import { Button } from "../components/ui/button";
 import { useLife, Frame, ErrorLine } from "./lifecycle-shared";
-import { NewWorkspaceDialog } from "./lifecycle-workspace";
 import { ProjectDialog, SetupScriptDialog } from "./lifecycle-project";
 import { SwitchModelDialog } from "./lifecycle-switch-model";
 import { ClosedDialog, ImportDialog } from "./lifecycle-chats";
@@ -15,7 +14,6 @@ import { ClosedDialog, ImportDialog } from "./lifecycle-chats";
 export function LifecycleDialogs({ app }: { app: App }) {
   return (
     <>
-      <NewWorkspaceDialog app={app} />
       <ProjectDialog app={app} />
       <SetupScriptDialog app={app} />
       <SwitchModelDialog app={app} />

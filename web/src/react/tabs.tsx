@@ -3,16 +3,21 @@
 // context menu serves every tab.
 
 import { ChevronDownIcon, CopyIcon, LoaderCircleIcon, PencilIcon, PlusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { memo, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { App } from "../core/app";
+import type { Starting } from "../core/new-chat";
 import { workspaceRow, type Tab, type Tabs } from "../core/nav";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "../components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { copyText as copy } from "./copy";
-import { NewChatMenu, type NewChatAnchor } from "./row-overlays";
 import { StatusGlyph } from "./status";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+
+/** The id prefix of a starting chat's tab, which the server's strip never lists. */
+const START = "start:";
+
+const startTab = (s: Starting): Tab => ({ id: START + s.id, session: "", title: s.title, status: null, badge: null, canClose: false, canHide: s.error !== null, pending: s.error ? "failed" : "starting", fields: [], children: null });
 
 export function TabStrip({ app }: { app: App }) {
   // Only the strip's own fields: a rows frame in the open chat must not render the strip.
@@ -22,12 +27,15 @@ export function TabStrip({ app }: { app: App }) {
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   const scroller = useRef<HTMLDivElement>(null);
   const dragged = useRef<string | null>(null);
-  const newChat = useRef<((anchor: NewChatAnchor) => void) | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [overflow, setOverflow] = useState<Tab[]>([]);
+  const starts = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.state.starts);
+  const viewing = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.state.viewing?.id ?? null);
   const ws = workspaceRow(tree, workspace);
-  const list = tabs?.tabs ?? [];
-  const selected = list.find((t) => t.session === openId);
+  // A starting chat is a tab of the workspace it started from until it opens (ADR 0147).
+  const startTabs = useMemo(() => Object.values(starts).filter((s) => s.from === workspace).map(startTab), [starts, workspace]);
+  const list = useMemo(() => [...(tabs?.tabs ?? []), ...startTabs], [tabs, startTabs]);
+  const selected = viewing ? list.find((t) => t.id === START + viewing) : list.find((t) => t.session === openId);
   const focusable = selected?.pending === null ? selected : list.find((tab) => tab.pending === null);
 
   useEffect(() => {
@@ -58,7 +66,9 @@ export function TabStrip({ app }: { app: App }) {
     const tab = tabOf(e);
     if (!tab) return;
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
+    if (tab.id.startsWith(START)) return action === "close" ? app.newChat.dismiss(tab.id.slice(START.length)) : app.newChat.view(tab.id.slice(START.length));
     if (action === "close") return void app.closeTab(tab.id);
+    app.newChat.hide();
     if (tab.session !== openId) app.openChat(tab.session);
     if (action === "children" && tab.children?.firstBlocked) app.focusPane(tab.children.firstBlocked);
   };
@@ -174,14 +184,14 @@ export function TabStrip({ app }: { app: App }) {
       </DropdownMenu>
       <button
         className="icon-btn"
-        aria-label="New chat in this workspace"
-        title="New chat in this workspace (⌘T)"
+        aria-label="New chat"
+        title="New chat (⌘N), or one here with no prompt (⌘T)"
+        data-testid="tab-new-chat"
         disabled={ws ? !ws.newChatEnabled : true}
-        onClick={(e) => ws && newChat.current?.({ rect: e.currentTarget.getBoundingClientRect(), workspace: ws })}
+        onClick={() => ws && app.newChat.open(ws.id)}
       >
         <PlusIcon />
       </button>
-      <NewChatMenu app={app} open={newChat} />
     </div>
   );
 }

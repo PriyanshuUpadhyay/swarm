@@ -1,0 +1,55 @@
+import { describe, expect, it } from "vitest";
+import type { App } from "./app";
+import { NewChat, targets } from "./new-chat";
+import type { TreeView } from "./nav";
+
+const row = (id: string, startsChatWorktree: boolean) => ({ id, kind: "workspace", newChatEnabled: true, startsChatWorktree });
+const tree = {
+  sections: [
+    { kind: "project", path: "/hub", folder: false, title: "hub", rows: [row("/hub/wt/main", true), row("/hub/wt/fix", false)] },
+    { kind: "project", path: "/notes", folder: true, title: "notes", rows: [row("/notes", false)] },
+  ],
+} as unknown as TreeView;
+
+describe("new chat composer", () => {
+  it("starts on a hub's main for a new worktree, and in a plain folder itself", () => {
+    expect(targets(tree, "/hub/wt/fix")).toEqual([
+      { cwd: "/hub/wt/main", project: "/hub", title: "hub", git: true, worktree: true },
+      { cwd: "/notes", project: "/notes", title: "notes", git: false, worktree: false },
+    ]);
+  });
+
+  it("posts the prompt, place and run, shows the steps, then opens the chat and sends queued text", async () => {
+    const calls: string[] = [];
+    const app = {
+      navSeq: 1,
+      view: { tree, workspace: "/hub/wt/fix", openId: null },
+      notice: (text: string) => calls.push(`notice ${text}`),
+      api: {
+        post: async (path: string, body: unknown) => (calls.push(`${path} ${JSON.stringify(body)}`), { start: "s1" }),
+        action: async (path: string, body: unknown) => void calls.push(`${path} ${JSON.stringify(body)}`),
+      },
+      actions: { openNew: async (session: string, open: boolean) => void calls.push(`open ${session} ${open}`) },
+    };
+    const chats = new NewChat(app as unknown as App);
+    chats.open();
+    expect(chats.state.composer).toMatchObject({ cwd: "/hub/wt/main", place: { kind: "new" } });
+
+    const run = { provider: "codex", model: "gpt-5", effort: "high", account: null };
+    await chats.start("/hub/wt/main", "Fix the flaky smoke test\n", { kind: "new" }, { role: "chat", run });
+    expect(calls[0]).toBe('/api/chat/new {"cwd":"/hub/wt/main","role":"chat","prompt":"Fix the flaky smoke test","place":{"kind":"new"},"provider":"codex","model":"gpt-5","effort":"high"}');
+    expect(chats.state.composer).toBeNull();
+    expect(chats.shown()).toMatchObject({ id: "s1", title: "Fix the flaky smoke test", from: "/hub/wt/fix" });
+
+    chats.onFrame("chat-start", { start: "s1", step: "worktree", state: "running" });
+    chats.onFrame("chat-start", { start: "s1", step: "worktree", state: "completed", workspace: "/hub/wt/fix-flaky-smoke-test", branch: "swarm/fix-flaky-smoke-test" });
+    chats.onFrame("setup", { workspace: "/hub/wt/fix-flaky-smoke-test", state: "running" });
+    chats.onFrame("setup", { workspace: "/hub/wt/fix-flaky-smoke-test", state: "output", text: "npm ci\n" });
+    chats.queue("s1", "Also run the e2e suite");
+    expect(chats.shown()).toMatchObject({ branch: "swarm/fix-flaky-smoke-test", steps: [{ step: "worktree", state: "completed" }], setup: { output: "npm ci\n" } });
+
+    await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
+    expect(chats.state.starts).toEqual({});
+    expect(calls.slice(1)).toEqual(["open chat-9 true", '/api/chat/send {"session":"chat-9","agent":"chair","text":"Also run the e2e suite"}']);
+  });
+});

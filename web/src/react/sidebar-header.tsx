@@ -34,7 +34,7 @@ export function SidebarHeader({ app }: { app: App }) {
         <DropdownMenuContent align="start">
           <DropdownMenuItem onSelect={() => app.life.openProject("create")}>Create Project…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => app.life.openProject("import")}>Import Project…</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => app.life.newWorkspace()}>New Workspace…</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => app.newChat.open()}>New Chat…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => app.life.openClosed()}>Archived chats…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => app.life.openImports()}>Import chats…</DropdownMenuItem>
         </DropdownMenuContent>
