@@ -308,3 +308,49 @@ pub(super) async fn run_conductor_write(app: &App, body: ImportWrite) -> Result<
 #[cfg(test)]
 #[path = "setup/tests.rs"]
 mod tests;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct KeyWrite {
+    pub(super) name: String,
+    /// The new value, or None to remove the key.
+    pub(super) value: Option<String>,
+}
+/// Settings › Keys: which API keys are saved. Only `swarm keys` reads or writes the Keychain, and
+/// no reply holds a key's value.
+pub(super) async fn keys_read(State(app): State<App>) -> Result<Json<Value>, ApiError> {
+    keys_list(&app).await.map(Json)
+}
+/// Adds, replaces, or removes one key, then lists the keys. The value goes to the CLI on stdin.
+/// `record_errors` keeps this body out of `errors.jsonl`.
+pub(super) async fn keys_write(
+    State(app): State<App>,
+    body: Result<Json<KeyWrite>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(body) =
+        body.map_err(|e| error(e.status(), "a key write needs a name and an optional value"))?;
+    let verb = if body.value.is_some() {
+        "set"
+    } else {
+        "remove"
+    };
+    run_cli(
+        &app,
+        home_call(&app, &["keys", verb, &body.name]),
+        body.value,
+    )
+    .await?;
+    keys_list(&app).await.map(Json)
+}
+async fn keys_list(app: &App) -> Result<Value, ApiError> {
+    let output = run_cli(app, home_call(app, &["keys", "--json"]), None).await?;
+    serde_json::from_str::<Value>(&output)
+        .ok()
+        .filter(|value| value["schema"] == swarm::keys::KEYS_SCHEMA)
+        .ok_or_else(|| {
+            error(
+                StatusCode::BAD_GATEWAY,
+                "swarm returned an invalid key list",
+            )
+        })
+}

@@ -181,8 +181,9 @@ pub(super) async fn record_errors(app: &App, request: Request, next: Next) -> Re
             "uri": uri,
             "status": parts.status.as_u16(),
             "reply": value(&reply),
-            // Search snapshots can hold 16 MiB of cached output. Keep them out of error logs.
-            "request": if rows_find { None } else { sent.as_deref().map(value) },
+            // Search snapshots can hold 16 MiB of cached output, and a key write holds a secret.
+            // Keep both out of error logs.
+            "request": if rows_find || uri.starts_with("/api/keys") { None } else { sent.as_deref().map(value) },
             "request_bytes": sent.as_ref().map(|bytes| bytes.len()),
         }),
     );
