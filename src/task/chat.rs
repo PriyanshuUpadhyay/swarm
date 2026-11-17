@@ -166,8 +166,9 @@ fn claim_record(
     }
 }
 
-/// The top folder of the chat worktree that `folder` sits in, or None for any other folder.
-/// Only a path with a `chat-` part costs a git call.
+/// The top folder of the git checkout that `folder` sits in when that top's name starts with
+/// `chat-`, else None. A plain repository named so passes too; `drop_unnamed_chat` then checks
+/// its task record. Only a path with a `chat-` part costs a git call.
 pub fn chat_top(folder: &Path) -> Option<String> {
     let in_chat = |path: &Path| {
         path.components()
@@ -177,7 +178,12 @@ pub fn chat_top(folder: &Path) -> Option<String> {
         return None;
     }
 
-    let top = git(folder, &["rev-parse", "--show-toplevel"])?;
+    // The bounded call (10 s), because archive runs this for each folder.
+    let top = crate::view::lifecycle::check_git(
+        &folder.to_string_lossy(),
+        &["rev-parse", "--show-toplevel"],
+    )
+    .ok()?;
     Path::new(&top)
         .file_name()
         .is_some_and(|name| name.to_string_lossy().starts_with(CHAT_NAME))
