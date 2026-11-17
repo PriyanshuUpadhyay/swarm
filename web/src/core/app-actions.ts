@@ -14,8 +14,10 @@ export class AppActions {
   constructor(private readonly app: App) {}
 
   /** ⌘T, a "+" and New chat: starts a profile (the default one unless `launch` names it) in the
-   *  workspace. A notice shows while `swarm launch` runs; `draft` goes into the new chat's composer. */
-  async startChat(workspace = this.app.workspace, launch: { role?: string } = {}, draft = "") {
+   *  workspace. On a hub's main checkout the server makes the chat its own worktree, unless
+   *  `launch.here` is set (ADR 0146). A notice shows while `swarm launch` runs; `draft` goes into
+   *  the new chat's composer. */
+  async startChat(workspace = this.app.workspace, launch: { role?: string; here?: boolean } = {}, draft = "") {
     const reason = this.newChatReason(workspace);
     if (reason || !workspace) return this.app.notice(reason ?? "Pick a workspace to start a chat.");
     if (this.app.starting) return;
