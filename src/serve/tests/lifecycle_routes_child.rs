@@ -463,6 +463,7 @@ case "$1 $2" in
 esac
 "#;
     std::fs::write(&fixture.app.cli, cli).unwrap();
+
     let hub_path = hub.to_string_lossy().into_owned();
     let main = hub.join("wt/main").to_string_lossy().into_owned();
     choices_store::update(&fixture.app.root, None, |owner, _| {
@@ -473,10 +474,12 @@ esac
         Ok(())
     })
     .unwrap();
+
     let started = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
         .await
         .unwrap_or_else(|e| panic!("{e:?} {}", action_calls(&fixture)))
         .0;
+
     let chat = started["workspace"].as_str().unwrap().to_owned();
     let branch = lifecycle::check_git(&chat, &["branch", "--show-current"]).unwrap();
     assert!(swarm::task::unnamed_chat(&branch), "{chat} {branch}");
@@ -484,6 +487,7 @@ esac
     assert!(swarm::task::records(&fixture.app.root).iter().any(|task| {
         task.path == chat && task.session.as_deref() == started["session"].as_str()
     }));
+
     let calls = action_calls(&fixture);
     assert!(calls.lines().last().unwrap().contains(&format!("{chat}|launch orchestrator chat")), "{calls}");
 
@@ -499,9 +503,11 @@ esac
         swarm::store::add_agent(&connection, &id, "orchestrator", "chat").unwrap();
         id
     };
+
     let id = chat_session(&started, &chat);
     let send = json!({"session":id,"agent":"orchestrator","text":"Fix the login redirect bug now please"});
     let _ = call_action(&fixture, "/api/chat/send", send).await.unwrap();
+
     assert_eq!(
         lifecycle::check_git(&chat, &["branch", "--show-current"]).unwrap(),
         "swarm/fix-the-login-redirect-bug"
@@ -521,10 +527,12 @@ esac
                 .await
                 .unwrap()
                 .0;
+
             let folder = started["workspace"].as_str().unwrap().to_owned();
             if work {
                 sh(&format!("cd {folder} && echo b > b.txt && git add b.txt && git commit -q -m b"));
             }
+
             let id = chat_session(&started, &folder);
             let _ = call_action(&fixture, "/api/sessions/archive", json!({"ids":[id]}))
                 .await
@@ -534,19 +542,22 @@ esac
         assert!(!Path::new(&folders[0]).exists());
         assert!(Path::new(&folders[1]).is_dir());
 
-        // A second chat in the same unused worktree keeps it when the first chat is archived.
+        // A second chat in the same unused worktree, here in a subfolder of it, keeps it when the
+        // first chat is archived.
         let first = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
             .await
             .unwrap()
             .0;
+
         let shared = first["workspace"].as_str().unwrap().to_owned();
         let second = call_action(&fixture, "/api/chat/new", json!({"cwd":shared}))
             .await
             .unwrap()
             .0;
+
         assert_eq!(second["workspace"], json!(shared));
         let id = chat_session(&first, &shared);
-        chat_session(&second, &shared);
+        chat_session(&second, &format!("{shared}/sub"));
         let _ = call_action(&fixture, "/api/sessions/archive", json!({"ids":[id]}))
             .await
             .unwrap();

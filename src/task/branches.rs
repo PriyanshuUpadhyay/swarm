@@ -1,6 +1,6 @@
 //! What a branch name meets in a hub, and the base new work starts from (ADR 0142).
 
-use super::git;
+use super::{git, ref_exists};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -18,7 +18,7 @@ pub enum BranchState {
 
 pub fn branch_state(dir: &Path, branch: &str) -> BranchState {
     let reference = format!("refs/heads/{branch}");
-    if git(dir, &["show-ref", "--verify", "--quiet", &reference]).is_none() {
+    if !ref_exists(dir, &reference) {
         return BranchState::Absent;
     }
     let listing = git(dir, &["worktree", "list", "--porcelain"]).unwrap_or_default();

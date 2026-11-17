@@ -55,10 +55,8 @@ pub fn record_chat(
         .ok_or_else(|| format!("{} is not on a {PREFIX} branch", path.display()))?;
     let repo = hub.common.to_string_lossy().into_owned();
 
-    let sync_warning = git(&hub.common, &["remote", "get-url", "origin"]).and_then(|_| {
-        // The server calls this, and it moves main as landing does, so agent markers go.
-        origin::sync_default(&hub, &format!("origin/{}", hub.default), true).err()
-    });
+    let sync_warning = git(&hub.common, &["remote", "get-url", "origin"])
+        .and_then(|_| origin::sync_default(&hub, &format!("origin/{}", hub.default)).err());
     let task = Task {
         branch: branch.clone(),
         path: path.to_string_lossy().into_owned(),
@@ -80,7 +78,7 @@ pub fn record_chat(
 
 /// Renames an unnamed chat worktree's branch after the chat's first prompt, and moves its
 /// record. A name that a local or an origin branch has gets `-2` to `-9`. A prompt with no ASCII
-/// word, or one whose ten names are all taken, gives `untitled-<id>`, so a chat that had a prompt
+/// word, or one whose nine names are all taken, gives `untitled-<id>`, so a chat that had a prompt
 /// never reads as unnamed. The folder keeps its name, so the agent's folder stays. None for a
 /// folder that is not an unnamed chat worktree, or whose record names another branch.
 pub fn name_chat(root: &Path, cwd: &Path, prompt: &str) -> Result<Option<String>, String> {
@@ -99,6 +97,7 @@ pub fn name_chat(root: &Path, cwd: &Path, prompt: &str) -> Result<Option<String>
 
     let id = &task.branch[PREFIX.len() + CHAT_NAME.len()..];
     let untitled = branch_name(&format!("untitled-{id}"));
+
     let base = chat_branch(prompt)
         .filter(|name| !unnamed_chat(name))
         .unwrap_or_else(|| untitled.clone());
@@ -153,37 +152,53 @@ fn claim_record(
         .create_new(true)
         .open(&path);
     match file {
-        Ok(mut file) => std::io::Write::write_all(&mut file, text.as_bytes())
-            .map(|()| Some((name, path)))
-            .map_err(|error| format!("cannot write the task record: {error}")),
+        Ok(mut file) => match std::io::Write::write_all(&mut file, text.as_bytes()) {
+            Ok(()) => Ok(Some((name, path))),
+            Err(error) => {
+                // A half-written claim would hold the name for no chat.
+                let _ = std::fs::remove_file(&path);
+                Err(format!("cannot write the task record: {error}"))
+            }
+        },
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),
         Err(error) => Err(format!("cannot write the task record: {error}")),
     }
 }
 
-/// Removes a chat worktree that a failed chat start left, and its record, when it holds no
-/// change; `git worktree remove` without `--force` refuses one that does. Its branch goes only
-/// when `git branch -d` finds it merged, so no commit is lost.
-pub fn remove_failed_chat(root: &Path, path: &Path) -> Result<(), String> {
+/// Removes a chat worktree that a failed chat start left, and its record, through Worktrunk, so
+/// its remove hooks run. With no `--force`, a worktree with changes stays. The branch goes only
+/// when it has no commit that the default branch, origin's when fetched, lacks; local main can be
+/// behind origin's, where the chat started.
+pub fn remove_failed_chat(root: &Path, wt: &Path, path: &Path) -> Result<(), String> {
     let hub = hub(path).ok_or("this folder is not in a worktree hub")?;
     let branch = git(path, &["symbolic-ref", "-q", "--short", "HEAD"])
         .filter(|branch| unnamed_chat(branch))
         .ok_or("this folder is not an unnamed chat worktree")?;
-    let folder = path.to_string_lossy();
-
-    run(
-        Path::new("git"),
+    let origin = format!("refs/remotes/origin/{}", hub.default);
+    let base = if ref_exists(&hub.common, &origin) {
+        origin
+    } else {
+        hub.default.clone()
+    };
+    let own = git(
         &hub.common,
-        &["worktree", "remove", &folder],
-        false,
-    )?;
-    let _ = std::fs::remove_file(record_path(root, &hub.common.to_string_lossy(), &branch));
-    let _ = run(
-        Path::new("git"),
-        &hub.common,
-        &["branch", "-d", &branch],
-        false,
+        &["rev-list", "--count", &format!("{base}..{branch}")],
     );
+
+    let mut args = vec![
+        "remove",
+        branch.as_str(),
+        "--foreground",
+        "--format",
+        "json",
+    ];
+    if own.as_deref() == Some("0") {
+        args.push("--force-delete");
+    } else {
+        args.push("--no-delete-branch");
+    }
+    run(wt, &hub.main, &args, false)?;
+    let _ = std::fs::remove_file(record_path(root, &hub.common.to_string_lossy(), &branch));
     Ok(())
 }
 

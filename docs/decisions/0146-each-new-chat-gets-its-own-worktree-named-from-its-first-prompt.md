@@ -25,9 +25,11 @@ A new chat whose folder is the default-branch worktree of a bare hub starts in i
 worktree. The server makes it before the agent starts, through the New workspace path: it
 fetches origin, adds `chat-<8 hex>` in the project's worktree folder (`wt/` in a hub) on
 `swarm/chat-<8 hex>` from the origin default, and runs the project's setup script. A project
-with no origin default starts from the local default, and the main sync below is skipped. A
+with no origin default starts from the local default. With no `origin` remote, the main sync
+below is skipped; with one that lacks the default branch, it gives a warning. A
 failed create, setup, or launch starts no chat (ADR 0097). Swarm then archives its session and
-removes the worktree and its task record when the worktree holds no change. When the chair may
+removes the worktree and its task record through Worktrunk when the worktree holds no change.
+Its branch goes too when it has no commit of its own. When the chair may
 still run, as after a launch that timed out, the worktree stays. The server writes the task
 record and fast-forwards local main to origin (ADR 0145). A warning from that step, such as a ref hook that could not be set, goes in the
 reply and the server log.

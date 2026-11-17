@@ -100,22 +100,16 @@ async fn open_session(app: &App, cwd: &str) -> Result<String, ApiError> {
 
 /// Undoes a chat start that failed after its worktree was made. The session is archived, and
 /// the worktree and its record go when it holds no change. A chair that may run keeps both,
-/// because a launch can time out after its pane started.
+/// because a launch can time out after its pane started: only a session with no chair row, or
+/// one whose chair is known to be stopped, is undone.
 async fn forget_chat(app: &App, cwd: &str, session: Option<&str>) {
     if let Some(session) = session {
         let call = chat_call(cwd, Some(session));
-        let agents = run_cli(app, call.args(&["agents", "--json"]), None).await;
-        let alive = agents
-            .ok()
-            .and_then(|out| serde_json::from_str::<Value>(&out).ok())
-            .map(|out| {
-                out["agents"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .any(|agent| agent["alive"] == true)
-            });
-        if alive != Some(false) {
+        let stopped = match chair_agent(app, &call).await {
+            Ok(chair) => chair.is_null() || chair["alive"] == false,
+            Err(_) => false,
+        };
+        if !stopped {
             eprintln!("swarm: kept the chat worktree {cwd}, because its chair may run");
             return;
         }
@@ -129,8 +123,14 @@ async fn forget_chat(app: &App, cwd: &str, session: Option<&str>) {
     }
 
     let (root, path) = (app.root.clone(), PathBuf::from(cwd));
-    let removed =
-        tokio::task::spawn_blocking(move || swarm::task::remove_failed_chat(&root, &path)).await;
+    let removed = tokio::task::spawn_blocking(move || {
+        swarm::task::remove_failed_chat(&root, &swarm::task::wt_program(), &path)
+    })
+    .await;
+    if matches!(removed, Ok(Ok(()))) {
+        shells::close_all(app, cwd);
+        action_execute::forget_folder(&app.root, cwd);
+    }
     if !matches!(removed, Ok(Ok(()))) {
         eprintln!("swarm: kept the chat worktree {cwd} of a chat that did not start: {removed:?}");
     }
