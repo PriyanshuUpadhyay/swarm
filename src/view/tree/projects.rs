@@ -131,6 +131,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                     None
                 },
                 removed: false,
+                hub_main: ws.hub_main,
                 chats: listed,
                 unlisted,
                 archived: archived_chats(snapshot, &ws.path, owner),
@@ -162,6 +163,7 @@ pub fn build(snapshot: &Value, owner: &OwnerChoices) -> Tree {
                     missing: false,
                     mark: None,
                     removed,
+                    hub_main: false,
                     chats: listed,
                     unlisted,
                     // A removed worktree's chats keep their own gone folder, so none matches.

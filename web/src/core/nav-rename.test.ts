@@ -17,7 +17,7 @@ const tabs: Tabs = {
 const row: SidebarRow = {
   id: `chat:${session}`, kind: "chat", depth: 1, parentId: workspace, expanded: false, hasChildren: false,
   childrenSummary: null, title: "Saved sidebar name", detail: "", status: null, counts: [], age: null, help: "",
-  pinned: false, archived: false, missing: false, newChatEnabled: false, dimmed: false, fields: [],
+  pinned: false, archived: false, missing: false, newChatEnabled: false, chatWorktree: false, dimmed: false, fields: [],
   selection: { workspace, chat: session, agentSession: null, agent: null },
 };
 const tree: TreeView = {

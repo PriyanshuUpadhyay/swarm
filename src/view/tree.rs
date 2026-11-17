@@ -60,6 +60,9 @@ pub struct WorkspaceFact {
     pub locked: bool,
     pub detached: bool,
     pub bare: bool,
+    /// The default-branch checkout of a worktree hub, where a new chat gets its own worktree
+    /// (ADR 0146).
+    pub hub_main: bool,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -138,6 +141,7 @@ pub struct Workspace {
     pub missing: bool,
     pub mark: Option<String>,
     pub removed: bool,
+    pub hub_main: bool,
     pub chats: Vec<Chat>,
     /// Chats the app cannot open, so no view lists them (ADR 0083). A workspace delete still
     /// closes their live agents.

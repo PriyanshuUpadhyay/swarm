@@ -246,13 +246,21 @@ impl Discovery {
                 let id = id_for(&path, common.as_deref());
                 let project = projects.entry(id.clone()).or_insert_with(|| {
                     let workspaces = if let Some(common) = &common {
-                        run(
+                        let mut workspaces = run(
                             "git",
                             &["-C", common, "worktree", "list", "--porcelain", "-z"],
                             5,
                         )
                         .map(|b| parse_worktrees(&b))
-                        .unwrap_or_default()
+                        .unwrap_or_default();
+                        // The same test that `new_chat` makes, so the menu offers what it does.
+                        if let Some(hub) = crate::task::hub(Path::new(common)) {
+                            let main = hub.main.to_string_lossy();
+                            for workspace in &mut workspaces {
+                                workspace.hub_main = workspace.path == main;
+                            }
+                        }
+                        workspaces
                     } else {
                         vec![WorkspaceFact {
                             path: path.clone(),

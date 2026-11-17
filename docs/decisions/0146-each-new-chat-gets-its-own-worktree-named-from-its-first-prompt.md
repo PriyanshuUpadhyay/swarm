@@ -43,11 +43,16 @@ commits. Setup output that git sees counts as a change, so such a worktree stays
 `swarm task start` is removed. `land [--pr]`, `drop`, `list`, and `sweep` stay. With no name,
 `land` and `drop` act on the chat worktree that holds the current folder.
 
-The "+" menu has "Default profile, no new worktree", which starts the chat in the folder
-itself. Continue keeps a chat in its folder. Plain clones keep today's behavior, because the
+On a hub's main row, the "+" menu also has "Default profile, no new worktree", which starts
+the chat in the folder itself. The sidebar row carries `chatWorktree`, so the menu shows that
+item only where a new chat gets its own worktree. Continue keeps a chat in its folder. Plain clones keep today's behavior, because the
 task commands and the main wall exist only in hubs.
 
 ## Consequences
+
+- Archive and the first send wait for `wt remove` and `git branch -m` with no time limit. The
+  owner accepted this as a known limit (2026-11-17); a project hook that never ends holds
+  the reply.
 
 - One create path, swarm's own, makes every worktree. Worktrunk still merges and removes.
 - The edit wall on main stays (ADR 0135), and its block and its warning (ADR 0143) tell the

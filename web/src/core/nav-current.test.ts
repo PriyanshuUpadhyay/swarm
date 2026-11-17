@@ -23,7 +23,7 @@ function row(id: string, kind: SidebarRow["kind"], depth: number, extra: Partial
     pinned: false,
     archived: false,
     missing: false,
-    newChatEnabled: true,
+    newChatEnabled: true, chatWorktree: false,
     dimmed: false,
     fields: [],
     selection: sel(kind === "workspace" ? id : null),

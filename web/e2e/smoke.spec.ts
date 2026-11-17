@@ -212,16 +212,17 @@ test("the tab strip's + asks for a profile before it starts a chat", async ({ pa
   await tab.getByRole("button", { name: "New chat in this workspace" }).click();
   const menu = tab.getByTestId("new-chat-menu");
   await expect(menu.getByRole("menuitem", { name: "Default profile", exact: true })).toBeVisible();
+  // A plain clone's chat stays in its folder, so only a hub's main offers "no new worktree".
+  await expect(menu.getByRole("menuitem", { name: "Default profile, no new worktree" })).toHaveCount(0);
   await tab.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   expect(started).toEqual([]);
 });
 
-test("the + menu's no new worktree item starts the chat in the folder itself", async ({ page: tab }) => {
+test("a hub main's + menu starts a chat with no new worktree", async ({ page: tab }) => {
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
-  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
   const bodies: unknown[] = [];
   // The request is answered here, so no chat starts in the fixture.
   await tab.route("**/api/chat/new", async (route) => {
@@ -229,9 +230,11 @@ test("the + menu's no new worktree item starts the chat in the folder itself", a
     await route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"stopped by the test"}' });
   });
 
-  await tab.getByRole("button", { name: "New chat in this workspace" }).click();
+  const row = tab.locator(`[data-testid="tree-row"][data-id="${process.env.SWARM_E2E_HUB_MAIN}"]`);
+  await row.hover();
+  await row.locator('[data-action="new-chat"]').click();
   await tab.getByTestId("new-chat-menu").getByRole("menuitem", { name: "Default profile, no new worktree" }).click();
 
   await expect.poll(() => bodies.length).toBe(1);
-  expect(bodies[0]).toMatchObject({ here: true });
+  expect(bodies[0]).toMatchObject({ cwd: process.env.SWARM_E2E_HUB_MAIN, here: true });
 });
