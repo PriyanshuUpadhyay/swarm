@@ -4,8 +4,8 @@ use super::git;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// What a branch name meets in a repository. Both create paths, the sidebar "+" and
-/// `swarm task start`, decide from this, so a left-over branch opens or reopens instead of failing.
+/// What a branch name meets in a repository. The sidebar "+" decides from this, so a left-over
+/// branch opens or reopens instead of failing, and a chat's branch rename skips a taken name.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BranchState {
     /// No local branch has this name.
