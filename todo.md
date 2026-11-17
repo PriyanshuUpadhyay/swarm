@@ -1,5 +1,31 @@
 # To do
 
+## A Claude pane can wait on the "Adding a new directory" dialog, and no one is told
+
+A Claude pane runs in `<folder>/.herdr/workers` and adds the task folder as an extra folder.
+`swarm launch` trusts `.herdr/workers` in `~/.claude.json` but not the added folder, so Claude
+Code (2.1.326) can open this dialog before its session starts:
+
+```text
+Adding a new directory:
+<folder>
+This session hasn't worked here before. Is this a directory you created or one you trust?
+❯ No, exit
+  Yes, add it
+Esc to exit · To add it, press ↓ to Yes, then Enter (your text is kept)
+```
+
+The screen check (`src/screen/prompt.rs`) does not see it: the footer is not in
+`PROMPT_FOOTERS`, the choices have no numbers, and `HEADERS` knows only AGY's
+"Accessing workspace:". No hook fires before the session starts, so the agent state stays
+`null`, and the chair gets no question to answer. Two fixes: `swarm launch` trusts the added
+folder too, and the screen check reports this dialog as a question that `swarm answer` can
+answer. The chair cannot press ↓ itself, because `swarm key` sends only `Up` and `C-u`.
+
+Seen 2026-11-17: four trial panes (`review.trial-*` roles) in folders under
+`~/.swarm/ws/` and `~/work/swarm-trial-2026-11-17/` waited on it until the owner looked. Panes in
+`/tmp` and in hub worktrees did not get it; the rule Claude uses is not known.
+
 ## swarm spawn checks the model and reports what went wrong
 
 `swarm spawn` (and `launch`) should check that the routed model exists for the provider and
