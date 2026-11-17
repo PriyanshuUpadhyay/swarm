@@ -253,94 +253,103 @@ fn now() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-/// `swarm task start <slug>`: a worktree on `swarm/<slug>` from a fresh `origin/<default>` (or the
-/// local default branch with no origin), its record, and the ref hook. A left-over `swarm/<slug>`
-/// with no worktree is reopened at its own commit; one that this session's record names returns
-/// that record; one that another worktree holds is refused with its path. Returns the record and a
-/// warning when the hook could not be set.
-pub fn start(
-    root: &Path,
-    wt: &Path,
-    cwd: &Path,
-    slug: &str,
-    owner: (Option<String>, Option<String>),
-) -> Result<(Task, Option<String>), String> {
-    // A leading `-` would read as an option, so `start --help` makes no task.
-    if slug.is_empty()
-        || slug.starts_with('-')
-        || !slug
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    {
-        return Err(format!(
-            "task name {slug:?} must use a-z, 0-9, and -, start with a letter or digit, like fix-login"
-        ));
+/// True for the branch a chat worktree gets before its first prompt: `swarm/chat-<8 hex>`.
+pub fn unnamed_chat(branch: &str) -> bool {
+    branch
+        .strip_prefix(PREFIX)
+        .and_then(|rest| rest.strip_prefix("chat-"))
+        .is_some_and(|id| id.len() == 8 && id.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// The branch name a first prompt gives: its first five ASCII words, lowercase and joined by
+/// `-`, at most 40 characters, under `swarm/`. None when the prompt has no such word.
+pub fn chat_branch(prompt: &str) -> Option<String> {
+    let mut slug = String::new();
+    let words = prompt
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .take(5);
+    for word in words {
+        let word = word.to_ascii_lowercase();
+        let extra = usize::from(!slug.is_empty()) + word.len();
+        if slug.len() + extra > 40 {
+            if slug.is_empty() {
+                slug = word[..40].to_string();
+            }
+            break;
+        }
+        if !slug.is_empty() {
+            slug.push('-');
+        }
+        slug.push_str(&word);
     }
-    let hub = hub(cwd).ok_or("this folder is not in a worktree hub (a bare .bare with wt/)")?;
-    let branch = format!("{PREFIX}{slug}");
+    (!slug.is_empty()).then(|| format!("{PREFIX}{slug}"))
+}
+
+/// The record of a chat's own worktree at `path`, which the app made when the chat opened, so
+/// `land`, `drop`, and `sweep` treat it as a task. Only the server calls it. Local default moves to origin's (ADR 0145), and
+/// the ref hook is set. Returns the record and a warning when either could not be done.
+pub fn record_chat(
+    root: &Path,
+    path: &Path,
+    session: Option<String>,
+) -> Result<(Task, Option<String>), String> {
+    let hub = hub(path).ok_or("this folder is not in a worktree hub (a bare .bare with wt/)")?;
+    let branch = git(path, &["symbolic-ref", "-q", "--short", "HEAD"])
+        .filter(|branch| branch.starts_with(PREFIX))
+        .ok_or_else(|| format!("{} is not on a {PREFIX} branch", path.display()))?;
     let repo = hub.common.to_string_lossy().into_owned();
-    let base = fresh_origin_base(&hub.common, &hub.default)?;
-    let sync_warning = base
-        .as_ref()
-        .and_then(|base| origin::sync_default(&hub, base, false).err());
-    let created = match branch_state(&hub.common, &branch) {
-        BranchState::Checkout(path) => {
-            let mine = read_record(root, &repo, &branch).filter(|task| {
-                owner.0.is_some()
-                    && task.session == owner.0
-                    && resolve(Path::new("/"), Path::new(&task.path))
-                        == resolve(Path::new("/"), &path)
-            });
-            return match mine {
-                Some(task) => Ok((task, sync_warning)),
-                None => Err(format!(
-                    "{branch} is already checked out at {}, and this session did not start it there; pick another name, or ask the owner",
-                    path.display()
-                )),
-            };
-        }
-        BranchState::Free => run(
-            wt,
-            &hub.main,
-            &["switch", &branch, "--no-cd", "--format", "json"],
-            false,
-        )?,
-        BranchState::Absent => {
-            let base = base.unwrap_or_else(|| hub.default.clone());
-            run(
-                wt,
-                &hub.main,
-                &[
-                    "switch", "--create", &branch, "--base", &base, "--no-cd", "--format", "json",
-                ],
-                false,
-            )?
-        }
-    };
-    let path = created
-        .lines()
-        .find_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .and_then(|value| value["path"].as_str().map(str::to_string))
-        .ok_or_else(|| format!("Worktrunk did not report a path: {created}"))?;
+    let sync_warning = git(&hub.common, &["remote", "get-url", "origin"]).and_then(|_| {
+        // The server calls this, and it moves main as landing does, so agent markers go.
+        origin::sync_default(&hub, &format!("origin/{}", hub.default), true).err()
+    });
     let task = Task {
         branch: branch.clone(),
-        path,
+        path: path.to_string_lossy().into_owned(),
         repo: repo.clone(),
         default: hub.default.clone(),
-        session: owner.0,
-        agent: owner.1,
+        session,
+        agent: Some("orchestrator".into()),
         created_unix_s: now(),
     };
-    if let Err(error) = write_json(&record_path(root, &repo, &branch), &task) {
-        // A worktree with no record could not be landed or dropped, so it goes too.
-        let _ = run(wt, &hub.main, &["remove", &branch, "--foreground"], false);
-        return Err(format!("cannot write the task record: {error}"));
-    }
+    write_json(&record_path(root, &repo, &branch), &task)
+        .map_err(|error| format!("cannot write the task record: {error}"))?;
     let warnings: Vec<_> = [sync_warning, install_hook(&hub)]
         .into_iter()
         .flatten()
         .collect();
     Ok((task, (!warnings.is_empty()).then(|| warnings.join("; "))))
+}
+
+/// Renames an unnamed chat worktree's branch after the chat's first prompt, with `-2` to `-9` on
+/// a taken name, and moves its record. The folder keeps its name, so the agent's folder stays.
+/// None when the branch already has a name or the prompt gives none.
+pub fn name_chat(root: &Path, cwd: &Path, prompt: &str) -> Result<Option<String>, String> {
+    let (hub, task) = task_here(root, cwd)?;
+    if !unnamed_chat(&task.branch) {
+        return Ok(None);
+    }
+    let Some(base) = chat_branch(prompt) else {
+        return Ok(None);
+    };
+    let branch = std::iter::once(base.clone())
+        .chain((2..=9).map(|n| format!("{base}-{n}")))
+        .find(|name| branch_state(&hub.common, name) == BranchState::Absent)
+        .ok_or_else(|| format!("{base} and its -2 to -9 names are taken"))?;
+    run(
+        Path::new("git"),
+        Path::new(&task.path),
+        &["branch", "-m", &task.branch, &branch],
+        false,
+    )?;
+    let renamed = Task {
+        branch: branch.clone(),
+        ..task.clone()
+    };
+    write_json(&record_path(root, &task.repo, &branch), &renamed)
+        .map_err(|error| format!("cannot write the task record: {error}"))?;
+    let _ = std::fs::remove_file(record_path(root, &task.repo, &task.branch));
+    Ok(Some(branch))
 }
 
 /// The task worktree that holds `cwd`, with its record.
@@ -354,7 +363,7 @@ fn task_here(root: &Path, cwd: &Path) -> Result<(Hub, Task), String> {
         .filter(|task| {
             resolve(Path::new("/"), Path::new(&task.path)) == resolve(cwd, Path::new(&top))
         })
-        .ok_or_else(|| format!("{top} is not a task worktree that `swarm task start` made"))?;
+        .ok_or_else(|| format!("{top} is not a chat worktree that swarm made"))?;
     Ok((hub, task))
 }
 
@@ -376,7 +385,7 @@ fn find_task(root: &Path, cwd: &Path, name: Option<&str>) -> Result<(Hub, Task),
     let branch = branch_name(name);
     let hub = hub(cwd).ok_or("this folder is not in a worktree hub")?;
     let task = read_record(root, &hub.common.to_string_lossy(), &branch)
-        .ok_or_else(|| format!("{branch} is not a task that `swarm task start` made here"))?;
+        .ok_or_else(|| format!("{branch} is not a chat worktree that swarm made here"))?;
     Ok((hub, task))
 }
 

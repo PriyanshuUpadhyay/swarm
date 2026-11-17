@@ -1,10 +1,10 @@
-//! `swarm task start <name> | land | drop [<branch>] | list | sweep [--apply]`: an agent's own task
-//! worktree, made from the default branch by Worktrunk and landed by the swarm server.
+//! `swarm task land | drop [<branch>] | list | sweep [--apply]`: a chat's own worktree, which the
+//! app made when the chat opened, landed by the swarm server.
 
 use super::*;
 use std::time::{Duration, Instant};
 
-const TASK_USAGE: &str = "usage: swarm task start <name> | land [<name>] [--pr] | drop [<name>] | list | sweep [--apply]";
+const TASK_USAGE: &str = "usage: swarm task land [<name>] [--pr] | drop [<name>] | list | sweep [--apply]";
 /// A Claude shell call stops at 2 minutes, so land waits less, and running it again keeps waiting.
 const LAND_WAIT: Duration = Duration::from_secs(100);
 
@@ -34,14 +34,6 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     let wt = swarm::task::wt_program();
     let value = match args {
-        [verb, name] if verb == "start" => {
-            let owner = (
-                env::var("SWARM_SESSION_ID").ok(),
-                env::var("SWARM_AGENT_ID").ok(),
-            );
-            let (task, warning) = swarm::task::start(&root, &wt, &cwd, name, owner)?;
-            serde_json::json!({"branch": task.branch, "path": task.path, "warning": warning})
-        }
         [verb, rest @ ..] if verb == "land" => {
             let pr = rest.iter().any(|arg| arg == "--pr");
             let names: Vec<_> = rest.iter().filter(|arg| arg.as_str() != "--pr").collect();

@@ -60,12 +60,15 @@ impl Hub {
             "#!/bin/sh\nif [ \"$2\" = list ]; then exit 0; fi\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s\\n' 'https://github.com/test/repo/pull/1'\n", dir.join("gh-args").display()
         )).unwrap();
         std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-        Some(Self {
+        let hub = Self {
             dir,
             main,
             root,
             wt,
-        })
+        };
+        // The first swarm command claims the home, so the task records can go in it.
+        assert!(hub.cli(&["task", "list"], false).status.success());
+        Some(hub)
     }
 
     fn cli(&self, args: &[&str], serve: bool) -> Output {
@@ -101,11 +104,26 @@ impl Hub {
         child.wait_with_output().unwrap()
     }
 
+    /// A chat worktree as the app makes one: from a fresh origin default, then its record.
     fn task(&self, name: &str) -> PathBuf {
-        let output = self.cli(&["task", "start", name], false);
-        assert!(output.status.success(), "{output:?}");
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        PathBuf::from(value["path"].as_str().unwrap())
+        let path = self.dir.join("wt").join(name);
+        git(&self.main, &["fetch", "-q", "origin"]);
+        git(
+            &self.main,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "--no-track",
+                "-b",
+                &format!("swarm/{name}"),
+                path.to_str().unwrap(),
+                "origin/main",
+            ],
+        );
+        let (_, warning) = swarm::task::record_chat(&self.root, &path, None).unwrap();
+        assert_eq!(warning, None);
+        path
     }
 }
 
@@ -222,7 +240,7 @@ fn pr_land_pushes_the_task_and_opens_a_pr_into_the_default() {
 }
 
 #[test]
-fn task_start_fast_forwards_local_main_after_a_pr_merge() {
+fn a_new_chat_worktree_fast_forwards_local_main_after_a_pr_merge() {
     let Some(hub) = Hub::new() else { return };
     let updater = hub.task("updater");
     commit(&updater, "merged-on-github");
