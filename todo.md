@@ -20,7 +20,9 @@ The screen check (`src/screen/prompt.rs`) does not see it: the footer is not in
 "Accessing workspace:". No hook fires before the session starts, so the agent state stays
 `null`, and the chair gets no question to answer. Two fixes: `swarm launch` trusts the added
 folder too, and the screen check reports this dialog as a question that `swarm answer` can
-answer. The chair cannot press ↓ itself, because `swarm key` sends only `Up` and `C-u`.
+answer. `swarm key` sends only `Up` and `C-u`; the workaround used on 2026-11-17 was the adapter
+verb, `SWARM_PANE=<pane> swarm pty screen`, then `SWARM_KEY=Down` and `SWARM_KEY=Enter` with
+`swarm pty key`.
 
 Seen 2026-11-17: four trial panes (`review.trial-*` roles) in folders under
 `~/.swarm/ws/` and `~/work/swarm-trial-2026-11-17/` waited on it until the owner looked. Panes in
