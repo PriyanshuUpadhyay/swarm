@@ -144,8 +144,9 @@ fn profile_errors(profile: &Profile) -> Vec<String> {
     if profile.runners.is_empty() {
         errors.push(format!("Profile '{name}' must have at least one runner."));
     }
-    // Fable is a child seat only where it judges, never where it writes code.
-    let judges = name.starts_with("review.") || name.starts_with("council.");
+    // Fable is a child seat only where it judges, never where it writes code. `chat` may list it
+    // because its runner is the main orchestrator; launch still refuses a child on it.
+    let fable_ok = name == "chat" || name.starts_with("review.") || name.starts_with("council.");
     for (index, runner) in profile.runners.iter().enumerate() {
         let at = format!("Profile '{name}' runner {}", index + 1);
         if profile.runners[..index].contains(runner) {
@@ -169,9 +170,9 @@ fn profile_errors(profile: &Profile) -> Vec<String> {
                 errors.push(format!("{at} has invalid {field} '{value}'."));
             }
         }
-        if runner.model.to_lowercase().contains("fable") && !judges {
+        if runner.model.to_lowercase().contains("fable") && !fable_ok {
             errors.push(format!(
-                "{at}: Fable is allowed only in a review.* or council.* profile."
+                "{at}: Fable is allowed only in chat or a review.* or council.* profile."
             ));
         }
     }

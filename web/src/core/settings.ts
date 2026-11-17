@@ -8,34 +8,9 @@ import type { App } from "./app";
 import type { Load } from "./changes";
 import type { Command } from "./commands";
 
-export type Page = "appearance" | "notifications" | "profiles" | "accounts" | "setup";
-export const PAGES: [Page, string][] = [
-  ["appearance", "Appearance"],
-  ["notifications", "Notifications"],
-  ["profiles", "Agent profiles"],
-  ["accounts", "Accounts"],
-  ["setup", "Setup & doctor"],
-];
-
-/** A setup, notice or UI row from `swarm.doctor.v1`. Transcript reads use the built-in Rust worker. */
-export type DoctorItem = { id: string; title: string; state: "ok" | "setup" | "broken"; reason: string; group: string | null };
-export type Doctor = { items: DoctorItem[] };
-/** `swarm setup <items> --plan --json`, cut to what the page shows. */
-export type SetupPlan = {
-  digest: string;
-  files: { group: string; path: string }[];
-  commands?: { group: string; line: string }[];
-  conflicts: { group: string; file: string; entry: string; fix: string }[];
-  skipped: { group: string; reason: string }[];
-};
-
-/** `swarm import conductor --json` (ADR 0106): the Conductor chats an import adds, and why it skips
- *  the others. */
-export type ConductorPlan = {
-  digest: string;
-  chats: { conductorId: string; title: string; provider: string; cwd: string; open: boolean; messages: number; nativeLog: boolean }[];
-  skipped: { conductorId: string; title: string; reason: string }[];
-};
+export * from "./settings-types";
+import type { Doctor, Hud, SetupPlan, Usage, Roles, ProviderInfo, AccountList, KeyList, Runner, ProfileOp, Page, DoctorItem, ConductorPlan } from "./settings-types";
+import { PAGES, USAGE_PROVIDERS, REFRESH_SECONDS } from "./settings-types";
 
 /** What Set up all runs: each item that needs setup and has no conflict, in row order. A conflict
  *  needs the owner, so its item is left out. */
@@ -45,43 +20,6 @@ export function setUpAll(doctor: Doctor, plan: SetupPlan): string[] {
   return [...new Set(needed)];
 }
 
-/** One usage window of one account (`docs/usage-format.md`). */
-export type Meter = {
-  provider: string;
-  account: string | null;
-  label: string;
-  window: string | null;
-  window_minutes: number | null;
-  used_pct: number | null;
-  reset_time_seconds: number | null;
-  state: "fresh" | "stale" | "missing" | "failed" | "no_source" | string;
-  reason: string | null;
-  reason_code: string | null;
-  as_of_seconds: number | null;
-};
-export type Usage = { meters: Meter[] };
-/** `swarm.hud.v1` from `/api/hud`. `app` is null when this swarm has no HUD app. */
-export type Hud = { installed: boolean; running: boolean; app: string | null };
-export type Runner = { provider: string; model: string; effort: string; sandbox?: string; approval?: string; permission?: string };
-export type Profile = { name: string; runners: Runner[] };
-export type Roles = { revision: string; min_usage_left_pct: number; profiles: Profile[] };
-export type ProviderInfo = { id: string; label: string; efforts: string[]; default_effort: string; accounts: boolean };
-export type Account = { name: string; email: string | null; auth_state: string; usage_state: string; remaining_pct: number | null; summary: string | null };
-export type AccountList = { provider: string; state: string; revision: string; auto: string | null; accounts: Account[] };
-
-export type ProfileOp =
-  | { op: "save"; profile: Profile }
-  | { op: "new"; name: string }
-  | { op: "rename"; name: string; to: string }
-  | { op: "copy"; name: string; to: string }
-  | { op: "delete"; name: string }
-  | { op: "reset" }
-  | { op: "min_usage"; pct: number };
-
-/** The providers with usage meters and accounts. AGY has neither. */
-export const USAGE_PROVIDERS = ["claude", "codex"];
-/** The server keeps one refresh per provider per 300 s (S2). */
-export const REFRESH_SECONDS = 300;
 
 export type SettingsState = {
   open: boolean;
@@ -111,6 +49,7 @@ export type SettingsState = {
   pending: { items: string[]; files: SetupPlan["files"]; commands: NonNullable<SetupPlan["commands"]>; digest: string } | null;
   /** The Conductor import plan, read only when the owner asks for it. */
   conductor: Load<ConductorPlan>;
+  keys: Load<KeyList>;
 };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
@@ -164,6 +103,7 @@ export class Settings {
     plan: { state: "idle" },
     pending: null,
     conductor: { state: "idle" },
+    keys: { state: "idle" },
   };
   private listeners = new Set<() => void>();
   /** Counts HUD writes, so a read that began before a write cannot overwrite its reply. */
@@ -192,6 +132,7 @@ export class Settings {
     if (page === "profiles") void this.loadRoles();
     // loadSetup keeps its errors in state.doctor and state.plan, so nothing waits for it.
     if (page === "setup") void this.loadSetup();
+    if (page === "keys") void this.loadKeys();
     if (page === "accounts") {
       for (const p of USAGE_PROVIDERS) void this.loadAccounts(p);
       void this.loadUsage();
@@ -410,6 +351,29 @@ export class Settings {
 
   setUpItem(item: DoctorItem) {
     return item.group ? this.setUp([item.group]) : Promise.resolve();
+  }
+
+  // ---- API keys ----
+
+  async loadKeys() {
+    if (this.state.keys.state !== "ready") this.set({ keys: { state: "loading" } });
+    try {
+      this.set({ keys: { state: "ready", data: await this.api.get<KeyList>("/api/keys") } });
+    } catch (err) {
+      this.set({ keys: { state: "error", error: message(err) } });
+    }
+  }
+
+  /** Adds or replaces one key in the Keychain. The value is sent once and never kept in state. */
+  saveKey(name: string, value: string): Promise<boolean> {
+    if (this.state.busy) return Promise.resolve(false);
+    return this.write(() => this.api.post("/api/keys", { name, value }), "Keys", () => this.loadKeys());
+  }
+
+  removeKey(name: string, label: string) {
+    this.ask(`Remove the ${label} key from the Keychain? Tools that need it stop using it.`, "Remove key", () =>
+      this.write(() => this.api.post("/api/keys", { name }), "Keys", () => this.loadKeys()),
+    );
   }
 
   // ---- Conductor import ----

@@ -40,6 +40,12 @@ several files with commas, such as `config `.oxlintrc.json, pyproject.toml``. A 
 the oxlint config, and a `.toml` file is the ruff config (`[tool.ruff]` in `pyproject.toml`). The command
 must not write files, so check that its type checker sets `noEmit`.
 
+For a test gate behind an opaque command, append `; tests` after the optional config, for example
+``CI: `Checks` runs `sh scripts/check.sh`; tests``. Direct test commands are recognized by
+`blocks/prove-it-works/scripts/proof.py`; name wrappers explicitly. The test-result proof rule is
+owned by `blocks/prove-it-works/SKILL.md`. Test gates use `build --run`; a GitHub check status alone
+cannot supply the runner result. Keep runner output enabled and disable cached test results.
+
 ## Script limits
 
 Known limits, accepted by the user on 2026-10-09 (review run range-01cdecf-f715957-01): the

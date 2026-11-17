@@ -23,7 +23,7 @@ metadata:
 - Order the units so the stack proves itself. A reviewer reads the failing then passing evidence within each behavior, scaffold then feature, and each commit stands on its own.
 - Fix seats may build fix rows with declared, separate files at the same time, under the Parallel fix seats (opt-in) section of `auto` mode. Each fix still ends in its own check at its place in the stack.
 - When a data change can touch many records and the task allows a sample, the first unit runs it on one record and checks that record before the rest run.
-- The check inside each unit follows the kit block `blocks/prove-it-works/SKILL.md`.
+- The check inside each unit follows `blocks/prove-it-works/SKILL.md`, including its test-result command for each unit's test claim and its canary procedure for changes that keep behavior.
 
 ## Example
 Initial state: a migration renames a field across twelve files.

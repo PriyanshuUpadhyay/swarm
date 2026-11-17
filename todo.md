@@ -1,5 +1,47 @@
 # To do
 
+## Model trial follow-ups from 2026-11-17
+
+The model trials of 2026-11-17 changed `review.deep` and `search.web` (commit 05964e94). The
+results are in `~/.swarm/reports/2026-11-17-gamma-model-index/results-tests-1-4.md`. Two items
+are open, and the trial files that would let someone rerun them are deleted.
+
+- **Terra high is a shadow in `review.visual`, but nothing runs it.** It found 7 of 7 known
+  faults on 24 screenshots, and Sol high found 6, at about 40% of Sol's cost. Swarm has no shadow
+  runner, so on the next few visual reviews, start a `gpt-6.1-terra` high seat next to Sol by
+  hand. Promote Terra to first if both arms agree.
+- **Two Fable runners have no trial result.** Fable 5.2 passed at xhigh only, but `review.deep`
+  runner 4 runs it at high. `review.visual` runner 4 is still `claude-fable-5-1` high, because
+  no visual trial ran Fable.
+
+## A Claude pane can wait on the "Adding a new directory" dialog, and no one is told
+
+A Claude pane runs in `<folder>/.herdr/workers` and adds the task folder as an extra folder.
+`swarm launch` trusts `.herdr/workers` in `~/.claude.json` but not the added folder, so Claude
+Code (2.1.326) can open this dialog before its session starts:
+
+```text
+Adding a new directory:
+<folder>
+This session hasn't worked here before. Is this a directory you created or one you trust?
+❯ No, exit
+  Yes, add it
+Esc to exit · To add it, press ↓ to Yes, then Enter (your text is kept)
+```
+
+The screen check (`src/screen/prompt.rs`) does not see it: the footer is not in
+`PROMPT_FOOTERS`, the choices have no numbers, and `HEADERS` knows only AGY's
+"Accessing workspace:". No hook fires before the session starts, so the agent state stays
+`null`, and the chair gets no question to answer. Two fixes: `swarm launch` trusts the added
+folder too, and the screen check reports this dialog as a question that `swarm answer` can
+answer. `swarm key` sends only `Up` and `C-u`; the workaround used on 2026-11-17 was the adapter
+verb, `SWARM_PANE=<pane> swarm pty screen`, then `SWARM_KEY=Down` and `SWARM_KEY=Enter` with
+`swarm pty key`.
+
+Seen 2026-11-17: four trial panes (`review.trial-*` roles) in folders under
+`~/.swarm/ws/` and `~/work/swarm-trial-2026-11-17/` waited on it until the owner looked. Panes in
+`/tmp` and in hub worktrees did not get it; the rule Claude uses is not known.
+
 ## swarm spawn checks the model and reports what went wrong
 
 `swarm spawn` (and `launch`) should check that the routed model exists for the provider and

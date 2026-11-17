@@ -119,3 +119,20 @@ fn badge_counts_waiting_chats_and_honours_the_badge_preference() {
     fs::write(root.join("choices.json"), choices.to_string()).unwrap();
     badge(0);
 }
+
+#[test]
+fn a_refused_key_write_keeps_its_value_out_of_the_error_log() {
+    let server = Server::new();
+    // An unknown name fails in `swarm keys` before any Keychain call.
+    let (status, ..) = server.request(
+        "POST",
+        "/api/keys",
+        "Content-Type: application/json\r\n",
+        &json!({"name": "NOT_A_KEY", "value": "secret-in-body"}).to_string(),
+        true,
+    );
+    assert_eq!(status, 409);
+    let log = fs::read_to_string(server.dir.join("home/.swarm/errors.jsonl")).unwrap();
+    assert!(log.contains("/api/keys"));
+    assert!(!log.contains("secret-in-body"));
+}

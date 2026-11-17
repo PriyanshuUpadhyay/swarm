@@ -1,6 +1,6 @@
 ---
 name: council
-description: Run a visible debate between three independent voices on one pinned question, and give one advisory recommendation. Use when the user asks for a council, a multi-model debate, a cross-model second opinion, or a high-stakes design review.
+description: Run a debate between three independent voices on one pinned question, for one recommendation. Use when the user asks for a council, or when you cannot say up front what good looks like: bugs, security holes, edge cases, open trade-offs.
 ---
 
 # Council
@@ -14,6 +14,16 @@ inspect evidence and write only council scratch artifacts. Briefs and seats foll
 `blocks/worker-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
 says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. End with the options, evidence, disagreement, and the decision
 that remains with the user.
+
+## When a council fits
+
+A council only refines what it receives. Three voices cannot supply the goal or the context that the task lacks.
+
+- Pick a council when you cannot say up front what good looks like. Examples are a bug hunt, a security review, a list of edge cases, and a design trade-off that is still open.
+- When you can state the intent and have the context, do not pick a council. Write the intent and context first, then plan, implement, and verify with one model.
+- When the task needs both, settle the intent and context first. Then convene the council on the one open question.
+
+The first sentence of the plan or reply says which case applies. `skills/swarm/SKILL.md` points here and does not restate this rule.
 
 ## Start or continue
 

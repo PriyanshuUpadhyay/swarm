@@ -92,7 +92,16 @@ def verdict(name, only=None):
             problems.append("build: no result; run `build <run>`, or `build <run> --run` for an unpushed head")
         elif b["head"] != t["head"] or (t["head"] is None and b["digest"] != tree_digest()):
             problems.append("build: the result is for other code; run `build` again")
+        elif b["conclusion"] == "incomplete":
+            problems.append(f"build: {b.get('test_error') or 'test evidence is incomplete'}")
         else:
+            from review_check import proof
+            if (t["ci"].get("tests", False) or proof.runs_tests(t["ci"]["cmd"])) and b["conclusion"] == "success":
+                try:
+                    evidence = b.get("tests") or {}
+                    proof.parsed_tests(d / evidence["path"], evidence["code_mtime_ns"])
+                except (KeyError, OSError, ValueError) as error:
+                    problems.append(f"build: no usable test result ({error}); run `build` again")
             built = "pass" if b["conclusion"] == "success" else "fail"
             for uid in units:
                 done[uid] |= set(checklist[uid].get("tool", []))

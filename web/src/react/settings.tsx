@@ -1,4 +1,4 @@
-// Settings (⌘,) with five pages. Rows are plain elements with inline buttons; no row has its own
+// Settings (⌘,) with six pages. Rows are plain elements with inline buttons; no row has its own
 // menu, tooltip or hover card.
 
 import { XIcon, TriangleAlertIcon } from "lucide-react";
@@ -16,6 +16,7 @@ import { ProfilesPage } from "./settings-profiles";
 import { NoticesStatus } from "./settings-notices";
 import { updateStatus } from "./update";
 import { SetupPage } from "./settings-setup";
+import { KeysPage } from "./settings-keys";
 
 // ---- dialog ----
 
@@ -62,6 +63,7 @@ function PageBody({ app, page }: { app: App; page: Page }) {
   if (page === "notifications") return <NotificationsPage app={app} />;
   if (page === "profiles") return <ProfilesPage app={app} />;
   if (page === "setup") return <SetupPage app={app} />;
+  if (page === "keys") return <KeysPage app={app} />;
   return <AccountsPage app={app} />;
 }
 

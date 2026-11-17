@@ -384,15 +384,15 @@ fn with_no_file_the_built_in_profiles_show_and_nothing_is_written() {
     }
 
     let bin = clis(&home, &["codex", "claude", "agy"]);
-    for (role, model) in [
-        ("search.web", "gpt-6.1-sol"),
-        ("code.small", "gpt-6.1-sol"),
-        ("council.gemini", "gpt-6.1-sol"),
+    for (role, model, effort) in [
+        ("search.web", "gpt-6.1-terra", "medium"),
+        ("code.small", "gpt-6.1-sol", "high"),
+        ("council.gemini", "gpt-6.1-sol", "high"),
     ] {
         let profile = profiles.iter().find(|p| p["name"] == role).unwrap();
         assert_eq!(profile["runners"][0]["provider"], "codex", "{role}");
         assert_eq!(profile["runners"][0]["model"], model, "{role}");
-        assert_eq!(profile["runners"][0]["effort"], "high", "{role}");
+        assert_eq!(profile["runners"][0]["effort"], effort, "{role}");
         assert_eq!(profile["runners"][0]["sandbox"], "workspace-write");
         assert_eq!(profile["runners"][0]["approval"], "never");
 
@@ -400,7 +400,7 @@ fn with_no_file_the_built_in_profiles_show_and_nothing_is_written() {
             let selected = json(&swarm(&home, &[("PATH", &bin)], &["roles", "get", role]));
             assert_eq!(selected["provider"], "codex", "{role}");
             assert_eq!(selected["model"], model, "{role}");
-            assert_eq!(selected["effort"], "high", "{role}");
+            assert_eq!(selected["effort"], effort, "{role}");
         }
     }
 

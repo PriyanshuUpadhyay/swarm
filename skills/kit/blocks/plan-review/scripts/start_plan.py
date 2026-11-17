@@ -18,6 +18,19 @@ file for plan.html with the words, the file, and the plan.md hash, so the drift 
 A run whose step files exist starts again only when each file still matches plan.md (see drift): the same
 needs, holds, Writes and Optional lines, brief, and blocks, and no file without a row. A plan that adds a step
 only makes the new file. Any other change refuses and asks for a new run folder that names this one.
+
+An optional `## Align` section records required answers in one Markdown table:
+
+| Required answer | Answer | Owner message |
+|---|---|---|
+| A1: empty input | Reject it (typed, from the request). | chat message 12 |
+| Acceptance | Start empty; submit; see a required-name error. | chat message 13 |
+| Not built | Do not change saved names. | chat message 13 |
+
+Every row requires an answer and a reference to the owner's message (a chat message id or a saved
+message path). Empty cells and unresolved markers such as `skipped`, `pending`, or `-` refuse,
+even after approval. Escape a pipe inside a cell as `\\|`. A small, clear task may omit this section.
+The check validates the record; it cannot prove who wrote a referenced message or that they read the plan.
 """
 
 import hashlib
@@ -36,9 +49,44 @@ import step_brief  # noqa: E402
 import step_run  # noqa: E402
 
 
+def align_answers(run):
+    """Check the required-answer record before approval can start work or write an auto round."""
+    lines = read_utf8(Path(run) / "plan.md").splitlines()
+    fence = 0
+    for i, line in enumerate(lines):
+        if fence:
+            if re.fullmatch(r"`{" + str(fence) + r",}", line.strip()):
+                fence = 0
+            lines[i] = ""
+        elif opening := re.match(r"`{3,}", line):
+            fence = len(opening[0])
+            lines[i] = ""
+    heads = [i for i, line in enumerate(lines) if line.strip() == "## Align"]
+    if not heads:
+        return
+    if len(heads) != 1:
+        raise SystemExit("plan.md has more than one ## Align section; keep one required-answer table")
+    end = next((i for i in range(heads[0] + 1, len(lines)) if re.match(r"#{1,2} ", lines[i])), len(lines))
+    table = [line.strip() for line in lines[heads[0] + 1:end] if line.strip()]
+    cells = [re.split(r"(?<!\\)\|", line[1:-1]) for line in table if line.startswith("|") and line.endswith("|")]
+    cells = [[cell.strip().replace("\\|", "|") for cell in row] for row in cells]
+    if len(cells) != len(table) or len(cells) < 3 or cells[0] != ["Required answer", "Answer", "Owner message"] or \
+            len(cells[1]) != 3 or not all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells[1]) or \
+            any(len(row) != 3 for row in cells[2:]):
+        raise SystemExit("plan.md Align needs one table: | Required answer | Answer | Owner message |; see start_plan.py")
+    unresolved = {"", "-", "skip", "skipped", "pending", "unanswered", "tbd"}
+    for row in cells[2:]:
+        label = step_run.plain(row[0]) or "unnamed answer"
+        for field, value in zip(("required answer name", "answer", "owner-message reference"), row):
+            answer = value.strip("`*_ ").casefold()
+            if answer in unresolved or field == "owner-message reference" and answer in {"none", "n/a"}:
+                raise SystemExit(f"plan.md Align {label}: {field} is blank or unresolved; record the owner's answer and message reference, then approve the updated plan")
+
+
 def approved(run):
     """The preset's Start command or None, after the stop rule holds; else SystemExit."""
     run = Path(run)
+    align_answers(run)
     file = preset.of_plan(run / "plan.md")
     stop, start, _ = preset.section(file) if file else ("owner", None, [])
     if stop == "owner" or not preset.same_steps(run / "plan.md", file):
@@ -62,6 +110,7 @@ def page_matches(run):
 def auto(run, source):
     """Write the next plan-review round as approved, from the owner's words in source; else SystemExit."""
     run, source = Path(run), Path(source)
+    align_answers(run)
     words = re.search(r'^Auto approval: "(.+)"$', (run / "plan.md").read_text(encoding="utf-8"), re.M)
     if not words:
         raise SystemExit('plan.md has no line Auto approval: "<the owner\'s words>"')

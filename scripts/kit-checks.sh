@@ -27,6 +27,7 @@ checks = [
     "skills/kit/skills/swarm/scripts/test_preset.py",
     "skills/kit/skills/code-review/scripts/test_review_check.py",
     "skills/kit/scripts/test_build_checks.py",
+    "skills/kit/blocks/prove-it-works/scripts/test_proof.py",
     "skills/kit/skills/code-review/scripts/test_review_walk.py",
     "skills/kit/skills/code-review/scripts/test_validate_citations.py",
     "skills/kit/skills/implement/scripts/test_land.py",

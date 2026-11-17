@@ -20,6 +20,7 @@ metadata:
 - Each row's check is the one that the build step's file names for it, in a todo's evidence or its `## Result`. In implement, review judges that each done-when has one there, before this table exists.
 - Evidence reads "not run" until you get it. A row with no proof reads "unverified" and says why.
 - Keep a partial check apart from a completed proof.
+- For a row that says tests ran, cite the test-result command and kept runner result from `blocks/prove-it-works/SKILL.md`. That block also owns canary and expected-output comparison proof.
 - In research, the table also has one row for each source type: local sources, surveys, origin papers, recent work, and off-path ideas. Each row holds its result with a link, or `not applicable: <reason>`. A link check does not prove coverage, because it shows only that the links open.
 - When a source type has a gap, say whether the gap blocks the answer. Write `blocks: <which conclusion>` or `does not block: <why>`.
 

@@ -318,6 +318,9 @@ mod tests {
     #[test]
     fn validate_names_each_broken_rule() {
         assert_eq!(validate(&config(vec![chat()])), Vec::<String>::new());
+        let mut fable_chat = chat();
+        fable_chat.runners.push(runner(Provider::Claude, "fable"));
+        assert_eq!(validate(&config(vec![fable_chat])), Vec::<String>::new());
         let mut codex = runner(Provider::Codex, "--yolo");
         codex.effort = "huge".into();
         codex.permission = Some("auto".into());

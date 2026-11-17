@@ -8,6 +8,7 @@ pub mod guard;
 pub mod herdr;
 pub mod host;
 pub mod hud;
+pub mod keys;
 pub mod managed;
 pub mod paths;
 pub mod permission;

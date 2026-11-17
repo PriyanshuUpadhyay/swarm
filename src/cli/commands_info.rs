@@ -153,6 +153,9 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         );
         return Ok(Some(()));
     }
+    if args.first().is_some_and(|arg| arg == "keys") {
+        return keys(&args[1..]).map(Some);
+    }
     if let [cmd, json] = args
         && cmd == "notices"
         && json == "--json"
@@ -414,4 +417,45 @@ fn kit(mode: &str) -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(status.code().unwrap_or(1));
     }
     Ok(())
+}
+
+/// `swarm keys [--json]`, `swarm keys set <NAME>` with the value on stdin, and
+/// `swarm keys remove <NAME>`. Only the owner writes a key; a worker only lists them.
+fn keys(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
+    match args {
+        [] | [_] if args.first().is_none_or(|flag| flag == "--json") => {
+            let list = swarm::keys::list();
+            if !args.is_empty() {
+                return print_json(&serde_json::json!({
+                    "schema": swarm::keys::KEYS_SCHEMA,
+                    "keys": list,
+                }));
+            }
+            for key in list {
+                let state = if key.saved { "saved" } else { "not saved" };
+                println!("{:<18} {:<10} {}", key.name, state, key.label);
+            }
+            Ok(())
+        }
+        [verb, name] if verb == "set" || verb == "remove" => {
+            if swarm::host::is_worker(|name| env::var(name).ok()) {
+                return Err("swarm: only the owner adds, replaces, or removes a key".into());
+            }
+            if verb == "remove" {
+                swarm::keys::remove(name)?;
+                println!("removed {name}");
+                return Ok(());
+            }
+            let mut value = String::new();
+            std::io::stdin().take(4096).read_to_string(&mut value)?;
+            swarm::keys::save(name, value.trim_end_matches(['\r', '\n']))?;
+            println!("saved {name}");
+            Ok(())
+        }
+        _ => Err(
+            "usage: swarm keys [--json] | keys set <NAME> (value on stdin) | keys remove <NAME>"
+                .into(),
+        ),
+    }
 }

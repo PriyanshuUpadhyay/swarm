@@ -171,6 +171,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/usage", get(usage_read))
         .route("/api/usage/refresh", post(usage_refresh))
         .route("/api/hud", get(hud_read).post(hud_write))
+        .route("/api/keys", get(keys_read).post(keys_write))
         .route("/api/notices", get(notices_read).post(notices_write))
         .route("/api/doctor", get(doctor_read))
         .route("/api/update", get(update_read).post(update_write))

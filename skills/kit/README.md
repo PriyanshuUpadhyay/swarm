@@ -5,14 +5,15 @@ Workflow skills for coding agents (Claude Code, Codex, Antigravity). Each skill 
 
 ## Skills
 
-The plugin ships four skills. `swarm` is the one workflow skill, `skill-eval` tests skills, and the others serve
-swarm panes. ADR 0136 says how a new skill earns its place.
+The plugin ships twelve skills. `swarm` plans workflows, standalone skills own their methods,
+and two background skills serve swarm panes. ADR 0136 says how a new skill earns its place.
 
 | Skill | Use |
 |---|---|
 | `swarm` | Plan any task from kit blocks, starting from a preset when one fits; draw it, get approval, run the steps |
 | `swarm-orchestrator` | Run a swarm session as the parent agent |
 | `implement` | Run one change through frame, design, contracts, impact, build, review, and close, in `pair` or `auto` mode |
+| `socratic-tutor` | Teach through questions, a skill map, and review, with learner evidence saved for resume |
 | `swarm-voice` | Act as one child agent in a swarm session |
 | `skill-eval` | Test whether a skill helps: a cold name check, runs with and without it, and a blind grade |
 

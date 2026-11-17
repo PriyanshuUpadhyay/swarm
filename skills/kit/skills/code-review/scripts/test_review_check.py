@@ -11,6 +11,7 @@ from test_review_check_loop_snapshots import *
 from test_review_check_loop_ledger import *
 from test_review_check_catalog import *
 from test_review_check_build_timeout import *
+from test_review_check_test_gate import *
 from test_review_check_answers import *
 from test_review_check_history import *
 from test_review_check_crash import *
@@ -176,6 +177,8 @@ if __name__ == "__main__":
         test_repo_rules_origin()
         test_seat_gaps()
         test_frozen_build()
+        test_parsed_test_build_gate()
+        test_test_gate_proof_guard()
         test_cli_encoding()
         test_superseded_run()
         test_answers()
