@@ -27,7 +27,7 @@ export type SidebarRow = {
   missing: boolean;
   newChatEnabled: boolean;
   // A new chat here gets its own worktree, so the + menu offers "no new worktree" (ADR 0146).
-  chatWorktree: boolean;
+  startsChatWorktree: boolean;
   dimmed: boolean;
   fields: Field[];
   // Null on a "more" or archived row (Option<Selection> in src/view/sidebar.rs).

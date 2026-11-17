@@ -437,6 +437,7 @@ esac
             .project_paths
             .contains(&target)
     );
+
     // ADR 0146: a new chat on a hub's main checkout runs in its own new worktree, after setup.
     let hub = root.join("hub");
     std::fs::create_dir(&hub).unwrap();
@@ -452,6 +453,7 @@ esac
         && git --git-dir=.bare worktree add -q --orphan -b main wt/main \
         && echo a > wt/main/a.txt && git -C wt/main add a.txt && git -C wt/main commit -q -m a \
         && echo setup-ran >> .bare/info/exclude");
+
     // Setup output is ignored, as `node_modules` is; a file git sees would keep the worktree.
     let cli = r#"#!/bin/sh
 printf '%s\n' "$PWD|$*" >> "$SWARM_HOME/actions"
@@ -484,6 +486,7 @@ esac
     }));
     let calls = action_calls(&fixture);
     assert!(calls.lines().last().unwrap().contains(&format!("{chat}|launch orchestrator chat")), "{calls}");
+
     // The fake CLI makes no session row, so the test adds the one `swarm session new` would.
     let chat_session = |started: &Value, cwd: &str| {
         let id = started["session"].as_str().unwrap().to_owned();
@@ -507,6 +510,7 @@ esac
         choices_store::load(&fixture.app.root, true).unwrap().owner.names[&chat],
         "fix-the-login-redirect-bug"
     );
+
     // An archived chat that got no prompt takes its empty worktree with it; one with a commit stays.
     if !root.join("bin/wt").is_file() {
         eprintln!("skipped: archive of a chat worktree, because Worktrunk is not installed");
@@ -548,6 +552,7 @@ esac
             .unwrap();
         assert!(Path::new(&shared).is_dir());
     }
+
     // New chat in main keeps the chat in main.
     let kept = call_action(&fixture, "/api/chat/new", json!({"cwd":main,"here":true}))
         .await

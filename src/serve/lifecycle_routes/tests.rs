@@ -30,8 +30,9 @@ exec /usr/bin/git "$@"
     )
     .unwrap();
     std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
-    // Worktrunk removes a chat worktree, so the child gets the real binary, not a wrapper on PATH
-    // that reads the owner's home. The child skips that part when Worktrunk is not installed.
+    // Worktrunk removes a chat worktree, so the child gets the real binary. `wt_program` may find
+    // a wrapper that reads the owner's home, often in ~/.local/bin, so this list leaves it out.
+    // The child skips that part when Worktrunk is not installed.
     let home = std::path::PathBuf::from(std::env::var_os("HOME").unwrap());
     let real = [home.join(".cargo/bin/wt"), "/opt/homebrew/bin/wt".into()];
     if let Some(wt) = real.iter().find(|path| path.is_file()) {

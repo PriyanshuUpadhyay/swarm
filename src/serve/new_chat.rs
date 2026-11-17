@@ -43,8 +43,9 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
         if is_read_only(&tree, &saved, &allowed_cwd) {
             return Err(read_only_error("chat"));
         }
+        // The tree is fresh, so its hub-main mark is the one the menu shows (ADR 0146).
         Ok(found
-            .filter(|_| !here && hub_main(Path::new(&allowed_cwd)))
+            .filter(|(_, workspace)| !here && workspace.hub_main)
             .map(|(project, _)| project.path.clone()))
     })
     .await
@@ -55,37 +56,36 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
         None => body.cwd.clone(),
     };
 
-    let started = launch_chat(app, &body, role, account, &cwd, own_worktree).await;
-    if own_worktree && started.is_err() {
-        // A chat that did not start leaves no worktree, so a retry does not add another.
-        let path = PathBuf::from(&cwd);
-        let removed =
-            tokio::task::spawn_blocking(move || swarm::task::remove_failed_chat(&path)).await;
-        if !matches!(removed, Ok(Ok(()))) {
-            eprintln!(
-                "swarm: kept the chat worktree {cwd} of a chat that did not start: {removed:?}"
-            );
+    // A chat that did not start removes its own worktree, so a retry does not add another.
+    let session = match open_session(app, &cwd).await {
+        Ok(session) => session,
+        Err(err) => {
+            if own_worktree {
+                forget_chat(app, &cwd, None).await;
+            }
+            return Err(err);
         }
+    };
+    let started = start_chair(app, &body, role, account, &cwd, &session, own_worktree).await;
+    if own_worktree && started.is_err() {
+        forget_chat(app, &cwd, Some(&session)).await;
     }
     started
 }
 
-/// Makes the session in `cwd`, records a chat worktree, and launches the chair.
-async fn launch_chat(
-    app: &App,
-    body: &NewChat,
-    role: &str,
-    account: Option<&str>,
-    cwd: &str,
-    own_worktree: bool,
-) -> Result<Value, ApiError> {
-    let mut call = CliCall {
+fn chat_call(cwd: &str, session: Option<&str>) -> CliCall {
+    CliCall {
         args: Vec::new(),
         cwd: cwd.into(),
-        session: None,
+        session: session.map(str::to_owned),
         adapter: "tmux-swarm".into(),
-    };
-    let create = app.chat_create.lock().await;
+    }
+}
+
+/// Makes the swarm session of a new chat in `cwd`, and returns its id.
+async fn open_session(app: &App, cwd: &str) -> Result<String, ApiError> {
+    let call = chat_call(cwd, None);
+    let _create = app.chat_create.lock().await;
     run_cli(app, call.args(&["init"]), None).await?;
     let output = run_cli(app, call.args(&["session", "new", "lane"]), None).await?;
     let session = output.trim();
@@ -95,8 +95,58 @@ async fn launch_chat(
             "swarm returned an invalid session id",
         ));
     }
-    call.session = Some(session.to_owned());
-    drop(create);
+    Ok(session.to_owned())
+}
+
+/// Undoes a chat start that failed after its worktree was made. The session is archived, and
+/// the worktree and its record go when it holds no change. A chair that may run keeps both,
+/// because a launch can time out after its pane started.
+async fn forget_chat(app: &App, cwd: &str, session: Option<&str>) {
+    if let Some(session) = session {
+        let call = chat_call(cwd, Some(session));
+        let agents = run_cli(app, call.args(&["agents", "--json"]), None).await;
+        let alive = agents
+            .ok()
+            .and_then(|out| serde_json::from_str::<Value>(&out).ok())
+            .map(|out| {
+                out["agents"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|agent| agent["alive"] == true)
+            });
+        if alive != Some(false) {
+            eprintln!("swarm: kept the chat worktree {cwd}, because its chair may run");
+            return;
+        }
+
+        if let Err(err) = run_cli(app, call.args(&["session", "archive", session]), None).await {
+            eprintln!(
+                "swarm: the session {session} of a chat that did not start stays: {}",
+                shells::api_text(&err)
+            );
+        }
+    }
+
+    let (root, path) = (app.root.clone(), PathBuf::from(cwd));
+    let removed =
+        tokio::task::spawn_blocking(move || swarm::task::remove_failed_chat(&root, &path)).await;
+    if !matches!(removed, Ok(Ok(()))) {
+        eprintln!("swarm: kept the chat worktree {cwd} of a chat that did not start: {removed:?}");
+    }
+}
+
+/// Records a chat worktree, then launches the chair of `session`.
+async fn start_chair(
+    app: &App,
+    body: &NewChat,
+    role: &str,
+    account: Option<&str>,
+    cwd: &str,
+    session: &str,
+    own_worktree: bool,
+) -> Result<Value, ApiError> {
+    let mut call = chat_call(cwd, Some(session));
 
     let mut warning = None;
     if own_worktree {
@@ -133,16 +183,10 @@ async fn launch_chat(
     }))
 }
 
-/// True when `cwd` is the default-branch checkout of a worktree hub.
-fn hub_main(cwd: &Path) -> bool {
-    swarm::task::hub(cwd)
-        .is_some_and(|hub| std::fs::canonicalize(cwd).is_ok_and(|cwd| cwd == hub.main))
-}
-
 /// A new worktree for one chat on `swarm/chat-<8 hex>`, made by the New workspace path, so it
 /// starts from a fresh origin and runs the project's setup script. The first prompt names the
-/// branch (ADR 0146). A failed setup starts no chat (ADR 0097), and `new_chat` then removes
-/// the worktree when it holds no change.
+/// branch (ADR 0146). A failed setup starts no chat (ADR 0097), and the worktree then goes when
+/// it holds no change.
 async fn chat_worktree(app: &App, project: String) -> Result<String, ApiError> {
     let request = lifecycle::NewWorkspace {
         project,
@@ -170,9 +214,7 @@ async fn chat_worktree(app: &App, project: String) -> Result<String, ApiError> {
     match made["setup"]["state"].as_str() {
         None | Some("completed") => Ok(path.to_owned()),
         Some(state) => {
-            let folder = PathBuf::from(path);
-            let _ =
-                tokio::task::spawn_blocking(move || swarm::task::remove_failed_chat(&folder)).await;
+            forget_chat(app, path, None).await;
             Err(error(
                 StatusCode::BAD_GATEWAY,
                 &format!(

@@ -20,6 +20,11 @@ pub struct Hub {
     pub main: PathBuf,
 }
 
+/// True when `reference`, a full ref name, exists in the repository at `dir`.
+fn ref_exists(dir: &Path, reference: &str) -> bool {
+    git(dir, &["show-ref", "--verify", "--quiet", reference]).is_some()
+}
+
 fn git(dir: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new("git")
         .arg("-C")
@@ -349,8 +354,7 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Ta
 #[path = "task/chat.rs"]
 mod chat;
 pub use chat::{
-    chat_branch, chat_placeholder, drop_unnamed_chat, name_chat, record_chat, remove_failed_chat,
-    unnamed_chat,
+    chat_placeholder, drop_unnamed_chat, name_chat, record_chat, remove_failed_chat, unnamed_chat,
 };
 #[path = "task/branches.rs"]
 mod branches;

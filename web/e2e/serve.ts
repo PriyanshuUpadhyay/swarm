@@ -276,6 +276,7 @@ export default async function setup() {
   git(ghProject, "branch", "-q", "-D", "pr-7");
   git(ghProject, "remote", "add", "origin", "https://github.com/acme/demo.git");
   git(dir, "clone", "-q", origin, prProject);
+
   // proj-hub is a worktree hub, a bare `.bare` with main in `wt/main`, where a new chat gets its own worktree (ADR 0146).
   const hubMain = join(dir, "proj-hub", "wt", "main");
   git(dir, "clone", "-q", "--bare", origin, join(dir, "proj-hub", ".bare"));

@@ -140,7 +140,7 @@ pub(super) fn nested(tree: &tree::Tree, cwd: &str) -> Vec<String> {
 }
 
 /// An error's text, as the page shows it.
-fn api_text(err: &ApiError) -> String {
+pub(super) fn api_text(err: &ApiError) -> String {
     err.1.0["error"].as_str().unwrap_or_default().to_owned()
 }
 

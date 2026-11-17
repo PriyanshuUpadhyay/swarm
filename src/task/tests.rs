@@ -191,4 +191,15 @@ fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
     let other = chat(&root, &main, "chat-89abcdef", None);
     let named = name_chat(&root, Path::new(&other.path), "🙂").unwrap();
     assert_eq!(named.as_deref(), Some("swarm/untitled-89abcdef"));
+
+    // A record that names another branch, as an agent could write it, renames nothing.
+    let forged = chat(&root, &main, "chat-aaaabbbb", None);
+    let record = record_path(&root, &forged.repo, &forged.branch);
+    let other = Task {
+        branch: "main".into(),
+        ..forged.clone()
+    };
+    write_json(&record, &other).unwrap();
+    let named = name_chat(&root, Path::new(&forged.path), "rename main please").unwrap();
+    assert_eq!(named, None);
 }
