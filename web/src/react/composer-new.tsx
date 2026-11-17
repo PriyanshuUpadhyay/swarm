@@ -37,7 +37,7 @@ export function ComposerPage({ app }: { app: App }) {
   const composer = useNewChat(app, () => app.newChat.state.composer);
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
-  const list = targets(tree, workspace);
+  const list = targets(tree, composer?.cwd ?? workspace);
   const target = (composer && list.find((t) => t.cwd === composer.cwd)) || defaultTarget(list, tree, workspace);
   if (!target) return null;
   return <NewChatComposer app={app} key={composer?.seq ?? `page:${target.cwd}`} initial={target} place={composer?.place ?? defaultPlace(target)} focus={composer !== null} />;
@@ -76,7 +76,6 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
   const profile = Array.isArray(profiles) ? (profiles.find((p) => p.name === role) ?? profiles[0]) : undefined;
   const base = profileRun(profile);
   const shown = run ?? base;
-  const catalog = useRunCatalog(app, shown?.provider ?? "claude");
 
   useEffect(() => {
     app.life.profiles().then(
@@ -104,19 +103,25 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
     const ok = await app.newChat.start(target.cwd, text, place, { role: profile?.name ?? role, run: changed });
     if (!ok) setSending(false);
   };
-  // ⌘⇧/ steps to the next thinking level the picked model takes.
-  const cycleThinking = () => {
+  // ⌘⇧/ steps to the next thinking level the picked model takes. Each list read runs a CLI, so
+  // only this key and the run menu read them.
+  const cycleThinking = async () => {
     if (!shown) return;
-    const { levels } = runModel(catalog, shown);
-    if (!levels.length) return;
-    const at = shown.effort ? levels.indexOf(shown.effort) : -1;
-    setRun({ ...shown, effort: levels[(at + 1) % levels.length] });
+    try {
+      const [{ providers }, { models }] = await Promise.all([app.life.runs.providers(), app.life.runs.models(shown.provider)]);
+      const { levels } = runModel({ providers, models: { [shown.provider]: models }, error: null }, shown);
+      if (!levels.length) return;
+      const at = shown.effort ? levels.indexOf(shown.effort) : -1;
+      setRun({ ...shown, effort: levels[(at + 1) % levels.length] });
+    } catch (err) {
+      app.notice(message(err), true);
+    }
   };
   const onKeyDown = (e: KeyboardEvent) => {
     const meta = e.metaKey || e.ctrlKey;
     let done = true;
     if (meta && e.key === "Enter") void send();
-    else if (meta && (e.key === "/" || e.key === "?") && e.shiftKey) cycleThinking();
+    else if (meta && (e.key === "/" || e.key === "?") && e.shiftKey) void cycleThinking();
     else if (meta && e.key === "/") setMenu((m) => (m === "run" ? null : "run"));
     else if (meta && !e.shiftKey && e.key.toLowerCase() === "p") setMenu((m) => (m === "project" ? null : "project"));
     else if (e.key === "Escape" && menu) setMenu(null);
@@ -130,7 +135,7 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
 
   const runText = shown ? [cliName(shown.provider), shown.model ?? "Default model", shown.effort && levelWord(shown.effort)].filter(Boolean).join(" · ") : typeof profiles === "string" ? "Profiles unavailable" : "Reading profiles…";
   return (
-    <div className={`grid w-full gap-3 ${overlay ? "max-w-[min(960px,calc(100vw-32px))]" : "max-w-[960px] px-4"}`} data-testid="new-chat-composer" data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
+    <div className={`grid w-full gap-3 ${overlay ? "max-w-[min(960px,calc(100vw-32px))]" : "max-w-[960px] px-4"}`} data-testid="new-chat-composer" data-cwd={target.cwd} data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
       <div className="grid gap-3 min-[1000px]:grid-cols-[1fr_280px]">
         <div className="grid gap-2 rounded-xl border border-border-strong bg-popover p-3 shadow-panel">
           <textarea
@@ -195,7 +200,7 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
                   ))}
                 </div>
               )}
-              {shown && <RunPicker app={app} catalog={catalog} current={base ?? shown} draft={shown} setDraft={setRun} />}
+              {shown && <RunMenu app={app} current={base ?? shown} draft={shown} setDraft={setRun} />}
             </div>
           )}
         </div>
@@ -203,6 +208,11 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
       </div>
     </div>
   );
+}
+
+function RunMenu({ app, current, draft, setDraft }: { app: App; current: Run; draft: Run; setDraft: (run: Run) => void }) {
+  const catalog = useRunCatalog(app, current.provider);
+  return <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={setDraft} />;
 }
 
 function Chip({ testid, on, title, disabled, onClick, children }: { testid: string; on: boolean; title: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {

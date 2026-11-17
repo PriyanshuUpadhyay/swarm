@@ -7,7 +7,7 @@ import type { Run } from "./composer";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
 import type { TreeView } from "./nav";
 
-/** Where a new chat runs; `new` on a hub's main makes the chat its own worktree. */
+/** Where a new chat runs; `new` makes the chat its own worktree. */
 export type Place = { kind: "new" } | { kind: "here" } | { kind: "branch"; branch: string } | { kind: "pr"; number: number } | { kind: "issue"; number: number; title?: string };
 
 /** A project the composer can start in: the folder a new chat names, and what it offers. */
@@ -42,16 +42,17 @@ export type NewChatState = {
 
 export const STEP_WORDS: Record<string, string> = { worktree: "Make the worktree", setup: "Run the setup script", start: "Start the agent", send: "Send your prompt" };
 
-/** The projects the composer offers, each with the folder a new chat in it names. A hub's main
- *  checkout makes a new worktree; a plain folder starts in itself. */
+/** The projects the composer offers, each with the folder a new chat in it names: a hub's main
+ *  checkout, else the open workspace, else the project's own folder. A git project can make a new worktree; a plain
+ *  folder starts the chat in itself. */
 export function targets(tree: TreeView | null, workspace: string | null): Target[] {
   return (tree?.sections ?? [])
     .filter((s) => s.kind === "project")
     .flatMap((s) => {
       const rows = s.rows.filter((r) => r.kind === "workspace" && r.newChatEnabled);
       const main = rows.find((r) => r.startsChatWorktree);
-      const cwd = main?.id ?? rows.find((r) => r.id === workspace)?.id ?? rows[0]?.id ?? (s.folder ? null : s.path);
-      return cwd ? [{ cwd, project: s.path ?? cwd, title: s.title, git: !s.folder, worktree: main !== undefined }] : [];
+      const cwd = main?.id ?? rows.find((r) => r.id === workspace)?.id ?? (s.folder ? rows[0]?.id : s.path) ?? null;
+      return cwd ? [{ cwd, project: s.path ?? cwd, title: s.title, git: !s.folder, worktree: !s.folder }] : [];
     });
 }
 
@@ -109,7 +110,8 @@ export class NewChat {
     const list = targets(this.app.view.tree, at ?? this.app.view.workspace);
     const target = (at && list.find((t) => t.cwd === at || t.project === at)) || defaultTarget(list, this.app.view.tree, at ?? this.app.view.workspace);
     if (!target) return this.app.notice("Import or create a project first.");
-    this.set({ composer: { cwd: target.cwd, place: place ?? defaultPlace(target), seq: ++this.seq } });
+    // The composer replaces a start's view; the start keeps its tab.
+    this.set({ composer: { cwd: target.cwd, place: place ?? defaultPlace(target), seq: ++this.seq }, viewing: null });
   }
 
   close() {

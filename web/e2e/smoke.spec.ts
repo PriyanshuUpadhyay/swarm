@@ -202,24 +202,27 @@ test("a pasted image is saved by the server and its path goes in the draft", asy
   await composer.fill("");
 });
 
-test("the tab strip's + asks for a profile before it starts a chat", async ({ page: tab }) => {
+test("the tab strip's + opens the composer over the chat, and Esc closes it with no start", async ({ page: tab }) => {
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
   await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
   const started: string[] = [];
   tab.on("request", (r) => r.url().endsWith("/api/chat/new") && started.push(r.url()));
-  await tab.getByRole("button", { name: "New chat in this workspace" }).click();
-  const menu = tab.getByTestId("new-chat-menu");
-  await expect(menu.getByRole("menuitem", { name: "Default profile", exact: true })).toBeVisible();
-  // A plain clone's chat stays in its folder, so only a hub's main offers "no new worktree".
-  await expect(menu.getByRole("menuitem", { name: "Default profile, no new worktree" })).toHaveCount(0);
+  await tab.getByTestId("tab-new-chat").click();
+  const overlay = tab.getByTestId("composer-overlay");
+  await expect(overlay.getByTestId("new-chat-prompt")).toBeFocused();
+  await expect(tab.getByTestId("transcript")).toBeAttached();
   await tab.keyboard.press("Escape");
-  await expect(menu).toBeHidden();
+  await expect(overlay).toBeHidden();
+  // ⌘N opens it again from the chat.
+  await tab.keyboard.press("Meta+n");
+  await expect(overlay).toBeVisible();
+  await tab.keyboard.press("Escape");
   expect(started).toEqual([]);
 });
 
-test("a hub main's + menu starts a chat with no new worktree", async ({ page: tab }) => {
+test("⌘T starts a chat in a hub's main with no prompt and no new worktree", async ({ page: tab }) => {
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
@@ -230,11 +233,10 @@ test("a hub main's + menu starts a chat with no new worktree", async ({ page: ta
     await route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"stopped by the test"}' });
   });
 
-  const row = tab.locator(`[data-testid="tree-row"][data-id="${process.env.SWARM_E2E_HUB_MAIN}"]`);
-  await row.hover();
-  await row.locator('[data-action="new-chat"]').click();
-  await tab.getByTestId("new-chat-menu").getByRole("menuitem", { name: "Default profile, no new worktree" }).click();
+  await tab.locator(`[data-testid="tree-row"][data-id="${process.env.SWARM_E2E_HUB_MAIN}"]`).click();
+  await expect(tab.getByTestId("workspace-landing")).toBeVisible();
+  await tab.locator("body").press("Meta+t");
 
   await expect.poll(() => bodies.length).toBe(1);
-  expect(bodies[0]).toMatchObject({ cwd: process.env.SWARM_E2E_HUB_MAIN, here: true });
+  expect(bodies[0]).toEqual({ cwd: process.env.SWARM_E2E_HUB_MAIN, role: "chat", place: { kind: "here" } });
 });

@@ -264,7 +264,7 @@ test("Tab reaches an agent pane's header buttons", async ({ page: tab }, info) =
   expect(await tab.getByTestId("sidebar").locator("button").evaluateAll((buttons) => buttons.every((button) => button.tabIndex === -1))).toBe(true);
   await workspace(tab, "ws-build").getByRole("button", { name: "New chat in ws-build", exact: true }).focus();
   await tab.keyboard.press("Enter");
-  await expect(tab.getByTestId("new-chat-menu")).toBeVisible();
+  await expect(tab.getByTestId("new-chat-prompt")).toBeFocused();
   await tab.keyboard.press("Escape");
   await tab.setViewportSize({ width: 1600, height: 900 });
   await tab.locator(`[data-testid="tree-row"][data-session="${process.env[`SWARM_E2E_PANES_${info.project.name}`]}"]`).click();

@@ -1,151 +1,116 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ISSUES } from "./serve";
-import { header, holdChatStart, newWorkspace, open, shoot, workspace } from "./lifecycle-helpers";
+import { api, compose, header, holdChatStart, open, shoot, workspace } from "./lifecycle-helpers";
 
 // The cases share one server home with every spec, and a repeat finds the workspaces of the run
 // before, so each name carries the browser and the repeat.
 const runName = (info: { project: { name: string }; repeatEachIndex: number }) => `${info.project.name}-${info.repeatEachIndex}`;
 const ghProject = () => join(process.env.SWARM_E2E_DIR!, "proj-gh");
 
-test("New workspace makes a new branch, an existing branch and a pull request workspace", async ({ page: tab }, info) => {
+const setScript = async (tab: Page, script: string) => {
+  await header(tab, "proj-gh").click({ button: "right" });
+  await tab.getByRole("menuitem", { name: "Setup script…" }).click();
+  const box = tab.getByTestId("setup-script");
+  await expect(box).toBeEnabled();
+  await box.fill(script);
+  const saved = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "setup_script");
+  await tab.getByTestId("setup-script-save").click();
+  expect((await saved).status()).toBe(200);
+};
+
+test("⌘Enter makes a worktree named from the prompt and shows each start step and the setup output", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  await holdChatStart(tab);
   const b = runName(info);
-  execFileSync("git", ["-C", ghProject(), "branch", `topic-${b}`]);
-  const dialog = tab.getByTestId("new-workspace");
-
-  await newWorkspace(tab, "proj-gh", async () => {
-    await dialog.getByTestId("nw-name").fill(`nb-${b}`);
-    await expect(dialog.getByTestId("nw-base").getByRole("option", { selected: true })).toHaveText("main");
-    await shoot(tab, "new-workspace", b);
-  });
-  await expect(dialog).toBeHidden();
-  await expect(workspace(tab, `nb-${b}`)).toBeVisible();
-  await expect(tab.getByTestId("workspace-landing")).toContainText(`nb-${b}`);
-
-  // An existing branch fills the name from the branch.
-  await newWorkspace(tab, "proj-gh", async () => {
-    await dialog.getByTestId("nw-mode-existing-branch").click();
-    // The filter finds the branch in a long list, and Enter picks its first match.
-    await dialog.getByTestId("nw-branch-filter").fill(`topic-${b}`);
-    await dialog.getByTestId("nw-branch-filter").press("Enter");
-    await expect(dialog.getByTestId("nw-branch").getByRole("option", { selected: true })).toHaveText(`topic-${b}`);
-    await expect(dialog.getByTestId("nw-name")).toHaveValue(`topic-${b}`);
-  });
-  await expect(dialog).toBeHidden();
-  await expect(workspace(tab, `topic-${b}`)).toBeVisible();
-
-  // A pull request is fetched from origin into a new branch.
-  await newWorkspace(tab, "proj-pr", async () => {
-    await dialog.getByTestId("nw-mode-pr").click();
-    await dialog.getByTestId("nw-name").fill(`pr-${b}`);
-    await dialog.getByTestId("nw-pr").fill("7");
-  });
-  await expect(dialog).toBeHidden();
-  const pr = (await workspace(tab, `pr-${b}`).getAttribute("data-id"))!;
-  expect(readFileSync(join(pr, "review.md"), "utf8")).toBe("the change under review\n");
-
-  // The same name again offers the worktree that has its branch, and opens it with no new folder.
-  await newWorkspace(tab, "proj-gh", async () => {
-    await dialog.getByTestId("nw-name").fill(`nb-${b}`);
-  });
-  await expect(dialog.getByTestId("nw-existing")).toContainText("already open");
-  await dialog.getByTestId("nw-open-existing").click();
-  await expect(dialog).toBeHidden();
-  await expect(tab.getByTestId("workspace-landing")).toContainText(`nb-${b}`);
-  expect(errors).toEqual([]);
-});
-
-test("a workspace from an issue is named after it and starts a chat with the issue as its draft", async ({ page: tab }) => {
-  const errors = await open(tab);
-  const issue = ISSUES[0];
-  const live = process.env.SWARM_E2E_LIVE!;
-  // `swarm launch` needs a provider; the stand-in answers with the live chat.
-  await tab.route("**/api/chat/new", (route) => route.fulfill({ json: { ok: true, session: live, agent: "orchestrator", pane: "fixture-chair" } }));
-  const dialog = await newWorkspace(tab, "proj-gh", async () => {
-    await tab.getByTestId("nw-mode-issue").click();
-    await expect(tab.getByTestId("nw-issue")).toHaveCount(ISSUES.length);
-    await tab.getByTestId("nw-issue").filter({ hasText: issue.title }).click();
-    await expect(tab.getByTestId("nw-issue-body")).toContainText(issue.body);
-  });
-  await expect(dialog).toBeHidden();
-  const made = workspace(tab, `${issue.number}-${issue.title}`);
-  await expect(made).toBeVisible();
+  const branch = `swarm/fix-flaky-smoke-${b}`;
+  // The marker file holds the script until the case lets it fail, so the live output shows first.
+  // A failed setup starts no chat (ADR 0097), so no agent launches in the shared home.
+  const gate = join(process.env.SWARM_E2E_DIR!, `gate-${b}`);
+  await setScript(tab, `echo setup-started; while [ ! -e ${gate} ]; do sleep 0.1; done; echo to-stderr >&2; exit 3`);
+  let path: string | null = null;
   try {
-    await expect(tab.locator(`[data-testid="transcript"][data-chat="${live}"]`)).toBeVisible();
-    await expect(tab.getByTestId("composer")).toHaveValue(`Issue #${issue.number}: ${issue.title}\n\n${issue.body}`);
-    await tab.getByTestId("composer").fill("");
+    const composer = await compose(tab, "proj-gh", `Fix the flaky smoke ${b}`);
+    // The card names the branch before the send.
+    await expect(composer.getByTestId("preview-branch")).toHaveText(branch);
+    await expect(composer.getByTestId("preview-setup")).toContainText("echo setup-started");
+    await shoot(tab, "new-chat-composer", b);
+    await composer.getByTestId("new-chat-prompt").press("Meta+Enter");
+
+    const start = tab.getByTestId("starting-chat");
+    await expect(start).toContainText(`Fix the flaky smoke ${b}`);
+    await expect(start.getByTestId("start-steps")).toContainText(`Make the worktree: ${branch}`);
+    await expect(start.getByTestId("setup-output")).toContainText("setup-started");
+    await shoot(tab, "new-chat-starting", b);
+    writeFileSync(gate, "");
+    await expect(start).toHaveAttribute("data-state", "failed");
+    await expect(start.getByTestId("setup-output")).toContainText("to-stderr");
+    await expect(start.getByTestId("start-error")).toContainText("no chat started");
+    path = execFileSync("git", ["-C", ghProject(), "worktree", "list", "--porcelain"], { encoding: "utf8" })
+      .split("\n\n")
+      .find((block) => block.includes(`branch refs/heads/${branch}`))
+      ?.match(/^worktree (.*)$/m)?.[1] ?? null;
+    expect(path).not.toBeNull();
   } finally {
-    // The issue names the workspace, so a repeat needs its folder and branch gone. Delete refuses
-    // here, because proj-gh's origin has no remote refs and so every commit counts as unpushed.
-    const path = (await made.getAttribute("data-id"))!;
-    const branch = execFileSync("git", ["-C", path, "branch", "--show-current"], { encoding: "utf8" }).trim();
-    execFileSync("git", ["-C", ghProject(), "worktree", "remove", "--force", path]);
-    execFileSync("git", ["-C", ghProject(), "branch", "-D", branch]);
+    await setScript(tab, "");
+    // proj-gh is no worktree hub, so a failed start keeps its worktree; a repeat needs both gone.
+    if (path) execFileSync("git", ["-C", ghProject(), "worktree", "remove", "--force", path]);
+    if (path) execFileSync("git", ["-C", ghProject(), "branch", "-D", branch]);
   }
   expect(errors).toEqual([]);
 });
 
-test("the setup script streams its output; a failure keeps the workspace and says so", async ({ page: tab }, info) => {
+test("the place menu sends a branch, a pull request or an issue as the chat's place", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  await holdChatStart(tab);
+  const bodies = await holdChatStart(tab);
   const b = runName(info);
-  const setScript = async (script: string) => {
-    await header(tab, "proj-gh").click({ button: "right" });
-    await tab.getByRole("menuitem", { name: "Setup script…" }).click();
-    const box = tab.getByTestId("setup-script");
-    await expect(box).toBeEnabled();
-    await box.fill(script);
-    const saved = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "setup_script");
-    await tab.getByTestId("setup-script-save").click();
-    expect((await saved).status()).toBe(200);
-  };
+  execFileSync("git", ["-C", ghProject(), "branch", `topic-${b}`]);
   try {
-    // The marker file holds the script until the case lets it finish, so the live output shows first.
-    const gate = join(process.env.SWARM_E2E_DIR!, `gate-${b}`);
-    await setScript(`echo setup-started; while [ ! -e ${gate} ]; do sleep 0.1; done; echo to-stderr >&2; exit 3`);
-    const dialog = await newWorkspace(tab, "proj-gh", async () => {
-      await tab.getByTestId("nw-name").fill(`setup-${b}`);
-      await expect(tab.getByTestId("new-workspace")).toContainText("setup script");
-    });
-    const progress = dialog.getByTestId("nw-progress");
-    await expect(dialog.getByTestId("setup-output")).toContainText("setup-started");
-    await expect(progress).toHaveAttribute("data-state", "working");
-    await expect(progress).toContainText("Running the setup script");
-    await shoot(tab, "setup-output", b);
-    writeFileSync(gate, "");
-    await expect(progress).toHaveAttribute("data-state", "kept");
-    await expect(dialog.getByTestId("setup-output")).toContainText("to-stderr");
-    await expect(progress).toContainText("exit code 3");
-    await expect(workspace(tab, `setup-${b}`)).toBeVisible();
-    await dialog.getByTestId("nw-open").click();
-    await expect(tab.getByTestId("workspace-landing")).toContainText(`setup-${b}`);
+    let composer = await compose(tab, "proj-gh", "Review the topic");
+    await composer.getByTestId("chip-place").click();
+    await composer.getByTestId("place-kind-branch").click();
+    // The filter finds the branch in a long list, and Enter picks its first match.
+    await composer.getByTestId("place-branch-filter").fill(`topic-${b}`);
+    await composer.getByTestId("place-branch-filter").press("Enter");
+    await expect(composer.getByTestId("chip-place")).toHaveText(`Branch topic-${b}`);
+    await shoot(tab, "place-menu", b);
+    await composer.getByTestId("new-chat-start").click();
+    await expect.poll(() => bodies.length).toBe(1);
+    expect(bodies[0]).toMatchObject({ prompt: "Review the topic", place: { kind: "branch", branch: `topic-${b}` } });
+    expect(String(bodies[0].cwd)).toContain("/proj-gh");
 
-    // A script that succeeds closes the dialog on the new workspace.
-    await setScript("echo all-good");
-    await newWorkspace(tab, "proj-gh", async () => {
-      await tab.getByTestId("nw-name").fill(`setup-ok-${b}`);
-    });
-    await expect(tab.getByTestId("new-workspace")).toBeHidden();
-    await expect(tab.getByText("The setup script finished.")).toBeVisible();
-    await expect(tab.getByTestId("workspace-landing")).toContainText(`setup-ok-${b}`);
+    composer = await compose(tab, "proj-gh");
+    await composer.getByTestId("chip-place").click();
+    await composer.getByTestId("place-kind-pr").click();
+    // An empty prompt is allowed; the PR number is not optional.
+    await expect(composer.getByTestId("new-chat-start")).toBeDisabled();
+    await composer.getByTestId("place-pr").fill("7");
+    await composer.getByTestId("new-chat-prompt").press("Meta+Enter");
+    await expect.poll(() => bodies.length).toBe(2);
+    expect(bodies[1]).toMatchObject({ place: { kind: "pr", number: 7 } });
+    expect(bodies[1].prompt).toBeUndefined();
+
+    composer = await compose(tab, "proj-gh", "Fix it");
+    await composer.getByTestId("chip-place").click();
+    await composer.getByTestId("place-kind-issue").click();
+    await expect(composer.getByTestId("place-issue")).toHaveCount(ISSUES.length);
+    await composer.getByTestId("place-issue").filter({ hasText: ISSUES[0].title }).click();
+    await expect(composer.getByTestId("chip-place")).toHaveText(`Issue #${ISSUES[0].number}`);
+    await composer.getByTestId("new-chat-start").click();
+    await expect.poll(() => bodies.length).toBe(3);
+    expect(bodies[2]).toMatchObject({ prompt: "Fix it", place: { kind: "issue", number: ISSUES[0].number } });
   } finally {
-    await setScript("");
+    execFileSync("git", ["-C", ghProject(), "branch", "-D", `topic-${b}`]);
   }
   expect(errors).toEqual([]);
 });
 
 test("archive asks while agents run and restores; delete asks and removes the folder", async ({ page: tab }, info) => {
-  const errors = await open(tab);
-  await holdChatStart(tab);
   const b = runName(info);
   // proj-pr's main is on its origin, so a fresh branch there has nothing unpushed and may be deleted.
-  await newWorkspace(tab, "proj-pr", async () => {
-    await tab.getByTestId("nw-name").fill(`arch-${b}`);
-  });
+  await api("/api/workspace/new", { project: realpathSync(join(process.env.SWARM_E2E_DIR!, "proj-pr")), name: `arch-${b}`, mode: "new-branch" });
+  const errors = await open(tab);
   const row = workspace(tab, `arch-${b}`);
   await expect(row).toBeVisible();
   const path = (await row.getAttribute("data-id"))!;

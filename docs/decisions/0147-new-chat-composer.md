@@ -30,13 +30,15 @@ thinking level, ⌘P picks the project, and Esc closes the overlay. The sidebar 
 ⌘T starts a chat at once in the open worktree, with no composer and no new worktree, also on a
 hub's main.
 
-The place chip of a git project offers a new worktree (the default on a hub's main), an existing
-branch, a pull request, an issue, and the folder itself. A plain folder shows "In folder". The
+The place chip of a git project offers a new worktree (the default), an existing branch, a pull
+request, an issue, and the folder itself. A new worktree comes from the project, also when it is
+no worktree hub, as the New workspace dialog's new branch did. A plain folder shows "In folder". The
 New workspace dialog is removed; its lists live in this menu. The run chip starts on the chosen
 profile's first runner.
 
-`POST /api/chat/new` takes `prompt` and `place` (`new`, `here`, `branch`, `pr`, `issue`; absent
-is `new`) and replaces `here: true` with `place: {kind: "here"}`. It checks the request and the
+`POST /api/chat/new` takes `prompt` and `place` (`new`, `here`, `branch`, `pr`, `issue`) and
+replaces `here: true` with `place: {kind: "here"}`. An absent place keeps ADR 0146: a hub's main
+makes the chat's own worktree, and any other folder starts the chat in itself. It checks the request and the
 folder, then answers at once with a start id. The worktree, the setup script, the chair and the
 first send run in the background. Each step goes out as a `chat-start` frame
 `{start, step, state}` with step `worktree`, `setup`, `start`, `send` and last `done`; `done`
@@ -67,5 +69,7 @@ change; one of another place stays, as the dialog kept it.
   its tab, and the chat appears in the sidebar when it starts.
 - Two composers that send the same prompt at once can both read one name as free. The second
   create then fails with "The branch … already exists", and nothing is made.
+- Outside a worktree hub, the rename and the cleanup of ADR 0146 do not run: a new worktree with
+  no prompt keeps `swarm/chat-<8 hex>`, and one whose setup failed stays for the owner to remove.
 - The "+" menu item "Default profile, no new worktree" of ADR 0146 is gone; the place menu's
   folder item and ⌘T replace it.

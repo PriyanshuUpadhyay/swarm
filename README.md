@@ -205,8 +205,10 @@ reload or a new tab needs no link. The URL names the open chat as `/chat/<id>`, 
 beside the tab strip copies the full id.
 
 1. Click **Import Project…** and type the folder's full path. Swarm adds and selects the project without
-   starting an agent. Click **New chat** to start the `chat` profile. In a worktree hub, a new chat on main gets its own worktree, named from its first prompt (ADR 0146). A folder that is not a Git repository gets an offer to run `git init`.
-   The **+** on a project's header makes a workspace (a branch in its own worktree) there.
+   starting an agent. A folder that is not a Git repository gets an offer to run `git init`.
+   Press ⌘N (or the **+** on the project's header), type the first prompt, and press ⌘Enter. In a
+   Git project the chat gets its own worktree, on a branch named from the prompt; a plain folder
+   starts the chat in itself (ADR 0147). ⌘T starts a chat in the open worktree with no prompt.
 2. To use another model, click **Switch model** in the chat.
 3. Type your task. When the chair launches a worker, the worker's pane opens as a column to the
    right of the chat, and you can type into it.
@@ -216,9 +218,9 @@ beside the tab strip copies the full id.
 The web UI's scope is ADR 0076 (Scope v1). The sidebar shows Pinned workspaces, then one header per
 project with its workspaces and chats, and Archived. A Recent list spans every project. Chats of a
 workspace are tabs (⌘1 to ⌘9), and ⌘K opens a palette that finds actions, workspaces and chats.
-New workspace makes a branch in its own worktree from a new branch, an existing branch, a pull
-request, or a GitHub issue, and can run the project's setup script. New chat starts the `chat`
-profile or another profile. Switch model hands the chat to another model with a compact summary.
+⌘N opens the new chat composer: the first prompt, the project, the place (a new worktree, an
+existing branch, a pull request, a GitHub issue, or the folder itself) and the run (profile, model,
+thinking). ⌘Enter starts it, and the starting tab shows each step and the setup script's output. Switch model hands the chat to another model with a compact summary.
 Child agents show as panes beside the chat. Changes shows the workspace diff, and a line comment
 goes to the agent. Rows show PR and CI status, and compact meters show account usage. Settings has
 Appearance, the send key, Notifications, Profiles, and Accounts.

@@ -125,26 +125,20 @@ test("chat pickers filter, move with arrow keys, and refresh imports without clo
   await expect(dialog).toContainText("No chat matches.");
 });
 
-test("a new workspace clears a selected issue when the project changes and uses Hide while working", async ({ page }) => {
-  await page.route("**/api/workspace/new", () => {});
+test("the composer's project change resets a picked issue to the new project's default place", async ({ page }) => {
   await open(page);
   await header(page, "proj-gh").hover();
-  await header(page, "proj-gh").locator('[data-action="new-workspace"]').click();
-  const dialog = page.getByTestId("new-workspace");
-  await dialog.getByTestId("nw-mode-issue").click();
-  await dialog.getByTestId("nw-issue").first().click();
-  await expect(dialog.getByTestId("nw-create")).toBeEnabled();
-  const project = dialog.getByTestId("nw-project");
-  const other = await project.locator("option").evaluateAll((options, selected) => options.map((o) => (o as HTMLOptionElement).value).find((value) => value !== selected), await project.inputValue());
-  expect(other).toBeTruthy();
-  await project.selectOption(other!);
-  await expect(dialog.getByTestId("nw-create")).toBeDisabled();
-  await dialog.getByTestId("nw-mode-new-branch").click();
-  await dialog.getByTestId("nw-name").fill("pending-setup");
-  await expect(dialog.getByTestId("nw-folder")).not.toHaveValue("");
-  await dialog.getByTestId("nw-create").click();
-  await expect(dialog.getByRole("button", { name: "Hide", exact: true })).toBeVisible();
-  await screenshot(page, "workspace-working");
+  await header(page, "proj-gh").locator('[data-action="new-chat-project"]').click();
+  const composer = page.getByTestId("new-chat-composer");
+  await composer.getByTestId("chip-place").click();
+  await composer.getByTestId("place-kind-issue").click();
+  await composer.getByTestId("place-issue").first().click();
+  await expect(composer.getByTestId("new-chat-start")).toBeEnabled();
+  await composer.getByTestId("new-chat-prompt").press("Meta+p");
+  const projects = composer.getByTestId("project-menu").getByRole("option");
+  await projects.filter({ hasNotText: "proj-gh" }).first().click();
+  await expect(composer.getByTestId("chip-place")).not.toContainText("Issue");
+  await screenshot(page, "new-chat-composer");
 });
 
 test("Settings shows notice health after Home dismissal and Home includes setup", async ({ page }) => {

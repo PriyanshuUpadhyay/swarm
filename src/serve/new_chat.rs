@@ -44,15 +44,17 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
     if body.cwd.contains('\0') || !Path::new(&body.cwd).is_absolute() {
         return Err(error(StatusCode::BAD_REQUEST, "absolute cwd required"));
     }
-    let place = body.place.clone().unwrap_or(Place::New);
+    let place = body.place.clone();
     let snapshot_app = app.clone();
     let allowed_cwd = body.cwd.clone();
     let project_of = tokio::task::spawn_blocking(move || {
         let target = chat_target(&snapshot_app, &allowed_cwd)?;
+        // With no place, a hub's main makes the chat's own worktree and any other folder starts
+        // the chat in itself (ADR 0146); the composer's `new` makes one in any git project.
         Ok::<_, ApiError>(match place {
-            Place::Here => None,
-            Place::New => target.hub_main.then_some((target.project, Place::New)),
-            other => Some((target.project, other)),
+            Some(Place::Here) => None,
+            None => target.hub_main.then_some((target.project, Place::New)),
+            Some(other) => Some((target.project, other)),
         })
     })
     .await

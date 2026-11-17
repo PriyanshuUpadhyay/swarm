@@ -40,21 +40,27 @@ async function shoot(tab: Page, name: string, browser: string) {
   await tab.evaluate(() => delete document.documentElement.dataset.theme);
 }
 
-/** A new workspace starts a chat. With no provider, `swarm launch` waits about 10 s for a chair that
- *  never registers, holds the server's action lane meanwhile, and leaves a chat in the shared home.
- *  The page keeps the request pending instead. */
-const holdChatStart = (tab: Page) => tab.route("**/api/chat/new", () => {});
-
-/** Opens New Workspace from the project's "+", fills a name, and creates it. */
-async function newWorkspace(tab: Page, project: string, fill: () => Promise<void>) {
+/** Opens the composer on `project` from its "+" and types `prompt`. */
+async function compose(tab: Page, project: string, prompt = "") {
   await header(tab, project).hover();
-  await header(tab, project).locator('[data-action="new-workspace"]').click();
-  const dialog = tab.getByTestId("new-workspace");
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByTestId("nw-folder")).not.toHaveValue("");
-  await fill();
-  await dialog.getByTestId("nw-create").click();
-  return dialog;
+  await header(tab, project).locator('[data-action="new-chat-project"]').click();
+  const composer = tab.getByTestId("new-chat-composer");
+  await expect(composer.getByTestId("chip-project")).toHaveText(project);
+  // The "+" opens a new composer, which takes the focus; the start page's own one may show first.
+  await expect(composer.getByTestId("new-chat-prompt")).toBeFocused();
+  if (prompt) await composer.getByTestId("new-chat-prompt").fill(prompt);
+  return composer;
 }
 
-export { server, api, readTree, open, header, workspace, shoot, holdChatStart, newWorkspace };
+/** Answers `/api/chat/new` here and keeps each body, so no chat starts in the shared home. With no
+ *  provider, `swarm launch` would wait about 10 s for a chair that never registers. */
+async function holdChatStart(tab: Page) {
+  const bodies: Record<string, unknown>[] = [];
+  await tab.route("**/api/chat/new", async (route) => {
+    bodies.push(route.request().postDataJSON());
+    await route.fulfill({ json: { ok: true, start: `held-${bodies.length}` } });
+  });
+  return bodies;
+}
+
+export { server, api, readTree, open, header, workspace, shoot, holdChatStart, compose };

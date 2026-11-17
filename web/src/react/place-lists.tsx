@@ -71,7 +71,7 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
     <div className="grid gap-3" data-testid="place-panel">
       <div role="tablist" aria-label="Start in" className="view-switch !mx-0 !mb-0">
         {kinds.map(([k, label]) => (
-          <button key={k} type="button" role="tab" aria-selected={place.kind === k} data-testid={`place-${k}`} disabled={unborn && k !== "new" && k !== "here"} onClick={() => pick(k)}>
+          <button key={k} type="button" role="tab" aria-selected={place.kind === k} data-testid={`place-kind-${k}`} disabled={unborn && k !== "new" && k !== "here"} onClick={() => pick(k)}>
             {label}
           </button>
         ))}

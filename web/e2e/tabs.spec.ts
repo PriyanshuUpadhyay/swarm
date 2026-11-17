@@ -40,7 +40,7 @@ for (const pending of ["empty", null] as const) {
       const landing = tab.getByTestId("workspace-landing");
       await expect(landing).toBeVisible();
       await expect(landing).toContainText(pending === null ? "Pick a tab, or start a new chat." : "This workspace has no open chats.");
-      await expect(landing.getByRole("button", { name: "New chat", exact: true })).toBeEnabled();
+      await expect(landing.getByTestId("new-chat-prompt")).toBeEditable();
     } finally {
       try {
         await tab.screenshot({ path: info.outputPath("workspace-landing.png") });

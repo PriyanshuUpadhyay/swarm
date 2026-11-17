@@ -3,9 +3,9 @@
 use super::*;
 
 /// `GET /api/chat/new-preview?cwd=&prompt=`: what a new chat in `cwd` with place `new` and this
-/// prompt does, for the composer's card. It writes nothing. A chat that starts in `cwd` itself
-/// is `{place: "folder"}`; one that gets its own worktree names its branch, folder, base, the
-/// last origin fetch and the setup script's first line (ADR 0147).
+/// prompt does, for the composer's card. It writes nothing. A plain folder is
+/// `{place: "folder"}`; a git project names the new worktree's branch, folder, base, the last
+/// origin fetch and the setup script's first line (ADR 0147).
 pub(in crate::serve) async fn new_chat_preview(
     State(app): State<App>,
     Query(query): Query<HashMap<String, String>>,
@@ -18,7 +18,7 @@ pub(in crate::serve) async fn new_chat_preview(
     tokio::task::spawn_blocking(move || {
         let target = chat_target(&app, &cwd)?;
         let project = lifecycle::project(&target.tree, &target.project).map_err(lifecycle_error)?;
-        let Some(common) = lifecycle::common(project).filter(|_| target.hub_main) else {
+        let Some(common) = lifecycle::common(project) else {
             return Ok(Json(json!({"place": "folder"})));
         };
         let branch = swarm::task::chat_preview(Path::new(&cwd), &prompt);
