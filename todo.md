@@ -3,16 +3,12 @@
 ## Model trial follow-ups from 2026-11-17
 
 The model trials of 2026-11-17 changed `review.deep` and `search.web` (commit 05964e94). The
-results are in `~/.swarm/reports/2026-11-17-gamma-model-index/results-tests-1-4.md`. Two items
-are open, and the trial files that would let someone rerun them are deleted.
+results are in `~/.swarm/reports/2026-11-17-gamma-model-index/results-tests-1-4.md`.
 
 - **Terra high is a shadow in `review.visual`, but nothing runs it.** It found 7 of 7 known
   faults on 24 screenshots, and Sol high found 6, at about 40% of Sol's cost. Swarm has no shadow
   runner, so on the next few visual reviews, start a `gpt-6.1-terra` high seat next to Sol by
   hand. Promote Terra to first if both arms agree.
-- **Two Fable runners have no trial result.** Fable 5.2 passed at xhigh only, but `review.deep`
-  runner 4 runs it at high. `review.visual` runner 4 is still `claude-fable-5-1` high, because
-  no visual trial ran Fable.
 
 ## A Claude pane can wait on the "Adding a new directory" dialog, and no one is told
 
