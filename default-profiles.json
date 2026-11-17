@@ -23,6 +23,13 @@
       "runners": [
         {
           "provider": "codex",
+          "model": "gpt-6.1-terra",
+          "effort": "medium",
+          "sandbox": "workspace-write",
+          "approval": "never"
+        },
+        {
+          "provider": "codex",
           "model": "gpt-6.1-sol",
           "effort": "high",
           "sandbox": "workspace-write",
@@ -186,14 +193,14 @@
       "runners": [
         {
           "provider": "claude",
-          "model": "claude-fable-5-1",
+          "model": "claude-fable-5-2",
           "effort": "xhigh",
           "permission": "auto"
         },
         {
           "provider": "codex",
-          "model": "gpt-6-astra",
-          "effort": "high",
+          "model": "gpt-6.1-sol",
+          "effort": "xhigh",
           "sandbox": "workspace-write",
           "approval": "never"
         },
@@ -206,7 +213,7 @@
         },
         {
           "provider": "claude",
-          "model": "claude-fable-5-1",
+          "model": "claude-fable-5-2",
           "effort": "high",
           "permission": "auto"
         }
