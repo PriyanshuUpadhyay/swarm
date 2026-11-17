@@ -6,6 +6,90 @@ pub fn state_hook_command(provider: &str) -> Result<String, String> {
     Ok(format!("{} hook {provider}", quoted_exe()?))
 }
 
+/// The flags that make a Claude or Codex CLI run `swarm hook`, which reports the agent's state
+/// and its chat log; empty for a CLI with no per-process hook flag. `launch` adds them, and so
+/// does `spawn` for a bare `claude` or `codex` command, so its pane can show the chat.
+pub fn hook_args(
+    provider: Provider,
+    agent_id: &str,
+    cwd: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    match provider {
+        Provider::Claude => {
+            let handler = |command: String| serde_json::json!({"hooks": [{"type": "command", "command": command, "timeout": STATE_HOOK_TIMEOUT}]});
+            let state = state_hook_command(provider.id())?;
+            let mut hooks = serde_json::Map::new();
+            for event in CLAUDE_STATE_EVENTS {
+                let mut group = handler(state.clone());
+                if event == "PermissionRequest" {
+                    group["hooks"][0]["timeout"] = crate::permission::HOOK_TIMEOUT_SECONDS.into();
+                }
+                hooks.insert(event.into(), serde_json::json!([group]));
+            }
+            // `/clear` opens a new log, so every Claude agent reports SessionStart state; the chair
+            // also records its new session id.
+            let mut start = vec![handler(state.clone())];
+            if agent_id == "orchestrator" {
+                start.insert(0, handler(chair_hook_command(provider.id())?));
+            }
+            hooks.insert("SessionStart".into(), start.into());
+            Ok(vec![
+                "--settings".into(),
+                owner_choice::claude_json(hooks, cwd),
+            ])
+        }
+        Provider::Codex => {
+            // `swarm setup hooks` trusts these for the owner (`codex_hook_trust`); the trust holds
+            // only while each value stays byte-identical, so nothing per launch goes in it. The
+            // pane env names the agent. The empty first group puts swarm's hook in group 1, so
+            // its trust key differs from another tool's `-c` hook in group 0.
+            let command = serde_json::to_string(&shared_hook_command(provider.id()))
+                .expect("string serialization cannot fail");
+            Ok(CODEX_STATE_EVENTS
+                .iter()
+                .flat_map(|event| {
+                    [
+                        "-c".into(),
+                        format!(
+                            "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={command},timeout={STATE_HOOK_TIMEOUT}}}]}}]"
+                        ),
+                    ]
+                })
+                .collect())
+        }
+        Provider::Agy | Provider::Pi => Ok(Vec::new()),
+    }
+}
+
+/// A `swarm spawn` command, with the flags of `hook_args` after a bare `claude` or `codex`, because
+/// only `swarm hook` stores the chat log the app's pane reads. A Claude command with its own
+/// `--settings` keeps it, and any other command stays as it is.
+pub fn spawn_hook_command(
+    command: &[String],
+    agent_id: &str,
+    cwd: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    let Some((cli, rest)) = command.split_first() else {
+        return Ok(Vec::new());
+    };
+    let provider = match Provider::parse(cli) {
+        Some(provider @ (Provider::Claude | Provider::Codex)) => provider,
+        _ => return Ok(command.to_vec()),
+    };
+    if provider == Provider::Claude
+        && rest
+            .iter()
+            .take_while(|arg| *arg != "--")
+            .any(|arg| arg == "--settings" || arg.starts_with("--settings="))
+    {
+        return Ok(command.to_vec());
+    }
+    let mut hooked = vec![cli.clone()];
+    hooked.extend(hook_args(provider, agent_id, cwd)?);
+    hooked.extend_from_slice(rest);
+    Ok(hooked)
+}
+
 /// The state hook for Codex and AGY, whose hook config every swarm build on the Mac shares: Codex
 /// trusts a hash of this text, and AGY's `hooks.json` is global. So the text names no build. It
 /// runs the `runs/<session>/bin/swarm` link that `swarm launch` made for the pane, not `swarm` on

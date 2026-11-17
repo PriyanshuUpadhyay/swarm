@@ -315,4 +315,25 @@ mod tests {
         let no_timeout = r#"{"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "swarm guard codex PreToolUse"}]}]}}"#;
         assert!(codex_guard_trust(home, no_timeout).is_empty());
     }
+
+    #[test]
+    fn a_spawned_claude_or_codex_runs_swarm_hook_so_its_chat_log_is_stored() {
+        let args = |words: &[&str]| {
+            words
+                .iter()
+                .map(|word| word.to_string())
+                .collect::<Vec<_>>()
+        };
+        let cwd = std::path::Path::new("/");
+        let claude = spawn_hook_command(&args(&["claude", "--model", "m"]), "rv-a", cwd).unwrap();
+        assert_eq!(claude[1], "--settings");
+        assert!(claude[2].contains("hook claude"), "{}", claude[2]);
+        assert_eq!(&claude[3..], args(&["--model", "m"]));
+        let codex = spawn_hook_command(&args(&["codex", "-m", "m"]), "rv-b", cwd).unwrap();
+        assert!(
+            codex.iter().any(|arg| arg.contains("hook codex")),
+            "{codex:?}"
+        );
+        assert_eq!(&codex[codex.len() - 2..], args(&["-m", "m"]));
+    }
 }

@@ -55,25 +55,7 @@ pub fn argv(
             if let Some(permission) = &resolved.permission {
                 args.extend(["--permission-mode".into(), permission.clone()]);
             }
-            let handler = |command: String| serde_json::json!({"hooks": [{"type": "command", "command": command, "timeout": STATE_HOOK_TIMEOUT}]});
-            let state = state_hook_command(provider.id())?;
-            let mut hooks = serde_json::Map::new();
-            for event in CLAUDE_STATE_EVENTS {
-                let mut group = handler(state.clone());
-                if event == "PermissionRequest" {
-                    group["hooks"][0]["timeout"] = crate::permission::HOOK_TIMEOUT_SECONDS.into();
-                }
-                hooks.insert(event.into(), serde_json::json!([group]));
-            }
-            // `/clear` opens a new log, so every Claude agent reports SessionStart state; the chair
-            // also records its new session id.
-            let mut start = vec![handler(state.clone())];
-            if agent_id == "orchestrator" {
-                start.insert(0, handler(chair_hook_command(provider.id())?));
-            }
-            hooks.insert("SessionStart".into(), start.into());
-
-            args.extend(["--settings".into(), owner_choice::claude_json(hooks, cwd)]);
+            args.extend(hook_args(provider, agent_id, cwd)?);
             Ok(args)
         }
         Provider::Codex => {
@@ -236,20 +218,7 @@ pub fn argv(
             if let Some(approval) = &resolved.approval {
                 args.extend(["--ask-for-approval".into(), approval.clone()]);
             }
-            // `swarm setup hooks` trusts these for the owner (`codex_hook_trust`); the trust holds
-            // only while each value stays byte-identical, so nothing per launch goes in it. The
-            // pane env names the agent. The empty first group puts swarm's hook in group 1, so
-            // its trust key differs from another tool's `-c` hook in group 0.
-            let command = serde_json::to_string(&shared_hook_command(provider.id()))
-                .expect("string serialization cannot fail");
-            for event in CODEX_STATE_EVENTS {
-                args.extend([
-                    "-c".into(),
-                    format!(
-                        "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={command},timeout={STATE_HOOK_TIMEOUT}}}]}}]"
-                    ),
-                ]);
-            }
+            args.extend(hook_args(provider, agent_id, cwd)?);
 
             args.extend(owner_choice::codex_args());
             Ok(args)

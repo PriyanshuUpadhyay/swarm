@@ -342,6 +342,12 @@ pub(crate) fn spawn_agent(
         );
         let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe.clone(), "exited".into()]);
+        // A launch has the hook flags already.
+        let command = if options.runner.is_some() {
+            options.command.to_vec()
+        } else {
+            swarm::bus::spawn_hook_command(options.command, agent_id, &env::current_dir()?)?
+        };
         let child = if account.is_some()
             || (options.runner.is_some() && provider.is_some_and(Provider::has_accounts))
         {
@@ -362,10 +368,10 @@ pub(crate) fn spawn_agent(
                     .flat_map(|account| &account.env)
                     .map(|(key, value)| format!("{key}={value}")),
             );
-            args.extend_from_slice(options.command);
+            args.extend_from_slice(&command);
             swarm::adapter::shell_line(&args)
         } else {
-            swarm::adapter::shell_line(options.command)
+            swarm::adapter::shell_line(&command)
         };
         // tmux answers no OSC 7501 probe, so a CLI that sends reports gets a terminal that does
         // when the pane feeds `swarm status-feed`; Codex sends none (ADR 0123). Only a launch,
