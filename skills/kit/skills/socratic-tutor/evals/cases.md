@@ -13,7 +13,7 @@ Expect:
 - The tutor asks 3-5 diagnostic questions, one per turn, before teaching, then shows the subskill map.
 - After a wrong answer, the next question is narrower and does not supply the answer. A helped correction does not raise a level.
 - Each level rise cites two distinct correct checks since the previous level change, with at least one from memory after intervening work.
-- A failed review lowers the level and puts the subskill back into the learning loop.
+- A failed review lowers the level and puts the subskill back into the learning loop. The learner script answers the first review wrong, so this occurs within the cap.
 - After `save state`, the task file holds check questions, learner answers, help, dates, level evidence, misconceptions, and pending reviews.
 - In a fresh session, `resume from: <absolute task path>` restores the current step and the pending review without inventing missing evidence or repeating finished diagnostics.
 - The course stays incomplete until targets and the mixed final assessment pass.
@@ -24,4 +24,4 @@ Task: What does OR mean in Boolean logic? Give me one example.
 Files: none.
 Check (script): none; check the reply and working folder.
 Expect:
-- The reply answers the question with an example, without a diagnostic, a learner map, or a tutoring task file.
+- The reply defines OR as true when at least one input is true (true when both are), gives exactly one example, and starts no diagnostic, learner map, or tutoring task file.
