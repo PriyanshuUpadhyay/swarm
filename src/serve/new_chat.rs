@@ -192,3 +192,43 @@ pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, Ap
 #[cfg(test)]
 #[path = "new_chat/tests.rs"]
 mod tests;
+
+/// Names a chat worktree's branch from the chat's first prompt, and its sidebar row with it
+/// (ADR 0146). A failure only logs, because the prompt must still go.
+pub(super) async fn name_chat_worktree(app: &App, cwd: PathBuf, prompt: String) {
+    let root = app.root.clone();
+    let named = tokio::task::spawn_blocking(move || {
+        let branch = swarm::task::name_chat(&root, &cwd, &prompt)?;
+        if let Some(branch) = &branch {
+            let path = cwd.to_string_lossy().into_owned();
+            let name = branch.trim_start_matches(swarm::task::PREFIX).to_owned();
+            choices_store::update(&root, None, |owner, _| {
+                if owner.names.contains_key(&path) {
+                    owner.names.insert(path.clone(), name.clone());
+                }
+                Ok(())
+            })
+            .map_err(|err| err.to_string())?;
+        }
+        Ok::<_, String>(branch)
+    })
+    .await;
+    if let Ok(Err(err)) = named {
+        eprintln!("swarm: the chat worktree kept its first name: {err}");
+    }
+}
+
+/// Removes the worktree of each archived chat that never got a prompt (ADR 0146). A worktree
+/// with changes or commits stays, and the refusal only logs.
+pub(super) async fn drop_unnamed_chats(app: &App, folders: Vec<PathBuf>) {
+    let root = app.root.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        let wt = swarm::task::wt_program();
+        for folder in folders {
+            if let Err(err) = swarm::task::drop_unnamed_chat(&root, &wt, &folder) {
+                eprintln!("swarm: kept the chat worktree {}: {err}", folder.display());
+            }
+        }
+    })
+    .await;
+}

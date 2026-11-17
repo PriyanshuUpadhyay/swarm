@@ -445,6 +445,15 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Ta
     Ok(task)
 }
 
+/// `drop` for a chat worktree whose chat ended before its first prompt, so its branch still has
+/// no name. None for any other folder. `drop` still refuses a worktree with changes or commits.
+pub fn drop_unnamed_chat(root: &Path, wt: &Path, cwd: &Path) -> Result<Option<Task>, String> {
+    match task_here(root, cwd) {
+        Ok((_, task)) if unnamed_chat(&task.branch) => drop(root, wt, cwd, None).map(Some),
+        _ => Ok(None),
+    }
+}
+
 #[path = "task/branches.rs"]
 mod branches;
 pub use branches::{BranchState, branch_state, fresh_origin_base};

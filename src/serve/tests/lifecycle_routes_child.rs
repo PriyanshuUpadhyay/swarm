@@ -450,17 +450,16 @@ esac
     };
     sh("git init -q --bare .bare && git -C .bare symbolic-ref HEAD refs/heads/main \
         && git --git-dir=.bare worktree add -q --orphan -b main wt/main \
-        && echo a > wt/main/a.txt && git -C wt/main add a.txt && git -C wt/main commit -q -m a");
-    let cli = format!(
-        r#"#!/bin/sh
+        && echo a > wt/main/a.txt && git -C wt/main add a.txt && git -C wt/main commit -q -m a \
+        && echo setup-ran >> .bare/info/exclude");
+    // Setup output is ignored, as `node_modules` is; a file git sees would keep the worktree.
+    let cli = r#"#!/bin/sh
 printf '%s\n' "$PWD|$*" >> "$SWARM_HOME/actions"
 case "$1 $2" in
-'session new') printf '%s\n' '{}' ;;
+'session new') /usr/bin/uuidgen | /usr/bin/tr A-Z a-z ;;
 'launch orchestrator') printf 'fixture-pane\n' ;;
 esac
-"#,
-        uuid::Uuid::now_v7()
-    );
+"#;
     std::fs::write(&fixture.app.cli, cli).unwrap();
     let hub_path = hub.to_string_lossy().into_owned();
     let main = hub.join("wt/main").to_string_lossy().into_owned();
@@ -485,6 +484,50 @@ esac
     }));
     let calls = action_calls(&fixture);
     assert!(calls.lines().last().unwrap().contains(&format!("{chat}|launch orchestrator chat")), "{calls}");
+    // The fake CLI makes no session row, so the test adds the one `swarm session new` would.
+    let chat_session = |started: &Value, cwd: &str| {
+        let id = started["session"].as_str().unwrap().to_owned();
+        connection
+            .execute(
+                "INSERT INTO session (id, talk_mode, cwd, adapter) VALUES (?1, 'lane', ?2, 'tmux-swarm')",
+                (&id, cwd),
+            )
+            .unwrap();
+        swarm::store::add_agent(&connection, &id, "orchestrator", "chat").unwrap();
+        id
+    };
+    let id = chat_session(&started, &chat);
+    let send = json!({"session":id,"agent":"orchestrator","text":"Fix the login redirect bug now please"});
+    let _ = call_action(&fixture, "/api/chat/send", send).await.unwrap();
+    assert_eq!(
+        lifecycle::check_git(&chat, &["branch", "--show-current"]).unwrap(),
+        "swarm/fix-the-login-redirect-bug"
+    );
+    assert_eq!(
+        choices_store::load(&fixture.app.root, true).unwrap().owner.names[&chat],
+        "fix-the-login-redirect-bug"
+    );
+    // An archived chat that got no prompt takes its empty worktree with it; one with a commit stays.
+    if root.join("bin/wt").is_file() {
+        let mut folders = Vec::new();
+        for work in [false, true] {
+            let started = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
+                .await
+                .unwrap()
+                .0;
+            let folder = started["workspace"].as_str().unwrap().to_owned();
+            if work {
+                sh(&format!("cd {folder} && echo b > b.txt && git add b.txt && git commit -q -m b"));
+            }
+            let id = chat_session(&started, &folder);
+            let _ = call_action(&fixture, "/api/sessions/archive", json!({"ids":[id]}))
+                .await
+                .unwrap();
+            folders.push(folder);
+        }
+        assert!(!Path::new(&folders[0]).exists());
+        assert!(Path::new(&folders[1]).is_dir());
+    }
     // New chat in main keeps the chat in main.
     let kept = call_action(&fixture, "/api/chat/new", json!({"cwd":main,"here":true}))
         .await

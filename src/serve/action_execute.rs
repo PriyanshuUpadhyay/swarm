@@ -46,6 +46,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
     };
     let interrupt = matches!(action, Action::Interrupt(_));
     let archive = matches!(action, Action::Archive(_));
+    let mut archived_folders = Vec::new();
     let (call, text) = match action {
         Action::Send(body) => {
             if body.text.trim().is_empty() {
@@ -61,6 +62,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
             if text.trim().is_empty() {
                 return Err(error(StatusCode::BAD_REQUEST, "swarm: empty text"));
             }
+            name_chat_worktree(app, call.cwd.clone(), text.clone()).await;
             (call.args(&["type", &agent]), Some(text))
         }
         Action::Interrupt(body) if interrupt_clears_box(app, &body)? => {
@@ -104,7 +106,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
                 return Err(error(StatusCode::BAD_REQUEST, "session ids required"));
             }
             for id in &body.ids {
-                action_session(app, id)?;
+                archived_folders.push(action_session(app, id)?.cwd);
             }
             let mut call = default_call().args(&["session", verb]);
             call.args.extend(body.ids);
@@ -191,6 +193,9 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
         }
     };
     run_cli(app, call, text).await?;
+    if archive {
+        drop_unnamed_chats(app, archived_folders).await;
+    }
     Ok(json!({"ok": true}))
 }
 
