@@ -196,6 +196,56 @@ pub(super) async fn call_action(
     .await
 }
 
+/// Calls `/api/chat/new` and waits for its start to end. Returns the `done` frame, which names
+/// the session and its folder, or the start's error as a 502, as a refused request returns its own.
+pub(super) async fn start_chat(fixture: &Fixture, body: Value) -> Result<Value, ApiError> {
+    let id = uuid::Uuid::new_v4().to_string();
+    fixture
+        .app
+        .hub
+        .lock()
+        .unwrap()
+        .streams
+        .insert(id.clone(), client(&[]));
+    let started = call_action(fixture, "/api/chat/new", body).await;
+    let start = match started {
+        Ok(reply) => reply.0["start"].as_str().unwrap().to_owned(),
+        Err(err) => {
+            fixture.app.hub.lock().unwrap().streams.remove(&id);
+            return Err(err);
+        }
+    };
+    let done = tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let frames: Vec<_> = {
+                let mut hub = fixture.app.hub.lock().unwrap();
+                hub.streams.get_mut(&id).unwrap().queue.drain(..).collect()
+            };
+            for frame in frames {
+                let data: Value = serde_json::from_str(&frame.data).unwrap();
+                if frame.name == "chat-start"
+                    && data["start"] == start.as_str()
+                    && data["step"] == "done"
+                {
+                    return data;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the chat start ended");
+    fixture.app.hub.lock().unwrap().streams.remove(&id);
+    if done["state"] == "completed" {
+        Ok(done)
+    } else {
+        Err(error(
+            StatusCode::BAD_GATEWAY,
+            done["error"].as_str().unwrap_or_default(),
+        ))
+    }
+}
+
 pub(super) fn action_calls(fixture: &Fixture) -> String {
     std::fs::read_to_string(fixture.app.root.parent().unwrap().join("actions")).unwrap_or_default()
 }

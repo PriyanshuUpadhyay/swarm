@@ -157,6 +157,26 @@ pub(super) async fn execute_lifecycle(
     app: &App,
     action: LifecycleAction,
 ) -> Result<Value, ApiError> {
+    let (mut result, setup) = apply_lifecycle_action(app, action).await?;
+    if let Some(script) = setup {
+        let path = result["workspace"]
+            .as_str()
+            .expect("created workspace")
+            .to_owned();
+        result["setup"] = run_setup(app, &path, &script, SETUP_TIMEOUT).await;
+    }
+    Ok(result)
+}
+
+/// The most time a project's setup script gets.
+pub(super) const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Applies `action` and returns its result, with the project's setup script when the action
+/// made a new workspace, so a caller can report the workspace before the script runs.
+pub(super) async fn apply_lifecycle_action(
+    app: &App,
+    action: LifecycleAction,
+) -> Result<(Value, Option<String>), ApiError> {
     let cloned = app.clone();
     let (tree, saved) = tokio::task::spawn_blocking(move || fresh_lifecycle_tree(&cloned))
         .await
@@ -231,19 +251,13 @@ pub(super) async fn execute_lifecycle(
         None
     };
     let cloned = app.clone();
-    let mut result = tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || {
         apply_lifecycle(&cloned, action, &tree, &saved, targets.len())
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "lifecycle task failed"))??;
-    if let Some(script) = setup.filter(|_| result["created"] == true) {
-        let path = result["workspace"]
-            .as_str()
-            .expect("created workspace")
-            .to_owned();
-        result["setup"] = run_setup(app, &path, &script, Duration::from_secs(600)).await;
-    }
-    Ok(result)
+    let setup = setup.filter(|_| result["created"] == true);
+    Ok((result, setup))
 }
 
 #[cfg(test)]

@@ -49,10 +49,23 @@ pub(super) struct NewChat {
     pub(super) model: Option<String>,
     pub(super) account: Option<String>,
     pub(super) effort: Option<String>,
-    /// Start in `cwd` itself, even on a hub's main checkout, which otherwise gets a new chat
-    /// worktree (ADR 0146).
-    #[serde(default)]
-    pub(super) here: bool,
+    /// The first prompt, sent once the chair is ready. It names a new chat worktree (ADR 0147).
+    pub(super) prompt: Option<String>,
+    /// Where the chat runs; absent is `new`.
+    pub(super) place: Option<Place>,
+}
+
+/// Where a new chat runs (ADR 0147). `new` on a hub's main checkout makes the chat its own
+/// worktree, and elsewhere starts in `cwd`, as `here` always does. `branch`, `pr` and `issue`
+/// make or open a worktree in `cwd`'s project, as New workspace did.
+#[derive(Deserialize, Clone)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub(super) enum Place {
+    New,
+    Here,
+    Branch { branch: String },
+    Pr { number: u64 },
+    Issue { number: u64 },
 }
 
 #[derive(Deserialize)]

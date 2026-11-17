@@ -193,6 +193,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/chat/continue", post(continue_chat))
         .route("/api/chat/branch", post(branch_chat))
         .route("/api/chat/continue/cancel", post(cancel_continue))
+        .route("/api/chat/new-preview", get(new_chat_preview))
         .route("/api/workspace/new-options", get(lifecycle_read))
         .route("/api/workspace/fetch", post(workspace_fetch))
         .route("/api/workspace/impact", get(lifecycle_read))

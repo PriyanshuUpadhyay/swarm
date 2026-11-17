@@ -177,8 +177,9 @@ exit 1
 }
 
 #[tokio::test]
-async fn a_session_send_finishes_while_another_session_action_or_launch_is_running() {
-    for slow_route in ["/api/chat/interrupt", "/api/chat/new"] {
+async fn a_session_send_finishes_while_another_session_action_is_running() {
+    // A new chat's launch runs off the queue (ADR 0147), so only a session action can hold it.
+    for slow_route in ["/api/chat/interrupt"] {
         let fixture = action_fixture();
         let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
         let other = swarm::store::create_session(
@@ -198,7 +199,7 @@ async fn a_session_send_finishes_while_another_session_action_or_launch_is_runni
 case "$1 $2" in
   'session new') printf '%s\n' '{new_id}'; exit 0 ;;
 esac
-if [ "$1" = interrupt ] || [ "$1" = launch ]; then
+if [ "$1" = interrupt ]; then
   printf 'running\n' > "$SWARM_HOME/slow-start"
   while [ ! -f "$SWARM_HOME/release" ]; do sleep 0.01; done
   printf 'fixture-pane\n'
@@ -209,11 +210,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
         )
         .unwrap();
         let slow_app = fixture.app.clone();
-        let slow_body = if slow_route == "/api/chat/new" {
-            json!({"cwd": env!("CARGO_MANIFEST_DIR")})
-        } else {
-            json!({"session": other, "agent": "worker"})
-        };
+        let slow_body = json!({"session": other, "agent": "worker"});
         let slow = tokio::spawn(async move {
             chat_action(
                 State(slow_app),

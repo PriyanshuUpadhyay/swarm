@@ -357,6 +357,7 @@ mod tests {
 
     // This test re-runs itself by the exact path serve::tests::lifecycle_routes_child.
     include!("serve/tests/lifecycle_routes_child.rs");
+    include!("serve/tests/chat_worktrees_child.rs");
 
     // This test re-runs itself by the exact path serve::tests::workspace_panel_routes_child.
     include!("serve/tests/workspace_panel_routes_child.rs");

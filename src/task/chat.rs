@@ -220,15 +220,16 @@ pub fn chat_top(folder: &Path) -> Option<String> {
         .then_some(top)
 }
 
-/// Removes a chat worktree that a failed chat start left, and its record, through Worktrunk, so
-/// its remove hooks run. With no `--force`, a worktree with changes stays. The branch goes only
-/// when it has no commit that the default branch, origin's when fetched, lacks; local main can be
-/// behind origin's, where the chat started.
-pub fn remove_failed_chat(root: &Path, wt: &Path, path: &Path) -> Result<(), String> {
+/// Removes the chat worktree on `branch` that a failed chat start left, and its record, through
+/// Worktrunk, so its remove hooks run. With no `--force`, a worktree with changes stays. The
+/// branch goes only when it has no commit that the default branch, origin's when fetched, lacks;
+/// local main can be behind origin's, where the chat started.
+pub fn remove_failed_chat(root: &Path, wt: &Path, path: &Path, branch: &str) -> Result<(), String> {
     let hub = hub(path).ok_or("this folder is not in a worktree hub")?;
+    // The caller made this worktree on `branch`; any other checkout there is not its own.
     let branch = git(path, &["symbolic-ref", "-q", "--short", "HEAD"])
-        .filter(|branch| unnamed_chat(branch))
-        .ok_or("this folder is not an unnamed chat worktree")?;
+        .filter(|head| head == branch && head.starts_with(PREFIX))
+        .ok_or("this folder is not the new chat worktree")?;
     let origin = format!("refs/remotes/origin/{}", hub.default);
     let base = if ref_exists(&hub.common, &origin) {
         origin

@@ -2,19 +2,37 @@
 
 use super::*;
 
+/// `POST /api/chat/new`: checks the request, answers at once with a start id, and starts the
+/// chat in the background (ADR 0147). Each step goes out as a `chat-start` frame with that id;
+/// the last one, step `done`, carries the session and its folder, or the error.
 pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError> {
-    let role = body.role.as_deref().unwrap_or("chat");
-    let account = body.account.as_deref().or(if body.provider.is_none() {
-        Some("auto")
+    let (start, launch) = checked_start(app, body).await?;
+    let id = start.id.clone();
+    tokio::spawn(start.run(launch));
+    Ok(json!({"ok": true, "start": id}))
+}
+
+/// A new chat that a model switch starts in `body.cwd`; it waits for the chat to start.
+pub(super) async fn new_chat_now(app: &App, body: NewChat) -> Result<Value, ApiError> {
+    let (mut start, launch) = checked_start(app, body).await?;
+    let (session, workspace) = start.steps(&launch).await?;
+    Ok(json!({"ok": true, "session": session, "workspace": workspace}))
+}
+
+/// Checks a new chat request and the folder it names, before any change.
+async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiError> {
+    let role = body.role.clone().unwrap_or_else(|| "chat".into());
+    let account = body.account.clone().or(if body.provider.is_none() {
+        Some("auto".into())
     } else {
         None
     });
     for value in [
-        Some(role),
+        Some(role.as_str()),
         body.provider.as_deref(),
         body.model.as_deref(),
         body.effort.as_deref(),
-        account,
+        account.as_deref(),
     ]
     .into_iter()
     .flatten()
@@ -26,51 +44,65 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     if body.cwd.contains('\0') || !Path::new(&body.cwd).is_absolute() {
         return Err(error(StatusCode::BAD_REQUEST, "absolute cwd required"));
     }
+    let place = body.place.clone().unwrap_or(Place::New);
     let snapshot_app = app.clone();
     let allowed_cwd = body.cwd.clone();
-    let here = body.here;
-    let main_of = tokio::task::spawn_blocking(move || {
-        let (tree, saved) = fresh_lifecycle_tree(&snapshot_app)?;
-        let found = tree.workspace(&allowed_cwd);
-        let workspace = found.map(|(_, w)| w);
-        if workspace.is_none() && !tree.projects.iter().any(|p| p.path == allowed_cwd) {
-            return Err(error(
-                StatusCode::FORBIDDEN,
-                "cwd is outside the workspace tree",
-            ));
-        }
-        lifecycle::checked_path(&snapshot_app.root, &allowed_cwd, true).map_err(lifecycle_error)?;
-        if is_read_only(&tree, &saved, &allowed_cwd) {
-            return Err(read_only_error("chat"));
-        }
-        // The tree is fresh, so its hub-main mark is the one the menu shows (ADR 0146).
-        Ok(found
-            .filter(|(_, workspace)| !here && workspace.hub_main)
-            .map(|(project, _)| project.path.clone()))
+    let project_of = tokio::task::spawn_blocking(move || {
+        let target = chat_target(&snapshot_app, &allowed_cwd)?;
+        Ok::<_, ApiError>(match place {
+            Place::Here => None,
+            Place::New => target.hub_main.then_some((target.project, Place::New)),
+            other => Some((target.project, other)),
+        })
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))??;
-    let own_worktree = main_of.is_some();
-    let cwd = match main_of {
-        Some(project) => chat_worktree(app, project).await?,
-        None => body.cwd.clone(),
-    };
 
-    // A chat that did not start removes its own worktree, so a retry does not add another.
-    let session = match open_session(app, &cwd).await {
-        Ok(session) => session,
-        Err(err) => {
-            if own_worktree {
-                forget_chat(app, &cwd, None).await;
-            }
-            return Err(err);
-        }
+    let start = Start {
+        app: app.clone(),
+        id: uuid::Uuid::new_v4().to_string(),
+        step: "start",
     };
-    let started = start_chair(app, &body, role, account, &cwd, &session, own_worktree).await;
-    if own_worktree && started.is_err() {
-        forget_chat(app, &cwd, Some(&session)).await;
+    let launch = Launch {
+        body,
+        role,
+        account,
+        worktree: project_of,
+    };
+    Ok((start, launch))
+}
+
+/// The project a new chat in `cwd` belongs to, and whether `cwd` is its hub's main checkout.
+struct Target {
+    project: String,
+    hub_main: bool,
+    tree: tree::Tree,
+    saved: choices_store::Saved,
+}
+
+/// Checks that a new chat may start in `cwd`: a workspace or project of the tree, under the
+/// allowed roots, and not read-only. The tree is fresh, so its hub-main mark is the one the
+/// menu shows (ADR 0146).
+fn chat_target(app: &App, cwd: &str) -> Result<Target, ApiError> {
+    let (tree, saved) = fresh_lifecycle_tree(app)?;
+    let found = tree.workspace(cwd);
+    let project = found
+        .map(|(project, _)| project)
+        .or_else(|| tree.projects.iter().find(|p| p.path == cwd))
+        .ok_or_else(|| error(StatusCode::FORBIDDEN, "cwd is outside the workspace tree"))?
+        .path
+        .clone();
+    lifecycle::checked_path(&app.root, cwd, true).map_err(lifecycle_error)?;
+    if is_read_only(&tree, &saved, cwd) {
+        return Err(read_only_error("chat"));
     }
-    started
+    let hub_main = found.is_some_and(|(_, workspace)| workspace.hub_main);
+    Ok(Target {
+        project,
+        hub_main,
+        tree,
+        saved,
+    })
 }
 
 fn chat_call(cwd: &str, session: Option<&str>) -> CliCall {
@@ -102,7 +134,7 @@ async fn open_session(app: &App, cwd: &str) -> Result<String, ApiError> {
 /// the worktree and its record go when it holds no change. A chair that may run keeps both,
 /// because a launch can time out after its pane started: only a session with no chair row, or
 /// one whose chair is known to be stopped, is undone.
-async fn forget_chat(app: &App, cwd: &str, session: Option<&str>) {
+async fn forget_chat(app: &App, cwd: &str, session: Option<&str>, branch: &str) {
     if let Some(session) = session {
         let call = chat_call(cwd, Some(session));
         let stopped = match chair_agent(app, &call).await {
@@ -124,10 +156,11 @@ async fn forget_chat(app: &App, cwd: &str, session: Option<&str>) {
         }
     }
 
-    let (app, cwd) = (app.clone(), cwd.to_owned());
+    let (app, cwd, branch) = (app.clone(), cwd.to_owned(), branch.to_owned());
     let removed = tokio::task::spawn_blocking(move || {
         let path = PathBuf::from(&cwd);
-        match swarm::task::remove_failed_chat(&app.root, &swarm::task::wt_program(), &path) {
+        let wt = swarm::task::wt_program();
+        match swarm::task::remove_failed_chat(&app.root, &wt, &path, &branch) {
             Ok(()) => {
                 shells::close_all(&app, &cwd);
                 action_execute::forget_folder(&app.root, &cwd);
@@ -144,7 +177,7 @@ async fn forget_chat(app: &App, cwd: &str, session: Option<&str>) {
     }
 }
 
-/// Records a chat worktree, then launches the chair of `session`.
+/// Records a chat worktree, then launches the chair of `session`. Returns the record's warning.
 async fn start_chair(
     app: &App,
     body: &NewChat,
@@ -153,7 +186,7 @@ async fn start_chair(
     cwd: &str,
     session: &str,
     own_worktree: bool,
-) -> Result<Value, ApiError> {
+) -> Result<Option<String>, ApiError> {
     let mut call = chat_call(cwd, Some(session));
 
     let mut warning = None;
@@ -183,55 +216,9 @@ async fn start_chair(
         }
     }
     let output = run_cli(app, call, None).await?;
-    let pane = first_line(&output)
+    first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
-    Ok(json!({
-        "ok": true, "session": session, "agent": "orchestrator", "pane": pane,
-        "workspace": cwd, "warning": warning,
-    }))
-}
-
-/// A new worktree for one chat on `swarm/chat-<8 hex>`, made by the New workspace path, so it
-/// starts from a fresh origin and runs the project's setup script. The first prompt names the
-/// branch (ADR 0146). A failed setup starts no chat (ADR 0097), and the worktree then goes when
-/// it holds no change.
-async fn chat_worktree(app: &App, project: String) -> Result<String, ApiError> {
-    let request = lifecycle::NewWorkspace {
-        project,
-        name: swarm::task::chat_placeholder(),
-        folder: None,
-        prefix: Some(swarm::task::PREFIX.into()),
-        mode: lifecycle::Mode::NewBranch,
-        base: None,
-        branch: None,
-        pr: None,
-        issue: None,
-    };
-
-    let made = execute_lifecycle(app, LifecycleAction::New(request)).await?;
-    let path = made["workspace"]
-        .as_str()
-        .filter(|_| made["created"] == true)
-        .ok_or_else(|| {
-            error(
-                StatusCode::CONFLICT,
-                "Swarm made no worktree for the chat; try again",
-            )
-        })?;
-
-    match made["setup"]["state"].as_str() {
-        None | Some("completed") => Ok(path.to_owned()),
-        Some(state) => {
-            forget_chat(app, path, None).await;
-            Err(error(
-                StatusCode::BAD_GATEWAY,
-                &format!(
-                    "The setup script of the new chat worktree {path} ended with {state}, so no chat started. {}",
-                    made["setup"]["error"].as_str().unwrap_or_default()
-                ),
-            ))
-        }
-    }
+    Ok(warning)
 }
 
 /// True when the workspace that holds `cwd` is archived, missing, or removed. That is the deepest
@@ -278,6 +265,13 @@ pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, Ap
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
     Ok(json!({"ok": true, "session": body.session, "agent": "orchestrator", "pane": pane}))
 }
+
+#[path = "new_chat/preview.rs"]
+mod preview;
+pub(super) use preview::new_chat_preview;
+#[path = "new_chat/start.rs"]
+mod start;
+use start::{Launch, Start};
 
 #[cfg(test)]
 #[path = "new_chat/tests.rs"]

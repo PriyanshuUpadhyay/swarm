@@ -363,7 +363,7 @@ pub(super) async fn execute_continue_timed(
             prepared = prepare => prepared?,
         };
         continue_phase(app, old, "starting")?;
-        let started = new_chat(app, NewChat { cwd: call.cwd.to_string_lossy().into_owned(), role: None, provider: Some(body.provider.clone()), model: Some(body.model.clone()), account: body.account.clone(), effort: body.effort.clone(), here: true }).await?;
+        let started = new_chat_now(app, NewChat { cwd: call.cwd.to_string_lossy().into_owned(), role: None, provider: Some(body.provider.clone()), model: Some(body.model.clone()), account: body.account.clone(), effort: body.effort.clone(), prompt: None, place: Some(Place::Here) }).await?;
         let session = started["session"].as_str().unwrap();
         if body.carry == Carry::Clean {
             run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
