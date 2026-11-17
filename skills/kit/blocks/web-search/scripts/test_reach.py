@@ -35,7 +35,7 @@ def reach(*args, curl=None, page="", key=""):
     (root / "security").write_text(SECURITY)
     for f in ("curl", "playwriter", "security"):
         (root / f).chmod(0o755)
-    env = {k: v for k, v in os.environ.items() if k not in ("S2_API_KEY", "OPENALEX_API_KEY")}
+    env = {k: v for k, v in os.environ.items() if k not in ("S2_API_KEY", "OPENALEX_API_KEY", "TINYFISH_API_KEY")}
     env.update({"PATH": f"{root}:/usr/bin:/bin", "FAKE_CURL": json.dumps(curl or {}), "FAKE_KEY": key,
                 "FAKE_PAGE": page, "REACH_LAST30DAYS": str(root / "absent.py")})
     return subprocess.run([sys.executable, "-I", SCRIPT, *args], capture_output=True, text=True, env=env)
@@ -52,6 +52,15 @@ def test_read_falls_back_to_the_browser_when_the_reader_is_blocked():
     r = reach("read", "https://example.com/post", page="The post text")
     assert r.returncode == 0, r.stderr
     assert "The post text" in r.stdout
+
+
+def test_read_uses_tinyfish_when_the_reader_is_blocked():
+    page = {"results": [{"title": "Post", "text": "The rendered text"}], "errors": []}
+    r = reach("read", "https://example.com/post", key="k1",
+              curl={"api.fetch.tinyfish.ai": [json.dumps(page), 200]})
+    assert r.returncode == 0, r.stderr
+    assert "The rendered text" in r.stdout
+    assert "read_tinyfish ok" in r.stderr
 
 
 def test_blocked_when_every_route_fails():

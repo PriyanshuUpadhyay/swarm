@@ -10,8 +10,9 @@ or page text from a page route. Stderr holds one line per route tried, then a `b
 every route failed. Exit 0 on content, 3 when blocked, 2 on a usage error.
 
 Routes only read. The browser route uses the user's signed-in browser through browser_read.py.
-Keys are optional: S2_API_KEY (Semantic Scholar) and OPENALEX_API_KEY. Each is read from the
-environment, else from the macOS Keychain entry `swarm-<name>`, so every pane finds it.
+Keys are optional: S2_API_KEY (Semantic Scholar), OPENALEX_API_KEY, and TINYFISH_API_KEY (the
+TinyFish search and read routes, which fail without it). Each is read from the environment, else
+from the macOS Keychain entry `swarm-<name>`, so every pane finds it.
 """
 
 import json
@@ -48,11 +49,13 @@ def run(cmd, timeout=120):
     return out.stdout
 
 
-def get(url, headers=()):
-    cmd = ["curl", "-sS", "-L", "-m", "40", "-A", UA, "-w", "\n%{http_code}", url]
+def get(url, headers=(), data=None, timeout=40):
+    cmd = ["curl", "-sS", "-L", "-m", str(timeout), "-A", UA, "-w", "\n%{http_code}"]
     for h in headers:
         cmd += ["-H", h]
-    body, _, code = run(cmd).rpartition("\n")
+    if data is not None:
+        cmd += ["-H", "Content-Type: application/json", "--data", json.dumps(data)]
+    body, _, code = run(cmd + [url], timeout=timeout + 20).rpartition("\n")
     if code != "200":
         raise Fail(f"HTTP {code}")
     if not body.strip():
@@ -62,9 +65,9 @@ def get(url, headers=()):
     return body
 
 
-def get_json(url, headers=()):
+def get_json(url, headers=(), data=None, timeout=40):
     try:
-        return json.loads(get(url, headers))
+        return json.loads(get(url, headers, data, timeout))
     except json.JSONDecodeError:
         raise Fail("not JSON")
 
@@ -167,6 +170,20 @@ def web_exa(query, days):
     return out
 
 
+def tinyfish_key():
+    key = api_key("TINYFISH_API_KEY")
+    if not key:
+        raise Fail("no TINYFISH_API_KEY")
+    return f"X-API-Key: {key}"
+
+
+def web_tinyfish(query, days):
+    data = get_json(f"https://api.search.tinyfish.ai?query={q(query)}&recency_minutes={days * 1440}",
+                    [tinyfish_key()])
+    return lines({"title": r.get("title"), "url": r.get("url"), "snippet": r.get("snippet")}
+                 for r in data.get("results", []))
+
+
 SEARCH = {
     "hn": [hn_algolia],
     "reddit": [last30days("reddit"), reddit_browser],
@@ -174,7 +191,7 @@ SEARCH = {
     "lobsters": [lobsters_page, lobsters_browser],
     "github": [github_gh],
     "youtube": [youtube_ytdlp],
-    "web": [web_exa],
+    "web": [web_exa, web_tinyfish],
 }
 
 
@@ -201,6 +218,19 @@ def read_jina(url):
     return get(f"https://r.jina.ai/{url}")
 
 
+def read_tinyfish(url):
+    # It renders JavaScript pages. A per-URL failure such as bot_blocked or login_required comes
+    # back in errors[], so the browser route, which has the user's logins, still runs next.
+    data = get_json("https://api.fetch.tinyfish.ai", [tinyfish_key()],
+                    {"urls": [url], "format": "markdown"}, timeout=120)
+    for e in data.get("errors", []):
+        raise Fail(e.get("error", "fetch error"))
+    page = (data.get("results") or [{}])[0]
+    if not (page.get("text") or "").strip():
+        raise Fail("empty page")
+    return f"{page.get('title') or url}\n{url}\n\n{page['text']}\n"
+
+
 def read_browser(url):
     return browser(url)
 
@@ -213,7 +243,7 @@ def read_wayback(url):
     return text(get(closest["url"]))
 
 
-READ = [read_jina, read_browser, read_wayback]
+READ = [read_jina, read_tinyfish, read_browser, read_wayback]
 
 
 # --- paper routes ----------------------------------------------------------------------------
