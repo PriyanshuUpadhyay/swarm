@@ -168,12 +168,14 @@ fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
     let task = chat(&root, &main, "chat-0123abcd", Some("s1"));
     let path = PathBuf::from(&task.path);
 
-    // A local branch has the name and origin has -2, so this chat gets -3.
-    let expected = "swarm/fix-the-login-redirect-bug-3";
-    git(&main, &["branch", "swarm/fix-the-login-redirect-bug"]).unwrap();
-    let origin_ref = "refs/remotes/origin/swarm/fix-the-login-redirect-bug-2";
+    // A local branch has the name and origin has -2, so this chat gets -3. Filler words go.
+    let expected = "swarm/fix-login-redirect-bug-now-3";
+    git(&main, &["branch", "swarm/fix-login-redirect-bug-now"]).unwrap();
+    let origin_ref = "refs/remotes/origin/swarm/fix-login-redirect-bug-now-2";
     git(&main, &["update-ref", origin_ref, "HEAD"]).unwrap();
     let prompt = "Fix the login redirect bug now please";
+    // The preview gives the same name and claims nothing.
+    assert_eq!(chat_preview(&main, prompt).as_deref(), Some(expected));
     let named = name_chat(&root, &path, prompt).unwrap();
     assert_eq!(named.as_deref(), Some(expected));
     assert_eq!(name_chat(&root, &path, "a second prompt").unwrap(), None);

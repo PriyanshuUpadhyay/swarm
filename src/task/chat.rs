@@ -8,6 +8,13 @@ const CHAT_NAME: &str = "chat-";
 const CHAT_ID_LEN: usize = 8;
 /// The most words of a first prompt that go into a branch name.
 const SLUG_WORDS: usize = 5;
+/// Words a branch name leaves out, so it reads as the task: "Fix the flaky smoke test" gives
+/// `fix-flaky-smoke-test`, not `fix-the-flaky-smoke-test`.
+const FILLER: &[&str] = &[
+    "a", "an", "the", "please", "can", "could", "would", "will", "you", "we", "i", "me", "my",
+    "our", "us", "let", "lets", "s", "to", "of", "for", "in", "on", "at", "by", "with", "and",
+    "or", "is", "are", "be", "it", "its", "this", "that", "when", "so", "make", "just", "some",
+];
 
 /// A new chat worktree's folder and placeholder branch name, `chat-<8 hex>`; its branch is
 /// `swarm/` and this name until the first prompt names it.
@@ -24,14 +31,21 @@ pub fn unnamed_chat(branch: &str) -> bool {
         .is_some_and(|id| id.len() == CHAT_ID_LEN && id.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
-/// The branch name a first prompt gives: its first five ASCII words, lowercase and joined by
-/// `-`, at most 40 characters, under `swarm/`. None when the prompt has no such word.
+/// The branch name a first prompt gives: its first five ASCII words that are not filler,
+/// lowercase and joined by `-`, at most 40 characters, under `swarm/`. A prompt of filler only
+/// keeps its words. None when the prompt has no ASCII word.
 fn chat_branch(prompt: &str) -> Option<String> {
-    let words: Vec<_> = prompt
+    let all: Vec<_> = prompt
         .split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|word| !word.is_empty())
-        .take(SLUG_WORDS)
         .collect();
+    let task: Vec<_> = all
+        .iter()
+        .copied()
+        .filter(|word| !FILLER.contains(&word.to_ascii_lowercase().as_str()))
+        .collect();
+    let words: Vec<_> = if task.is_empty() { all } else { task };
+    let words = &words[..words.len().min(SLUG_WORDS)];
     if words.is_empty() {
         return None;
     }
@@ -101,14 +115,9 @@ pub fn name_chat(root: &Path, cwd: &Path, prompt: &str) -> Result<Option<String>
     let base = chat_branch(prompt)
         .filter(|name| !unnamed_chat(name))
         .unwrap_or_else(|| untitled.clone());
-    let names = std::iter::once(base.clone())
-        .chain((2..=9).map(|n| format!("{base}-{n}")))
-        .chain([untitled]);
+    let names = prompt_names(&base).chain([untitled]);
     let renamed = names
-        .filter(|name| {
-            branch_state(&hub.common, name) == BranchState::Absent
-                && !ref_exists(&hub.common, &format!("refs/remotes/origin/{name}"))
-        })
+        .filter(|name| free_branch(&hub.common, name))
         .find_map(|name| claim_record(root, &task, name).transpose())
         .transpose()?
         .ok_or_else(|| format!("{base}, its -2 to -9 names, and the untitled name are taken"))?;
@@ -127,6 +136,27 @@ pub fn name_chat(root: &Path, cwd: &Path, prompt: &str) -> Result<Option<String>
 
     let _ = std::fs::remove_file(record_path(root, &task.repo, &task.branch));
     Ok(Some(branch))
+}
+
+/// The names a prompt's branch `base` may take, in order: `base`, then `-2` to `-9`.
+fn prompt_names(base: &str) -> impl Iterator<Item = String> {
+    std::iter::once(base.to_owned()).chain((2..=9).map(move |n| format!("{base}-{n}")))
+}
+
+/// True when neither a local branch nor an origin branch has the name.
+fn free_branch(common: &Path, name: &str) -> bool {
+    branch_state(common, name) == BranchState::Absent
+        && !ref_exists(common, &format!("refs/remotes/origin/{name}"))
+}
+
+/// The branch a new chat worktree in the hub of `project` gets from `prompt`: the first free
+/// name of `name_chat`'s list. It writes nothing, so the composer can call it on each pause in
+/// typing. None when the prompt has no ASCII word, when its nine names are taken, or when
+/// `project` is in no worktree hub; the chat then starts on a placeholder name.
+pub fn chat_preview(project: &Path, prompt: &str) -> Option<String> {
+    let hub = hub(project)?;
+    let base = chat_branch(prompt).filter(|name| !unnamed_chat(name))?;
+    prompt_names(&base).find(|name| free_branch(&hub.common, name))
 }
 
 /// Writes the record of `task` under the new branch `name`, only when no record has that name.

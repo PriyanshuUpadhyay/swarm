@@ -355,8 +355,8 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Ta
 #[path = "task/chat.rs"]
 mod chat;
 pub use chat::{
-    chat_placeholder, chat_top, drop_unnamed_chat, name_chat, record_chat, remove_failed_chat,
-    unnamed_chat,
+    chat_placeholder, chat_preview, chat_top, drop_unnamed_chat, name_chat, record_chat,
+    remove_failed_chat, unnamed_chat,
 };
 #[path = "task/branches.rs"]
 mod branches;
