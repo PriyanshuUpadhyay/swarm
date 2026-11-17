@@ -253,105 +253,6 @@ fn now() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-/// True for the branch a chat worktree gets before its first prompt: `swarm/chat-<8 hex>`.
-pub fn unnamed_chat(branch: &str) -> bool {
-    branch
-        .strip_prefix(PREFIX)
-        .and_then(|rest| rest.strip_prefix("chat-"))
-        .is_some_and(|id| id.len() == 8 && id.chars().all(|c| c.is_ascii_hexdigit()))
-}
-
-/// The branch name a first prompt gives: its first five ASCII words, lowercase and joined by
-/// `-`, at most 40 characters, under `swarm/`. None when the prompt has no such word.
-pub fn chat_branch(prompt: &str) -> Option<String> {
-    let mut slug = String::new();
-    let words = prompt
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|word| !word.is_empty())
-        .take(5);
-    for word in words {
-        let word = word.to_ascii_lowercase();
-        let extra = usize::from(!slug.is_empty()) + word.len();
-        if slug.len() + extra > 40 {
-            if slug.is_empty() {
-                slug = word[..40].to_string();
-            }
-            break;
-        }
-        if !slug.is_empty() {
-            slug.push('-');
-        }
-        slug.push_str(&word);
-    }
-    (!slug.is_empty()).then(|| format!("{PREFIX}{slug}"))
-}
-
-/// The record of a chat's own worktree at `path`, which the app made when the chat opened, so
-/// `land`, `drop`, and `sweep` treat it as a task. Only the server calls it. Local default moves to origin's (ADR 0145), and
-/// the ref hook is set. Returns the record and a warning when either could not be done.
-pub fn record_chat(
-    root: &Path,
-    path: &Path,
-    session: Option<String>,
-) -> Result<(Task, Option<String>), String> {
-    let hub = hub(path).ok_or("this folder is not in a worktree hub (a bare .bare with wt/)")?;
-    let branch = git(path, &["symbolic-ref", "-q", "--short", "HEAD"])
-        .filter(|branch| branch.starts_with(PREFIX))
-        .ok_or_else(|| format!("{} is not on a {PREFIX} branch", path.display()))?;
-    let repo = hub.common.to_string_lossy().into_owned();
-    let sync_warning = git(&hub.common, &["remote", "get-url", "origin"]).and_then(|_| {
-        // The server calls this, and it moves main as landing does, so agent markers go.
-        origin::sync_default(&hub, &format!("origin/{}", hub.default), true).err()
-    });
-    let task = Task {
-        branch: branch.clone(),
-        path: path.to_string_lossy().into_owned(),
-        repo: repo.clone(),
-        default: hub.default.clone(),
-        session,
-        agent: Some("orchestrator".into()),
-        created_unix_s: now(),
-    };
-    write_json(&record_path(root, &repo, &branch), &task)
-        .map_err(|error| format!("cannot write the task record: {error}"))?;
-    let warnings: Vec<_> = [sync_warning, install_hook(&hub)]
-        .into_iter()
-        .flatten()
-        .collect();
-    Ok((task, (!warnings.is_empty()).then(|| warnings.join("; "))))
-}
-
-/// Renames an unnamed chat worktree's branch after the chat's first prompt, with `-2` to `-9` on
-/// a taken name, and moves its record. The folder keeps its name, so the agent's folder stays.
-/// None when the branch already has a name or the prompt gives none.
-pub fn name_chat(root: &Path, cwd: &Path, prompt: &str) -> Result<Option<String>, String> {
-    let (hub, task) = task_here(root, cwd)?;
-    if !unnamed_chat(&task.branch) {
-        return Ok(None);
-    }
-    let Some(base) = chat_branch(prompt) else {
-        return Ok(None);
-    };
-    let branch = std::iter::once(base.clone())
-        .chain((2..=9).map(|n| format!("{base}-{n}")))
-        .find(|name| branch_state(&hub.common, name) == BranchState::Absent)
-        .ok_or_else(|| format!("{base} and its -2 to -9 names are taken"))?;
-    run(
-        Path::new("git"),
-        Path::new(&task.path),
-        &["branch", "-m", &task.branch, &branch],
-        false,
-    )?;
-    let renamed = Task {
-        branch: branch.clone(),
-        ..task.clone()
-    };
-    write_json(&record_path(root, &task.repo, &branch), &renamed)
-        .map_err(|error| format!("cannot write the task record: {error}"))?;
-    let _ = std::fs::remove_file(record_path(root, &task.repo, &task.branch));
-    Ok(Some(branch))
-}
-
 /// The task worktree that holds `cwd`, with its record.
 fn task_here(root: &Path, cwd: &Path) -> Result<(Hub, Task), String> {
     let hub = hub(cwd).ok_or("this folder is not in a worktree hub")?;
@@ -445,15 +346,12 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Ta
     Ok(task)
 }
 
-/// `drop` for a chat worktree whose chat ended before its first prompt, so its branch still has
-/// no name. None for any other folder. `drop` still refuses a worktree with changes or commits.
-pub fn drop_unnamed_chat(root: &Path, wt: &Path, cwd: &Path) -> Result<Option<Task>, String> {
-    match task_here(root, cwd) {
-        Ok((_, task)) if unnamed_chat(&task.branch) => drop(root, wt, cwd, None).map(Some),
-        _ => Ok(None),
-    }
-}
-
+#[path = "task/chat.rs"]
+mod chat;
+pub use chat::{
+    chat_branch, chat_placeholder, drop_unnamed_chat, name_chat, record_chat, remove_failed_chat,
+    unnamed_chat,
+};
 #[path = "task/branches.rs"]
 mod branches;
 pub use branches::{BranchState, branch_state, fresh_origin_base};

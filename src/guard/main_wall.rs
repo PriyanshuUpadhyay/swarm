@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 mod shell;
 use shell::{Token, commands};
 
-pub const MAIN_READ_ONLY: &str = "swarm guard: main is read-only for agents. Ask the owner to start a new chat, which gets its own worktree, or to start this one with no new worktree; so the call is blocked";
-const MAIN_WARNING: &str = "swarm guard warning: main is read-only for agents. A new chat gets its own worktree; edit there.";
+pub const MAIN_READ_ONLY: &str = "swarm guard: main is read-only for agents. Ask the owner to start a new chat; a new chat gets its own worktree, where you can edit. So the call is blocked";
+const MAIN_WARNING: &str = "swarm guard warning: main is read-only for agents. Ask the owner to start a new chat; a new chat gets its own worktree, where you can edit.";
 
 /// Git subcommands that change a worktree, its index, or its branch.
 /// `update-ref` is not here: it writes no worktree, and the match below checks the ref it moves.

@@ -211,8 +211,27 @@ test("the tab strip's + asks for a profile before it starts a chat", async ({ pa
   tab.on("request", (r) => r.url().endsWith("/api/chat/new") && started.push(r.url()));
   await tab.getByRole("button", { name: "New chat in this workspace" }).click();
   const menu = tab.getByTestId("new-chat-menu");
-  await expect(menu.getByRole("menuitem", { name: "Default profile" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Default profile", exact: true })).toBeVisible();
   await tab.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   expect(started).toEqual([]);
+});
+
+test("the + menu's no new worktree item starts the chat in the folder itself", async ({ page: tab }) => {
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
+  const bodies: unknown[] = [];
+  // The request is answered here, so no chat starts in the fixture.
+  await tab.route("**/api/chat/new", async (route) => {
+    bodies.push(route.request().postDataJSON());
+    await route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"stopped by the test"}' });
+  });
+
+  await tab.getByRole("button", { name: "New chat in this workspace" }).click();
+  await tab.getByTestId("new-chat-menu").getByRole("menuitem", { name: "Default profile, no new worktree" }).click();
+
+  await expect.poll(() => bodies.length).toBe(1);
+  expect(bodies[0]).toMatchObject({ here: true });
 });

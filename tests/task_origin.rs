@@ -104,10 +104,11 @@ impl Hub {
         child.wait_with_output().unwrap()
     }
 
-    /// A chat worktree as the app makes one: from a fresh origin default, then its record.
+    /// A chat worktree from a fresh origin default, with its record as the app writes it.
     fn task(&self, name: &str) -> PathBuf {
         let path = self.dir.join("wt").join(name);
         git(&self.main, &["fetch", "-q", "origin"]);
+
         git(
             &self.main,
             &[

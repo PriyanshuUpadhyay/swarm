@@ -508,7 +508,9 @@ esac
         "fix-the-login-redirect-bug"
     );
     // An archived chat that got no prompt takes its empty worktree with it; one with a commit stays.
-    if root.join("bin/wt").is_file() {
+    if !root.join("bin/wt").is_file() {
+        eprintln!("skipped: archive of a chat worktree, because Worktrunk is not installed");
+    } else {
         let mut folders = Vec::new();
         for work in [false, true] {
             let started = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
@@ -527,6 +529,24 @@ esac
         }
         assert!(!Path::new(&folders[0]).exists());
         assert!(Path::new(&folders[1]).is_dir());
+
+        // A second chat in the same unused worktree keeps it when the first chat is archived.
+        let first = call_action(&fixture, "/api/chat/new", json!({"cwd":main}))
+            .await
+            .unwrap()
+            .0;
+        let shared = first["workspace"].as_str().unwrap().to_owned();
+        let second = call_action(&fixture, "/api/chat/new", json!({"cwd":shared}))
+            .await
+            .unwrap()
+            .0;
+        assert_eq!(second["workspace"], json!(shared));
+        let id = chat_session(&first, &shared);
+        chat_session(&second, &shared);
+        let _ = call_action(&fixture, "/api/sessions/archive", json!({"ids":[id]}))
+            .await
+            .unwrap();
+        assert!(Path::new(&shared).is_dir());
     }
     // New chat in main keeps the chat in main.
     let kept = call_action(&fixture, "/api/chat/new", json!({"cwd":main,"here":true}))

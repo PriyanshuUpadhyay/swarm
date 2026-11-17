@@ -52,11 +52,36 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     let own_worktree = main_of.is_some();
     let cwd = match main_of {
         Some(project) => chat_worktree(app, project).await?,
-        None => body.cwd,
+        None => body.cwd.clone(),
     };
+
+    let started = launch_chat(app, &body, role, account, &cwd, own_worktree).await;
+    if own_worktree && started.is_err() {
+        // A chat that did not start leaves no worktree, so a retry does not add another.
+        let path = PathBuf::from(&cwd);
+        let removed =
+            tokio::task::spawn_blocking(move || swarm::task::remove_failed_chat(&path)).await;
+        if !matches!(removed, Ok(Ok(()))) {
+            eprintln!(
+                "swarm: kept the chat worktree {cwd} of a chat that did not start: {removed:?}"
+            );
+        }
+    }
+    started
+}
+
+/// Makes the session in `cwd`, records a chat worktree, and launches the chair.
+async fn launch_chat(
+    app: &App,
+    body: &NewChat,
+    role: &str,
+    account: Option<&str>,
+    cwd: &str,
+    own_worktree: bool,
+) -> Result<Value, ApiError> {
     let mut call = CliCall {
         args: Vec::new(),
-        cwd: cwd.clone().into(),
+        cwd: cwd.into(),
         session: None,
         adapter: "tmux-swarm".into(),
     };
@@ -72,15 +97,22 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     }
     call.session = Some(session.to_owned());
     drop(create);
+
+    let mut warning = None;
     if own_worktree {
-        let (root, path, id) = (app.root.clone(), cwd.clone(), session.to_owned());
-        tokio::task::spawn_blocking(move || {
+        let (root, path, id) = (app.root.clone(), cwd.to_owned(), session.to_owned());
+        let (_, found) = tokio::task::spawn_blocking(move || {
             swarm::task::record_chat(&root, Path::new(&path), Some(id))
         })
         .await
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "chat record task failed"))?
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err))?;
+        if let Some(found) = &found {
+            eprintln!("swarm: chat worktree {cwd}: {found}");
+        }
+        warning = found;
     }
+
     call.args = vec!["launch".into(), "orchestrator".into(), role.to_owned()];
     for (flag, value) in [
         ("--provider", body.provider.as_deref()),
@@ -95,9 +127,10 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     let output = run_cli(app, call, None).await?;
     let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
-    Ok(
-        json!({"ok": true, "session": session, "agent": "orchestrator", "pane": pane, "workspace": cwd}),
-    )
+    Ok(json!({
+        "ok": true, "session": session, "agent": "orchestrator", "pane": pane,
+        "workspace": cwd, "warning": warning,
+    }))
 }
 
 /// True when `cwd` is the default-branch checkout of a worktree hub.
@@ -108,12 +141,12 @@ fn hub_main(cwd: &Path) -> bool {
 
 /// A new worktree for one chat on `swarm/chat-<8 hex>`, made by the New workspace path, so it
 /// starts from a fresh origin and runs the project's setup script. The first prompt names the
-/// branch (ADR 0146). A failed setup starts no chat (ADR 0097).
+/// branch (ADR 0146). A failed setup starts no chat (ADR 0097), and `new_chat` then removes
+/// the worktree when it holds no change.
 async fn chat_worktree(app: &App, project: String) -> Result<String, ApiError> {
-    let id = uuid::Uuid::new_v4().simple().to_string();
     let request = lifecycle::NewWorkspace {
         project,
-        name: format!("chat-{}", &id[..8]),
+        name: swarm::task::chat_placeholder(),
         folder: None,
         prefix: Some(swarm::task::PREFIX.into()),
         mode: lifecycle::Mode::NewBranch,
@@ -122,6 +155,7 @@ async fn chat_worktree(app: &App, project: String) -> Result<String, ApiError> {
         pr: None,
         issue: None,
     };
+
     let made = execute_lifecycle(app, LifecycleAction::New(request)).await?;
     let path = made["workspace"]
         .as_str()
@@ -132,15 +166,21 @@ async fn chat_worktree(app: &App, project: String) -> Result<String, ApiError> {
                 "Swarm made no worktree for the chat; try again",
             )
         })?;
+
     match made["setup"]["state"].as_str() {
         None | Some("completed") => Ok(path.to_owned()),
-        Some(state) => Err(error(
-            StatusCode::BAD_GATEWAY,
-            &format!(
-                "The setup script of the new chat worktree {path} ended with {state}, so no chat started. {}",
-                made["setup"]["error"].as_str().unwrap_or_default()
-            ),
-        )),
+        Some(state) => {
+            let folder = PathBuf::from(path);
+            let _ =
+                tokio::task::spawn_blocking(move || swarm::task::remove_failed_chat(&folder)).await;
+            Err(error(
+                StatusCode::BAD_GATEWAY,
+                &format!(
+                    "The setup script of the new chat worktree {path} ended with {state}, so no chat started. {}",
+                    made["setup"]["error"].as_str().unwrap_or_default()
+                ),
+            ))
+        }
     }
 }
 
@@ -192,43 +232,3 @@ pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, Ap
 #[cfg(test)]
 #[path = "new_chat/tests.rs"]
 mod tests;
-
-/// Names a chat worktree's branch from the chat's first prompt, and its sidebar row with it
-/// (ADR 0146). A failure only logs, because the prompt must still go.
-pub(super) async fn name_chat_worktree(app: &App, cwd: PathBuf, prompt: String) {
-    let root = app.root.clone();
-    let named = tokio::task::spawn_blocking(move || {
-        let branch = swarm::task::name_chat(&root, &cwd, &prompt)?;
-        if let Some(branch) = &branch {
-            let path = cwd.to_string_lossy().into_owned();
-            let name = branch.trim_start_matches(swarm::task::PREFIX).to_owned();
-            choices_store::update(&root, None, |owner, _| {
-                if owner.names.contains_key(&path) {
-                    owner.names.insert(path.clone(), name.clone());
-                }
-                Ok(())
-            })
-            .map_err(|err| err.to_string())?;
-        }
-        Ok::<_, String>(branch)
-    })
-    .await;
-    if let Ok(Err(err)) = named {
-        eprintln!("swarm: the chat worktree kept its first name: {err}");
-    }
-}
-
-/// Removes the worktree of each archived chat that never got a prompt (ADR 0146). A worktree
-/// with changes or commits stays, and the refusal only logs.
-pub(super) async fn drop_unnamed_chats(app: &App, folders: Vec<PathBuf>) {
-    let root = app.root.clone();
-    let _ = tokio::task::spawn_blocking(move || {
-        let wt = swarm::task::wt_program();
-        for folder in folders {
-            if let Err(err) = swarm::task::drop_unnamed_chat(&root, &wt, &folder) {
-                eprintln!("swarm: kept the chat worktree {}: {err}", folder.display());
-            }
-        }
-    })
-    .await;
-}

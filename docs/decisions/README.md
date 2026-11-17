@@ -5,7 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
-| 0146 | Each new chat gets its own worktree, named from its first prompt | 2 | accepted | 2026-11-17 | ↑0135 ↑0142 ↑0145 →0019 →0097 →0143 →0144 |
+| 0146 | Each new chat gets its own worktree, named from its first prompt | 2 | accepted | 2026-11-17 | ↑0135 ↑0142 ↑0143 ↑0145 →0019 →0097 →0144 |
 | 0145 | A task lands on origin and local main together, or as a PR | 2 | accepted | 2026-11-12 | ↑0135 →0142 →0144 |
 | 0144 | Swarm task sweep removes merged worktrees and keeps branches | 2 | accepted | 2026-11-11 | ↑0055 ↑0135 →0134 →0142 |
 | 0143 | The main wall's shell part warns and never blocks | 2 | accepted | 2026-11-11 | ↑0135 →0040 |

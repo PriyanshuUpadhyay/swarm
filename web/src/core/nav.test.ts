@@ -256,29 +256,6 @@ describe("a new chat", () => {
   });
 });
 
-describe("a chat started with no new worktree", () => {
-  it("asks the server to start it in the folder itself", async () => {
-    const posts: { path: string; body: unknown }[] = [];
-    const api = {
-      snapshot: async (): Promise<Snapshot> => ({ version: 1, sessions: [], agents: {} }),
-      tree: async () => tree([section("/r/app", "project", [appMain, chat("new", "/r/app")])]),
-      tabs: async () => {
-        throw new ApiError(404, "unknown workspace");
-      },
-      post: async (path: string, body: unknown) => {
-        posts.push({ path, body });
-        return { session: "new" };
-      },
-      choice: async (rev: string) => ({ revision: rev, version: 1 }),
-    } as unknown as Api;
-    const app = new App(api);
-    app.notice = () => {};
-    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
-    await app.startChat("/r/app", { here: true });
-    expect(posts[0]).toEqual({ path: "/api/chat/new", body: { cwd: "/r/app", here: true } });
-  });
-});
-
 describe("a chat started from the tab strip", () => {
   it("is a plain tab: closing its tab keeps the chat, and ⇧⌘T opens it again", async () => {
     const writes: Record<string, unknown>[] = [];

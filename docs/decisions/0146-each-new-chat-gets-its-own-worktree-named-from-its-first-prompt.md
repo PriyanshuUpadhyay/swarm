@@ -2,8 +2,8 @@
 status: accepted
 date: 2026-11-17
 deciders: [user]
-amends: ["0135", "0142", "0145"]
-related: ["0019", "0097", "0143", "0144"]
+amends: ["0135", "0142", "0143", "0145"]
+related: ["0019", "0097", "0144"]
 informed-by:
   - 'owner, 2026-11-17: "a deterministic way to handling these would be better… i had liked how conductor.build used to handle worktrees and their initialization without much input from the user… right now we are complicating it quite a lot"'
   - 'owner, 2026-11-17: "new chat. but we will use our own worktree setup and if we can make it leaner then we do that. user should not have to pick branch name and so on. it can be created from the first prompt of that chat. each chat can be done in a new worktree i feel"'
@@ -23,20 +23,25 @@ flow confusing and asked for one that needs no input, like Conductor's.
 
 A new chat whose folder is the default-branch worktree of a bare hub starts in its own new
 worktree. The server makes it before the agent starts, through the New workspace path: it
-fetches origin, adds `wt/chat-<8 hex>` on `swarm/chat-<8 hex>` from the origin default, and
-runs the project's setup script. A failed create or setup starts no chat (ADR 0097). The
-server then writes the task record and fast-forwards local main to origin (ADR 0145).
+fetches origin, adds `chat-<8 hex>` in the project's worktree folder (`wt/` in a hub) on
+`swarm/chat-<8 hex>` from the origin default, and runs the project's setup script. A failed
+create, setup, or launch starts no chat (ADR 0097), and swarm removes that worktree when it
+holds no change. The server then writes the task record and fast-forwards local main to origin
+(ADR 0145). A warning from that step, such as a ref hook that could not be set, goes in the
+reply and the server log.
 
-The chat's first prompt renames the branch to `swarm/` and the first five words of the prompt,
-lowercase and joined by `-`, at most 40 characters. A taken name gets `-2` to `-9`. The
-folder keeps its name, so the agent's folder never changes. The sidebar row takes the new name.
+The chat's first prompt renames the branch to `swarm/` and the first five ASCII words of the
+prompt, lowercase and joined by `-`, at most 40 characters. A prompt with no ASCII word gives
+`swarm/untitled-<8 hex>`. A name that a local or an origin branch has gets `-2` to `-9`; when all
+are taken, the branch keeps its first name and the server logs it. The folder keeps its name, so
+the agent's folder never changes. The sidebar row takes the new name.
 
-When a chat is archived and its branch still has no name, swarm drops its worktree. `drop`
-still refuses a worktree with changes or commits. Setup output that git sees counts as a
-change, so such a worktree stays.
+When a chat is archived and its branch still has no name, swarm drops its worktree, unless a
+chat that is not archived still runs in it. `drop` still refuses a worktree with changes or
+commits. Setup output that git sees counts as a change, so such a worktree stays.
 
-`swarm task start` is removed. `land [--pr]`, `drop`, `list`, and `sweep` stay, and with no
-name they act on the chat worktree that holds the current folder.
+`swarm task start` is removed. `land [--pr]`, `drop`, `list`, and `sweep` stay. With no name,
+`land` and `drop` act on the chat worktree that holds the current folder.
 
 The "+" menu has "Default profile, no new worktree", which starts the chat in the folder
 itself. Continue keeps a chat in its folder. Plain clones keep today's behavior, because the
@@ -45,5 +50,6 @@ task commands and the main wall exist only in hubs.
 ## Consequences
 
 - One create path, swarm's own, makes every worktree. Worktrunk still merges and removes.
-- The edit wall on main stays (ADR 0135, 0143) and points to a new chat.
+- The edit wall on main stays (ADR 0135), and its block and its warning (ADR 0143) tell the
+  agent to ask the owner for a new chat.
 - A chat that ran before this change stays in its saved folder on resume.

@@ -47,6 +47,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
     let interrupt = matches!(action, Action::Interrupt(_));
     let archive = matches!(action, Action::Archive(_));
     let mut archived_folders = Vec::new();
+    let mut archived_ids = Vec::new();
     let (call, text) = match action {
         Action::Send(body) => {
             if body.text.trim().is_empty() {
@@ -107,6 +108,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
             }
             for id in &body.ids {
                 archived_folders.push(action_session(app, id)?.cwd);
+                archived_ids.push(id.clone());
             }
             let mut call = default_call().args(&["session", verb]);
             call.args.extend(body.ids);
@@ -194,7 +196,7 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
     };
     run_cli(app, call, text).await?;
     if archive {
-        drop_unnamed_chats(app, archived_folders).await;
+        drop_unnamed_chats(app, archived_folders, archived_ids).await;
     }
     Ok(json!({"ok": true}))
 }
@@ -216,3 +218,67 @@ fn archived_titles(snapshot: &Value, owner: &choices::OwnerChoices) -> BTreeMap<
 #[cfg(test)]
 #[path = "action_execute/tests.rs"]
 mod tests;
+
+/// Names a chat worktree's branch from the chat's first prompt, and its sidebar row with it
+/// (ADR 0146). A failure only logs, because the prompt must still go.
+async fn name_chat_worktree(app: &App, cwd: PathBuf, prompt: String) {
+    let root = app.root.clone();
+    let named = tokio::task::spawn_blocking(move || {
+        let Some(branch) = swarm::task::name_chat(&root, &cwd, &prompt)? else {
+            return Ok(());
+        };
+
+        let path = cwd.to_string_lossy().into_owned();
+        let name = branch.trim_start_matches(swarm::task::PREFIX).to_owned();
+        choices_store::update(&root, None, |owner, _| {
+            if owner.names.contains_key(&path) {
+                owner.names.insert(path.clone(), name.clone());
+            }
+            Ok(())
+        })
+        .map(|_| ())
+        .map_err(|err| format!("{branch} is named, but its sidebar row kept its old name: {err}"))
+    })
+    .await;
+    match named {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => eprintln!("swarm: chat worktree name: {err}"),
+        Err(err) => eprintln!("swarm: chat worktree name task failed: {err}"),
+    }
+}
+
+/// Removes the worktree of each archived chat that never got a prompt (ADR 0146), unless a chat
+/// that is not archived still runs in it. A worktree with changes or commits stays, and the
+/// refusal only logs.
+async fn drop_unnamed_chats(app: &App, folders: Vec<PathBuf>, archived: Vec<String>) {
+    let root = app.root.clone();
+    let dropped = tokio::task::spawn_blocking(move || {
+        let wt = swarm::task::wt_program();
+        let connection = read_connection(&root).map_err(|err| err.to_string())?;
+        for folder in folders {
+            let folder_text = folder.to_string_lossy();
+            // The archive call just ran, so the archived ids count as gone whatever the row says.
+            let mut statement = connection
+                .prepare("SELECT id FROM session WHERE cwd = ?1 AND archived_at IS NULL")
+                .map_err(|err| err.to_string())?;
+            let ids = statement
+                .query_map([folder_text.as_ref()], |row| row.get::<_, String>(0))
+                .map_err(|err| err.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|err| err.to_string())?;
+            if ids.iter().any(|id| !archived.contains(id)) {
+                continue;
+            }
+            if let Err(err) = swarm::task::drop_unnamed_chat(&root, &wt, &folder) {
+                eprintln!("swarm: kept the chat worktree {folder_text}: {err}");
+            }
+        }
+        Ok::<_, String>(())
+    })
+    .await;
+    match dropped {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => eprintln!("swarm: archived chat worktrees were not checked: {err}"),
+        Err(err) => eprintln!("swarm: archived chat worktree task failed: {err}"),
+    }
+}

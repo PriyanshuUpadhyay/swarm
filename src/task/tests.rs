@@ -63,10 +63,11 @@ fn commit(dir: &Path, file: &str) {
     }
 }
 
-/// A chat worktree on `swarm/<name>` as the app makes one, with its record.
+/// A chat worktree on `swarm/<name>` from local main, with its record as the app writes it.
 fn chat(root: &Path, main: &Path, name: &str, session: Option<&str>) -> Task {
     let path = main.parent().unwrap().join(name);
     let branch = format!("{PREFIX}{name}");
+
     git(
         main,
         &[
@@ -85,7 +86,7 @@ fn chat(root: &Path, main: &Path, name: &str, session: Option<&str>) -> Task {
 }
 
 #[test]
-fn a_task_starts_lands_into_main_and_is_removed() {
+fn a_chat_worktree_lands_into_main_and_is_removed() {
     let Some(wt) = real_wt() else {
         eprintln!("skipped: Worktrunk is not installed");
         return;
@@ -166,18 +167,28 @@ fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
     let main = dir.join("wt/main");
     let task = chat(&root, &main, "chat-0123abcd", Some("s1"));
     let path = PathBuf::from(&task.path);
-    // Another chat already has the name, so this one gets -2.
+
+    // A local branch has the name and origin has -2, so this chat gets -3.
+    let expected = "swarm/fix-the-login-redirect-bug-3";
     git(&main, &["branch", "swarm/fix-the-login-redirect-bug"]).unwrap();
+    let origin_ref = "refs/remotes/origin/swarm/fix-the-login-redirect-bug-2";
+    git(&main, &["update-ref", origin_ref, "HEAD"]).unwrap();
     let prompt = "Fix the login redirect bug now please";
     let named = name_chat(&root, &path, prompt).unwrap();
-    assert_eq!(named.as_deref(), Some("swarm/fix-the-login-redirect-bug-2"));
+    assert_eq!(named.as_deref(), Some(expected));
     assert_eq!(name_chat(&root, &path, "a second prompt").unwrap(), None);
+
     let saved = records(&root);
     assert_eq!(saved.len(), 1);
-    assert_eq!(saved[0].branch, "swarm/fix-the-login-redirect-bug-2");
+    assert_eq!(saved[0].branch, expected);
     assert_eq!(saved[0].session.as_deref(), Some("s1"));
     let dropped = drop(&root, &wt, &path, None).unwrap();
-    assert_eq!(dropped.branch, "swarm/fix-the-login-redirect-bug-2");
+    assert_eq!(dropped.branch, expected);
     assert!(!path.exists());
     assert!(records(&root).is_empty());
+
+    // A prompt with no ASCII word still names the chat, so archive never reads it as unused.
+    let other = chat(&root, &main, "chat-89abcdef", None);
+    let named = name_chat(&root, Path::new(&other.path), "🙂").unwrap();
+    assert_eq!(named.as_deref(), Some("swarm/untitled-89abcdef"));
 }
