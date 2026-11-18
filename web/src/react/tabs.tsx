@@ -38,7 +38,7 @@ export function TabStrip({ app }: { app: App }) {
   // What the main view shows: a move to another chat bumps navSeq, so the start is no longer shown.
   const viewing = useNewChat(app, () => app.newChat.shown()?.id ?? null);
   const ws = workspaceRow(tree, workspace);
-  // A starting chat is a tab of the workspace it started from until it opens (ADR 0147).
+  // A starting chat is a tab of the workspace it started from until it opens (ADR 0149).
   const startTabs = useMemo(() => Object.values(starts).filter((s) => s.from === workspace).map(startTab), [starts, workspace]);
   const list = useMemo(() => [...(tabs?.tabs ?? []), ...startTabs], [tabs, startTabs]);
   const selected = viewing ? list.find((t) => t.id === START + viewing) : list.find((t) => t.session === openId);

@@ -1,4 +1,4 @@
-// The new chat composer and the chats it starts (ADR 0147). ⌘N opens the composer; ⌘Enter posts
+// The new chat composer and the chats it starts (ADR 0149). ⌘N opens the composer; ⌘Enter posts
 // `/api/chat/new`, which answers with a start id at once, and `chat-start` frames report each step.
 
 import type { App } from "./app";

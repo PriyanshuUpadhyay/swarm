@@ -55,7 +55,7 @@ pub(super) fn apply_lifecycle(
                 |owner: &mut choices::OwnerChoices, state: &mut choices::ViewState| {
                     lifecycle::remember(owner, &path, &project.path);
                     // Only the keys that create_workspace changed: a chat start runs this off the
-                    // action lane, so other keys may have changed since its snapshot (ADR 0147).
+                    // action lane, so other keys may have changed since its snapshot (ADR 0149).
                     let saved = owner
                         .project_defaults
                         .entry(project.path.clone())

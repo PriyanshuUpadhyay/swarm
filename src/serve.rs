@@ -63,7 +63,7 @@ struct Server {
     handoffs: Mutex<HashMap<String, HandoffRun>>,
     chat_create: tokio::sync::Mutex<()>,
     /// One lock for each project, held while a chat start picks its worktree name and makes it,
-    /// so two starts with one prompt get two names (ADR 0147).
+    /// so two starts with one prompt get two names (ADR 0149).
     worktree_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     // shortcut: the cooldown resets on server restart; seed from cache if restart bursts matter.
     usage_refresh: Mutex<HashMap<String, (tokio::time::Instant, Option<ApiError>)>>,
@@ -94,7 +94,7 @@ struct Hub {
     followers: HashMap<String, Follower>,
     retiring: HashMap<String, watch::Receiver<bool>>,
     row_cache: VecDeque<(String, LiveRows)>,
-    /// The `done` frames of the last chat starts, for a page whose stream was down (ADR 0147).
+    /// The `done` frames of the last chat starts, for a page whose stream was down (ADR 0149).
     starts_done: VecDeque<(String, Value)>,
     /// The ids of chat starts that have not sent their `done` frame yet.
     starts_running: HashSet<String>,
@@ -171,13 +171,13 @@ struct Follower {
 }
 
 impl Hub {
-    /// Marks a chat start running until its `done` frame (ADR 0147).
+    /// Marks a chat start running until its `done` frame (ADR 0149).
     fn begin_start(&mut self, id: String) {
         self.starts_running.insert(id);
     }
 
     /// Ends a chat start and keeps its `done` frame, with the last `STARTS_KEPT`, for a page
-    /// whose stream was down (ADR 0147).
+    /// whose stream was down (ADR 0149).
     fn finish_start(&mut self, id: &str, frame: Value) {
         self.starts_running.remove(id);
         if self.starts_done.len() == STARTS_KEPT {

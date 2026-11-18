@@ -1,5 +1,5 @@
 // The run picker: models of each CLI, the thinking level and the account. The chat's run chip
-// and the new chat composer both show it (ADR 0110, ADR 0147).
+// and the new chat composer both show it (ADR 0110, ADR 0149).
 
 import { useEffect, useId, useState, useSyncExternalStore, type Dispatch } from "react";
 import type { App } from "../core/app";

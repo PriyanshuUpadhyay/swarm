@@ -103,7 +103,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
 /** The open chat, else the selected workspace's landing, else Home; the workspace panel beside it. */
 function Main({ app, changes }: { app: App; changes: Changes }) {
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
-  // A starting chat shows its steps until the owner moves away (ADR 0147).
+  // A starting chat shows its steps until the owner moves away (ADR 0149).
   const start = useNewChat(app, () => app.newChat.shown());
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   const reconnecting = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);

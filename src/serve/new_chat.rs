@@ -3,7 +3,7 @@
 use super::*;
 
 /// `POST /api/chat/new`: checks the request, answers at once with a start id, and starts the
-/// chat in the background (ADR 0147). Each step goes out as a `chat-start` frame with that id;
+/// chat in the background (ADR 0149). Each step goes out as a `chat-start` frame with that id;
 /// the last one, step `done`, carries the session and its folder, or the error.
 pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError> {
     let (start, launch) = checked_start(app, body).await?;

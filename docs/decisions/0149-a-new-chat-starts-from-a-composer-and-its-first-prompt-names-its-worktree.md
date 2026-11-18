@@ -10,7 +10,7 @@ informed-by:
   - 'owner, 2026-11-18: "2a 3 not sure. cmd t and cmd n doing the same thing?? cmd t should just create a new chat in the same worktree / 4 accepted. but branch name be more task friendly"'
 ---
 
-# 0147. A new chat starts from a composer, and its first prompt names its worktree
+# 0149. A new chat starts from a composer, and its first prompt names its worktree
 
 ## Context and Problem Statement
 

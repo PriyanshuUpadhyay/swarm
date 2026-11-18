@@ -208,7 +208,7 @@ beside the tab strip copies the full id.
    starting an agent. A folder that is not a Git repository gets an offer to run `git init`.
    Press ⌘N (or the **+** on the project's header), type the first prompt, and press ⌘Enter. In a
    Git project the chat gets its own worktree, on a branch named from the prompt; a plain folder
-   starts the chat in itself (ADR 0147). ⌘T starts a chat in the open worktree with no prompt.
+   starts the chat in itself (ADR 0149). ⌘T starts a chat in the open worktree with no prompt.
 2. To use another model, click **Switch model** in the chat.
 3. Type your task. When the chair launches a worker, the worker's pane opens as a column to the
    right of the chat, and you can type into it.

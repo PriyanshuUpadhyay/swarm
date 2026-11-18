@@ -43,7 +43,7 @@ export class App {
   readonly settings = new Settings(this);
   /** The kit's blocks and skills (ADR 0111). */
   readonly skills = new Skills(this);
-  /** The new chat composer and the chats it starts (ADR 0147). */
+  /** The new chat composer and the chats it starts (ADR 0149). */
   readonly newChat = new NewChat(this);
   /** Whether macOS lets swarm's notices through (ADR 0102). */
   readonly notices = new Notices(this);

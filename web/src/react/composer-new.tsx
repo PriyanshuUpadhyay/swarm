@@ -1,4 +1,4 @@
-// The new chat composer (ADR 0147): one part, as the start page when no chat is open and as an
+// The new chat composer (ADR 0149): one part, as the start page when no chat is open and as an
 // overlay over the open chat. The owner types the first prompt, keeps or changes the project, the
 // place and the run, and presses ⌘Enter. A starting chat shows its steps in `StartingView`.
 

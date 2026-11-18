@@ -188,7 +188,7 @@ exit 1
 
 #[tokio::test]
 async fn a_session_send_finishes_while_another_session_action_is_running() {
-    // A new chat's launch runs off the queue (ADR 0147), so only a session action can hold it.
+    // A new chat's launch runs off the queue (ADR 0149), so only a session action can hold it.
     let fixture = action_fixture();
     let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
     let other = swarm::store::create_session(
@@ -262,7 +262,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
 
 #[tokio::test]
 async fn a_new_chat_replies_with_its_start_id_while_its_launch_still_runs() {
-    // ADR 0147: the page opens the chat at once and follows its steps.
+    // ADR 0149: the page opens the chat at once and follows its steps.
     let fixture = action_fixture();
 
     std::fs::write(

@@ -1,4 +1,4 @@
-// A chat that is starting (ADR 0147): its steps as the `chat-start` frames report them, its setup
+// A chat that is starting (ADR 0149): its steps as the `chat-start` frames report them, its setup
 // output, and a box whose text goes after the first prompt.
 
 import { CircleCheckIcon, LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";

@@ -1,4 +1,4 @@
-//! The new chat composer's preview card (ADR 0147).
+//! The new chat composer's preview card (ADR 0149).
 
 use super::*;
 
@@ -6,7 +6,7 @@ use super::*;
 /// prompt does, for the composer's card. It makes and saves nothing; like each lifecycle read,
 /// it refreshes the server's tree cache, and the page reads it on each pause in typing. A plain folder is
 /// `{place: "folder"}`; a git project names the new worktree's branch, folder, base, the last
-/// origin fetch and the setup script's first line (ADR 0147).
+/// origin fetch and the setup script's first line (ADR 0149).
 pub(in crate::serve) async fn new_chat_preview(
     State(app): State<App>,
     Query(query): Query<HashMap<String, String>>,

@@ -1,4 +1,4 @@
-/// The chat worktree part of `lifecycle_routes_child` (ADR 0146, ADR 0147), in its environment.
+/// The chat worktree part of `lifecycle_routes_child` (ADR 0146, ADR 0149), in its environment.
 async fn chat_worktrees(fixture: &Fixture, root: &Path, connection: &rusqlite::Connection) {
     // ADR 0146: a new chat on a hub's main checkout runs in its own new worktree, after setup.
     let hub = root.join("hub");
@@ -124,7 +124,7 @@ esac
         .unwrap();
     assert_eq!(kept["workspace"], json!(main));
 
-    // ADR 0147: a first prompt names the new worktree when it is made, and goes to the chair.
+    // ADR 0149: a first prompt names the new worktree when it is made, and goes to the chair.
     let id = uuid::Uuid::new_v4().to_string();
     let named = hub.join("wt/fix-flaky-smoke-test").to_string_lossy().into_owned();
     chat_session(&json!({"session": id}), &named);
@@ -164,7 +164,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
     let home = fixture.app.root.parent().unwrap();
     assert_eq!(std::fs::read_to_string(home.join("typed")).unwrap(), prompt);
 
-    // ADR 0147: place `new` in a git project that is no hub still starts the chat in a new worktree.
+    // ADR 0149: place `new` in a git project that is no hub still starts the chat in a new worktree.
     let clone = root.join("clone");
     sh("cd .. && git init -q -b main clone && cd clone && echo a > a.txt && git add a.txt \
         && git -c user.name=t -c user.email=t@t commit -q -m a");

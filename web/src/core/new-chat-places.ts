@@ -1,4 +1,4 @@
-// The composer's projects and places (ADR 0147): which folder a new chat starts in, and the
+// The composer's projects and places (ADR 0149): which folder a new chat starts in, and the
 // words and checks for each place.
 
 import { workspaceRow, type TreeView } from "./nav";

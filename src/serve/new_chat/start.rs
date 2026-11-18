@@ -1,4 +1,4 @@
-//! A new chat's start in the background, step by step (ADR 0147).
+//! A new chat's start in the background, step by step (ADR 0149).
 
 use super::*;
 
@@ -155,7 +155,7 @@ impl Start {
 
         self.enter(Step::Start);
         // In a hub, a chat that did not start removes its own worktree, so a retry does not add
-        // another; outside a hub the worktree stays (ADR 0147).
+        // another; outside a hub the worktree stays (ADR 0149).
         let session = match open_session(&app, &cwd).await {
             Ok(session) => session,
             Err(err) => {
@@ -205,7 +205,7 @@ impl Start {
 
     /// A worktree for the chat in `project`, made by the New workspace path, so it starts from a
     /// fresh origin and runs the project's setup script. Place `new` makes `swarm/` and the
-    /// prompt's name (ADR 0147), or `swarm/chat-<8 hex>` with no prompt, which the first prompt
+    /// prompt's name (ADR 0149), or `swarm/chat-<8 hex>` with no prompt, which the first prompt
     /// names later (ADR 0146). A failed setup starts no chat (ADR 0097); in a hub, a worktree of
     /// place `new` then goes when it holds no change. Any other worktree stays, as New workspace
     /// kept it.

@@ -49,13 +49,13 @@ pub(super) struct NewChat {
     pub(super) model: Option<String>,
     pub(super) account: Option<String>,
     pub(super) effort: Option<String>,
-    /// The first prompt, sent once the chair is ready. It names a new chat worktree (ADR 0147).
+    /// The first prompt, sent once the chair is ready. It names a new chat worktree (ADR 0149).
     pub(super) prompt: Option<String>,
     /// Where the chat runs. Absent keeps ADR 0146: a hub's main makes the chat's own worktree.
     pub(super) place: Option<Place>,
 }
 
-/// Where a new chat runs (ADR 0147). `new` makes the chat its own worktree in `cwd`'s git
+/// Where a new chat runs (ADR 0149). `new` makes the chat its own worktree in `cwd`'s git
 /// project, and `here` starts it in `cwd`. `branch`, `pr` and `issue` make or open a worktree in
 /// `cwd`'s project, as New workspace did.
 #[derive(Deserialize, Clone)]
