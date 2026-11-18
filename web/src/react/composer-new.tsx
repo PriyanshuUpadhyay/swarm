@@ -5,7 +5,7 @@
 import { LoaderCircleIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import type { App } from "../core/app";
-import { cliName, levelWord, type Run } from "../core/composer";
+import { cliName, levelWord, profileRun, sameRun, type Run } from "../core/composer";
 import { type Profile } from "../core/lifecycle";
 import { DEFAULT_ROLE, defaultPlace, placeLabel, placeReady, defaultTarget, targets, type Place, type Preview, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
@@ -15,14 +15,6 @@ import { PlacePanel } from "./place-lists";
 import { RunPicker, runModel, useRunCatalog } from "./run-picker";
 
 /** The card of a new worktree; the composer asks only for a git project's place `new`. */
-
-/** A profile's run: its first runner, on the CLI's login. */
-function profileRun(profile: Profile | undefined): Run | null {
-  const r = profile?.runners[0];
-  return r ? { provider: r.provider, model: r.model ?? null, effort: r.effort ?? null, account: null } : null;
-}
-
-const sameRun = (a: Run | null, b: Run | null) => a?.provider === b?.provider && a?.model === b?.model && a?.effort === b?.effort && a?.account === b?.account;
 
 /** A read of NewChat that also renders again when navSeq moves, because shown() and composing() read it. */
 export function useNewChat<T>(app: App, read: () => T): T {
@@ -310,26 +302,22 @@ function usePreview(app: App, target: Target, place: Place, text: string): Previ
 }
 
 function PreviewCard({ target, place, preview }: { target: Target; place: Place; preview: Preview | "failed" | null }) {
-  const rows: [string, string][] =
-    preview === "failed"
-      ? [["Branch", "Not known yet; the send names it"]]
-      : preview
-      ? [
-          ["Branch", preview.branch ?? "swarm/chat-…, renamed from the first prompt"],
-          ["Folder", preview.folder ?? "named from the branch"],
-          ["Base", preview.base ?? "none"],
-          ["Fetched", preview.fetchedUnixS ? new Date(preview.fetchedUnixS * 1000).toLocaleString() : "never"],
-          ...(preview.setup ? ([["Setup", preview.setup]] as [string, string][]) : []),
-        ]
-      : place.kind === "new" && target.git
-        ? [["Branch", "Reading…"]]
-        : place.kind === "here" || !target.git
-          ? [["Folder", target.cwd]]
-          : [["Starts on", placeLabel(place, target)]];
+  const worktree = place.kind === "new" && target.git;
+  const read = (p: Preview): [string, string][] => [
+    ["Branch", p.branch ?? "swarm/chat-…, renamed from the first prompt"],
+    ["Folder", p.folder ?? "named from the branch"],
+    ["Base", p.base ?? "none"],
+    ["Fetched", p.fetchedUnixS ? new Date(p.fetchedUnixS * 1000).toLocaleString() : "never"],
+    ...(p.setup ? ([["Setup", p.setup]] as [string, string][]) : []),
+  ];
+
+  const elsewhere: [string, string][] = place.kind === "here" || !target.git ? [["Folder", target.cwd]] : [["Starts on", placeLabel(place, target)]];
+  const waiting: [string, string][] = [["Branch", preview === "failed" ? "Not known yet; the send names it" : "Reading…"]];
+  const rows = !worktree ? elsewhere : preview && preview !== "failed" ? read(preview) : waiting;
 
   return (
     <aside className="grid content-start gap-1.5 rounded-xl border border-border p-3 text-sm" aria-label="What starts" data-testid="new-chat-preview">
-      <h3 className="text-xs font-medium text-muted-foreground">{place.kind === "new" && target.git ? "A new worktree" : "Where the chat runs"}</h3>
+      <h3 className="text-xs font-medium text-muted-foreground">{worktree ? "A new worktree" : "Where the chat runs"}</h3>
       {rows.map(([k, v]) => (
         <div key={k} className="grid grid-cols-[72px_1fr] gap-2">
           <span className="text-muted-foreground">{k}</span>

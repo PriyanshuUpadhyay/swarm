@@ -3,6 +3,7 @@
 
 import type { Agent, Display, Session } from "./api";
 import type { Meter } from "./settings";
+import type { Profile } from "./settings-types";
 
 /** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
 export type Prompt = { id: string; question: string; choices: string[]; details?: string[] };
@@ -282,3 +283,11 @@ export function chooseModel(current: Run, draft: Run, cli: { id: string; efforts
   const account = login === accountCli(draft.provider, draft.model) ? draft.account : login === accountCli(current.provider, current.model) ? current.account : null;
   return { provider: cli.id, model, effort, account };
 }
+
+/** A profile's run: its first runner, on the CLI's login. */
+export function profileRun(profile: Profile | undefined): Run | null {
+  const r = profile?.runners[0];
+  return r ? { provider: r.provider, model: r.model ?? null, effort: r.effort ?? null, account: null } : null;
+}
+
+export const sameRun = (a: Run | null, b: Run | null) => a?.provider === b?.provider && a?.model === b?.model && a?.effort === b?.effort && a?.account === b?.account;

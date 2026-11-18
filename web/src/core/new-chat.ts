@@ -20,7 +20,8 @@ export type Preview = { branch: string | null; folder: string | null; base: stri
 /** The composer's run: a profile, and a run the owner picked instead of its default. */
 export type ComposerRun = { role: string; run: Run | null };
 
-export type StartStep = { step: string; state: "running" | "completed" | "failed"; error: string | null };
+/** One start step; `words` is the server's text for it. */
+export type StartStep = { step: string; words: string | null; state: "running" | "completed" | "failed"; error: string | null };
 
 /** A chat that is starting: its steps, its setup output, and text to send after the first prompt. */
 export type Starting = {
@@ -148,7 +149,10 @@ export function placeReady(place: Place): boolean {
 const TITLE_CHARS = 60;
 
 /** The tab title of a start: the prompt's first line, else New chat. It cuts whole characters. */
-const startTitle = (prompt: string) => Array.from(prompt.trim().split("\n")[0]).slice(0, TITLE_CHARS).join("") || "New chat";
+const startTitle = (prompt: string) => firstLine(prompt.trim(), TITLE_CHARS) || "New chat";
+
+/** The first line of `text`, cut to `chars` code points, so an emoji at the cut stays whole. */
+export const firstLine = (text: string, chars: number) => Array.from(text.split("\n")[0]).slice(0, chars).join("");
 
 export class NewChat {
   state: NewChatState = { composer: null, unsent: "", starts: {}, viewing: null };
@@ -206,7 +210,6 @@ export class NewChat {
     const composed = targets(this.app.view.tree, start.cwd).some((t) => t.cwd === start.cwd);
     if (!composed) return void this.start(start.cwd, start.prompt, start.place, { role: DEFAULT_ROLE, run: null });
     this.open(start.cwd, start.place, this.state.unsent || start.prompt);
-    this.set({ unsent: "" });
   }
 
   /** The composer's text as the owner types, so a move away does not lose it; no render needs it.
@@ -312,7 +315,7 @@ export class NewChat {
 
   /** A `setup` or `chat-start` frame; the promise ends when a started chat has opened and its
    *  queued text went. It never rejects: a failure shows a notice. */
-  onFrame(event: "setup" | "chat-start", data: Record<string, unknown>): Promise<void> | undefined {
+  async onFrame(event: "setup" | "chat-start", data: Record<string, unknown>): Promise<void> {
     if (event === "setup") {
       for (const start of Object.values(this.state.starts)) {
         if (start.workspace !== data.workspace) continue;
@@ -343,7 +346,8 @@ export class NewChat {
       return this.opened(start, String(data.session));
     }
 
-    const steps = [...start.steps.filter((s) => s.step !== step), { step, state, error } as StartStep];
+    const words = typeof data.words === "string" ? data.words : null;
+    const steps = [...start.steps.filter((s) => s.step !== step), { step, words, state, error } as StartStep];
     this.setStart(id, {
       steps,
       ...(typeof data.workspace === "string" ? { workspace: data.workspace } : {}),

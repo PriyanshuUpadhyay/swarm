@@ -5,7 +5,7 @@ import { isChair, paneStatus } from "./panes";
 import { chatRows, nextBlocked, paletteSources, recency, workspaceOf, workspaceRow, type PaletteItem } from "./nav";
 import { type Ask, SIDEBAR_VIEWS, PROMPT_JUMP } from "./app-types";
 import type { App } from "./app";
-import { DEFAULT_ROLE } from "./new-chat";
+import { DEFAULT_ROLE, firstLine } from "./new-chat";
 
 /** A new chat waits up to LIST_POLLS * LIST_POLL_MS (5 s) for the server's tree to list it. */
 const LIST_POLLS = 20;
@@ -161,8 +161,7 @@ export class AppActions {
     const prompts: PaletteItem[] = open
       ? this.app.composing.history(open).map((text, i) => ({
           id: `prompt:${i}`,
-          // By code point, so an emoji at the cut stays whole.
-          title: Array.from(text.split("\n")[0]).slice(0, 120).join(""),
+          title: firstLine(text, 120),
           group: "prompt",
           run: () => {
             this.app.composing.reuse(open, text);

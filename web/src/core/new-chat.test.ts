@@ -44,13 +44,13 @@ describe("new chat composer", () => {
 
     const run = { provider: "codex", model: "gpt-5", effort: "high", account: null };
     const posted = chats.start("/hub/wt/main", "Fix the flaky smoke test\n", { kind: "new" }, { role: "chat", run });
-    chats.onFrame("chat-start", { start: "s1", step: "worktree", state: "running" });
+    chats.onFrame("chat-start", { start: "s1", step: "worktree", words: "Make the worktree", state: "running" });
     await posted;
     expect(calls[0]).toBe('/api/chat/new {"cwd":"/hub/wt/main","role":"chat","prompt":"Fix the flaky smoke test","place":{"kind":"new"},"provider":"codex","model":"gpt-5","effort":"high"}');
     expect(chats.state.composer).toBeNull();
     expect(chats.shown()).toMatchObject({ id: "s1", title: "Fix the flaky smoke test", from: "/hub/wt/fix" });
 
-    expect(chats.shown()?.steps).toEqual([{ step: "worktree", state: "running", error: null }]);
+    expect(chats.shown()?.steps).toEqual([{ step: "worktree", words: "Make the worktree", state: "running", error: null }]);
     chats.onFrame("chat-start", { start: "s1", step: "worktree", state: "completed", workspace: "/hub/wt/fix-flaky-smoke-test", branch: "swarm/fix-flaky-smoke-test" });
     chats.onFrame("setup", { workspace: "/hub/wt/fix-flaky-smoke-test", state: "running" });
     chats.onFrame("setup", { workspace: "/hub/wt/fix-flaky-smoke-test", state: "output", text: "npm ci\n" });

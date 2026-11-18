@@ -49,9 +49,16 @@ pub(super) struct Start {
 }
 
 impl Start {
-    /// Publishes a `chat-start` frame for this start.
+    /// Publishes a `chat-start` frame for this start, with the words the page shows for its step.
     pub(super) fn frame(&self, step: &str, state: &str, extra: Value) {
-        let mut payload = json!({"start": self.id, "step": step, "state": state});
+        let words = match step {
+            "worktree" => Some("Make the worktree"),
+            "setup" => Some("Run the setup script"),
+            "start" => Some("Start the agent"),
+            "send" => Some("Send your prompt"),
+            _ => None,
+        };
+        let mut payload = json!({"start": self.id, "step": step, "state": state, "words": words});
         if let Value::Object(extra) = extra {
             payload.as_object_mut().unwrap().extend(extra);
         }
