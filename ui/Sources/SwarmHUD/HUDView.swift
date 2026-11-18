@@ -163,6 +163,9 @@ extension UsageModel {
         return readings.count <= 1 ? readings.first ?? "" : nil
     }
 
+    /// What the owner sees now: the open card, the popup, or the closed wings.
+    var shownSize: CGSize { isOpen ? openSize : popup != nil ? popupSize : closedSize }
+
     var openSize: CGSize {
         let table = ledger(accounts)
         var height = Layout.header(notch: notch) + Layout.belowStatus + Layout.bottom

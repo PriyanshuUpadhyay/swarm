@@ -18,7 +18,7 @@ pub(crate) fn notice_chair_done(
     reply: Option<&str>,
     now: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !is_chair(connection, session, agent) {
+    if !swarm::store::is_lead(connection, session, agent)? {
         return Ok(());
     }
 
@@ -60,7 +60,7 @@ pub(crate) fn notice_failed(
     agent: &str,
     detail: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !is_chair(connection, session, agent) {
+    if !swarm::store::is_lead(connection, session, agent)? {
         return Ok(());
     }
     let body = detail
@@ -99,13 +99,6 @@ pub(crate) fn notice_blocked(
         notice_kind::WAITING,
         what,
     )
-}
-
-fn is_chair(connection: &rusqlite::Connection, session: &str, agent: &str) -> bool {
-    swarm::store::orchestrator_of(connection, session)
-        .ok()
-        .as_deref()
-        == Some(agent)
 }
 
 /// The agent's log, else the chair's.

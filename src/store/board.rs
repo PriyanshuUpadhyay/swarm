@@ -106,7 +106,8 @@ pub fn body_path(project_id: &str, n: i64) -> String {
     format!("boards/{hex}/{n}.md")
 }
 
-pub(super) fn is_lead(
+/// Whether `agent_id` is the session's orchestrator; a read error reads as no.
+pub fn is_lead(
     tx: &Connection,
     session_id: &str,
     agent_id: &str,

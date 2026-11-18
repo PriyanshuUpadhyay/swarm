@@ -30,9 +30,8 @@ public struct InboxSnapshot: Decodable, Equatable, Sendable {
         // A bad entry costs only that entry.
         needs = try container.decodeIfPresent([Lossy<NeedCard>].self, forKey: .needs)?.compactMap(\.value) ?? []
         rows = try container.decodeIfPresent([Lossy<InboxRow>].self, forKey: .rows)?.compactMap(\.value) ?? []
-        // An older swarm sends no totals, so its lists are whole.
-        needsTotal = try container.decodeIfPresent(Int.self, forKey: .needsTotal) ?? needs.count
-        rowsTotal = try container.decodeIfPresent(Int.self, forKey: .rowsTotal) ?? rows.count
+        needsTotal = try container.decode(Int.self, forKey: .needsTotal)
+        rowsTotal = try container.decode(Int.self, forKey: .rowsTotal)
     }
 
     /// Nil for another schema or a reply that does not decode, so the HUD keeps its last inbox
@@ -90,10 +89,6 @@ public struct NeedCard: Decodable, Equatable, Sendable {
     public let title: String
     public let prompt: NeedPrompt?
 
-    public init(session: String, agent: String, adapter: String? = nil, title: String, prompt: NeedPrompt? = nil) {
-        (self.session, self.agent, self.adapter, self.title, self.prompt) = (session, agent, adapter, title, prompt)
-    }
-
     public var key: String { "\(session)/\(agent)/\(prompt?.id ?? "")" }
 }
 
@@ -103,10 +98,6 @@ public struct NeedPrompt: Decodable, Equatable, Sendable {
     public let id: String
     public let question: String
     public let choices: [String]
-
-    public init(id: String, question: String, choices: [String]) {
-        (self.id, self.question, self.choices) = (id, question, choices)
-    }
 }
 
 /// One line of the popup under the notch.

@@ -24,11 +24,13 @@ pub fn home() -> Result<String, Box<dyn std::error::Error>> {
         explicit => {
             let explicit = explicit?;
             // With no home in the user database, HOME stands in, so the guard does not open.
-            match account_home().or_else(|| std::env::var("HOME").ok()) {
-                Some(owner) => refuse_owner_home(&explicit, &owner, env!("SWARM_BUILD_BRANCH"))
-                    .map_or(Ok(explicit), |refusal| Err(refusal.into())),
-                None => Ok(explicit),
+            if let Some(owner) = account_home().or_else(|| std::env::var("HOME").ok())
+                && let Some(refusal) =
+                    refuse_owner_home(&explicit, &owner, env!("SWARM_BUILD_BRANCH"))
+            {
+                return Err(refusal.into());
             }
+            Ok(explicit)
         }
     }
 }

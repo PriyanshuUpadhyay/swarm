@@ -253,7 +253,7 @@ pub fn one_line(text: &str) -> String {
 pub fn shorten(text: &str, max: usize) -> String {
     if text.chars().count() > max {
         text.chars()
-            .take(max.saturating_sub(1))
+            .take(max - 1)
             .collect::<String>()
             .trim_end()
             .to_owned()

@@ -93,7 +93,7 @@ struct ClosedWings: View {
     private func spokenLabel(best: BestAccount?, text: WingText) -> String {
         var label = agentsSpoken(model.agents)
         if let need = model.inbox.needs.first {
-            label = "\(need.title) needs you, " + label
+            label = "\(need.title) \(InboxKind.waiting.word), " + label
         } else if !model.inbox.rows.isEmpty {
             label = "\(model.inbox.rowsTotal) unseen \(model.inbox.rowsTotal == 1 ? "chat" : "chats"), " + label
         }

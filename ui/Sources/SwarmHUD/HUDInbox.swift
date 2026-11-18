@@ -35,9 +35,6 @@ extension UsageModel {
         return CGSize(width: max(closedSize.width, InboxLayout.popupWidth),
                       height: notch.height + InboxLayout.popupGap + items * InboxLayout.popupItem + InboxLayout.popupBottom)
     }
-
-    /// What the owner sees now: the open card, the popup, or the closed wings.
-    var shownSize: CGSize { isOpen ? openSize : popup != nil ? popupSize : closedSize }
 }
 
 /// Amber for a wait or a question, red for a stop, green for done.

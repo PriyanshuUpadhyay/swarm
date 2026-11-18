@@ -344,7 +344,7 @@ public func wingText(_ agents: WorkingSnapshot, best: BestAccount?, inbox: Inbox
     if let inboxText = inboxWing(inbox), inboxText.blocked || agents.blocked.isEmpty {
         text = inboxText
     } else if !agents.blocked.isEmpty {
-        text = WingText(left: "needs you", blocked: true,
+        text = WingText(left: InboxKind.waiting.word, blocked: true,
                         tags: agents.agents.first(where: \.blocked).map { [String($0.id.prefix(12))] } ?? [])
     } else if working > 0 {
         // Each provider's first model, then the rest, so two Claude models do not hide Codex.
