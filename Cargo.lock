@@ -800,7 +800,7 @@ dependencies = [
 
 [[package]]
 name = "swarm"
-version = "0.0.67"
+version = "0.0.68"
 dependencies = [
  "axum",
  "libc",
