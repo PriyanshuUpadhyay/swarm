@@ -141,6 +141,13 @@ test("the composer's project change resets a picked issue to the new project's d
   await screenshot(page, "new-chat-composer");
 });
 
+test("New Chat… in the Add project menu leaves the focus in the composer's prompt", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Add project" }).click();
+  await page.getByRole("menuitem", { name: "New Chat…" }).click();
+  await expect(page.locator(":focus")).toHaveAttribute("data-testid", "new-chat-prompt");
+});
+
 test("Settings shows notice health after Home dismissal and Home includes setup", async ({ page }) => {
   await page.route("**/api/notices", (route) => route.fulfill({ json: { state: "held", reason: "Focus holds notices", steps: [], action: "focus" } }));
   await open(page);

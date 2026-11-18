@@ -1,4 +1,5 @@
 import { BlocksIcon, HouseIcon, MonitorIcon, MoonIcon, PlusIcon, SearchIcon, SettingsIcon, SunIcon } from "lucide-react";
+import { useRef } from "react";
 import { type App } from "../core/app";
 import { Button } from "../components/ui/button";
 import {
@@ -15,6 +16,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../components/ui/toolti
 import { chooseTheme, useTheme, type Theme } from "./appearance";
 
 export function SidebarHeader({ app }: { app: App }) {
+  // New Chat… opens the composer once the menu has closed: an open menu holds the focus, and
+  // on close it gives the focus back to its button.
+  const composing = useRef(false);
   return (
     <div className="flex h-10 shrink-0 items-center gap-0.5 pr-2 pl-2">
       <Tooltip>
@@ -31,10 +35,24 @@ export function SidebarHeader({ app }: { app: App }) {
             <PlusIcon />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent
+          align="start"
+          onCloseAutoFocus={(e) => {
+            if (!composing.current) return;
+            e.preventDefault();
+            composing.current = false;
+            app.newChat.open();
+          }}
+        >
           <DropdownMenuItem onSelect={() => app.life.openProject("create")}>Create Project…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => app.life.openProject("import")}>Import Project…</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => app.newChat.open()}>New Chat…</DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => {
+              composing.current = true;
+            }}
+          >
+            New Chat…
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => app.life.openClosed()}>Archived chats…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => app.life.openImports()}>Import chats…</DropdownMenuItem>
         </DropdownMenuContent>

@@ -117,6 +117,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
   useEffect(() => {
     if (focus) box.current?.focus();
   }, [focus]);
+
   const lastMenu = useRef<Menu>(null);
   useEffect(() => {
     if (menu === "project") projects.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();

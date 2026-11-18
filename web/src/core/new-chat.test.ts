@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { App } from "./app";
-import { NewChat, targets } from "./new-chat";
+import { NewChat } from "./new-chat";
 import type { TreeView } from "./nav";
 
 const row = (id: string, startsChatWorktree: boolean) => ({ id, kind: "workspace", newChatEnabled: true, startsChatWorktree });
@@ -15,13 +15,6 @@ const tree = {
 const stub = <T extends object>(extra: T) => ({ navSeq: 1, view: { tree, workspace: "/hub/wt/fix", openId: null }, notice: (_text: string) => {}, ...extra });
 
 describe("new chat composer", () => {
-  it("starts on a hub's main for a new worktree, and in a plain folder itself", () => {
-    expect(targets(tree, "/hub/wt/fix")).toEqual([
-      { cwd: "/hub/wt/main", project: "/hub", title: "hub", git: true },
-      { cwd: "/notes", project: "/notes", title: "notes", git: false },
-    ]);
-  });
-
   it("posts the prompt, place and run, shows the steps, then opens the chat and sends queued text", async () => {
     // A frame can beat the POST reply, and a failed send of the box's text shows a notice.
     const calls: string[] = [];
@@ -214,6 +207,37 @@ describe("new chat composer", () => {
     await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
     expect(calls).toEqual(["start shown s1", "Typed while it opens"]);
     expect(chats.state.starts).toEqual({});
+  });
+
+  it("opens a start's chat once when a reconnect reads its done frame again", async () => {
+    const sent: string[] = [];
+    let release = () => {};
+    const app = stub({
+      api: { post: async () => ({ start: "s1" }), action: async (_path: string, body: { text: string }) => void sent.push(body.text) },
+      actions: { openNew: () => new Promise<void>((done) => (release = done)) },
+    });
+    const chats = new NewChat(app as unknown as App);
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { run: null });
+    chats.setDraft("s1", "Then the docs");
+    chats.queue("s1");
+
+    const done = { start: "s1", step: "done", state: "completed", session: "chat-9" };
+    const first = chats.onFrame("chat-start", done);
+    const again = chats.onFrame("chat-start", done);
+    release();
+    await Promise.all([first, again]);
+    expect(sent).toEqual(["Then the docs"]);
+  });
+
+  it("keeps a hidden composer's text when the page composer's Escape closes it", () => {
+    const chats = new NewChat(stub({}) as unknown as App);
+    chats.open();
+    chats.typed("Draft one");
+    (chats as unknown as { app: { navSeq: number } }).app.navSeq = 2;
+
+    chats.close("Page text");
+    chats.open();
+    expect(chats.composing()?.text).toBe("Page text\n\nDraft one");
   });
 
   it("does not open the composer on another project for a project with no folder to start in", () => {

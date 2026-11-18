@@ -49,7 +49,8 @@ server keeps the last 64 `done` frames, and `GET /api/chat/start?id=` returns `{
 stream reconnected reads a `done` it missed and stops waiting on a start the server lost. Text typed in that tab goes after the
 first prompt; text whose send fails, the first prompt too, goes in the chat's text box with a notice. The app waits 10 s for the start id; then it
 shows a notice and keeps the composer, because the server may have started the chat. A failed
-start offers Edit and retry, which opens the composer again with its prompt, folder and place. A model switch waits for its chat as before.
+start offers Edit and retry, which opens the composer again with its prompt, folder, place and
+run; a failed ⌘T start, whose folder the composer does not offer, starts again with its text. A model switch waits for its chat as before.
 
 With a prompt, the server names the worktree when it makes it: `swarm/` and the first five
 ASCII words of the prompt that are not filler, lowercase and joined by `-`, at most 38

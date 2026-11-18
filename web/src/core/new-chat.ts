@@ -5,20 +5,12 @@ import type { App } from "./app";
 import { firstLine, message } from "./app-types";
 import type { Run } from "./composer";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
-import { workspaceRow, type TreeView } from "./nav";
+import { canStartIn, defaultPlace, defaultTarget, targets, type Place, type Preview } from "./new-chat-places";
 
-/** Where a new chat runs; `new` makes the chat its own worktree. */
-export type Place = { kind: "new" } | { kind: "here" } | { kind: "branch"; branch: string } | { kind: "pr"; number: number } | { kind: "issue"; number: number };
+export * from "./new-chat-places";
 
-/** A project the composer can start in: the folder a new chat names, and whether it is a git
- *  project, which can make a new worktree; a plain folder starts the chat in itself. */
-export type Target = { cwd: string; project: string; title: string; git: boolean };
-
-/** What a new worktree from this prompt gets, for the composer's card. */
-export type Preview = { branch: string | null; folder: string | null; base: string | null; fetchedUnixS: number | null; setup: string | null };
-
-/** The composer's run: a profile, and a run the owner picked instead of its default. */
-/** A start's profile and run; with no role, the server starts its default profile. */
+/** A start's profile, and a run the owner picked instead of its default; with no role, the
+ *  server starts its default profile. */
 export type ComposerRun = { role?: string; run: Run | null };
 
 /** One start step; `words` is the server's text for it. */
@@ -56,11 +48,6 @@ type NewChatState = {
   viewing: { id: string; nav: number } | null;
 };
 
-/** Whether the view shows the composer in its page: Home, and a workspace's landing that takes
- *  new chats. Elsewhere ⌘N opens it over the view. */
-export const composerInPage = (view: { openId: string | null; workspace: string | null; tree: TreeView | null }) =>
-  !view.openId && (!view.workspace || workspaceRow(view.tree, view.workspace)?.newChatEnabled === true);
-
 /** The profile pill the composer picks first, else the first profile. ⌘T sends no profile, so
  *  the server's default holds there. */
 export const DEFAULT_ROLE = "chat";
@@ -74,32 +61,6 @@ type StartOptions = { composer?: boolean; queued?: string[] };
 /** How many frames of unknown starts wait for their POST reply. */
 const EARLY_KEPT = 50;
 
-/** The projects the composer offers, each with the folder a new chat in it names: a hub's main
- *  checkout, else the open workspace, else the project's own folder. A git project can make a new worktree; a plain
- *  folder starts the chat in itself. */
-export function targets(tree: TreeView | null, workspace: string | null): Target[] {
-  return (tree?.sections ?? [])
-    .filter((s) => s.kind === "project")
-    .flatMap((s) => {
-      const rows = s.rows.filter((r) => r.kind === "workspace" && r.newChatEnabled);
-      const main = rows.find((r) => r.startsChatWorktree);
-      const cwd = main?.id ?? rows.find((r) => r.id === workspace)?.id ?? (s.folder ? rows[0]?.id : s.path) ?? null;
-      return cwd ? [{ cwd, project: s.path ?? cwd, title: s.title, git: !s.folder }] : [];
-    });
-}
-
-/** Whether the project at `path` has a folder a new chat can start in. */
-export const canStartIn = (tree: TreeView | null, path: string | null) => targets(tree, null).some((t) => t.project === path);
-
-/** The project the composer opens on: the one of `workspace`, else the first. */
-export function defaultTarget(list: Target[], tree: TreeView | null, workspace: string | null): Target | null {
-  const section = tree?.sections.find((s) => s.kind === "project" && s.rows.some((r) => r.id === workspace));
-  return list.find((t) => section?.rows.some((r) => r.id === t.cwd)) ?? list[0] ?? null;
-}
-
-/** The place a target starts on unless the owner picks another. */
-export const defaultPlace = (target: Target): Place => ({ kind: target.git ? "new" : "here" });
-
 /** The `/api/chat/new` body for a composer send. An issue's own text goes first on the server. */
 function startBody(cwd: string, prompt: string, place: Place, run: ComposerRun) {
   const text = prompt.trim();
@@ -110,49 +71,6 @@ function startBody(cwd: string, prompt: string, place: Place, run: ComposerRun) 
     place,
     ...(run.run ? { provider: run.run.provider, model: run.run.model ?? undefined, effort: run.run.effort ?? undefined, account: run.run.account ?? undefined } : {}),
   };
-}
-
-/** The chip's words for a place. */
-export function placeLabel(place: Place, target: Target): string {
-  if (!target.git) return "In folder";
-
-  switch (place.kind) {
-    case "new":
-      return "New worktree";
-    case "here":
-      return "In this folder";
-
-    case "branch":
-      return place.branch ? `Branch ${place.branch}` : "Pick a branch";
-    case "pr":
-      return place.number ? `PR #${place.number}` : "Pick a pull request";
-    case "issue":
-      return place.number ? `Issue #${place.number}` : "Pick an issue";
-
-    default: {
-      const _exhaustive: never = place;
-      return _exhaustive;
-    }
-  }
-}
-
-/** Whether a send can go with this place: a branch, PR or issue needs its pick. */
-export function placeReady(place: Place): boolean {
-  switch (place.kind) {
-    case "new":
-    case "here":
-      return true;
-
-    case "branch":
-      return place.branch !== "";
-    case "pr":
-    case "issue":
-      return place.number > 0;
-    default: {
-      const _exhaustive: never = place;
-      return _exhaustive;
-    }
-  }
 }
 
 /** The most characters of a prompt's first line that a start's tab shows. */
@@ -168,6 +86,8 @@ export class NewChat {
   private posting = false;
   /** `chat-start` frames that came before the POST reply named their start. */
   private early: Record<string, unknown>[] = [];
+  /** Starts whose chat opens now; a second `done`, as a reconnect's recheck reads, is dropped. */
+  private opening = new Set<string>();
 
   constructor(private readonly app: App) {}
 
@@ -188,7 +108,7 @@ export class NewChat {
 
   /** ⌘N, New chat, a row "+" and the tab "+": the composer on the project of `at` (a workspace or
    *  a project path), else on the open one. */
-  open(at?: string, place?: Place, text = "", run: ComposerRun | null = null) {
+  open(at?: string, place?: Place, run: ComposerRun | null = null) {
     const list = targets(this.app.view.tree, at ?? this.app.view.workspace);
     // A project of the tree with no folder to start in must not open the composer on another one.
     const project = this.app.view.tree?.sections.some((s) => s.kind === "project" && s.path === at);
@@ -197,10 +117,10 @@ export class NewChat {
     if (!target) return this.app.notice("Import or create a project first.");
     // ⌘N again on the same open composer keeps it, with its typed text.
     const open = this.composing();
-    if (open && open.cwd === target.cwd && !place && !text) return;
-    // The new composer gets every text that waits: the one passed, `unsent`, and the typed text of
-    // a composer that it replaces, open or hidden by a move away.
-    const waiting = [text, this.state.unsent, this.state.composer?.text ?? ""].filter((t) => t.trim());
+    if (open && open.cwd === target.cwd && !place) return;
+    // The new composer gets every text that waits: `unsent`, and the typed text of a composer
+    // that it replaces, open or hidden by a move away.
+    const waiting = [this.state.unsent, this.state.composer?.text ?? ""].filter((t) => t.trim());
     // The composer replaces a start's view; the start keeps its tab.
     const composer = { cwd: target.cwd, place: place ?? defaultPlace(target), text: [...new Set(waiting)].join("\n\n"), run, seq: ++this.seq, nav: this.app.navSeq };
     this.set({ composer, unsent: "", viewing: null });
@@ -221,7 +141,7 @@ export class NewChat {
     if (composed) {
       // The start's text waits in `unsent`, and open() gives it to the composer.
       this.dismiss(id);
-      return this.open(start.cwd, start.place, "", start.run);
+      return this.open(start.cwd, start.place, start.run);
     }
 
     const rest = [...start.queued, start.draft.trim()].filter(Boolean);
@@ -247,9 +167,13 @@ export class NewChat {
     return this.app.api.get<Preview>("/api/chat/new-preview", { cwd, prompt });
   }
 
-  /** Closes the composer; its `text` waits for the next one. */
+  /** Closes the composer; its `text` waits for the next one. A page composer's Escape also ends
+   *  a composer that a move away hid, so that one's text waits too. */
   close(text = "") {
-    if (this.state.composer) this.set({ composer: null, unsent: text.trim() ? text : "" });
+    const composer = this.state.composer;
+    if (!composer) return;
+    const hidden = this.composing() ? "" : composer.text;
+    this.set({ composer: null, unsent: [text, hidden].filter((t) => t.trim()).join("\n\n") });
   }
 
   /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. Only a
@@ -378,6 +302,8 @@ export class NewChat {
         this.app.notice(text, true);
         return;
       }
+      if (this.opening.has(id)) return;
+      this.opening.add(id);
       return this.opened(start, String(data.session));
     }
 
@@ -402,6 +328,7 @@ export class NewChat {
     const now = this.state.starts[start.id] ?? start;
     const texts = [...now.queued, now.draft.trim()].filter(Boolean);
     this.dismiss(start.id);
+    this.opening.delete(start.id);
 
     if (failed) {
       const kept = [start.prompt, ...texts].filter(Boolean).join("\n\n");

@@ -3,8 +3,8 @@ import { memo } from "react";
 import { type Field, type NavRow, type RecentChat, type SidebarRow } from "../core/nav";
 import { StatusGlyph } from "./status";
 
-/** One sidebar line. Memoized on its wire object, so a key move renders only two rows. */
-/** `canNewIn`: a project header whose project has a folder that a new chat can start in. */
+/** One sidebar line. Memoized on its wire object, so a key move renders only two rows.
+ *  `canNewIn`: a project header whose project has a folder that a new chat can start in. */
 export const RowView = memo(function RowView({ row, selected, marked, current, archive, canNewIn }: { row: NavRow; selected: boolean; marked: boolean | null; current: boolean; archive: boolean; canNewIn: boolean }) {
   const r = row.row;
   const common = {
