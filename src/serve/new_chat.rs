@@ -8,19 +8,19 @@ use super::*;
 pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError> {
     let (start, launch) = checked_start(app, body).await?;
     let id = start.id.clone();
-    app.hub.lock().unwrap().starts_running.insert(id.clone());
+    app.hub.lock().unwrap().begin_start(id.clone());
 
     // A panic in a step drops its task, so the outer task sends the `done` that it never sent.
     let watch = Start {
         app: app.clone(),
         id: id.clone(),
-        step: "start",
+        step: Step::Start,
     };
     let running = tokio::spawn(start.run(launch));
     tokio::spawn(async move {
         if running.await.is_err() {
             let text = "The start stopped on an internal error. Look in the server log.";
-            watch.frame("done", "failed", json!({"error": text}));
+            watch.frame(Step::Done, "failed", json!({"error": text}));
         }
     });
     Ok(json!({"ok": true, "start": id}))
@@ -85,7 +85,7 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
     let start = Start {
         app: app.clone(),
         id: uuid::Uuid::new_v4().to_string(),
-        step: "start",
+        step: Step::Start,
     };
     let launch = Launch {
         body,
@@ -298,7 +298,7 @@ pub(super) use preview::new_chat_preview;
 use preview::prompt_worktree;
 #[path = "new_chat/start.rs"]
 pub(super) mod start;
-use start::{Launch, Start, Worktree};
+use start::{Launch, Start, Step, Worktree};
 
 #[cfg(test)]
 #[path = "new_chat/tests.rs"]

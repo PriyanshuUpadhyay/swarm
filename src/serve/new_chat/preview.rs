@@ -24,7 +24,7 @@ pub(in crate::serve) async fn new_chat_preview(
             return Ok(Json(json!({"place": "folder"})));
         };
 
-        let (branch, folder) = prompt_worktree(&target, project, &cwd, &prompt);
+        let (branch, folder) = prompt_worktree(&app.root, &target, project, &cwd, &prompt);
         // The same base as create_workspace, so the card matches what starts.
         let base = lifecycle::references(common)
             .map_err(lifecycle_error)?
@@ -57,13 +57,17 @@ pub(in crate::serve) async fn new_chat_preview(
 /// The branch and folder that a new worktree named from `prompt` gets: the first name whose
 /// branch and folder are both free, with the folder create_workspace makes for it.
 pub(super) fn prompt_worktree(
+    root: &Path,
     target: &Target,
     project: &tree::Project,
     cwd: &str,
     prompt: &str,
 ) -> (Option<String>, Option<PathBuf>) {
     let (setting, _, _) = lifecycle::defaults(project, &target.saved.owner);
-    let parent = lifecycle::worktree_folder(project, &setting).ok();
+    // The same checked path as create_workspace, so a `..` in the setting resolves as it does.
+    let parent = lifecycle::worktree_folder(project, &setting)
+        .and_then(|folder| lifecycle::checked_path(root, &folder.to_string_lossy(), false))
+        .ok();
     let folder_of = |branch: &str| {
         let name = branch.trim_start_matches(swarm::task::PREFIX);
         parent

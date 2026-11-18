@@ -181,11 +181,19 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
     .unwrap();
     std::fs::write(&fixture.app.cli, cli.replace(&format!("printf '%s\\n' '{id}'"), "/usr/bin/uuidgen | /usr/bin/tr A-Z a-z")).unwrap();
 
+    let query = HashMap::from([("cwd".into(), clone_path.clone()), ("prompt".into(), "Add a retry".into())]);
+    let preview = new_chat_preview(State(fixture.app.clone()), Query(query))
+        .await
+        .unwrap()
+        .0;
+
     let body = json!({"cwd":clone_path,"prompt":"Add a retry","place":{"kind":"new"}});
     let started = start_chat(fixture, body)
         .await
         .unwrap_or_else(|e| panic!("{e:?} {}", action_calls(fixture)));
     let made = started["workspace"].as_str().unwrap();
+    // The default folder setting `../clone-worktrees` has a `..`, so this checks the card's folder.
+    assert_eq!(preview["folder"], json!(made));
     assert_eq!(
         lifecycle::check_git(made, &["branch", "--show-current"]).unwrap(),
         "swarm/add-retry"
@@ -214,4 +222,29 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
         lifecycle::check_git(docs, &["branch", "--show-current"]).unwrap(),
         "swarm/add-docs-2"
     );
+
+    // A start writes back only its worktree settings, so a setup script saved while it ran stays.
+    let (tree, saved) = fresh_lifecycle_tree(&fixture.app).unwrap();
+    choices_store::update(&fixture.app.root, None, |owner, _| {
+        owner
+            .project_defaults
+            .insert(clone_path.clone(), json!({"setup_script":"true"}));
+        Ok(())
+    })
+    .unwrap();
+
+    let request = lifecycle::NewWorkspace {
+        project: clone_path.clone(),
+        name: "add-notes".into(),
+        folder: None,
+        prefix: None,
+        mode: lifecycle::Mode::NewBranch,
+        base: None,
+        branch: None,
+        pr: None,
+        issue: None,
+    };
+    apply_lifecycle(&fixture.app, LifecycleAction::New(request), &tree, &saved, 0).unwrap();
+    let owner = choices_store::load(&fixture.app.root, true).unwrap().owner;
+    assert_eq!(lifecycle::setup_script(&owner, &clone_path), Some("true"));
 }

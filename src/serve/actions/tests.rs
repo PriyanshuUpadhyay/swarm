@@ -257,6 +257,54 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
 }
 
 #[tokio::test]
+async fn a_new_chat_replies_with_its_start_id_while_its_launch_still_runs() {
+    // ADR 0147: the page opens the chat at once and follows its steps.
+    let fixture = action_fixture();
+    std::fs::write(
+        &fixture.app.cli,
+        r#"#!/bin/sh
+case "$1 $2" in
+  'session new') /usr/bin/uuidgen | /usr/bin/tr A-Z a-z; exit 0 ;;
+esac
+if [ "$1" = launch ]; then
+  printf 'running\n' > "$SWARM_HOME/slow-start"
+  while [ ! -f "$SWARM_HOME/release" ]; do sleep 0.01; done
+  printf 'fixture-pane\n'
+fi
+"#,
+    )
+    .unwrap();
+
+    // The launch waits for the release file, which is written only after the reply.
+    let home = fixture.app.root.parent().unwrap();
+    let reply = tokio::time::timeout(
+        Duration::from_secs(10),
+        call_action(
+            &fixture,
+            "/api/chat/new",
+            json!({"cwd": env!("CARGO_MANIFEST_DIR")}),
+        ),
+    )
+    .await;
+
+    let waited = tokio::time::timeout(Duration::from_secs(30), async {
+        while !home.join("slow-start").exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    // Release the stand-in before an assertion so a failed test cannot leave it waiting.
+    std::fs::write(home.join("release"), "release").unwrap();
+
+    let reply = reply
+        .expect("the reply must not wait for the launch")
+        .unwrap()
+        .0;
+    assert!(reply["start"].is_string(), "{reply}");
+    assert!(waited.is_ok(), "the launch did not start");
+}
+
+#[tokio::test]
 async fn archive_and_unarchive_share_a_lane_without_blocking_a_session_send() {
     let fixture = action_fixture();
     std::fs::write(

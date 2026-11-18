@@ -2,9 +2,6 @@
 
 use super::*;
 
-/// How many `done` frames the hub keeps for pages that reconnect.
-const STARTS_KEPT: usize = 64;
-
 /// `GET /api/chat/start?id=`: `{done: frame}` for a recent start, `{running: true}` while it
 /// runs, and `{}` for an id the server does not know or no longer keeps. A page whose stream
 /// was down reads it, as the frame then never reached it.
@@ -41,42 +38,74 @@ pub(super) struct Launch {
     pub(super) worktree: Option<(String, Worktree)>,
 }
 
+/// A step of a chat start, as its `chat-start` frames name it; `Done` is the last frame.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum Step {
+    Worktree,
+    Setup,
+    Start,
+    Send,
+    Done,
+}
+
+impl Step {
+    fn name(self) -> &'static str {
+        match self {
+            Step::Worktree => "worktree",
+            Step::Setup => "setup",
+            Step::Start => "start",
+            Step::Send => "send",
+            Step::Done => "done",
+        }
+    }
+
+    /// The words the page shows for the step.
+    fn words(self) -> Option<&'static str> {
+        match self {
+            Step::Worktree => Some("Make the worktree"),
+            Step::Setup => Some("Run the setup script"),
+            Step::Start => Some("Start the agent"),
+            Step::Send => Some("Send your prompt"),
+            Step::Done => None,
+        }
+    }
+}
+
+/// The error text of a failed step, never empty, so the page always shows a reason.
+fn failure(err: &ApiError) -> String {
+    let text = shells::api_text(err);
+    if text.trim().is_empty() {
+        "The start failed with no error text. Look in the server log.".into()
+    } else {
+        text
+    }
+}
+
 /// One chat start in the background, and the step it is on.
 pub(super) struct Start {
     pub(super) app: App,
     pub(super) id: String,
-    pub(super) step: &'static str,
+    pub(super) step: Step,
 }
 
 impl Start {
     /// Publishes a `chat-start` frame for this start, with the words the page shows for its step.
-    pub(super) fn frame(&self, step: &str, state: &str, extra: Value) {
-        let words = match step {
-            "worktree" => Some("Make the worktree"),
-            "setup" => Some("Run the setup script"),
-            "start" => Some("Start the agent"),
-            "send" => Some("Send your prompt"),
-            _ => None,
-        };
-        let mut payload = json!({"start": self.id, "step": step, "state": state, "words": words});
+    pub(super) fn frame(&self, step: Step, state: &str, extra: Value) {
+        let mut payload =
+            json!({"start": self.id, "step": step.name(), "state": state, "words": step.words()});
         if let Value::Object(extra) = extra {
             payload.as_object_mut().unwrap().extend(extra);
         }
 
         let mut hub = self.app.hub.lock().unwrap();
-        if step == "done" {
-            hub.starts_running.remove(&self.id);
-            if hub.starts_done.len() == STARTS_KEPT {
-                hub.starts_done.pop_front();
-            }
-            hub.starts_done
-                .push_back((self.id.clone(), payload.clone()));
+        if step == Step::Done {
+            hub.finish_start(&self.id, payload.clone());
         }
         hub.publish(Frame::new("chat-start", payload, None));
     }
 
     /// Marks `step` running; the previous step completed.
-    fn enter(&mut self, step: &'static str) {
+    fn enter(&mut self, step: Step) {
         self.step = step;
         self.frame(step, "running", json!({}));
     }
@@ -89,16 +118,16 @@ impl Start {
         match self.steps(&launch).await {
             Ok((session, workspace)) => {
                 self.frame(
-                    "done",
+                    Step::Done,
                     "completed",
                     json!({"session": session, "workspace": workspace}),
                 );
             }
             Err(err) => {
-                let text = shells::api_text(&err);
+                let text = failure(&err);
                 eprintln!("swarm: a new chat did not start: {text}");
                 self.frame(self.step, "failed", json!({"error": text}));
-                self.frame("done", "failed", json!({"error": text}));
+                self.frame(Step::Done, "failed", json!({"error": text}));
             }
         }
     }
@@ -124,7 +153,7 @@ impl Start {
             None => (body.cwd.clone(), None, prompt.map(str::to_owned)),
         };
 
-        self.enter("start");
+        self.enter(Step::Start);
         // In a hub, a chat that did not start removes its own worktree, so a retry does not add
         // another; outside a hub the worktree stays (ADR 0147).
         let session = match open_session(&app, &cwd).await {
@@ -155,7 +184,7 @@ impl Start {
 
         // `swarm type` waits for the agent's input box, so the prompt goes once it is ready.
         if let Some(text) = prompt {
-            self.enter("send");
+            self.enter(Step::Send);
             let send = SendAction {
                 session: session.clone(),
                 agent: "orchestrator".into(),
@@ -166,7 +195,7 @@ impl Start {
             match enqueue_action(&app, Action::Send(send)).await {
                 Ok(_) => self.complete(json!({})),
                 Err(err) => {
-                    self.frame("send", "failed", json!({"error": shells::api_text(&err)}));
+                    self.frame(Step::Send, "failed", json!({"error": failure(&err)}));
                 }
             }
         }
@@ -187,7 +216,7 @@ impl Start {
         place: Worktree,
         prompt: Option<&str>,
     ) -> Result<Made, ApiError> {
-        self.enter("worktree");
+        self.enter(Step::Worktree);
         // The hub is found from the checkout; a hub project's own folder is no checkout.
         let checkout = cwd.to_owned();
 
@@ -210,7 +239,9 @@ impl Start {
                     let target = chat_target(&app, &checkout)?;
                     let project = lifecycle::project(&target.tree, &target.project)
                         .map_err(lifecycle_error)?;
-                    Ok::<_, ApiError>(prompt_worktree(&target, project, &checkout, &prompt).0)
+                    Ok::<_, ApiError>(
+                        prompt_worktree(&app.root, &target, project, &checkout, &prompt).0,
+                    )
                 })
                 .await
                 .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "chat name task failed"))??
@@ -228,7 +259,10 @@ impl Start {
             }
 
             Worktree::Branch { branch } => {
-                let name = branch.rsplit('/').next().unwrap_or(&branch).to_owned();
+                let name = branch
+                    .rsplit_once('/')
+                    .map_or(branch.as_str(), |(_, last)| last)
+                    .to_owned();
                 (
                     lifecycle::Mode::ExistingBranch,
                     name,
@@ -316,7 +350,7 @@ impl Start {
         self.complete(json!({"workspace": path, "branch": branch}));
 
         if let Some(script) = setup {
-            self.enter("setup");
+            self.enter(Step::Setup);
             let result = run_setup(&self.app, &path, &script, SETUP_TIMEOUT).await;
 
             if result["state"] != "completed" {

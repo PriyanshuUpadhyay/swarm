@@ -169,6 +169,21 @@ struct Follower {
 }
 
 impl Hub {
+    /// Marks a chat start running until its `done` frame (ADR 0147).
+    fn begin_start(&mut self, id: String) {
+        self.starts_running.insert(id);
+    }
+
+    /// Ends a chat start and keeps its `done` frame, with the last 64, for a page whose stream
+    /// was down (ADR 0147).
+    fn finish_start(&mut self, id: &str, frame: Value) {
+        self.starts_running.remove(id);
+        if self.starts_done.len() == 64 {
+            self.starts_done.pop_front();
+        }
+        self.starts_done.push_back((id.to_owned(), frame));
+    }
+
     fn cache_rows(&mut self, key: String, rows: LiveRows) {
         self.row_cache.retain(|(cached, _)| cached != &key);
         self.row_cache.push_back((key, rows));
