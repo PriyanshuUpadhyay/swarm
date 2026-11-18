@@ -89,4 +89,22 @@ describe("new chat composer", () => {
     expect(notices).toEqual(["The server did not answer in 10 s. Check the sidebar for the chat before you press ⌘Enter again."]);
     expect(chats.state.composer).not.toBeNull();
   });
+
+  it("keeps a first prompt whose send failed in a notice, and sends nothing after it", async () => {
+    const calls: string[] = [];
+    const app = {
+      navSeq: 1,
+      view: { tree, workspace: "/hub/wt/fix", openId: null },
+      notice: (text: string) => calls.push(`notice ${text}`),
+      api: { post: async () => ({ start: "s1" }), action: async (path: string) => void calls.push(path) },
+      actions: { openNew: async (session: string) => void calls.push(`open ${session}`) },
+    };
+    const chats = new NewChat(app as unknown as App);
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { role: "chat", run: null });
+    chats.setDraft("s1", "Then the docs");
+
+    chats.onFrame("chat-start", { start: "s1", step: "send", state: "failed", error: "chair is gone" });
+    await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
+    expect(calls).toEqual(["open chat-9", "notice Your first prompt did not send: chair is gone. Its text: Fix it\n\nThen the docs"]);
+  });
 });

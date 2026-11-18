@@ -326,8 +326,15 @@ export class NewChat {
   private async opened(start: Starting, session: string) {
     const shown = this.shown()?.id === start.id;
     const texts = [...start.queued, start.draft.trim()].filter(Boolean);
+    // The chat runs, but its first prompt did not go: nothing goes before it, and a notice keeps it all.
+    const failed = start.prompt ? start.steps.find((s) => s.step === "send" && s.state === "failed") : undefined;
     this.dismiss(start.id);
     await this.app.actions.openNew(session, shown).catch((err) => this.app.notice(message(err), true));
+
+    if (failed) {
+      const all = [start.prompt, ...texts].join("\n\n");
+      return this.app.notice(`Your first prompt did not send: ${failed.error ?? "the send failed"}. Its text: ${all}`, true);
+    }
 
     for (const [i, text] of texts.entries()) {
       try {

@@ -12,7 +12,7 @@ export type NewOptions = {
 
 export type Issue = { number: number; title: string; body: string; url?: string; labels?: { name: string }[] };
 
-/** One setup script run, from its `setup` stream frames and the create reply. */
+/** One setup script run, from its `setup` stream frames. */
 export type SetupRun = {
   workspace: string | null;
   state: "running" | "completed" | "failed" | "timeout";
