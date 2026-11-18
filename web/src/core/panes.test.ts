@@ -22,7 +22,7 @@ describe("pane cells", () => {
     // `swarm close` clears the pane, and the listing then says nothing about alive.
     expect(paneStatus(agent("reviewer", { pane: null, alive: null, state: "working" }))).toBe("ended");
     expect(paneStatus(agent("reviewer"))).toBe("done");
-    expect(paneStatus(agent("reviewer", { alive: null, state: "waiting" }))).toBe("waiting");
+    expect(paneStatus(agent("reviewer", { alive: null, state: "blocked" }))).toBe("blocked");
     expect(paneStatus(agent("reviewer", { state: "ended" }))).toBe("done");
   });
 
@@ -209,7 +209,7 @@ describe("child columns", () => {
 
   it("types, answers and stops in the child, and closes it by its id", async () => {
     const question = { id: "prompt-hash", question: "Run the tests?", choices: ["Yes", "No"] };
-    const { app, posts } = harness([chair, agent("reviewer", { state: "waiting", prompt: question }), agent("tester", { state: "working" })]);
+    const { app, posts } = harness([chair, agent("reviewer", { state: "blocked", prompt: question }), agent("tester", { state: "working" })]);
     app.openChat("chat");
     await settle();
     const reviewer = app.view.strip.panes.get("reviewer")!.composer!;
@@ -229,8 +229,8 @@ describe("child columns", () => {
     expect(app.view.composer!.state.answering).toBeNull();
   });
 
-  it("says why a waiting child cannot take input", async () => {
-    const { app } = harness([chair, agent("asking", { state: "waiting" })]);
+  it("says why a blocked child cannot take input", async () => {
+    const { app } = harness([chair, agent("asking", { state: "blocked" })]);
     app.openChat("chat");
     await settle();
     const input = (id: string) => app.view.strip.panes.get(id)!.composer!.agent;

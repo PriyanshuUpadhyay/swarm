@@ -231,12 +231,12 @@ describe("prompt history", () => {
   });
 });
 
-describe("openWaiting", () => {
-  it("opens a waiting chat that the sidebar does not list, and skips an agent with no pane and an archived workspace", () => {
+describe("openBlocked", () => {
+  it("opens a blocked chat that the sidebar does not list, and skips an agent with no pane and an archived workspace", () => {
     const api = { rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 0 }, rows: [], usage: null }) } as unknown as Api;
     const app = new App(api);
     const session = (id: string, workspace = "w") => ({ id, cwd: `/${workspace}`, created_at: 0, chair_provider: "claude", adapter: "tmux", project: "p", workspace });
-    const chair = (pane: string | null) => ({ id: "orchestrator", role: "orchestrator", state: "waiting", alive: true, pane });
+    const chair = (pane: string | null) => ({ id: "orchestrator", role: "orchestrator", state: "blocked", alive: true, pane });
     // The tree lists workspace w with no chat rows, as when it is collapsed or its chats are under
     // "\u2026 more". The archived workspace "gone" is not in it, as the Dock badge skips it.
     const workspace = { id: "w", kind: "workspace", archived: false, selection: { workspace: "w", chat: null, agentSession: null, agent: null } };
@@ -246,7 +246,7 @@ describe("openWaiting", () => {
       sessions: [session("archived", "gone"), session("no-pane"), session("asks")],
       agents: { archived: [chair("%2")], "no-pane": [chair(null)], asks: [chair("%1")] },
     });
-    app.openWaiting();
+    app.openBlocked();
     expect(app.view.openId).toBe("asks");
 
     // The Archived view lists only archived workspaces, and the tree is null before it loads.
@@ -255,7 +255,7 @@ describe("openWaiting", () => {
     for (const tree of [{ view: "archived", sections: [{ rows: [gone, goneChat] }] }, null]) {
       app.openChat("no-pane");
       (app as unknown as { tree: TreeView | null }).tree = tree as unknown as TreeView | null;
-      app.openWaiting();
+      app.openBlocked();
       expect(app.view.openId).toBe("asks");
     }
   });

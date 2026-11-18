@@ -15,7 +15,7 @@ describe("background rows", () => {
       ["task:orchestrator:b2", "working"],
       ["task:orchestrator:b1", "done"],
       ["agent:writer", "done"],
-      ["task:writer:b3", "failed"],
+      ["task:writer:b3", "error"],
     ]);
   });
 
@@ -33,7 +33,7 @@ describe("background rows", () => {
   });
 
   it("shows an unknown or a new end state as ended", () => {
-    expect(["running", "completed", "killed", "unknown", "paused"].map(taskStatus)).toEqual(["working", "done", "failed", "ended", "ended"]);
+    expect(["running", "completed", "killed", "unknown", "paused"].map(taskStatus)).toEqual(["working", "done", "error", "ended", "ended"]);
   });
 });
 

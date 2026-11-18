@@ -127,11 +127,11 @@ pub fn require_pane(
 
 /// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
 /// `chair_provider`.
-/// How long a `working` or `waiting` report counts without a newer one. A turn reports at each tool
+/// How long a `working` or `blocked` report counts without a newer one. A turn reports at each tool
 /// call, and an agent that died keeps its last report, so the usage HUD stops showing it after this.
 const WORKING_FOR_S: i64 = 600;
 
-/// The number of `agents` in `state` (`working` or `waiting`), by provider. Counting the one list
+/// The number of `agents` in `state` (`working` or `blocked`), by provider. Counting the one list
 /// that is also printed keeps the counts and the list from disagreeing.
 pub fn agents_by_provider(
     agents: &[RunningAgent],
@@ -144,7 +144,7 @@ pub fn agents_by_provider(
     counts
 }
 
-/// One agent with a pane that reported `working` or `waiting` within `WORKING_FOR_S`. A chair with
+/// One agent with a pane that reported `working` or `blocked` within `WORKING_FOR_S`. A chair with
 /// no provider of its own runs under its session's chair provider.
 #[derive(Debug, serde::Serialize)]
 pub struct RunningAgent {
@@ -157,7 +157,7 @@ pub struct RunningAgent {
     pub state: String,
 }
 
-/// Waiting first, then by session and id. Not by report time: each tool call reports, so the HUD's
+/// Blocked first, then by session and id. Not by report time: each tool call reports, so the HUD's
 /// model tags and chips would reshuffle on every poll.
 pub fn running_agents(
     connection: &Connection,
@@ -170,10 +170,10 @@ pub fn running_agents(
                                   THEN session.chair_provider END) AS provider,
                     agent.model, agent.account, agent.state
              FROM agent JOIN session ON session.id = agent.session_id
-             WHERE agent.pane_id IS NOT NULL AND agent.state IN ('working', 'waiting')
+             WHERE agent.pane_id IS NOT NULL AND agent.state IN ('working', 'blocked')
                AND agent.state_at >= unixepoch() - ?1)
          WHERE provider IS NOT NULL
-         ORDER BY state = 'waiting' DESC, session_id, id",
+         ORDER BY state = 'blocked' DESC, session_id, id",
     )?;
     let rows = statement.query_map([WORKING_FOR_S], |r| {
         Ok(RunningAgent {

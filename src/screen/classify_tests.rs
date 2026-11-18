@@ -5,22 +5,22 @@ mod tests {
 
     #[test]
     fn classifies_every_fixture() {
-        use ScreenState::{Idle, Waiting, Working};
+        use ScreenState::{Blocked, Idle, Working};
         let cases = [
             ("claude", fixture!("claude-idle"), Some(Idle)),
             ("claude", fixture!("claude-done"), Some(Idle)),
             ("claude", fixture!("claude-after-esc"), Some(Idle)),
-            ("claude", fixture!("claude-waiting"), Some(Waiting)),
-            ("claude", fixture!("claude-submit-answers"), Some(Waiting)),
+            ("claude", fixture!("claude-waiting"), Some(Blocked)),
+            ("claude", fixture!("claude-submit-answers"), Some(Blocked)),
             ("claude", fixture!("claude-working"), Some(Working)),
             ("codex", fixture!("codex-idle"), Some(Idle)),
-            ("codex", fixture!("codex-waiting"), Some(Waiting)),
+            ("codex", fixture!("codex-waiting"), Some(Blocked)),
             ("codex", fixture!("codex-working"), Some(Working)),
             ("agy", fixture!("agy-idle"), Some(Idle)),
-            ("agy", fixture!("agy-waiting"), Some(Waiting)),
+            ("agy", fixture!("agy-waiting"), Some(Blocked)),
             ("agy", fixture!("agy-working"), Some(Working)),
             ("pi", fixture!("pi-idle"), Some(Idle)),
-            ("pi", fixture!("pi-trust"), Some(Waiting)),
+            ("pi", fixture!("pi-trust"), Some(Blocked)),
             ("pi", fixture!("pi-ring-unsent"), Some(Idle)),
             ("pi", fixture!("pi-working"), Some(Working)),
             ("pi", "$ pi --model x\n", None),
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn a_codex_error_row_above_the_idle_composer_is_a_failure_with_its_message() {
         let rows = fixture!("codex-failed");
-        assert_eq!(screen_state("codex", rows), Some(ScreenState::Failed));
+        assert_eq!(screen_state("codex", rows), Some(ScreenState::Error));
         assert_eq!(
             failure_detail("codex", rows).as_deref(),
             Some("stream disconnected before completion: rate limit reached for gpt-5.5-codex")
@@ -81,10 +81,10 @@ mod tests {
                 Some("done"),
                 Some(970),
                 Some("hook"),
-                Some(ScreenState::Failed),
+                Some(ScreenState::Error),
                 1_000
             ),
-            (Some("failed".into()), Some("failed"))
+            (Some("error".into()), Some("error"))
         );
     }
 
@@ -97,7 +97,7 @@ mod tests {
                 fixture!("codex-failed").to_string()
             )),
             Some((
-                ScreenState::Failed,
+                ScreenState::Error,
                 Some(
                     "stream disconnected before completion: rate limit reached for gpt-5.5-codex"
                         .into()
@@ -117,13 +117,13 @@ mod tests {
         assert_eq!(
             resolve(
                 Some("codex"),
-                Some("failed"),
+                Some("error"),
                 Some(900),
                 Some("screen"),
                 unknown,
                 1_000
             ),
-            (Some("failed".into()), None)
+            (Some("error".into()), None)
         );
         // Only Codex has an error row to look for; other providers keep Herdr's idle.
         let no_read = || -> Option<String> { panic!("no text read for claude") };
@@ -139,7 +139,7 @@ mod tests {
         // A text screen verb is classified as before.
         assert_eq!(
             read_pane(Some("codex"), fixture!("codex-failed"), || None).map(|(state, _)| state),
-            Some(ScreenState::Failed)
+            Some(ScreenState::Error)
         );
     }
 
@@ -162,11 +162,11 @@ mod tests {
         // Real approvals still wait.
         assert_eq!(
             screen_state("claude", fixture!("claude-waiting")),
-            Some(ScreenState::Waiting)
+            Some(ScreenState::Blocked)
         );
         assert_eq!(
             screen_state("codex", fixture!("codex-waiting")),
-            Some(ScreenState::Waiting)
+            Some(ScreenState::Blocked)
         );
     }
 
@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(screen_state("codex", &codex), Some(ScreenState::Idle));
         // Codex's request for input keeps its footer on one row, with no choice rows.
         let asking = "  Which branch should I use?\n\n  enter to submit answer · esc to cancel\n";
-        assert_eq!(screen_state("codex", asking), Some(ScreenState::Waiting));
+        assert_eq!(screen_state("codex", asking), Some(ScreenState::Blocked));
     }
 
     #[test]
@@ -206,7 +206,7 @@ mod tests {
         };
         assert_eq!(status("idle"), Some(ScreenState::Idle));
         assert_eq!(status("working"), Some(ScreenState::Working));
-        assert_eq!(status("blocked"), Some(ScreenState::Waiting));
+        assert_eq!(status("blocked"), Some(ScreenState::Blocked));
         assert_eq!(status("unknown"), None);
         assert_eq!(herdr_state("not json"), None);
     }

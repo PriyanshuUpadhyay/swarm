@@ -131,7 +131,7 @@ func snapshot(to directory: URL, arguments: [String]) {
             model.lastWorking = family
             model.agents = switch state {
             case .working: WorkingSnapshot(working: [family: 2])
-            case .waiting: WorkingSnapshot(waiting: [family: 1])
+            case .waiting: WorkingSnapshot(blocked: [family: 1])
             case .idle, .sleeping: WorkingSnapshot()
             }
             model.lastActive = now.addingTimeInterval(state == .sleeping ? -301 : -60)
@@ -160,7 +160,7 @@ func snapshot(to directory: URL, arguments: [String]) {
 
     // The wings' words from `--working`: models while agents work, the number once the ring is red.
     model.accounts = closedAccounts
-    model.agents = WorkingSnapshot(working: fileAgents.working, agents: fileAgents.agents.filter { !$0.waiting })
+    model.agents = WorkingSnapshot(working: fileAgents.working, agents: fileAgents.agents.filter { !$0.blocked })
     render("closed-models", open: false)
     model.accounts = at(96)
     render("closed-models-full", open: false)

@@ -159,7 +159,7 @@ fn a_pi_seat_shows_its_host_record_as_its_state() {
     let seat = listed_seat(&home, &session);
     assert_eq!(
         (&seat["state"], &seat["state_kind"], &seat["state_at_s"]),
-        (&"waiting".into(), &"question".into(), &110.into()),
+        (&"blocked".into(), &"question".into(), &110.into()),
         "{seat}"
     );
     status("state=done:at=120");
@@ -203,12 +203,12 @@ fn a_failed_record_read_keeps_a_fresh_host_wait_and_a_future_record_is_none() {
         format!("state=blocked:kind=question:at={}", now()),
     )
     .unwrap();
-    assert_eq!(listed_seat(&home, &session)["state"], "waiting");
+    assert_eq!(listed_seat(&home, &session)["state"], "blocked");
     std::fs::remove_file(home.join("status")).unwrap();
     let seat = listed_seat(&home, &session);
     assert_eq!(
         (&seat["state"], &seat["state_source"]),
-        (&"waiting".into(), &"host".into()),
+        (&"blocked".into(), &"host".into()),
         "{seat}"
     );
     std::fs::write(
@@ -219,7 +219,7 @@ fn a_failed_record_read_keeps_a_fresh_host_wait_and_a_future_record_is_none() {
     let seat = listed_seat(&home, &session);
     assert_eq!(
         (&seat["state"], &seat["state_source"]),
-        (&"waiting".into(), &"host".into()),
+        (&"blocked".into(), &"host".into()),
         "{seat}"
     );
     assert!(seat["state_at_s"].as_i64().unwrap() <= now(), "{seat}");

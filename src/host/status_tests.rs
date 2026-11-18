@@ -11,7 +11,7 @@ fn a_host_record_needs_its_time() {
     );
     assert_eq!(
         record("state=blocked:kind=permission:at=5"),
-        Some(("waiting", Some("permission"), 5))
+        Some(("blocked", Some("permission"), 5))
     );
     assert_eq!(record("state=working"), None);
     assert_eq!(record("state=working:at=soon"), None);
@@ -30,10 +30,10 @@ fn program_status_maps_the_root_record() {
     );
     assert_eq!(
         state("state=blocked:kind=question", true),
-        Some(("waiting", Some("question"), None))
+        Some(("blocked", Some("question"), None))
     );
     assert_eq!(state("state=blocked:kind=auth", true), None);
-    assert_eq!(state("state=blocked", true), Some(("waiting", None, None)));
+    assert_eq!(state("state=blocked", true), Some(("blocked", None, None)));
     assert_eq!(state("state=done:app=pi", true), Some(("done", None, None)));
     // pi reports idle when it starts and when the owner cancels a run.
     assert_eq!(state("state=idle:app=pi", false), None);
@@ -41,7 +41,7 @@ fn program_status_maps_the_root_record() {
     // "rate limited", base64 without padding.
     assert_eq!(
         state("state=error:msg=cmF0ZSBsaW1pdGVk", true),
-        Some(("failed", None, Some("rate limited".into())))
+        Some(("error", None, Some("rate limited".into())))
     );
     assert_eq!(state("state=working:id=build/test", true), None);
     assert_eq!(state("state=clear", true), None);
@@ -53,7 +53,7 @@ fn program_status_maps_the_root_record() {
     assert_eq!(state("state=error:msg=A", true), None);
     assert_eq!(
         state("state=error:msg=***", true),
-        Some(("failed", None, None))
+        Some(("error", None, None))
     );
     // A malformed pair is skipped and the rest still counts.
     assert_eq!(state("junk:state=done", true), Some(("done", None, None)));
@@ -70,17 +70,17 @@ fn a_hook_state_report_reads_back_as_the_same_state() {
         program_status_report("claude", &hook)
     };
     assert_eq!(
-        report("waiting", Some("permission")).as_deref(),
+        report("blocked", Some("permission")).as_deref(),
         Some("state=blocked:kind=permission:app=claude")
     );
     assert_eq!(report("idle", None), None);
     for (state, kind) in [
         ("working", None),
-        ("waiting", Some("permission")),
-        ("waiting", Some("question")),
-        ("waiting", None),
+        ("blocked", Some("permission")),
+        ("blocked", Some("question")),
+        ("blocked", None),
         ("done", None),
-        ("failed", None),
+        ("error", None),
     ] {
         let body = report(state, kind).unwrap();
         let back = program_status(&body, true).unwrap();
@@ -130,12 +130,18 @@ fn hook_waits_carry_the_permission_or_question_kind() {
         ("claude", "PreToolUse", json!({}), None),
         ("codex", "Stop", json!({}), None),
         ("claude", "StopFailure", json!({"error": "quota"}), None),
+        (
+            "claude",
+            "StopFailure",
+            json!({"error": "authentication_failed"}),
+            Some("auth"),
+        ),
         ("agy", "Stop", json!({"error": "quota"}), None),
     ] {
         let report = hook_state(provider, event, &payload).unwrap();
         assert_eq!(report.kind, expected, "{provider} {event} {payload}");
         if expected.is_some() {
-            assert_eq!(report.state, "waiting");
+            assert_eq!(report.state, "blocked");
         }
     }
 }
@@ -169,31 +175,31 @@ fn maps_every_hook_event_in_the_state_table() {
             "claude",
             "PermissionRequest",
             empty.clone(),
-            Some(("waiting", None)),
+            Some(("blocked", None)),
         ),
         (
             "claude",
             "Elicitation",
             empty.clone(),
-            Some(("waiting", None)),
+            Some(("blocked", None)),
         ),
         (
             "claude",
             "Notification",
             notification("permission_prompt"),
-            Some(("waiting", None)),
+            Some(("blocked", None)),
         ),
         (
             "claude",
             "Notification",
             notification("elicitation_dialog"),
-            Some(("waiting", None)),
+            Some(("blocked", None)),
         ),
         (
             "claude",
             "Notification",
             notification("agent_needs_input"),
-            Some(("waiting", None)),
+            Some(("blocked", None)),
         ),
         (
             "claude",
@@ -208,13 +214,19 @@ fn maps_every_hook_event_in_the_state_table() {
             "claude",
             "StopFailure",
             json!({"error": "rate_limit"}),
-            Some(("failed", Some("rate_limit"))),
+            Some(("error", Some("rate_limit"))),
+        ),
+        (
+            "claude",
+            "StopFailure",
+            json!({"error": "authentication_failed"}),
+            Some(("blocked", Some("authentication_failed"))),
         ),
         (
             "claude",
             "StopFailure",
             empty.clone(),
-            Some(("failed", None)),
+            Some(("error", None)),
         ),
         (
             "claude",
@@ -267,7 +279,7 @@ fn maps_every_hook_event_in_the_state_table() {
             "agy",
             "Stop",
             json!({"error": "quota"}),
-            Some(("failed", Some("quota"))),
+            Some(("error", Some("quota"))),
         ),
         ("agy", "PreToolUse", empty.clone(), None),
         ("gemini", "Stop", empty.clone(), None),
@@ -291,11 +303,11 @@ fn a_codex_question_waits_through_its_sleeps_until_the_reply() {
     let ask = json!({"tool_name": "request_user_input_async"});
     assert_eq!(
         state("PreToolUse", ask.clone()),
-        Some(("waiting", Some("question")))
+        Some(("blocked", Some("question")))
     );
     assert_eq!(
         state("PostToolUse", ask),
-        Some(("waiting", Some("question")))
+        Some(("blocked", Some("question")))
     );
     // Codex 0.162 names the tool `sleep`; earlier builds named it `clocksleep`.
     for name in ["sleep", "clocksleep"] {

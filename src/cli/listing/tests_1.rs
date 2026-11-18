@@ -202,7 +202,7 @@ mod cases {
             &connection,
             &session,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             Some("permission"),
@@ -240,7 +240,7 @@ mod cases {
             &connection,
             &session,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             Some("permission"),
@@ -305,7 +305,7 @@ mod cases {
             .find(|agent| agent["id"] == ORCHESTRATOR)
             .unwrap();
         assert!(chair["provider"].is_null());
-        assert_eq!(chair["state"], "failed");
+        assert_eq!(chair["state"], "error");
         std::fs::remove_dir_all(root).unwrap();
     }
 

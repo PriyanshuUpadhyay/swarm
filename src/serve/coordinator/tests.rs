@@ -202,7 +202,7 @@ fn cached_waiting_worker() -> (Fixture, rusqlite::Connection, BTreeMap<String, V
         &connection,
         &fixture.session,
         "worker",
-        "waiting",
+        "blocked",
         "hook",
         Some("Choose"),
         None,
@@ -244,7 +244,7 @@ fn a_missed_listing_keeps_hook_changes_and_drops_the_old_prompt() {
         &connection,
         &fixture.session,
         "worker",
-        "waiting",
+        "blocked",
         "hook",
         Some("New detail"),
         Some("permission"),
@@ -313,10 +313,10 @@ fn a_missed_listing_keeps_the_resolved_state_when_the_stored_timestamp_is_unchan
     let stored = stored_agents(&connection, &fixture.session).unwrap();
     assert_eq!(stored[0]["state"], "working");
     assert_eq!(stored[0]["state_at_s"], 100);
-    assert_eq!(previous[&fixture.session][0]["state"], "waiting");
+    assert_eq!(previous[&fixture.session][0]["state"], "blocked");
     assert_eq!(previous[&fixture.session][0]["state_at_s"], 100);
     let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
-    assert_eq!(snapshot[&fixture.session][0]["state"], "waiting");
+    assert_eq!(snapshot[&fixture.session][0]["state"], "blocked");
     assert_eq!(snapshot[&fixture.session][0]["prompt"]["id"], "old-prompt");
     assert_eq!(snapshot[&fixture.session][0]["alive"], true);
 }

@@ -169,7 +169,7 @@ pub fn turn_started(
     let started: bool = connection.query_row(
         "SELECT EXISTS (SELECT 1 FROM agent
                         WHERE session_id = ?1 AND id = ?2 AND state_source IN ('hook', 'host')
-                          AND state IN ('working', 'waiting') AND state_at >= ?3)",
+                          AND state IN ('working', 'blocked') AND state_at >= ?3)",
         (session_id, agent_id, since),
         |row| row.get(0),
     )?;

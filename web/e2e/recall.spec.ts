@@ -223,7 +223,7 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
     return Math.abs(row.getBoundingClientRect().top - el.getBoundingClientRect().top);
   }, second)).toBeLessThan(40);
   await tab.keyboard.press("Control+Meta+w");
-  await expect(tab.getByText("No chat is waiting for you.")).toBeVisible();
+  await expect(tab.getByText("No chat is blocked.")).toBeVisible();
   expect(errors).toEqual([]);
 });
 

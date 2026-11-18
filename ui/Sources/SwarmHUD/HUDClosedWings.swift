@@ -2,21 +2,21 @@
 import SwarmHUDCore
 import SwiftUI
 
-/// "2 Claude agents working, Codex agent waiting for you", "No agent working".
+/// "2 Claude agents working, Codex agent blocked", "No agent working".
 func agentsSpoken(_ agents: WorkingSnapshot) -> String {
     func phrase(_ counts: [String: Int], _ verb: String) -> [String] {
         mascotFamilies.compactMap { provider in
             counts[provider].map { $0 == 1 ? "\(providerTitle(provider)) agent \(verb)" : "\($0) \(providerTitle(provider)) agents \(verb)" }
         }
     }
-    let parts = phrase(agents.working, "working") + phrase(agents.waiting, "waiting for you")
+    let parts = phrase(agents.working, "working") + phrase(agents.blocked, "blocked")
     return parts.isEmpty ? "No agent working" : parts.joined(separator: ", ")
 }
 
 /// "Claude on opus, Codex on gpt-6": each model beside its provider, so none reads as another's.
 func modelsSpoken(_ agents: [RunningAgent]) -> String {
     var phrases: [String] = []
-    for agent in agents where !agent.waiting {
+    for agent in agents where !agent.blocked {
         let phrase = "\(providerTitle(agent.provider)) on \(modelLabel(agent.model, provider: agent.provider))"
         if !phrases.contains(phrase) { phrases.append(phrase) }
     }
@@ -55,12 +55,12 @@ struct ClosedWings: View {
                 .padding(.leading, Layout.closedEar)
             if let left = text.left {
                 Text(left).font(.system(size: Layout.wingFont, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(text.waiting ? Palette.warn : Palette.secondary)
+                    .foregroundStyle(text.blocked ? Palette.warn : Palette.secondary)
                     .fixedSize()
             }
             Spacer(minLength: 0)
             ForEach(text.tags, id: \.self) { tag in
-                Text(tag).font(.system(size: Layout.tagFont, weight: .semibold)).foregroundStyle(text.waiting ? Palette.warn : Palette.secondary)
+                Text(tag).font(.system(size: Layout.tagFont, weight: .semibold)).foregroundStyle(text.blocked ? Palette.warn : Palette.secondary)
                     .fixedSize()
                     .padding(.horizontal, Layout.tagPadding).padding(.vertical, 2)
                     .background(Capsule().fill(Color.white.opacity(0.12)))
@@ -89,7 +89,7 @@ struct ClosedWings: View {
     // One long `+` chain with `?:` parts made the CI compiler give up on type-checking `body`.
     private func spokenLabel(best: BestAccount?, text: WingText) -> String {
         var label = agentsSpoken(model.agents)
-        if !text.tags.isEmpty && !text.waiting {
+        if !text.tags.isEmpty && !text.blocked {
             label += ", " + modelsSpoken(model.agents.agents)
         }
         label += ", " + (best.map { lowercasedFirst($0.spoken(now: now)) } ?? "no usage reading")

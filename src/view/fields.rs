@@ -167,7 +167,7 @@ fn add_usage(context: &mut Context, agents: impl IntoIterator<Item = Value>) {
 }
 fn question(agent: &Value) -> Option<&str> {
     agent["prompt"]["question"].as_str().or_else(|| {
-        if AgentStatus::agent(agent) == AgentStatus::Waiting {
+        if AgentStatus::agent(agent) == AgentStatus::Blocked {
             agent["state_detail"].as_str()
         } else {
             None
@@ -227,7 +227,7 @@ pub fn chat_context(
         .or_else(|| {
             chat.agents
                 .iter()
-                .find(|a| AgentStatus::agent(a) == AgentStatus::Waiting)
+                .find(|a| AgentStatus::agent(a) == AgentStatus::Blocked)
                 .and_then(|a| a["state_detail"].as_str())
         })
     {

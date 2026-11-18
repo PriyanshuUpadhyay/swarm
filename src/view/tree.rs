@@ -15,8 +15,8 @@ pub enum AgentStatus {
     Ended,
     Done,
     Working,
-    Failed,
-    Waiting,
+    Error,
+    Blocked,
 }
 impl AgentStatus {
     pub fn new(alive: Option<bool>, state: Option<&str>) -> Self {
@@ -25,8 +25,8 @@ impl AgentStatus {
         }
         match state {
             Some("working") => Self::Working,
-            Some("waiting") => Self::Waiting,
-            Some("failed") => Self::Failed,
+            Some("blocked") => Self::Blocked,
+            Some("error") => Self::Error,
             _ => Self::Done,
         }
     }
@@ -42,8 +42,8 @@ impl AgentStatus {
             Self::Ended => "ended",
             Self::Done => "done",
             Self::Working => "working",
-            Self::Failed => "failed",
-            Self::Waiting => "waiting",
+            Self::Error => "error",
+            Self::Blocked => "blocked",
         }
     }
     pub fn aggregate(statuses: impl IntoIterator<Item = Self>) -> Option<Self> {

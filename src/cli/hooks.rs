@@ -299,10 +299,10 @@ pub(crate) fn store_state(
     else {
         return Ok(false);
     };
-    if report.state == "waiting" && old.as_deref() != Some("waiting") {
-        notice_waiting(connection, session, agent, report.kind)?;
+    if report.state == "blocked" && old.as_deref() != Some("blocked") {
+        notice_blocked(connection, session, agent, report.kind)?;
     }
-    if report.state == "done" && matches!(old.as_deref(), Some("working" | "waiting")) {
+    if report.state == "done" && matches!(old.as_deref(), Some("working" | "blocked")) {
         notice_chair_done(connection, session, agent)?;
     }
     Ok(true)

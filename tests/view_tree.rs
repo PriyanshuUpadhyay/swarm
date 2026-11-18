@@ -234,7 +234,7 @@ fn chat_cut_and_order() {
 fn child_folds_and_hides_ended_children() {
     let snap = folder_snapshot(
         vec![session("chat", "/repo", 1)],
-        json!({"chat":[agent("orchestrator","working"),agent("review","waiting"),json!({"id":"code","role":"code","pane":null,"alive":false,"state":"done"})]}),
+        json!({"chat":[agent("orchestrator","working"),agent("review","blocked"),json!({"id":"code","role":"code","pane":null,"alive":false,"state":"done"})]}),
     );
     let owner = OwnerChoices::default();
     let mut state = ViewState::default();
@@ -243,22 +243,22 @@ fn child_folds_and_hides_ended_children() {
     assert!(!folded[1].expanded);
     assert_eq!(
         folded[1].children_summary.as_deref(),
-        Some("1 agent · 1 waiting")
+        Some("1 agent · 1 blocked")
     );
-    assert_eq!(folded[1].status, Some(Status::Waiting));
+    assert_eq!(folded[1].status, Some(Status::Blocked));
     state.fold("chat:chat", false);
     let opened = sections(&snap, &owner, &state, false).remove(0).rows;
     assert_eq!(
         opened.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
         ["/repo", "chat:chat", "child:chat/review"]
     );
-    assert_eq!(opened[1].status, Some(Status::Waiting));
+    assert_eq!(opened[1].status, Some(Status::Blocked));
     assert!(!opened[2].dimmed);
     assert_eq!(opened[2].detail, "· code");
     state.fold("/repo", true);
     let folded = sections(&snap, &owner, &state, false).remove(0).rows;
     assert_eq!(folded.len(), 1);
-    assert_eq!(folded[0].status, Some(Status::Waiting));
+    assert_eq!(folded[0].status, Some(Status::Blocked));
 }
 #[test]
 fn an_open_chat_is_done_only_when_its_chair_and_every_child_are_done() {
@@ -357,7 +357,7 @@ fn stable_chain_child_ids_and_current_urgency() {
     next["continuation_of"] = json!("root");
     let mut state = ViewState::default();
     state.fold("chat:root", false);
-    for older_status in ["waiting", "failed"] {
+    for older_status in ["blocked", "error"] {
         let snap = folder_snapshot(
             vec![old.clone(), next.clone()],
             json!({"root":[agent("previous-only",older_status)],"next":[agent("orchestrator","working"),agent("worker","done"),agent("finished","ended")]}),
@@ -379,7 +379,7 @@ fn stable_chain_child_ids_and_current_urgency() {
     let rows = sections(
         &folder_snapshot(
             vec![old, next],
-            json!({"root":[agent("previous-only","waiting")]}),
+            json!({"root":[agent("previous-only","blocked")]}),
         ),
         &OwnerChoices::default(),
         &state,
@@ -399,7 +399,7 @@ fn child_count_without_waiting() {
             vec![agent("one", "done"), agent("two", "working")],
             "2 agents",
         ),
-        (vec![agent("worker", "waiting")], "1 agent · 1 waiting"),
+        (vec![agent("worker", "blocked")], "1 agent · 1 blocked"),
     ] {
         let rows = sections(
             &folder_snapshot(vec![session("chat", "/repo", 1)], json!({"chat":agents})),
@@ -443,20 +443,20 @@ fn pinned_archived_and_empty_section_visibility() {
 fn urgent_collapsed_headers_and_counts() {
     let snap = folder_snapshot(
         vec![session("chat", "/repo", 1)],
-        json!({"chat":[agent("coder","working"),agent("tester","working"),agent("reviewer","waiting"),agent("old","ended")]}),
+        json!({"chat":[agent("coder","working"),agent("tester","working"),agent("reviewer","blocked"),agent("old","ended")]}),
     );
     let mut state = ViewState::default();
     state.fold("project:/repo", true);
     let section = sections(&snap, &OwnerChoices::default(), &state, false).remove(0);
     assert!(!section.expanded);
-    assert_eq!(section.status, Some(Status::Waiting));
+    assert_eq!(section.status, Some(Status::Blocked));
     assert_eq!(
         section.rows[0]
             .counts
             .iter()
             .map(|c| (c.status, c.count))
             .collect::<Vec<_>>(),
-        [(Status::Waiting, 1), (Status::Working, 2)]
+        [(Status::Blocked, 1), (Status::Working, 2)]
     );
 }
 #[path = "view_tree/archive.rs"]

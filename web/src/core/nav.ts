@@ -4,7 +4,7 @@
 import type { Snapshot } from "./api";
 import { fuzzySearchItems } from "./fuzzy-search";
 
-export type Status = "ended" | "done" | "working" | "failed" | "waiting";
+export type Status = "ended" | "done" | "working" | "error" | "blocked";
 export type Field = { field: string; text: string; status?: Status };
 export type Selection = { workspace: string | null; chat: string | null; agentSession: string | null; agent: string | null };
 
@@ -91,7 +91,7 @@ export type Tab = {
   canHide: boolean;
   pending: "starting" | "failed" | "closing" | null;
   fields: Field[];
-  children: { count: number; waiting: number; firstWaiting: string | null; text: string } | null;
+  children: { count: number; blocked: number; firstBlocked: string | null; text: string } | null;
 };
 
 /** A workspace's tab strip. Tab groups are not shown (ADR 0076), so `tabs` is the owner's order. */
@@ -371,12 +371,12 @@ export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null)
   return [...byActivity.filter((w) => w.row.pinned), ...byActivity.filter((w) => !w.row.pinned)];
 }
 
-/** The first waiting chat after `current` in sidebar order, wrapping; null when none waits. */
-export function nextWaiting(order: readonly string[], waiting: (session: string) => boolean, current: string | null): string | null {
+/** The first blocked chat after `current` in sidebar order, wrapping; null when none is blocked. */
+export function nextBlocked(order: readonly string[], blocked: (session: string) => boolean, current: string | null): string | null {
   const from = current ? order.indexOf(current) : -1;
   for (let k = 1; k <= order.length; k++) {
     const s = order[(from + k + order.length) % order.length];
-    if (s !== current && waiting(s)) return s;
+    if (s !== current && blocked(s)) return s;
   }
   return null;
 }

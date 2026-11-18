@@ -216,7 +216,7 @@ fn unknown_agent_liveness_keeps_the_tab_when_leaving() {
                 session("design", "/repo/wt/main", 1),
                 session("review", "/repo/wt/main", 2),
             ],
-            json!({"design":[unknown, agent("worker", "ended")],"review":[agent("orchestrator", "waiting")]}),
+            json!({"design":[unknown, agent("worker", "ended")],"review":[agent("orchestrator", "blocked")]}),
         ),
         &owner(),
     );

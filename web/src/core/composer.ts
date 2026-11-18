@@ -78,8 +78,8 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
   else if (!child && !agent?.pane) disabled = "The chair has no pane to receive input.";
   else if (!child && agent?.alive === false) disabled = "This chat's pane has closed. Start a new chat or switch model.";
   const unreachable = disabled !== null;
-  // A waiting agent has a dialog open, where Enter means yes, so typed text could approve a tool.
-  if (!disabled && agent?.state === "waiting")
+  // A blocked agent has a dialog open, where Enter means yes, so typed text could approve a tool.
+  if (!disabled && agent?.state === "blocked")
     disabled = prompt
       ? "The agent is asking a question. Answer it first."
       : child

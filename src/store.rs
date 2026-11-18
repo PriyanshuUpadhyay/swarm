@@ -83,6 +83,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0013.sql"),
     include_str!("../migrations/0014.sql"),
     include_str!("../migrations/0015.sql"),
+    include_str!("../migrations/0016.sql"),
 ];
 
 #[derive(serde::Serialize)]
@@ -174,7 +175,7 @@ fn migrate(connection: &mut Connection) -> Result<(), Box<dyn std::error::Error>
     if version == MIGRATIONS.len() as i64 {
         return Ok(());
     }
-    // Migration 0013 rebuilds `agent`. SQLite's rebuild steps need foreign keys off, and a
+    // Migrations 0013 and 0016 rebuild `agent`. SQLite's rebuild steps need foreign keys off, and a
     // transaction cannot change that, so it is off for the whole migration and checked before
     // the commit.
     let keys: bool = connection.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
@@ -274,6 +275,11 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
     if version < 15 {
         tx.execute_batch(MIGRATIONS[14])?;
         tx.pragma_update(None, "user_version", 15)?;
+    }
+
+    if version < 16 {
+        tx.execute_batch(MIGRATIONS[15])?;
+        tx.pragma_update(None, "user_version", 16)?;
     }
 
     let added = broken(&tx)? - broken_before;

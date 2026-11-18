@@ -21,7 +21,7 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
         // before 0.162) until the owner's reply arrives as a UserPromptSubmit, so a sleep keeps
         // the question's state.
         ("codex", "PreToolUse" | "PostToolUse") if tool == Some("request_user_input_async") => {
-            ("waiting", Some("question"))
+            ("blocked", Some("question"))
         }
         ("codex", "PreToolUse" | "PostToolUse") if matches!(tool, Some("sleep" | "clocksleep")) => {
             return None;
@@ -33,27 +33,37 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
         ("claude" | "codex", "UserPromptSubmit" | "PreToolUse" | "PostToolUse") => {
             ("working", None)
         }
-        ("claude", "PermissionRequest") => ("waiting", Some("permission")),
-        ("claude", "Elicitation") => ("waiting", Some("question")),
+        ("claude", "PermissionRequest") => ("blocked", Some("permission")),
+        ("claude", "Elicitation") => ("blocked", Some("question")),
         ("claude" | "codex", "Stop") | ("codex", "Interrupt") => ("done", None),
-        ("claude", "StopFailure") => ("failed", None),
+        // A credential the owner must fix is a block of kind `auth` in the protocol; any other
+        // API error, such as a lost connection, ends the turn as `error`.
+        ("claude", "StopFailure")
+            if matches!(
+                error,
+                Some("authentication_failed" | "oauth_org_not_allowed" | "cloud_credential_error")
+            ) =>
+        {
+            ("blocked", Some("auth"))
+        }
+        ("claude", "StopFailure") => ("error", None),
         ("claude", "Notification") => match text("notification_type")? {
-            "permission_prompt" => ("waiting", Some("permission")),
-            "elicitation_dialog" => ("waiting", Some("question")),
-            "agent_needs_input" => ("waiting", None),
+            "permission_prompt" => ("blocked", Some("permission")),
+            "elicitation_dialog" => ("blocked", Some("question")),
+            "agent_needs_input" => ("blocked", None),
             "idle_prompt" => ("done", None),
             _ => return None,
         },
         ("agy", "PreInvocation" | "PostToolUse") => ("working", None),
         ("agy", "Stop") => match error {
-            Some(_) => ("failed", None),
+            Some(_) => ("error", None),
             None => ("done", None),
         },
         _ => return None,
     };
     Some(HookState {
         state,
-        detail: if state == "failed" {
+        detail: if state == "error" || kind == Some("auth") {
             error.map(str::to_string)
         } else {
             None
@@ -91,21 +101,21 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
     let (state, kind) = match *pairs.get("state")? {
         "working" => ("working", None),
         "blocked" => match pairs.get("kind").copied() {
-            Some("permission") => ("waiting", Some("permission")),
-            Some("question") => ("waiting", Some("question")),
+            Some("permission") => ("blocked", Some("permission")),
+            Some("question") => ("blocked", Some("question")),
             // AGY reports `kind=auth` ("Sign in required") at every start while it signs itself
             // in, then `idle`; it is no question the owner can answer from a card.
             Some("auth") => return None,
-            _ => ("waiting", None),
+            _ => ("blocked", None),
         },
         "done" => ("done", None),
         "idle" if seen_work => ("done", None),
-        "error" => ("failed", None),
+        "error" => ("error", None),
         _ => return None,
     };
     Some(HookState {
         state,
-        detail: if state == "failed" { message } else { None },
+        detail: if state == "error" { message } else { None },
         kind,
     })
 }
@@ -129,10 +139,10 @@ pub fn host_record(body: &str, seen_work: bool) -> Option<(HookState, i64)> {
 pub fn program_status_report(provider: &str, state: &HookState) -> Option<String> {
     let body = match (state.state, state.kind) {
         ("working", _) => "state=working".to_string(),
-        ("waiting", Some(kind)) => format!("state=blocked:kind={kind}"),
-        ("waiting", None) => "state=blocked".to_string(),
+        ("blocked", Some(kind)) => format!("state=blocked:kind={kind}"),
+        ("blocked", None) => "state=blocked".to_string(),
         ("done", _) => "state=done".to_string(),
-        ("failed", _) => "state=error".to_string(),
+        ("error", _) => "state=error".to_string(),
         _ => return None,
     };
     Some(format!("{body}:app={provider}"))

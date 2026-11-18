@@ -397,7 +397,7 @@ pub(crate) fn ring_proof(
     if swarm::store::turn_started(connection, session_id, agent_id, rung_at)? {
         return Ok(Some(Delivery::Hook));
     }
-    if let Some((swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Waiting, _)) =
+    if let Some((swarm::screen::ScreenState::Working | swarm::screen::ScreenState::Blocked, _)) =
         swarm::screen::read_pane(provider, screen.unwrap_or(rows), || Some(rows.to_string()))
     {
         return Ok(Some(Delivery::Screen));

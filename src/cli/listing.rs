@@ -169,7 +169,7 @@ pub(crate) fn list_agents_from(
                 if kept.is_some() && provider != Some("pi") {
                     return Err(Box::new((kept, None, false)));
                 }
-                let seen_work = matches!(row.state.as_deref(), Some("working" | "waiting"));
+                let seen_work = matches!(row.state.as_deref(), Some("working" | "blocked"));
                 Ok(scope.spawn(move || {
                     let host = host_record_of(adapter, provider, pane, seen_work);
                     let fresh = kept.is_none();
@@ -246,7 +246,7 @@ pub(crate) fn list_agents_from(
         // fresh hook outranks the screen, so a turn it reports gets no ring typed into it.
         let idle = screen == Some(swarm::screen::ScreenState::Idle)
             && prompt.is_none()
-            && !matches!(state.as_deref(), Some("working" | "waiting"));
+            && !matches!(state.as_deref(), Some("working" | "blocked"));
         if Some(&row.id) == chair.as_ref() {
             chair_row_idle = idle;
         }
@@ -265,7 +265,7 @@ pub(crate) fn list_agents_from(
             eprintln!("swarm: {error}");
         }
         if let Some(seen) = write {
-            let detail = detail.filter(|_| seen == "failed");
+            let detail = detail.filter(|_| seen == "error");
             match swarm::store::set_screen_state(
                 connection,
                 session_id,
@@ -281,9 +281,9 @@ pub(crate) fn list_agents_from(
                 ),
             ) {
                 Ok(true) => {
-                    if seen == "waiting"
-                        && row.state.as_deref() != Some("waiting")
-                        && let Err(error) = notice_waiting(connection, session_id, &row.id, None)
+                    if seen == "blocked"
+                        && row.state.as_deref() != Some("blocked")
+                        && let Err(error) = notice_blocked(connection, session_id, &row.id, None)
                     {
                         eprintln!("swarm: {error}");
                     }
@@ -299,7 +299,7 @@ pub(crate) fn list_agents_from(
         }
         let state_kind = row
             .state_kind
-            .filter(|_| state.as_deref() == Some("waiting"));
+            .filter(|_| state.as_deref() == Some("blocked"));
         if provider.as_deref() == Some("claude")
             && let Some(prompt) = &mut prompt
         {

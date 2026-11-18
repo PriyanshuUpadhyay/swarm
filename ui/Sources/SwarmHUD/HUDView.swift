@@ -28,9 +28,9 @@ enum Palette {
     /// Brighter than `track`: a 3 pt ring needs more contrast than a 6 pt bar.
     static let ringTrack = Color.white.opacity(0.18)
     static let rule = Color.white.opacity(0.08)
-    /// A running agent's chip; a waiting one's is warm.
+    /// A running agent's chip; a blocked one's is warm.
     static let chip = Color(hex: 0x17171A)
-    static let chipWaiting = Color(hex: 0x2A1D0D)
+    static let chipBlocked = Color(hex: 0x2A1D0D)
 
     /// Text colour for a reading. Calm text stays white, so the phase never changes text contrast.
     static func ink(_ severity: Severity) -> Color {

@@ -159,29 +159,29 @@ public func bestAccount(_ accounts: [UsageAccount], history: [HistorySample], no
 }
 
 /// `swarm working --json`: per provider, the agents that work and the agents that wait for the
-/// owner's answer. A provider with none is absent, and so is `waiting` from an older swarm.
+/// owner's answer. A provider with none is absent. An older swarm sends `swarm.working.v1`, which reads as no agents.
 public struct WorkingSnapshot: Decodable, Equatable, Sendable {
     public var working: [String: Int]
-    public var waiting: [String: Int]
-    /// The same agents one by one, waiting first; empty from a swarm before 0.0.34.
+    public var blocked: [String: Int]
+    /// The same agents one by one, blocked first; empty from a swarm before 0.0.34.
     public var agents: [RunningAgent]
 
-    public init(working: [String: Int] = [:], waiting: [String: Int] = [:], agents: [RunningAgent] = []) {
+    public init(working: [String: Int] = [:], blocked: [String: Int] = [:], agents: [RunningAgent] = []) {
         self.working = working
-        self.waiting = waiting
+        self.blocked = blocked
         self.agents = agents
     }
 
-    private enum CodingKeys: String, CodingKey { case schema, working, waiting, agents }
+    private enum CodingKeys: String, CodingKey { case schema, working, blocked, agents }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let schema = try container.decode(String.self, forKey: .schema)
-        guard schema == "swarm.working.v1" else {
+        guard schema == "swarm.working.v2" else {
             throw DecodingError.dataCorruptedError(forKey: .schema, in: container, debugDescription: "unknown schema \(schema)")
         }
         working = try container.decode([String: Int].self, forKey: .working).filter { $0.value > 0 }
-        waiting = try container.decodeIfPresent([String: Int].self, forKey: .waiting)?.filter { $0.value > 0 } ?? [:]
+        blocked = try container.decodeIfPresent([String: Int].self, forKey: .blocked)?.filter { $0.value > 0 } ?? [:]
         // A bad entry costs only that agent, never the counts.
         agents = try container.decodeIfPresent([Lossy<RunningAgent>].self, forKey: .agents)?.compactMap(\.value) ?? []
     }
@@ -191,7 +191,7 @@ public struct WorkingSnapshot: Decodable, Equatable, Sendable {
         (try? JSONDecoder().decode(WorkingSnapshot.self, from: data)) ?? WorkingSnapshot()
     }
 
-    public var isActive: Bool { !working.isEmpty || !waiting.isEmpty }
+    public var isActive: Bool { !working.isEmpty || !blocked.isEmpty }
 }
 
 /// An array element that decodes to nil instead of failing the whole array.
@@ -200,20 +200,20 @@ struct Lossy<T: Decodable>: Decodable {
     init(from decoder: Decoder) throws { value = try? T(from: decoder) }
 }
 
-/// One working or waiting agent from `swarm working --json`.
+/// One working or blocked agent from `swarm working --json`.
 public struct RunningAgent: Decodable, Equatable, Sendable {
     public let id: String
     public let session: String?
     public let provider: String
     public let model: String?
     public let account: String?
-    /// Any state other than `waiting` reads as working.
-    public let waiting: Bool
+    /// Any state other than `blocked` reads as working.
+    public let blocked: Bool
 
     public init(id: String, session: String? = nil, provider: String, model: String? = nil, account: String? = nil,
-                waiting: Bool = false) {
-        (self.id, self.session, self.provider, self.model, self.account, self.waiting)
-            = (id, session, provider, model, account, waiting)
+                blocked: Bool = false) {
+        (self.id, self.session, self.provider, self.model, self.account, self.blocked)
+            = (id, session, provider, model, account, blocked)
     }
 
     /// An agent id repeats across sessions; the pair does not.
@@ -228,7 +228,7 @@ public struct RunningAgent: Decodable, Equatable, Sendable {
         provider = try container.decode(String.self, forKey: .provider)
         model = try container.decodeIfPresent(String.self, forKey: .model)
         account = try container.decodeIfPresent(String.self, forKey: .account)
-        waiting = try container.decodeIfPresent(String.self, forKey: .state) == "waiting"
+        blocked = try container.decodeIfPresent(String.self, forKey: .state) == "blocked"
     }
 }
 
@@ -265,14 +265,14 @@ public enum MascotState: String, CaseIterable, Sendable {
 /// The mascot sleeps once no agent has worked or waited for 5 minutes.
 public func mascotState(_ agents: WorkingSnapshot, lastActive: Date, now: Date) -> MascotState {
     if !agents.working.isEmpty { return .working }
-    if !agents.waiting.isEmpty { return .waiting }
+    if !agents.blocked.isEmpty { return .waiting }
     return now.timeIntervalSince(lastActive) >= 300 ? .sleeping : .idle
 }
 
-/// Whose mascot shows: the most working agents, else the most waiting, else whose agents worked
+/// Whose mascot shows: the most working agents, else the most blocked, else whose agents worked
 /// last, else the best account's provider, else Claude.
 public func mascotFamily(_ agents: WorkingSnapshot, lastWorking: String?, best: BestAccount?) -> String {
-    busiest(agents.working) ?? busiest(agents.waiting) ?? lastWorking ?? best?.account.provider ?? "claude"
+    busiest(agents.working) ?? busiest(agents.blocked) ?? lastWorking ?? best?.account.provider ?? "claude"
 }
 
 /// Which of `count` mascots shows: the next one every 10 minutes of the clock, so every HUD on the
@@ -322,27 +322,27 @@ public func usageRing(_ best: BestAccount?, readFailed: Bool) -> UsageRing {
 }
 
 /// The closed wings' words: beside the mascot the working count or "needs you", beside the ring
-/// up to two model tags, the waiting agent's name, or the used percent once the ring is red.
+/// up to two model tags, the blocked agent's name, or the used percent once the ring is red.
 public struct WingText: Equatable, Sendable {
     public var left: String?
-    public var waiting = false
+    public var blocked = false
     public var tags: [String] = []
     public var number: String?
 
-    public init(left: String? = nil, waiting: Bool = false, tags: [String] = [], number: String? = nil) {
-        (self.left, self.waiting, self.tags, self.number) = (left, waiting, tags, number)
+    public init(left: String? = nil, blocked: Bool = false, tags: [String] = [], number: String? = nil) {
+        (self.left, self.blocked, self.tags, self.number) = (left, blocked, tags, number)
     }
 }
 
 public func wingText(_ agents: WorkingSnapshot, best: BestAccount?) -> WingText {
     var text = WingText()
     let working = agents.working.values.reduce(0, +)
-    if !agents.waiting.isEmpty {
-        text = WingText(left: "needs you", waiting: true,
-                        tags: agents.agents.first(where: \.waiting).map { [String($0.id.prefix(12))] } ?? [])
+    if !agents.blocked.isEmpty {
+        text = WingText(left: "needs you", blocked: true,
+                        tags: agents.agents.first(where: \.blocked).map { [String($0.id.prefix(12))] } ?? [])
     } else if working > 0 {
         // Each provider's first model, then the rest, so two Claude models do not hide Codex.
-        let running = agents.agents.filter { !$0.waiting }
+        let running = agents.agents.filter { !$0.blocked }
         var providers: [String] = []
         for agent in running where !providers.contains(agent.provider) { providers.append(agent.provider) }
         let ordered = providers.compactMap { provider in running.first { $0.provider == provider } } + running

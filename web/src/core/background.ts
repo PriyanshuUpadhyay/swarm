@@ -32,7 +32,7 @@ export type BackgroundRow =
 export function taskStatus(status: string): PaneStatus {
   if (status === "running") return "working";
   if (status === "completed") return "done";
-  if (status === "failed" || status === "killed") return "failed";
+  if (status === "failed" || status === "killed") return "error";
   return "ended";
 }
 

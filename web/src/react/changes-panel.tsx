@@ -214,7 +214,7 @@ function Drafts({ app, changes, files }: { app: App; changes: Changes; files: Ch
 
 // ---- PR ----
 
-const CHECK_STATUS: Record<ReturnType<typeof checkState>, Status> = { failed: "failed", pending: "working", passed: "done", skipped: "ended" };
+const CHECK_STATUS: Record<ReturnType<typeof checkState>, Status> = { failed: "error", pending: "working", passed: "done", skipped: "ended" };
 const CHECK_ORDER = ["failed", "pending", "passed", "skipped"];
 const checkName = (c: Check) => [c.workflowName, c.name ?? c.context].filter(Boolean).join(" / ") || "Check";
 

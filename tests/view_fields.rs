@@ -86,7 +86,7 @@ fn field_serialization_writes_only_lists_that_differ_from_defaults() {
 }
 #[test]
 fn agent_keys_order_and_currency_cost() {
-    let mut a = agent("worker", "waiting");
+    let mut a = agent("worker", "blocked");
     a["model"] = json!("model");
     a["tokens"] = json!(12);
     a["costUsd"] = json!(1.235);
@@ -104,7 +104,7 @@ fn agent_keys_order_and_currency_cost() {
 }
 #[test]
 fn current_session_questions_and_chain_usage() {
-    let mut a = agent("orchestrator", "waiting");
+    let mut a = agent("orchestrator", "blocked");
     a["tokens"] = json!(5);
     a["costUsd"] = json!(0.2);
     a["prompt"] = json!({"question":"Old"});

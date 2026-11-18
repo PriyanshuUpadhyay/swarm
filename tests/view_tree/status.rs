@@ -11,9 +11,9 @@ fn agent_status_mapping() {
     }
     for (state, status) in [
         ("working", Status::Working),
-        ("waiting", Status::Waiting),
+        ("blocked", Status::Blocked),
         ("done", Status::Done),
-        ("failed", Status::Failed),
+        ("error", Status::Error),
     ] {
         assert_eq!(Status::new(Some(true), Some(state)), status);
     }
@@ -27,10 +27,10 @@ fn agent_status_aggregate() {
             vec![Status::Done, Status::Working, Status::Ended],
             Status::Working,
         ),
-        (vec![Status::Working, Status::Failed], Status::Failed),
+        (vec![Status::Working, Status::Error], Status::Error),
         (
-            vec![Status::Failed, Status::Waiting, Status::Working],
-            Status::Waiting,
+            vec![Status::Error, Status::Blocked, Status::Working],
+            Status::Blocked,
         ),
     ] {
         assert_eq!(Status::aggregate(values), Some(status));
@@ -44,7 +44,7 @@ fn agent_status_decoding() {
     .unwrap();
     assert_eq!(Status::agent(&future), Status::Done);
     assert_eq!(
-        Status::agent(&json!({"pane":null,"alive":true,"state":"waiting"})),
+        Status::agent(&json!({"pane":null,"alive":true,"state":"blocked"})),
         Status::Ended
     );
     assert_eq!(
@@ -53,9 +53,9 @@ fn agent_status_decoding() {
     );
     assert_eq!(
         Status::agent(
-            &json!({"pane":"%1","alive":true,"state":"waiting","state_at_s":1790000000,"state_detail":"permission prompt"})
+            &json!({"pane":"%1","alive":true,"state":"blocked","state_at_s":1790000000,"state_detail":"permission prompt"})
         ),
-        Status::Waiting
+        Status::Blocked
     );
     let list: Value = serde_json::from_str(
         r#"{"agents":[{"id":"coder","role":"code","provider":"codex","pane":"p1","alive":true}]}"#,
@@ -66,7 +66,7 @@ fn agent_status_decoding() {
     assert_eq!(coder["alive"], true);
     let context = swarm::view::fields::agent_context(coder, "Coder");
     assert_eq!(context.text["provider"], "codex");
-    let reviewer: Value = serde_json::from_str(r#"{"id":"reviewer","role":"review","pane":"%3","alive":true,"state":"waiting","state_at_s":1790000000,"state_source":"hook","state_detail":"permission prompt","state_kind":"permission"}"#).unwrap();
+    let reviewer: Value = serde_json::from_str(r#"{"id":"reviewer","role":"review","pane":"%3","alive":true,"state":"blocked","state_at_s":1790000000,"state_source":"hook","state_detail":"permission prompt","state_kind":"permission"}"#).unwrap();
     assert_eq!(reviewer["state_at_s"], 1790000000i64);
     assert_eq!(reviewer["state_source"], "hook");
     assert_eq!(reviewer["state_kind"], "permission");

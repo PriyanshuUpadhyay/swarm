@@ -60,7 +60,7 @@ export function TabStrip({ app }: { app: App }) {
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
     if (action === "close") return void app.closeTab(tab.id);
     if (tab.session !== openId) app.openChat(tab.session);
-    if (action === "children" && tab.children?.firstWaiting) app.focusPane(tab.children.firstWaiting);
+    if (action === "children" && tab.children?.firstBlocked) app.focusPane(tab.children.firstBlocked);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -204,7 +204,7 @@ const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { 
       {tab.pending === "starting" || tab.pending === "closing" ? (
         <LoaderCircleIcon className="glyph working" aria-label={cap(tab.pending)} />
       ) : tab.pending === "failed" ? (
-        <TriangleAlertIcon className="glyph failed" aria-label="Failed" />
+        <TriangleAlertIcon className="glyph error" aria-label="Failed" />
       ) : null}
       {tab.pending !== null || !tab.fields.length ? (
         <span className="label">{tab.title}</span>
@@ -229,9 +229,9 @@ const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { 
         <button
           tabIndex={-1}
           data-action="children"
-          className={`fld rounded-sm px-1 hover:bg-hover ${tab.children.waiting ? "text-waiting" : ""}`}
-          title={tab.children.waiting ? "Show first waiting child" : "Show chat"}
-          aria-label={`${tab.title}, ${tab.children.count} agents, ${tab.children.waiting} waiting`}
+          className={`fld rounded-sm px-1 hover:bg-hover ${tab.children.blocked ? "text-waiting" : ""}`}
+          title={tab.children.blocked ? "Show first blocked child" : "Show chat"}
+          aria-label={`${tab.title}, ${tab.children.count} agents, ${tab.children.blocked} blocked`}
         >
           {tab.children.text}
         </button>

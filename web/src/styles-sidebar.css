@@ -469,10 +469,10 @@
 .glyph.working {
   color: var(--status-working);
 }
-.glyph.waiting {
+.glyph.blocked {
   color: var(--status-waiting);
 }
-.glyph.failed {
+.glyph.error {
   color: var(--status-failed);
 }
 .glyph.done {

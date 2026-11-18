@@ -26,7 +26,7 @@ pub(crate) fn read_screen(
     let prompt =
         swarm::screen::agent_prompt(provider, &output, capture, log.map(std::path::Path::new));
     let (state, detail) = if provider == Some("claude") && prompt.is_some() {
-        (swarm::screen::ScreenState::Waiting, None)
+        (swarm::screen::ScreenState::Blocked, None)
     } else {
         swarm::screen::read_pane(provider, &output, capture)?
     };

@@ -105,7 +105,7 @@ fn badge_counts_waiting_chats_and_honours_the_badge_preference() {
         &connection,
         &server.session,
         "worker",
-        "waiting",
+        "blocked",
         "hook",
         None,
         None,

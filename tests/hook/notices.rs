@@ -200,7 +200,7 @@ fn a_change_to_waiting_still_prints_empty_json_when_open_cannot_start() {
     );
     assert!(reported.status.success(), "{reported:?}");
     assert_eq!(stdout(&reported), "{}\n", "{reported:?}");
-    assert_eq!(coder_state(&home, &session)["state"], "waiting");
+    assert_eq!(coder_state(&home, &session)["state"], "blocked");
     std::fs::remove_dir_all(home).unwrap();
 }
 
@@ -280,7 +280,7 @@ fn a_change_to_waiting_stores_one_notice_and_starts_the_helper_not_the_app() {
         assert_eq!(row["session_id"], session.as_str());
         assert_eq!(row["agent_id"], "coder");
         assert_eq!(row["title"], "Swarm");
-        assert_eq!(row["body"], format!("{folder}: waiting on a permission"));
+        assert_eq!(row["body"], format!("{folder}: blocked on a permission"));
     }
     assert_eq!(rows.as_array().unwrap().len(), 2);
     std::fs::remove_dir_all(home).unwrap();
@@ -308,7 +308,7 @@ fn notices_due_applies_the_notice_preferences() {
         &connection,
         &in_open,
         "coder",
-        "waiting",
+        "blocked",
         "hook",
         None,
         None,
@@ -340,21 +340,21 @@ fn notices_due_applies_the_notice_preferences() {
         muted.display()
     ));
     add(Some(&in_muted), Some("coder"), "muted");
-    add(Some(&in_open), Some("coder"), "waiting");
+    add(Some(&in_open), Some("coder"), "blocked");
     add(None, None, "done");
     // A test notice from Settings checks delivery, so the done switch does not drop it.
     add(None, None, "Swarm test");
     assert_eq!(
         due(),
         [
-            ("waiting".to_string(), false),
+            ("blocked".to_string(), false),
             ("Swarm test".to_string(), false)
         ]
     );
     assert_eq!(due(), []);
 
     choices(r#"{"post":false}"#);
-    add(Some(&in_open), Some("coder"), "waiting");
+    add(Some(&in_open), Some("coder"), "blocked");
     assert_eq!(due(), []);
 
     std::fs::remove_file(home.join(".swarm/choices.json")).unwrap();

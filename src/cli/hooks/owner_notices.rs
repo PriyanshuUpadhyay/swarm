@@ -26,17 +26,18 @@ pub(crate) fn notice_chair_done(
     add_folder_notice(connection, session, agent, "the orchestrator is done")
 }
 
-/// ADR 0077: a change to waiting is a notice row, which the notice helper posts.
-pub(crate) fn notice_waiting(
+/// ADR 0077: a change to blocked is a notice row, which the notice helper posts.
+pub(crate) fn notice_blocked(
     connection: &rusqlite::Connection,
     session: &str,
     agent: &str,
     kind: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let what = match kind {
-        Some("permission") => "waiting on a permission",
+        Some("permission") => "blocked on a permission",
         Some("question") => "asked a question",
-        _ => "waiting on a permission or a question",
+        Some("auth") => "blocked on a sign-in",
+        _ => "blocked on a permission or a question",
     };
     add_folder_notice(connection, session, agent, what)
 }
@@ -131,7 +132,7 @@ pub(crate) fn notices_due() -> Result<(), Box<dyn std::error::Error>> {
         let waiting = match (session, row.agent_id.as_deref()) {
             (Some(session), Some(agent)) => swarm::store::agents(&connection, session)?
                 .iter()
-                .any(|found| found.id == agent && found.state.as_deref() == Some("waiting")),
+                .any(|found| found.id == agent && found.state.as_deref() == Some("blocked")),
             _ => false,
         };
         // A test notice from Settings checks macOS delivery, so the done switch does not drop it.

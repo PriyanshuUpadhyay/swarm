@@ -181,10 +181,10 @@ fn group_runs_and_overflow() {
     assert!(tabs::overflow(&view.tabs, &BTreeMap::new(), 250.0).is_empty());
 }
 #[test]
-fn child_badges_count_live_and_first_waiting() {
+fn child_badges_count_live_and_first_blocked() {
     let snap = snapshot(
         vec![session("design", "/repo/wt/main", 1)],
-        json!({"design":[agent("orchestrator","waiting"),agent("builder","working"),agent("reviewer","waiting"),agent("analyst","waiting"),agent("ended","ended"),json!({"id":"registered","alive":true,"pane":null,"state":"waiting"}),json!({"id":"unknown","pane":"p1","state":"waiting"})]}),
+        json!({"design":[agent("orchestrator","blocked"),agent("builder","working"),agent("reviewer","blocked"),agent("analyst","blocked"),agent("ended","ended"),json!({"id":"registered","alive":true,"pane":null,"state":"blocked"}),json!({"id":"unknown","pane":"p1","state":"blocked"})]}),
     );
     let tree = swarm::view::tree::build(&snap, &owner());
     let view = tabs::view(
@@ -197,14 +197,14 @@ fn child_badges_count_live_and_first_waiting() {
     )
     .unwrap();
     let children = view.tabs[0].children.as_ref().unwrap();
-    assert_eq!(children.text, "3 · 2 waiting");
-    assert_eq!(children.first_waiting.as_deref(), Some("analyst"));
+    assert_eq!(children.text, "3 · 2 blocked");
+    assert_eq!(children.first_blocked.as_deref(), Some("analyst"));
     let mut named = session("design", "/repo/wt/main", 1);
     named["chair_id"] = json!("chair-custom");
     let tree = swarm::view::tree::build(
         &snapshot(
             vec![named],
-            json!({"design":[agent("chair-custom","waiting"),agent("builder","working")]}),
+            json!({"design":[agent("chair-custom","blocked"),agent("builder","working")]}),
         ),
         &owner(),
     );

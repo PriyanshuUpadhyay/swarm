@@ -84,7 +84,7 @@ mod cases {
             hook_report(&claude, waiting, coder).unwrap(),
             report(
                 Some(swarm::host::HookState {
-                    state: "waiting",
+                    state: "blocked",
                     detail: None,
                     kind: Some("permission"),
                 }),
@@ -102,7 +102,7 @@ mod cases {
             hook_report(&agy_stop, r#"{"error":"quota"}"#, coder).unwrap(),
             report(
                 Some(swarm::host::HookState {
-                    state: "failed",
+                    state: "error",
                     detail: Some("quota".to_string()),
                     kind: None,
                 }),

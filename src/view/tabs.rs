@@ -351,8 +351,8 @@ pub struct ChatTab {
 #[serde(rename_all = "camelCase")]
 pub struct ChildCount {
     pub count: usize,
-    pub waiting: usize,
-    pub first_waiting: Option<String>,
+    pub blocked: usize,
+    pub first_blocked: Option<String>,
     pub text: String,
 }
 #[derive(Clone, Debug, Serialize)]
@@ -436,9 +436,9 @@ pub fn view(
             continue;
         };
         let children = chat.children();
-        let waiting: Vec<_> = children
+        let blocked: Vec<_> = children
             .iter()
-            .filter(|a| super::tree::AgentStatus::agent(a) == super::tree::AgentStatus::Waiting)
+            .filter(|a| super::tree::AgentStatus::agent(a) == super::tree::AgentStatus::Blocked)
             .collect();
         tabs.push(ChatTab {
             id: key.clone(),
@@ -464,18 +464,18 @@ pub fn view(
                 .cloned(),
             children: (!children.is_empty()).then(|| ChildCount {
                 count: children.len(),
-                waiting: waiting.len(),
-                first_waiting: waiting
+                blocked: blocked.len(),
+                first_blocked: blocked
                     .first()
                     .and_then(|a| a["id"].as_str())
                     .map(str::to_owned),
                 text: format!(
                     "{}{}",
                     children.len(),
-                    if waiting.is_empty() {
+                    if blocked.is_empty() {
                         String::new()
                     } else {
-                        format!(" · {} waiting", waiting.len())
+                        format!(" · {} blocked", blocked.len())
                     }
                 ),
             }),

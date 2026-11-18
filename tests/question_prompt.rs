@@ -346,7 +346,7 @@ fn answer_accepts_the_id_that_the_listing_shows_for_a_tall_question() {
         String::from_utf8_lossy(&output.stderr)
     );
     let listing: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(listing["agents"][0]["state"], "waiting");
+    assert_eq!(listing["agents"][0]["state"], "blocked");
     assert_eq!(
         listing["agents"][0]["prompt"]["choices"][0],
         "Release on the planned date"

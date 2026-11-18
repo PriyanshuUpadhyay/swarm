@@ -177,7 +177,7 @@ struct OpenContent: View {
 }
 
 
-/// The agents swarm runs now, waiting ones first: `shown` chips, then "+N".
+/// The agents swarm runs now, blocked ones first: `shown` chips, then "+N".
 struct RunningLine: View {
     let agents: [RunningAgent]
     let theme: Theme
@@ -202,20 +202,20 @@ struct RunningLine: View {
 
     private func chip(_ agent: RunningAgent) -> some View {
         HStack(spacing: 6) {
-            Circle().fill(agent.waiting ? Palette.warn : theme.calm).frame(width: 6, height: 6)
+            Circle().fill(agent.blocked ? Palette.warn : theme.calm).frame(width: 6, height: 6)
             ProviderMark(provider: agent.provider, size: 12)
             // The name keeps its width; the model and account give way.
             Text(agent.id.count > 18 ? agent.id.prefix(17) + "…" : agent.id).fontWeight(.medium)
-                .foregroundStyle(agent.waiting ? Palette.warn : Palette.primary)
+                .foregroundStyle(agent.blocked ? Palette.warn : Palette.primary)
                 .fixedSize()
             // "needs you" first, so a crowded chip cuts the model, not the call to act.
-            Text(((agent.waiting ? ["needs you"] : []) + [modelLabel(agent.model, provider: agent.provider)]
+            Text(((agent.blocked ? ["needs you"] : []) + [modelLabel(agent.model, provider: agent.provider)]
                   + [agent.account].compactMap { $0 }).joined(separator: " · "))
                 .lineLimit(1)
-                .foregroundStyle(agent.waiting ? Palette.warn : Palette.secondary)
+                .foregroundStyle(agent.blocked ? Palette.warn : Palette.secondary)
         }
         .padding(.horizontal, 9).padding(.vertical, 4)
-        .background(Capsule().fill(agent.waiting ? Palette.chipWaiting : Palette.chip))
+        .background(Capsule().fill(agent.blocked ? Palette.chipBlocked : Palette.chip))
         // Chips take the line before the trailing spacer does.
         .layoutPriority(1)
         // The tooltip has the whole id, which the chip may cut.

@@ -1,10 +1,10 @@
 {
-  "schema": "swarm.working.v1",
+  "schema": "swarm.working.v2",
   "working": {
     "claude": 3,
     "codex": 1
   },
-  "waiting": {
+  "blocked": {
     "codex": 1
   },
   "agents": [
@@ -14,7 +14,7 @@
       "provider": "codex",
       "model": "gpt-6-luna",
       "account": "team",
-      "state": "waiting"
+      "state": "blocked"
     },
     {
       "id": "orchestrator",

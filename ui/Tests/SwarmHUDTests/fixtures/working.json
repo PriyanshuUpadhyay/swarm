@@ -1,1 +1,1 @@
-{"schema":"swarm.working.v1","working":{"claude":2,"codex":1},"waiting":{"codex":1}}
+{"schema":"swarm.working.v2","working":{"claude":2,"codex":1},"blocked":{"codex":1}}

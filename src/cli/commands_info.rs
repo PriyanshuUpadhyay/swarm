@@ -341,9 +341,9 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
         let agents = swarm::store::running_agents(&connection)?;
         return print_json(&serde_json::json!({
-            "schema": "swarm.working.v1",
+            "schema": "swarm.working.v2",
             "working": swarm::store::agents_by_provider(&agents, "working"),
-            "waiting": swarm::store::agents_by_provider(&agents, "waiting"),
+            "blocked": swarm::store::agents_by_provider(&agents, "blocked"),
             "agents": agents,
         }))
         .map(Some);

@@ -168,7 +168,7 @@ function FieldView({ f, row }: { f: Field; row: SidebarRow | null }) {
 }
 
 /** The row's CI text from Rust (`github_fields`) as a status glyph. */
-const CI_STATUS: Record<string, "failed" | "working" | "done"> = { "CI failed": "failed", "CI pending": "working", "CI passed": "done" };
+const CI_STATUS: Record<string, "error" | "working" | "done"> = { "CI failed": "error", "CI pending": "working", "CI passed": "done" };
 
 export const RecentRow = memo(function RecentRow({ r, selected, current }: { r: RecentChat; selected: boolean; current: boolean }) {
   return (

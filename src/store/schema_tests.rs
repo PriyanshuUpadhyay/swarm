@@ -74,7 +74,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             None,
@@ -82,7 +82,7 @@ mod tests {
         )
         .unwrap();
         let coder = &agents(&connection, SESSION).unwrap()[0];
-        assert_eq!(coder.state.as_deref(), Some("waiting"));
+        assert_eq!(coder.state.as_deref(), Some("blocked"));
         assert_eq!(coder.state_at, Some(1_700));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
     }
@@ -102,10 +102,13 @@ mod tests {
             ))
             .unwrap();
         migrate(&mut connection).unwrap();
-        let kind: Option<String> = connection
-            .query_row("SELECT state_kind FROM agent", [], |row| row.get(0))
+        // Migration 0016 renames the old `waiting` to the protocol's `blocked`.
+        let (state, kind): (String, Option<String>) = connection
+            .query_row("SELECT state, state_kind FROM agent", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
             .unwrap();
-        assert_eq!(kind, None);
+        assert_eq!((state.as_str(), kind), ("blocked", None));
         let version: i64 = connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();

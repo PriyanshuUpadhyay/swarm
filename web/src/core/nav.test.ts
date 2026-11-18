@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, type Api, type Snapshot } from "./api";
 import { App } from "./app";
-import { inOrder, moveTarget, navRows, nextWaiting, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type Section, type SidebarRow, type TreeView } from "./nav";
+import { inOrder, moveTarget, navRows, nextBlocked, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type Section, type SidebarRow, type TreeView } from "./nav";
 
 const sel = (workspace: string | null, chat: string | null = null) => ({ workspace, chat, agentSession: null, agent: null });
 
@@ -362,14 +362,14 @@ describe("tree refresh", () => {
   });
 });
 
-describe("nextWaiting", () => {
-  it("opens the next waiting chat in sidebar order, wrapping, and skips the open one", () => {
+describe("nextBlocked", () => {
+  it("opens the next blocked chat in sidebar order, wrapping, and skips the open one", () => {
     const waits = new Set(["a", "c"]);
-    const waiting = (s: string) => waits.has(s);
-    expect(nextWaiting(["a", "b", "c"], waiting, "a")).toBe("c");
-    expect(nextWaiting(["a", "b", "c"], waiting, "c")).toBe("a");
-    expect(nextWaiting(["a", "b", "c"], waiting, null)).toBe("a");
-    expect(nextWaiting(["a", "b"], (s) => s === "a", "a")).toBeNull();
+    const blocked = (s: string) => waits.has(s);
+    expect(nextBlocked(["a", "b", "c"], blocked, "a")).toBe("c");
+    expect(nextBlocked(["a", "b", "c"], blocked, "c")).toBe("a");
+    expect(nextBlocked(["a", "b", "c"], blocked, null)).toBe("a");
+    expect(nextBlocked(["a", "b"], (s) => s === "a", "a")).toBeNull();
   });
 });
 

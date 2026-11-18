@@ -3,7 +3,7 @@ use super::*;
 
 #[test]
 fn a_claude_permission_request_shows_the_coder_waiting() {
-    let home = scratch("waiting");
+    let home = scratch("blocked");
     let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
         .trim()
         .to_string();
@@ -30,7 +30,7 @@ fn a_claude_permission_request_shows_the_coder_waiting() {
     assert!(reported.status.success());
     assert_eq!(stdout(&reported), "{}\n");
     let coder = coder_state(&home, &session);
-    assert_eq!(coder["state"], "waiting");
+    assert_eq!(coder["state"], "blocked");
     assert_eq!(coder["state_source"], "hook");
     assert!(coder["state_at_s"].as_i64().unwrap() > 0);
     // ADR 0077: the change to waiting is one notice row for the helper.
@@ -218,7 +218,7 @@ fn a_pane_status_feed_sets_the_agent_state() {
         &["status-feed"],
         "\x1b]7501;state=blocked:kind=permission:app=pi\x07",
     );
-    assert_eq!(state(), (Some("waiting".into()), Some("permission".into())));
+    assert_eq!(state(), (Some("blocked".into()), Some("permission".into())));
     let notices: serde_json::Value =
         serde_json::from_str(&stdout(&swarm(&home, &[], &["notices", "--json"], ""))).unwrap();
     assert_eq!(notices[0]["agent_id"], "coder");

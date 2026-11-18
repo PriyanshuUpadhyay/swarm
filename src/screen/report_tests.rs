@@ -13,7 +13,7 @@ mod tests {
         assert!(!held_by_send(
             Some(100),
             Some(90),
-            Some(ScreenState::Waiting),
+            Some(ScreenState::Blocked),
             101
         ));
         assert!(!held_by_send(None, Some(90), idle, 101));
@@ -22,7 +22,7 @@ mod tests {
     #[test]
     fn a_fresh_hook_wins_then_a_differing_screen_is_written() {
         let now = 1_000;
-        let waiting = Some(ScreenState::Waiting);
+        let waiting = Some(ScreenState::Blocked);
         let idle = Some(ScreenState::Idle);
         // A hook report 9 s old is the authority, whatever the screen shows.
         assert_eq!(
@@ -40,7 +40,7 @@ mod tests {
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("waiting"),
+                Some("blocked"),
                 Some(now - 10),
                 Some("hook"),
                 idle,
@@ -52,24 +52,24 @@ mod tests {
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("waiting"),
+                Some("blocked"),
                 Some(now - 30),
                 Some("hook"),
                 waiting,
                 now
             ),
-            (Some("waiting".into()), None)
+            (Some("blocked".into()), None)
         );
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("failed"),
+                Some("error"),
                 Some(now - 30),
                 Some("hook"),
                 idle,
                 now
             ),
-            (Some("failed".into()), None)
+            (Some("error".into()), None)
         );
         // An agent with no report yet that sits at its prompt is done.
         assert_eq!(
@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("waiting"),
+                Some("blocked"),
                 Some(now - 1),
                 Some("screen"),
                 idle,
@@ -94,11 +94,11 @@ mod tests {
     fn only_provider_hook_gaps_overturn_a_recent_report() {
         let now = 1_000;
         for provider in [None, Some("claude"), Some("codex"), Some("agy")] {
-            for screen in [ScreenState::Idle, ScreenState::Failed, ScreenState::Waiting] {
+            for screen in [ScreenState::Idle, ScreenState::Error, ScreenState::Blocked] {
                 let gap = screen == ScreenState::Idle
-                    || (provider == Some("codex") && screen == ScreenState::Failed)
-                    || (provider == Some("codex") && screen == ScreenState::Waiting)
-                    || (provider == Some("agy") && screen == ScreenState::Waiting);
+                    || (provider == Some("codex") && screen == ScreenState::Error)
+                    || (provider == Some("codex") && screen == ScreenState::Blocked)
+                    || (provider == Some("agy") && screen == ScreenState::Blocked);
                 assert_eq!(screen_gap(provider, screen), gap);
                 assert_eq!(
                     resolve(
@@ -118,7 +118,7 @@ mod tests {
                 );
                 // A gap cannot replace a hook inside its initial authority window, except a
                 // Codex approval box, which no Codex hook reports (ADR 0021).
-                let at_once = provider == Some("codex") && screen == ScreenState::Waiting;
+                let at_once = provider == Some("codex") && screen == ScreenState::Blocked;
                 assert_eq!(
                     resolve(
                         provider,
@@ -129,7 +129,7 @@ mod tests {
                         now
                     ),
                     if at_once {
-                        (Some("waiting".into()), Some("waiting"))
+                        (Some("blocked".into()), Some("blocked"))
                     } else {
                         (Some("working".into()), None)
                     },
@@ -148,7 +148,7 @@ mod tests {
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("failed"),
+                Some("error"),
                 Some(now - 30),
                 Some("screen"),
                 idle,
@@ -160,25 +160,25 @@ mod tests {
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("failed"),
+                Some("error"),
                 Some(now - 30),
                 Some("hook"),
                 idle,
                 now
             ),
-            (Some("failed".into()), None)
+            (Some("error".into()), None)
         );
         // The error row still showing keeps the screen's failure.
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("failed"),
+                Some("error"),
                 Some(now - 30),
                 Some("screen"),
-                Some(ScreenState::Failed),
+                Some(ScreenState::Error),
                 now
             ),
-            (Some("failed".into()), None)
+            (Some("error".into()), None)
         );
     }
 
@@ -197,7 +197,7 @@ mod tests {
             ),
             (Some("working".into()), None)
         );
-        for state in ["waiting", "done"] {
+        for state in ["blocked", "done"] {
             // A working screen cannot replace a hook report through STALE_S.
             for age in [11, 44, 45] {
                 assert_eq!(
@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("waiting"),
+                Some("blocked"),
                 Some(now - 46),
                 Some("screen"),
                 None,
@@ -278,13 +278,13 @@ mod tests {
         assert_eq!(
             resolve(
                 Some("claude"),
-                Some("waiting"),
+                Some("blocked"),
                 Some(now - 300),
                 Some("hook"),
-                Some(ScreenState::Waiting),
+                Some(ScreenState::Blocked),
                 now
             ),
-            (Some("waiting".into()), None)
+            (Some("blocked".into()), None)
         );
         assert_eq!(
             resolve(

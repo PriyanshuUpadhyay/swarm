@@ -3,21 +3,21 @@ import Foundation
 import Testing
 @testable import SwarmHUDCore
 
-@Test func workingReadsV1WithAndWithoutWaitingAndFailsQuiet() {
+@Test func workingReadsV2WithAndWithoutBlockedAndFailsQuiet() {
     let read = { (json: String) in WorkingSnapshot.read(Data(json.utf8)) }
-    #expect(read(#"{"schema":"swarm.working.v1","working":{"claude":2,"codex":1}}"#)
+    #expect(read(#"{"schema":"swarm.working.v2","working":{"claude":2,"codex":1}}"#)
             == WorkingSnapshot(working: ["claude": 2, "codex": 1]))
-    #expect(read(#"{"schema":"swarm.working.v1","working":{"claude":2},"waiting":{"codex":1,"claude":0}}"#)
-            == WorkingSnapshot(working: ["claude": 2], waiting: ["codex": 1]))
-    #expect(read(#"{"schema":"swarm.working.v1","working":{},"waiting":{"codex":1}}"#).isActive)
-    #expect(!read(#"{"schema":"swarm.working.v1","working":{}}"#).isActive)
-    #expect(read(#"{"schema":"swarm.working.v2","working":{"claude":2}}"#) == WorkingSnapshot())
+    #expect(read(#"{"schema":"swarm.working.v2","working":{"claude":2},"blocked":{"codex":1,"claude":0}}"#)
+            == WorkingSnapshot(working: ["claude": 2], blocked: ["codex": 1]))
+    #expect(read(#"{"schema":"swarm.working.v2","working":{},"blocked":{"codex":1}}"#).isActive)
+    #expect(!read(#"{"schema":"swarm.working.v2","working":{}}"#).isActive)
+    #expect(read(#"{"schema":"swarm.working.v1","working":{"claude":2}}"#) == WorkingSnapshot())
     #expect(read("swarm: unknown command") == WorkingSnapshot())
 }
 
 @Test func mascotFamilyGoesWorkingThenWaitingThenLastThenBestThenClaude() {
     let best = BestAccount(account: account("codex", "x", [window(.week, 1)]), outlook: .lasts)
-    let both = WorkingSnapshot(working: ["claude": 1, "codex": 3], waiting: ["claude": 5])
+    let both = WorkingSnapshot(working: ["claude": 1, "codex": 3], blocked: ["claude": 5])
     #expect(mascotFamily(both, lastWorking: "claude", best: nil) == "codex")
     #expect(mascotFamily(WorkingSnapshot(working: ["claude": 2, "codex": 2]), lastWorking: nil, best: nil) == "claude")
     #expect(mascotFamily(WorkingSnapshot(), lastWorking: "claude", best: best) == "claude")
@@ -31,8 +31,8 @@ import Testing
     #expect(mascotState(idle, lastActive: last, now: last.addingTimeInterval(4 * 60 + 59)) == .idle)
     #expect(mascotState(idle, lastActive: last, now: last.addingTimeInterval(5 * 60 + 1)) == .sleeping)
     let late = last.addingTimeInterval(3600)
-    #expect(mascotState(WorkingSnapshot(waiting: ["codex": 1]), lastActive: last, now: late) == .waiting)
-    #expect(mascotState(WorkingSnapshot(working: ["claude": 1], waiting: ["codex": 1]), lastActive: last, now: late) == .working)
+    #expect(mascotState(WorkingSnapshot(blocked: ["codex": 1]), lastActive: last, now: late) == .waiting)
+    #expect(mascotState(WorkingSnapshot(working: ["claude": 1], blocked: ["codex": 1]), lastActive: last, now: late) == .working)
 }
 
 @Test func mascotTurnMovesOnEveryTenMinutesAndWrapsAround() {
@@ -65,7 +65,7 @@ import Testing
 }
 
 @Test func agyAndPiAgentsGetTheirOwnFamily() {
-    #expect(mascotFamily(WorkingSnapshot(working: ["agy": 4], waiting: ["codex": 1]), lastWorking: "claude", best: nil) == "agy")
+    #expect(mascotFamily(WorkingSnapshot(working: ["agy": 4], blocked: ["codex": 1]), lastWorking: "claude", best: nil) == "agy")
     #expect(mascotFamily(WorkingSnapshot(working: ["pi": 3, "claude": 1]), lastWorking: nil, best: nil) == "pi")
     #expect(mascotFamily(WorkingSnapshot(working: ["other": 9]), lastWorking: nil, best: nil) == "claude")
 }
@@ -100,17 +100,17 @@ import Testing
 
 
 @Test func workingReadsTheAgentListWhenPresent() {
-    let json = #"{"schema":"swarm.working.v1","working":{"claude":1},"waiting":{"codex":1},"agents":[{"id":"reviewer","session":"s1","provider":"codex","model":"gpt-6-luna","account":"team","state":"waiting","since_seconds":1792662983},{"id":"orchestrator","provider":"claude","model":null,"account":null,"state":"working","since_seconds":1792662900},{"id":"thinker","provider":"pi","state":"thinking"}]}"#
+    let json = #"{"schema":"swarm.working.v2","working":{"claude":1},"blocked":{"codex":1},"agents":[{"id":"reviewer","session":"s1","provider":"codex","model":"gpt-6-luna","account":"team","state":"blocked","since_seconds":1792662983},{"id":"orchestrator","provider":"claude","model":null,"account":null,"state":"working","since_seconds":1792662900},{"id":"thinker","provider":"pi","state":"thinking"}]}"#
     let agents = WorkingSnapshot.read(Data(json.utf8)).agents
     #expect(agents.map(\.id) == ["reviewer", "orchestrator", "thinker"])
-    #expect(agents.first == RunningAgent(id: "reviewer", session: "s1", provider: "codex", model: "gpt-6-luna", account: "team", waiting: true))
+    #expect(agents.first == RunningAgent(id: "reviewer", session: "s1", provider: "codex", model: "gpt-6-luna", account: "team", blocked: true))
     // Another state reads as working (A4); a missing list is an older swarm.
-    #expect(agents.last?.waiting == false)
+    #expect(agents.last?.blocked == false)
     #expect(agents.map(\.key) == ["s1/reviewer", "/orchestrator", "/thinker"])
     // A bad entry is skipped; the counts and the other agents stay.
-    let bad = WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v1","working":{"claude":2},"agents":[{"id":"thinker"},{"id":"orchestrator","provider":"claude"}]}"#.utf8))
+    let bad = WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v2","working":{"claude":2},"agents":[{"id":"thinker"},{"id":"orchestrator","provider":"claude"}]}"#.utf8))
     #expect(bad.working == ["claude": 2] && bad.agents.map(\.id) == ["orchestrator"])
-    #expect(WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v1","working":{}}"#.utf8)).agents.isEmpty)
+    #expect(WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v2","working":{}}"#.utf8)).agents.isEmpty)
 }
 
 @Test func modelLabelsAreShortFamilyNames() {
@@ -149,9 +149,9 @@ import Testing
     #expect(wingText(mixed, best: calm).tags == ["opus", "gpt-6"])
     // Usage wins over the model tags once the ring is red.
     #expect(wingText(working, best: near) == WingText(left: "4", number: "96%"))
-    let waiting = WorkingSnapshot(working: ["claude": 1], waiting: ["codex": 1],
-                                  agents: [RunningAgent(id: "reviewer", provider: "codex", waiting: true)] + working.agents)
-    #expect(wingText(waiting, best: calm) == WingText(left: "needs you", waiting: true, tags: ["reviewer"]))
+    let blocked = WorkingSnapshot(working: ["claude": 1], blocked: ["codex": 1],
+                                  agents: [RunningAgent(id: "reviewer", provider: "codex", blocked: true)] + working.agents)
+    #expect(wingText(blocked, best: calm) == WingText(left: "needs you", blocked: true, tags: ["reviewer"]))
     // An older swarm sends counts only.
-    #expect(wingText(WorkingSnapshot(waiting: ["codex": 1]), best: nil) == WingText(left: "needs you", waiting: true))
+    #expect(wingText(WorkingSnapshot(blocked: ["codex": 1]), best: nil) == WingText(left: "needs you", blocked: true))
 }

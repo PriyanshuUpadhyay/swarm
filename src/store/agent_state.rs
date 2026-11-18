@@ -3,11 +3,15 @@
 use super::*;
 
 /// Record an agent's reported state; `now` is unix seconds. The table's CHECKs refuse unknown
-/// states, sources, and invalid wait kinds. A kindless wait keeps the kind of an existing wait;
+/// states, sources, and invalid block kinds. A kindless block keeps the kind of an existing block;
 /// every other state write replaces it. Returns `Some` with the state it replaced (None when the
 /// agent had no state yet), read in the same immediate transaction, so two hooks that race cannot both see one
 /// change (a notice is sent once per change, ADR 0044). Returns None and writes nothing when the
 /// session holds no such agent.
+///
+/// An agent's own `done` does not replace its own `error`: a turn that an API error ends
+/// (Claude `StopFailure`) is followed about 60 s later by Claude's `idle_prompt`, and in Rex by
+/// an `idle` report, which would hide the failure. The next turn starts with `working`.
 #[allow(clippy::too_many_arguments)]
 pub fn set_state(
     connection: &Connection,
@@ -34,9 +38,11 @@ pub fn set_state(
     };
     transaction.execute(
         "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5,
-            state_kind = CASE WHEN ?3 = 'waiting' AND ?6 IS NULL AND state = 'waiting'
+            state_kind = CASE WHEN ?3 = 'blocked' AND ?6 IS NULL AND state = 'blocked'
                               THEN state_kind ELSE ?6 END, state_at = ?7
-         WHERE session_id = ?1 AND id = ?2",
+         WHERE session_id = ?1 AND id = ?2
+           AND NOT (?3 = 'done' AND ?4 IN ('hook', 'host')
+                    AND state IS 'error' AND state_source IN ('hook', 'host'))",
         (session_id, agent_id, state, source, detail, kind, now),
     )?;
     transaction.commit()?;
@@ -111,7 +117,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "failed",
+            "error",
             "hook",
             Some("rate_limit"),
             None,
@@ -121,7 +127,7 @@ mod tests {
         let rows = agents(&connection, SESSION).unwrap();
         let coder = rows.iter().find(|row| row.id == CODER).unwrap();
         let orchestrator = rows.iter().find(|row| row.id == ORCHESTRATOR).unwrap();
-        assert_eq!(coder.state.as_deref(), Some("failed"));
+        assert_eq!(coder.state.as_deref(), Some("error"));
         assert_eq!(coder.state_detail.as_deref(), Some("rate_limit"));
         assert_eq!(orchestrator.state, None);
         assert_eq!(
@@ -143,7 +149,7 @@ mod tests {
                 &connection,
                 SESSION,
                 "ghost",
-                "waiting",
+                "blocked",
                 "hook",
                 None,
                 None,
@@ -169,14 +175,31 @@ mod tests {
     }
 
     #[test]
+    fn an_idle_report_after_an_api_error_keeps_the_failure() {
+        let connection = seed();
+        let set = |state, detail| {
+            set_state(&connection, SESSION, CODER, state, "hook", detail, None, 42).unwrap();
+            let rows = agents(&connection, SESSION).unwrap();
+            let coder = rows.into_iter().find(|row| row.id == CODER).unwrap();
+            (coder.state, coder.state_detail)
+        };
+        set("error", Some("server_error"));
+        assert_eq!(
+            set("done", None),
+            (Some("error".into()), Some("server_error".into()))
+        );
+        assert_eq!(set("working", None).0.as_deref(), Some("working"));
+    }
+
+    #[test]
     fn a_waiting_hook_records_kind_and_a_screen_write_clears_it() {
         let connection = seed();
-        for (kind, screen_state) in [("permission", "waiting"), ("question", "done")] {
+        for (kind, screen_state) in [("permission", "blocked"), ("question", "done")] {
             set_state(
                 &connection,
                 SESSION,
                 CODER,
-                "waiting",
+                "blocked",
                 "hook",
                 Some("prompt"),
                 Some(kind),
@@ -194,7 +217,7 @@ mod tests {
                     screen_state,
                     None,
                     110,
-                    (Some("waiting"), Some("hook"), Some(100), Some(kind)),
+                    (Some("blocked"), Some("hook"), Some(100), Some(kind)),
                 )
                 .unwrap()
             );
@@ -207,7 +230,7 @@ mod tests {
     #[test]
     fn state_kind_checks_reject_non_waiting_states_and_unknown_kinds() {
         let connection = seed();
-        for (state, kind) in [("done", "permission"), ("waiting", "unknown")] {
+        for (state, kind) in [("done", "permission"), ("blocked", "unknown")] {
             let error = set_state(
                 &connection,
                 SESSION,
@@ -231,7 +254,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             Some("permission"),
@@ -242,7 +265,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             None,
@@ -271,7 +294,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             None,
@@ -288,19 +311,19 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             Some("permission"),
             100,
         )
         .unwrap();
-        let read = (Some("waiting"), Some("hook"), Some(100), Some("permission"));
+        let read = (Some("blocked"), Some("hook"), Some(100), Some("permission"));
         set_state(
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             Some("question"),
@@ -309,7 +332,7 @@ mod tests {
         .unwrap();
         assert!(!set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap());
         let coder = &agents(&connection, SESSION).unwrap()[0];
-        assert_eq!(coder.state.as_deref(), Some("waiting"));
+        assert_eq!(coder.state.as_deref(), Some("blocked"));
         assert_eq!(coder.state_kind.as_deref(), Some("question"));
     }
 
@@ -320,7 +343,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             Some("permission"),
@@ -352,7 +375,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             None,
@@ -368,9 +391,9 @@ mod tests {
             .into_iter()
             .find(|row| row.id == CODER)
             .unwrap();
-        assert_eq!(coder.state.as_deref(), Some("waiting"));
+        assert_eq!(coder.state.as_deref(), Some("blocked"));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
-        let latest = (Some("waiting"), Some("hook"), Some(105), None);
+        let latest = (Some("blocked"), Some("hook"), Some(105), None);
         assert!(set_screen_state(&connection, SESSION, CODER, "done", None, 111, latest).unwrap());
         let unset = (None, None, None, None);
         assert!(
@@ -396,7 +419,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             None,
             None,
@@ -410,7 +433,7 @@ mod tests {
             .into_iter()
             .find(|row| row.id == CODER)
             .unwrap();
-        assert_eq!(coder.state.as_deref(), Some("waiting"));
+        assert_eq!(coder.state.as_deref(), Some("blocked"));
     }
 
     #[test]
@@ -421,7 +444,7 @@ mod tests {
             &connection,
             SESSION,
             CODER,
-            "waiting",
+            "blocked",
             "hook",
             Some("quota"),
             Some("permission"),

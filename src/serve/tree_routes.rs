@@ -132,7 +132,7 @@ pub(super) async fn tree_view(
                         .flatten()
                 })
                 .map(tree::AgentStatus::agent)
-                .filter(|s| *s == tree::AgentStatus::Waiting),
+                .filter(|s| *s == tree::AgentStatus::Blocked),
         );
         let choices_error = app.tree_cache.lock().unwrap().choices_error.clone();
         Ok(Json(json!({
@@ -192,7 +192,7 @@ pub(super) async fn badge_view(State(app): State<App>) -> Result<Json<Value>, Ap
                 .flat_map(|p| &p.workspaces)
                 .filter(|w| !saved.owner.archived.contains(&w.path))
                 .flat_map(|w| &w.chats)
-                .filter(|c| c.status == Some(tree::AgentStatus::Waiting))
+                .filter(|c| c.status == Some(tree::AgentStatus::Blocked))
                 .count()
         };
         Ok(Json(json!({ "count": count })))

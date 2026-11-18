@@ -43,7 +43,7 @@ fn all_agent_listings_match_each_sessions_adapter_and_fields() {
                 &connection,
                 &session,
                 id,
-                "failed",
+                "error",
                 "hook",
                 Some("fixture failure"),
                 None,

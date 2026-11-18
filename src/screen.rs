@@ -6,7 +6,7 @@ pub const HOOK_AUTHORITY_S: i64 = 10;
 /// How long an owner's send reads as working with no newer report: the CLI picks the prompt up
 /// and sends its first report a second or two later, and its screen still shows the idle prompt.
 pub const SEND_HOLD_S: i64 = 5;
-/// A `working` or `waiting` report older than this, in seconds, that nothing confirms is shown
+/// A `working` or `blocked` report older than this, in seconds, that nothing confirms is shown
 /// as no report.
 pub const STALE_S: i64 = 45;
 /// How many bottom rows of a pane the classifier reads.
@@ -16,19 +16,19 @@ pub const ROWS: usize = 15;
 pub enum ScreenState {
     /// A spinner or an interrupt hint shows a turn in progress.
     Working,
-    Waiting,
+    Blocked,
     Idle,
     /// The turn ended on an error row, such as Codex's red `■ message`.
-    Failed,
+    Error,
 }
 
 impl ScreenState {
     pub fn as_state(self) -> &'static str {
         match self {
             ScreenState::Working => "working",
-            ScreenState::Waiting => "waiting",
+            ScreenState::Blocked => "blocked",
             ScreenState::Idle => "done",
-            ScreenState::Failed => "failed",
+            ScreenState::Error => "error",
         }
     }
 }
@@ -55,8 +55,8 @@ pub use prompt::{Prompt, prompt, whole_prompt};
 pub fn screen_gap(provider: Option<&str>, screen: ScreenState) -> bool {
     matches!(
         (provider, screen),
-        (Some("codex"), ScreenState::Failed | ScreenState::Waiting)
-            | (Some("agy"), ScreenState::Waiting)
+        (Some("codex"), ScreenState::Error | ScreenState::Blocked)
+            | (Some("agy"), ScreenState::Blocked)
             | (_, ScreenState::Idle)
     )
 }
@@ -81,8 +81,8 @@ pub fn held_by_send(
 ///
 /// A hook report younger than `HOOK_AUTHORITY_S` wins, except over a Codex approval box. Until `STALE_S`, only a state in
 /// `screen_gap` may replace it. Then a differing screen result is written with source `screen`.
-/// An idle screen agrees with a hook's `failed`, because a failed
-/// turn also ends at the idle prompt, but not with a `failed` the screen wrote. A `working` or `waiting` report older than `STALE_S` that the
+/// An idle screen agrees with a hook's `error`, because a failed
+/// turn also ends at the idle prompt, but not with an `error` the screen wrote. A `working` or `blocked` report older than `STALE_S` that the
 /// screen does not confirm is shown as no report, and nothing is written for it.
 pub fn resolve(
     provider: Option<&str>,
@@ -98,7 +98,7 @@ pub fn resolve(
     let own = matches!(source, Some("hook" | "host"));
     // No Codex hook reports its approval box, since its PermissionRequest fires before the
     // auto-reviewer, so the box on screen wins at once (ADR 0021).
-    let codex_approval = provider == Some("codex") && screen == Some(ScreenState::Waiting);
+    let codex_approval = provider == Some("codex") && screen == Some(ScreenState::Blocked);
     if own && age.is_some_and(|age| age < HOOK_AUTHORITY_S) && !codex_approval {
         return (state.map(str::to_string), None);
     }
@@ -113,13 +113,13 @@ pub fn resolve(
         // A failed turn also ends at the idle prompt, so an idle screen agrees with a failure a
         // hook reported. A failure the screen itself saw lasts only while its error row shows.
         let agrees = state == Some(seen)
-            || (seen == "done" && state == Some("failed") && source != Some("screen"));
+            || (seen == "done" && state == Some("error") && source != Some("screen"));
         if !agrees {
             return (Some(seen.to_string()), Some(seen));
         }
         return (state.map(str::to_string), None);
     }
-    let stale = matches!(state, Some("working" | "waiting")) && age.is_none_or(|age| age > STALE_S);
+    let stale = matches!(state, Some("working" | "blocked")) && age.is_none_or(|age| age > STALE_S);
     (state.filter(|_| !stale).map(str::to_string), None)
 }
 

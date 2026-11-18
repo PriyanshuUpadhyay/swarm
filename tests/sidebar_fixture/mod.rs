@@ -31,7 +31,7 @@ pub fn tree() -> Tree {
                 session("ended", "/repo/wt/main", 3),
                 session("notes", "/repo/wt/feature", 4),
             ],
-            json!({"design":[agent("orchestrator","working")],"review":[agent("orchestrator","waiting")],"ended":[agent("orchestrator","ended")],"notes":[agent("orchestrator","done")]}),
+            json!({"design":[agent("orchestrator","working")],"review":[agent("orchestrator","blocked")],"ended":[agent("orchestrator","ended")],"notes":[agent("orchestrator","done")]}),
         ),
         &owner(),
     )

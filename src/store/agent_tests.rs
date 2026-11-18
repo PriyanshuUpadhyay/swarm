@@ -63,7 +63,7 @@ mod tests {
             &connection,
             &session,
             "c",
-            "waiting",
+            "blocked",
             "hook",
             None,
             Some("question"),
@@ -71,7 +71,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            agents_by_provider(&running_agents(&connection).unwrap(), "waiting")
+            agents_by_provider(&running_agents(&connection).unwrap(), "blocked")
                 .into_iter()
                 .collect::<Vec<_>>(),
             [("codex".to_string(), 1)]
@@ -96,7 +96,7 @@ mod tests {
             &connection,
             &session,
             "c",
-            "waiting",
+            "blocked",
             "hook",
             None,
             Some("question"),
@@ -134,7 +134,7 @@ mod tests {
                 ))
                 .collect::<Vec<_>>(),
             [
-                ("c", "codex", "waiting"),
+                ("c", "codex", "blocked"),
                 ("a", "claude", "working"),
                 ("b", "claude", "working"),
                 ("orchestrator", "pi", "working")

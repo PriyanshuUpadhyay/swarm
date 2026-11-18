@@ -282,5 +282,5 @@ fn a_seat_with_no_provider_shows_the_state_that_herdr_reports() {
     let idle = seat(r#"{"result":{"agent":{"agent_status":"idle"}}}"#);
     assert_eq!(idle["state"], "done");
     let blocked = seat(r#"{"result":{"agent":{"agent_status":"blocked"}}}"#);
-    assert_eq!(blocked["state"], "waiting");
+    assert_eq!(blocked["state"], "blocked");
 }

@@ -193,7 +193,7 @@ fn claude_owner_answers_use_the_waiting_hook_and_never_keys() {
                 r.get(0)
             })
             .unwrap();
-        assert_eq!(state, "waiting");
+        assert_eq!(state, "blocked");
         let answer = fixture.answer(&prompt, choice);
         assert!(answer.status.success(), "{answer:?}");
         assert_eq!(hook.output(), swarm::permission::output(expected));

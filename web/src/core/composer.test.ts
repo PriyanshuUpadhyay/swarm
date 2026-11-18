@@ -40,8 +40,8 @@ describe("chair input", () => {
     const noAdapter = agentInput(session({ adapter: null }), [chair()]).disabled;
     const noPane = agentInput(session(), []).disabled;
     const closed = agentInput(session(), [chair({ alive: false })]);
-    const asking = agentInput(session(), [chair({ state: "waiting", prompt: waitingPrompt })]);
-    const askingInPane = agentInput(session(), [chair({ state: "waiting" })]).disabled;
+    const asking = agentInput(session(), [chair({ state: "blocked", prompt: waitingPrompt })]);
+    const askingInPane = agentInput(session(), [chair({ state: "blocked" })]).disabled;
     const reasons = [noAdapter, noPane, closed.disabled, asking.disabled, askingInPane];
     expect(noAdapter).toBe(MISSING_ADAPTER);
     for (const reason of reasons) expect(reason).toBeTruthy();
@@ -189,7 +189,7 @@ describe("chat actions", () => {
 
   it("does not send while the chair asks a question", async () => {
     const { app, posts, snapshot } = harness();
-    snapshot({ state: "waiting", prompt: waitingPrompt });
+    snapshot({ state: "blocked", prompt: waitingPrompt });
     app.openChat("chat");
     await settle();
     await app.send("chat", "yes please");
@@ -198,7 +198,7 @@ describe("chat actions", () => {
 
   it("interrupts, and answers with the prompt id and the zero-based choice", async () => {
     const { app, posts, snapshot } = harness();
-    snapshot({ state: "waiting", prompt: waitingPrompt });
+    snapshot({ state: "blocked", prompt: waitingPrompt });
     app.openChat("chat");
     await settle();
     await app.interrupt("chat");

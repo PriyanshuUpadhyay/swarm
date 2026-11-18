@@ -4,17 +4,17 @@
 import type { Agent, Session } from "./api";
 
 /** The one status every surface shows for an agent. */
-export type PaneStatus = "working" | "waiting" | "done" | "failed" | "ended";
+export type PaneStatus = "working" | "blocked" | "done" | "error" | "ended";
 
 /** No pane, or a pane that is not alive, is ended. An alive agent with no known state is idle, so done. */
 export function paneStatus(agent: Agent): PaneStatus {
   if (!agent.pane || agent.alive === false) return "ended";
   const s = agent.state;
-  return s === "working" || s === "waiting" || s === "failed" ? s : "done";
+  return s === "working" || s === "blocked" || s === "error" ? s : "done";
 }
 
-/** A waiting agent paused on a question inside its turn. */
-export const midTurn = (status: PaneStatus) => status === "working" || status === "waiting";
+/** A blocked agent paused on a question inside its turn. */
+export const midTurn = (status: PaneStatus) => status === "working" || status === "blocked";
 
 export type PaneCell = { id: string; role: string; model: string; status: PaneStatus; provider: string | null; hasLog: boolean };
 

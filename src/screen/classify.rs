@@ -53,7 +53,7 @@ fn approval(
 pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
     // A folder trust or a question waits on the user as an approval does.
     if prompt(rows).is_some() {
-        return Some(ScreenState::Waiting);
+        return Some(ScreenState::Blocked);
     }
     let lines: Vec<&str> = rows.trim_end().lines().collect();
     let lines = &lines[lines.len().saturating_sub(ROWS)..];
@@ -70,7 +70,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             };
             let questions = ["do you want to", "waiting for permission"];
             if approval(lines, &questions, &["esc to cancel"], Some('❯'), idle_at) {
-                return Some(ScreenState::Waiting);
+                return Some(ScreenState::Blocked);
             }
             let spinner = lines.iter().any(|line| {
                 first(line).is_some_and(|glyph| CLAUDE_SPINNERS.contains(&glyph))
@@ -102,7 +102,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                         && is_option(lines[index], '›'))
             };
             if approval(lines, &questions, &footers, None, idle_at) {
-                return Some(ScreenState::Waiting);
+                return Some(ScreenState::Blocked);
             }
             if has(&["esc to interr", "• working ("]) {
                 return Some(ScreenState::Working);
@@ -111,7 +111,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                 return None;
             }
             Some(if codex_failure(lines).is_some() {
-                ScreenState::Failed
+                ScreenState::Error
             } else if writing(rows, '›', "codex") {
                 ScreenState::Working
             } else {
@@ -122,7 +122,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             if has(&["requesting permission for:"])
                 && has(&["do you want to proceed?", "tab amend", "edit command"])
             {
-                return Some(ScreenState::Waiting);
+                return Some(ScreenState::Blocked);
             }
             let spinner = lines.iter().any(|line| {
                 let mut chars = line.trim_start().chars();
@@ -235,7 +235,7 @@ pub fn read_pane(
         // A read that fails or runs late proves nothing, so the pane is unknown, not idle.
         let text = capture()?;
         return Some(match failure_detail(provider, &text) {
-            Some(detail) => (ScreenState::Failed, Some(detail)),
+            Some(detail) => (ScreenState::Error, Some(detail)),
             None => (state, None),
         });
     }
@@ -249,7 +249,7 @@ pub fn herdr_state(output: &str) -> Option<ScreenState> {
     match value["result"]["agent"]["agent_status"].as_str()? {
         "idle" | "done" => Some(ScreenState::Idle),
         "working" => Some(ScreenState::Working),
-        "blocked" => Some(ScreenState::Waiting),
+        "blocked" => Some(ScreenState::Blocked),
         _ => None,
     }
 }

@@ -270,8 +270,8 @@ export class App {
     return this.navigation.chatTitle(session);
   }
 
-  openWaiting(e?: KeyboardEvent) {
-    return this.actions.openWaiting(e);
+  openBlocked(e?: KeyboardEvent) {
+    return this.actions.openBlocked(e);
   }
 
   /** Sessions of closed tabs, the last closed at the end, for ⇧⌘T. */

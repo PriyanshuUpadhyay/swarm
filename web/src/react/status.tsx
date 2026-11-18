@@ -1,19 +1,19 @@
 import { CircleAlertIcon, CircleCheckIcon, CircleIcon, LoaderCircleIcon, OctagonXIcon } from "lucide-react";
 
-export type Status = "working" | "waiting" | "failed" | "done" | "ended" | "idle";
+export type Status = "working" | "blocked" | "error" | "done" | "ended" | "idle";
 
 const TITLE: Record<Exclude<Status, "idle">, string> = {
   working: "Working",
-  waiting: "Waiting for you",
-  failed: "Failed",
+  blocked: "Blocked",
+  error: "Error",
   done: "Done",
   ended: "Ended",
 };
 
 const ICON = {
   working: LoaderCircleIcon,
-  waiting: CircleAlertIcon,
-  failed: OctagonXIcon,
+  blocked: CircleAlertIcon,
+  error: OctagonXIcon,
   done: CircleCheckIcon,
   ended: CircleIcon,
 };

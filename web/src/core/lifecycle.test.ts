@@ -124,7 +124,7 @@ describe("chats", () => {
     idle.life.endChat("chat-1", true);
     expect(idle.life.state.confirm).toMatchObject({ body: "Archiving closes its agent. The chat moves to Archived." });
 
-    const busy = fakeApp(async () => ({}), [{ id: "orchestrator", alive: true, state: "working" }, { id: "reviewer", alive: true, state: "waiting" }]);
+    const busy = fakeApp(async () => ({}), [{ id: "orchestrator", alive: true, state: "working" }, { id: "reviewer", alive: true, state: "blocked" }]);
     busy.life.endChat("chat-1", false);
     expect(busy.life.state.confirm).toMatchObject({ title: "End “Fix the sidebar”?", body: "2 agents still working. Ending stops them.", action: "End Chat" });
     expect(await busy.life.confirmed()).toBeNull();

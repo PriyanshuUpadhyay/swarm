@@ -333,14 +333,14 @@ fn rows(
         let expanded = !state.is_collapsed(&id);
         let children = chat.children();
         let status = chat.status;
-        let waiting = children
+        let blocked = children
             .iter()
-            .filter(|a| AgentStatus::agent(a) == AgentStatus::Waiting)
+            .filter(|a| AgentStatus::agent(a) == AgentStatus::Blocked)
             .count();
         let summary = (!children.is_empty()).then(|| {
             fields::count_text(children.len(), "agent")
-                + &if waiting > 0 {
-                    format!(" · {waiting} waiting")
+                + &if blocked > 0 {
+                    format!(" · {blocked} blocked")
                 } else {
                     String::new()
                 }

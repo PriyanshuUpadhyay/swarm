@@ -54,6 +54,14 @@ wins.
   Codex Waiting, and the screen result wins at once for it. An open Codex async question comes
   from the rollout log, since its TUI shows only a collapsed row, and `swarm answer` types the
   reply envelope into the input box.
+- Amended 2026-11-18: the agent states take the names of the Program Status Protocol 0.4 (OSC
+  7501) that swarm relies on: `working`, `blocked`, `done`, and `error` (before: `waiting` and
+  `failed`), and a block may be of kind `auth`. Migration 0016 renames stored rows, and `swarm
+  working --json` moves to `swarm.working.v2`. A Claude `StopFailure` is `error`, or `blocked`
+  with kind `auth` for `authentication_failed`, `oauth_org_not_allowed`, or
+  `cloud_credential_error`. A hook or host `done` does not replace a hook or host `error`,
+  because Claude sends `idle_prompt` about 60 s after a failed turn; the next turn's `working`
+  clears it.
 
 ## Pros and Cons of the Options
 

@@ -278,8 +278,8 @@ export class Lifecycle {
     const many = sessions.length > 1;
     if (!agents && !archive) return this.app.notice(many ? "These chats have already ended." : "This chat has already ended.");
     if (!agents) return this.runAction(run);
-    // An agent whose turn is over still has an open pane; only a working or waiting one is "running".
-    const busy = sessions.flatMap((s) => this.app.agentsOf(s).agents).filter((a) => a.alive && (a.state === "working" || a.state === "waiting")).length;
+    // An agent whose turn is over still has an open pane; only a working or blocked one is "running".
+    const busy = sessions.flatMap((s) => this.app.agentsOf(s).agents).filter((a) => a.alive && (a.state === "working" || a.state === "blocked")).length;
     return this.ask({ ...endConfirm(sessions.length, this.app.chatTitle(sessions[0]), archive, agents, busy), run });
   }
 

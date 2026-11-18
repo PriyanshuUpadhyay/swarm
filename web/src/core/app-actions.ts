@@ -2,7 +2,7 @@ import { sleep } from "./api";
 import { type Command } from "./commands";
 import { whenPainted } from "./perf";
 import { isChair, paneStatus } from "./panes";
-import { chatRows, nextWaiting, paletteSources, recency, workspaceOf, workspaceRow, type PaletteItem } from "./nav";
+import { chatRows, nextBlocked, paletteSources, recency, workspaceOf, workspaceRow, type PaletteItem } from "./nav";
 import { type Ask, SIDEBAR_VIEWS, PROMPT_JUMP, message } from "./app-types";
 import type { App } from "./app";
 
@@ -74,7 +74,7 @@ export class AppActions {
   }
 
   /** ⌃⌘W opens the next chat whose chair or child waits for the owner. */
-  openWaiting(e?: KeyboardEvent) {
+  openBlocked(e?: KeyboardEvent) {
     // Listed chats in sidebar order, then the chats that a collapsed workspace or "… more" hides.
     // Chats of an archived workspace are skipped, as the Dock badge does. The Workspaces view
     // leaves an archived workspace out; the Archived view and a tree not loaded yet mark nothing.
@@ -84,10 +84,10 @@ export class AppActions {
       return row ? row.archived : this.app.tree?.view === "workspaces" && !listed.includes(s);
     };
     const order = [...new Set([...listed, ...this.app.chatIds()])].filter((s) => !archived(s));
-    const waiting = (s: string) => (this.app.snapshot?.agents[s] ?? []).some((a) => paneStatus(a) === "waiting");
-    const next = nextWaiting(order, waiting, this.app.openId);
+    const blocked = (s: string) => (this.app.snapshot?.agents[s] ?? []).some((a) => paneStatus(a) === "blocked");
+    const next = nextBlocked(order, blocked, this.app.openId);
     if (next) this.app.navigation.openChat(next, e);
-    else this.app.notice("No chat is waiting for you.");
+    else this.app.notice("No chat is blocked.");
   }
 
   // ---- palette and names ----
@@ -235,7 +235,7 @@ export class AppActions {
       { id: "find.open", title: "Find", chord: "Meta+F", when: chat, run: () => this.app.reading.openFind() },
       { id: "prompt.prev", title: "Previous Prompt", chord: "Ctrl+Alt+ArrowUp", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: -1 })) },
       { id: "prompt.next", title: "Next Prompt", chord: "Ctrl+Alt+ArrowDown", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: 1 })) },
-      { id: "chat.waiting", title: "Next Waiting Chat", chord: "Ctrl+Meta+W", run: (e) => this.openWaiting(e) },
+      { id: "chat.blocked", title: "Next Blocked Chat", chord: "Ctrl+Meta+W", run: (e) => this.openBlocked(e) },
       {
         id: "chat.stop",
         title: "Stop the Chair",

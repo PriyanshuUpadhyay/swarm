@@ -132,7 +132,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     // The child's question shows on the chat page too; "Show column" focuses its pane.
     writeFileSync(testerScreen, waiting);
     const asking = tab.getByTestId("asking").getByTestId("prompt-card");
-    await expect(asking).toContainText("tester is waiting for you");
+    await expect(asking).toContainText("tester is blocked on you");
     await expect(tester.getByTestId("prompt-card")).toContainText("Do you want to proceed?");
     await asking.getByRole("button", { name: "Show column" }).click();
     await expect(tester).toHaveAttribute("data-focused", "true");
