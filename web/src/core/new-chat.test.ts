@@ -64,4 +64,27 @@ describe("new chat composer", () => {
       "notice Your next message did not send: chair is gone. Its text: Then the docs",
     ]);
   });
+
+  it("ends the start's wait after 10 s and keeps the composer, since the server may still start it", async () => {
+    const notices: string[] = [];
+    let signal: AbortSignal | undefined;
+    const app = {
+      navSeq: 1,
+      view: { tree, workspace: "/hub/wt/fix", openId: null },
+      notice: (text: string) => notices.push(text),
+      api: {
+        post: async (_path: string, _body: unknown, s?: AbortSignal) => {
+          signal = s;
+          throw new DOMException("timed out", "TimeoutError");
+        },
+      },
+    };
+    const chats = new NewChat(app as unknown as App);
+    chats.open();
+
+    expect(await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { role: "chat", run: null })).toBe(false);
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(notices).toEqual(["The server did not answer in 10 s. Check the sidebar for the chat before you press ⌘Enter again."]);
+    expect(chats.state.composer).not.toBeNull();
+  });
 });

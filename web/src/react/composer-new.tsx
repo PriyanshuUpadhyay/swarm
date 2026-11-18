@@ -38,7 +38,7 @@ export function ComposerPage({ app }: { app: App }) {
   const list = targets(tree, composer?.cwd ?? workspace);
   const target = (composer && list.find((t) => t.cwd === composer.cwd)) || defaultTarget(list, tree, workspace);
   if (!target) return null;
-  return <NewChatComposer app={app} key={composer?.seq ?? `page:${target.cwd}`} initial={target} place={composer?.place ?? defaultPlace(target)} focus={composer !== null} />;
+  return <NewChatComposer app={app} key={composer?.seq ?? `page:${target.cwd}`} initial={target} place={composer?.place ?? defaultPlace(target)} text={composer?.text ?? ""} focus={composer !== null} />;
 }
 
 /** The overlay over an open chat, while ⌘N or a "+" has it open. */
@@ -48,12 +48,12 @@ export function ComposerOverlay({ app }: { app: App }) {
   if (!composer) return null;
   const target = targets(tree, composer.cwd).find((t) => t.cwd === composer.cwd) ?? null;
   if (!target) return null;
-  return <Overlay app={app} key={composer.seq} target={target} place={composer.place} />;
+  return <Overlay app={app} key={composer.seq} target={target} place={composer.place} text={composer.text} />;
 }
 
 /** A modal dialog: Tab stays inside, focus goes back where it was on close, and a click on the
  *  backdrop closes it only while the prompt is empty, so a stray click keeps typed text. */
-function Overlay({ app, target, place }: { app: App; target: Target; place: Place }) {
+function Overlay({ app, target, place, text }: { app: App; target: Target; place: Place; text: string }) {
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -76,21 +76,21 @@ function Overlay({ app, target, place }: { app: App; target: Target; place: Plac
 
   return (
     <div ref={root} role="dialog" aria-modal="true" aria-label="New chat" className="absolute inset-0 z-40 grid place-items-start justify-center bg-background/70 pt-[12vh] backdrop-blur-[2px]" data-testid="composer-overlay" onMouseDown={backdrop} onKeyDown={trap}>
-      <NewChatComposer app={app} initial={target} place={place} focus overlay />
+      <NewChatComposer app={app} initial={target} place={place} text={text} focus overlay />
     </div>
   );
 }
 
 type Menu = "project" | "place" | "run" | null;
 
-function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = false }: { app: App; initial: Target; place: Place; focus: boolean; overlay?: boolean }) {
+function NewChatComposer({ app, initial, place: firstPlace, text: firstText, focus, overlay = false }: { app: App; initial: Target; place: Place; text: string; focus: boolean; overlay?: boolean }) {
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   const [cwd, setCwd] = useState(initial.cwd);
   const list = targets(tree, cwd);
   const target = list.find((t) => t.cwd === cwd) ?? initial;
 
   const [place, setPlace] = useState<Place>(firstPlace);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(firstText);
   const [menu, setMenu] = useState<Menu>(firstPlace.kind === "branch" && !firstPlace.branch ? "place" : null);
   const [profiles, setProfiles] = useState<Profile[] | string | null>(null);
   const [role, setRole] = useState(DEFAULT_ROLE);

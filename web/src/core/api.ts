@@ -288,10 +288,12 @@ export class Api {
     await this.post(path, body);
   }
 
-  /** A POST with a JSON body and reply. A failure throws the server's `error` text as the message. */
-  async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  /** A POST with a JSON body and reply. A failure throws the server's `error` text as the message.
+   *  A `signal` can end the wait, for example `AbortSignal.timeout`. */
+  async post<T>(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     const res = await this.fetch(path, {
       method: "POST",
+      signal,
       headers: this.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
     });

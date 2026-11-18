@@ -46,7 +46,9 @@ carries the session and its folder, or the error. Setup output keeps its `setup`
 app shows a starting tab with these steps at once, and opens the chat when `done` comes. The
 server keeps the last 64 `done` frames, and `GET /api/chat/start?id=` returns one or null, so a
 page whose stream reconnected reads a `done` it missed. Text typed in that tab goes after the
-first prompt; a send that fails shows that text in a notice. A model switch waits for its chat as before.
+first prompt; a send that fails shows that text in a notice. The app waits 10 s for the start id; then it
+shows a notice and keeps the composer, because the server may have started the chat. A failed
+start offers Edit and retry, which opens the composer again with its prompt, folder and place. A model switch waits for its chat as before.
 
 With a prompt, the server names the worktree when it makes it: `swarm/` and the first five
 ASCII words of the prompt that are not filler, lowercase and joined by `-`, at most 38

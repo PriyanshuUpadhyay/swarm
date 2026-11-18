@@ -42,7 +42,10 @@ function Failed({ app, start }: { app: App; start: Starting }) {
       <p className="text-sm break-words text-failed" role="alert" data-testid="start-error">
         {start.error}
       </p>
-      <div>
+      <div className="flex gap-2">
+        <Button type="button" size="sm" data-testid="start-retry" onClick={() => app.newChat.retry(start.id)}>
+          Edit and retry
+        </Button>
         <Button type="button" size="sm" variant="outline" onClick={() => app.newChat.dismiss(start.id)}>
           Close
         </Button>

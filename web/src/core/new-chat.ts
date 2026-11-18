@@ -22,6 +22,9 @@ export type StartStep = { step: string; state: "running" | "completed" | "failed
 /** A chat that is starting: its steps, its setup output, and text to send after the first prompt. */
 export type Starting = {
   id: string;
+  /** The folder and place the start posted, so Edit and retry opens the composer on them. */
+  cwd: string;
+  place: Place;
   /** The workspace whose tab strip shows it. */
   from: string | null;
   title: string;
@@ -37,7 +40,7 @@ export type Starting = {
 };
 
 export type NewChatState = {
-  composer: { cwd: string; place: Place; seq: number } | null;
+  composer: { cwd: string; place: Place; text: string; seq: number } | null;
   starts: Record<string, Starting>;
   /** The start on screen, and the app's navigation count then; any move away hides it. */
   viewing: { id: string; nav: number } | null;
@@ -48,6 +51,9 @@ export const DEFAULT_ROLE = "chat";
 
 /** The start steps in their order, with their words. */
 export const STEP_WORDS: Record<string, string> = { worktree: "Make the worktree", setup: "Run the setup script", start: "Start the agent", send: "Send your prompt" };
+
+/** How long the start's POST may take. The server answers in under a second, after its checks. */
+const START_TIMEOUT_MS = 10_000;
 
 /** How many frames of unknown starts wait for their POST reply. */
 const EARLY_KEPT = 50;
@@ -119,12 +125,20 @@ export class NewChat {
 
   /** ⌘N, New chat, a row "+" and the tab "+": the composer on the project of `at` (a workspace or
    *  a project path), else on the open one. */
-  open(at?: string, place?: Place) {
+  open(at?: string, place?: Place, text = "") {
     const list = targets(this.app.view.tree, at ?? this.app.view.workspace);
     const target = (at && list.find((t) => t.cwd === at || t.project === at)) || defaultTarget(list, this.app.view.tree, at ?? this.app.view.workspace);
     if (!target) return this.app.notice("Import or create a project first.");
     // The composer replaces a start's view; the start keeps its tab.
-    this.set({ composer: { cwd: target.cwd, place: place ?? defaultPlace(target), seq: ++this.seq }, viewing: null });
+    this.set({ composer: { cwd: target.cwd, place: place ?? defaultPlace(target), text, seq: ++this.seq }, viewing: null });
+  }
+
+  /** A failed start's Edit and retry: the composer again, with its prompt, folder and place. */
+  retry(id: string) {
+    const start = this.state.starts[id];
+    if (!start) return;
+    this.dismiss(id);
+    this.open(start.cwd, start.place, start.prompt);
   }
 
   close() {
@@ -138,16 +152,18 @@ export class NewChat {
     this.posting = true;
     let id: string;
     try {
-      ({ start: id } = await this.app.api.post<{ start: string }>("/api/chat/new", startBody(cwd, prompt, place, run)));
+      ({ start: id } = await this.app.api.post<{ start: string }>("/api/chat/new", startBody(cwd, prompt, place, run), AbortSignal.timeout(START_TIMEOUT_MS)));
     } catch (err) {
-      this.app.notice(message(err), true);
+      // The server may have started the chat before the wait ended, so the notice says to look first.
+      const timedOut = err instanceof DOMException && err.name === "TimeoutError";
+      this.app.notice(timedOut ? "The server did not answer in 10 s. Check the sidebar for the chat before you press ⌘Enter again." : message(err), true);
       return false;
     } finally {
       this.posting = false;
     }
 
     const from = this.app.view.workspace ?? cwd;
-    const start: Starting = { id, from, title: startTitle(prompt), prompt: prompt.trim(), steps: [], workspace: null, branch: null, setup: null, error: null, queued: [], draft: "" };
+    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), steps: [], workspace: null, branch: null, setup: null, error: null, queued: [], draft: "" };
     this.set({ composer: null, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav: this.app.navSeq } });
     const early = this.early.filter((data) => data.start === id);
     this.early = this.early.filter((data) => data.start !== id);

@@ -48,6 +48,10 @@ test("⌘Enter makes a worktree named from the prompt and shows each start step 
     await expect(start).toHaveAttribute("data-state", "failed");
     await expect(start.getByTestId("setup-output")).toContainText("to-stderr");
     await expect(start.getByTestId("start-error")).toContainText("no chat started");
+    // Edit and retry opens the composer again with the same prompt.
+    await start.getByTestId("start-retry").click();
+    await expect(tab.getByTestId("new-chat-prompt")).toHaveValue(`Fix the flaky smoke ${b}`);
+    await tab.getByTestId("new-chat-prompt").press("Escape");
 
     path = execFileSync("git", ["-C", ghProject(), "worktree", "list", "--porcelain"], { encoding: "utf8" })
       .split("\n\n")
