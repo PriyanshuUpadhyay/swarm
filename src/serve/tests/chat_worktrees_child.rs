@@ -155,7 +155,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
         .0;
     assert_eq!(
         (&preview["branch"], &preview["folder"], &preview["setup"]),
-        (&json!("swarm/fix-flaky-smoke-test"), &json!("wt/fix-flaky-smoke-test"), &json!("touch setup-ran"))
+        (&json!("swarm/fix-flaky-smoke-test"), &json!(named), &json!("touch setup-ran"))
     );
 
     let started = start_chat(fixture, json!({"cwd":main,"prompt":prompt}))

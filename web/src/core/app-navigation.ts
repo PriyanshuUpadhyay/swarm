@@ -260,9 +260,15 @@ export class AppNavigation {
     if (tab && tab.session !== this.app.openId) this.openChat(tab.session, e, { history: false });
   }
 
-  /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing. */
+  /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing.
+   *  While a start is on screen, ⌘W closes it if it failed, and never the chat behind it. */
   closeTab(key?: string): Promise<void> {
     if (this.app.life.state.confirm) return Promise.resolve();
+    const start = key ? null : this.app.newChat.shown();
+    if (start) {
+      if (start.error) this.app.newChat.dismiss(start.id);
+      return Promise.resolve();
+    }
     const run = this.closes.then(() => this.closeTabNow(key));
     this.closes = run.catch(() => {});
     return run;

@@ -67,6 +67,20 @@ pub fn options(project: &Project, owner: &OwnerChoices) -> Result<Value> {
 /// Creates a workspace, or opens the worktree that already has the picked existing branch.
 /// Returns its path, the project's new defaults, and whether git made a new worktree. A new
 /// branch whose name is taken is `Error::Exists`, so the dialog can offer to open or reopen it.
+/// The folder that holds a project's new worktrees, from the worktree folder setting: `~/` is
+/// the home folder, and any other relative path is under the project.
+pub fn worktree_folder(project: &Project, setting: &str) -> Result<PathBuf> {
+    let setting = setting.trim();
+    if setting.is_empty() {
+        return Err(Error::Invalid("Enter a worktree folder".into()));
+    }
+    Ok(if let Some(suffix) = setting.strip_prefix("~/") {
+        PathBuf::from(std::env::var_os("HOME").ok_or(Error::Forbidden)?).join(suffix)
+    } else {
+        Path::new(&project.path).join(setting)
+    })
+}
+
 pub fn create_workspace(
     root: &Path,
     project: &Project,
@@ -113,14 +127,7 @@ pub fn create_workspace(
         },
     }
     let folder_setting = request.folder.as_deref().unwrap_or(&folder).trim();
-    if folder_setting.is_empty() {
-        return Err(Error::Invalid("Enter a worktree folder".into()));
-    }
-    let folder = if let Some(suffix) = folder_setting.strip_prefix("~/") {
-        PathBuf::from(std::env::var_os("HOME").ok_or(Error::Forbidden)?).join(suffix)
-    } else {
-        Path::new(&project.path).join(folder_setting)
-    };
+    let folder = worktree_folder(project, folder_setting)?;
     let parent = checked_path(root, &folder.to_string_lossy(), false)?;
     let target = parent.join(slug(&request.name));
     if std::fs::symlink_metadata(&target).is_ok() {

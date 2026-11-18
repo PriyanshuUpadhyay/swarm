@@ -17,6 +17,7 @@ import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
 import { ComposerOverlay } from "./composer-new";
 import { StartingView } from "./starting-view";
+import { workspaceRow } from "../core/nav";
 import { LifecycleDialogs } from "./lifecycle";
 import { SettingsDialog } from "./settings";
 import { LoadFailed } from "./load-failed";
@@ -107,6 +108,9 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   const start = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.shown());
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   const reconnecting = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
+  // Home and a workspace that takes new chats show the composer in the page; elsewhere ⌘N opens it over the view.
+  const inPage = useSyncExternalStore(app.subscribe, () => !app.view.openId && (!app.view.workspace || workspaceRow(app.view.tree, app.view.workspace)?.newChatEnabled === true));
+
   return (
     <div className="flex h-full min-w-0 flex-col">
       {reconnecting && <div role="status" data-testid="reconnecting" className="border-b border-waiting/40 bg-waiting/10 px-3 py-1 text-xs">Reconnecting… Live updates have stopped.</div>}
@@ -121,7 +125,7 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
           {start ? <StartingView app={app} start={start} /> : openId ? <ChatColumn app={app} openId={openId} /> : workspace ? <WorkspaceLanding app={app} /> : <Home app={app} />}
-          {openId && !start && <ComposerOverlay app={app} />}
+          {!inPage && !start && <ComposerOverlay app={app} />}
         </div>
         <WorkspacePanel app={app} changes={changes} />
       </div>

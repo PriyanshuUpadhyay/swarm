@@ -27,7 +27,9 @@ pub(in crate::serve) async fn new_chat_preview(
         let name = branch
             .as_deref()
             .map(|branch| branch.trim_start_matches(swarm::task::PREFIX).to_owned());
+        // The same folder and base as create_workspace, so the card matches what starts.
         let (folder, _, _) = lifecycle::defaults(project, &target.saved.owner);
+        let folder = lifecycle::worktree_folder(project, &folder).ok();
         let base = lifecycle::references(common)
             .map_err(lifecycle_error)?
             .bases
@@ -51,7 +53,7 @@ pub(in crate::serve) async fn new_chat_preview(
         Ok(Json(json!({
             "place": "worktree",
             "branch": branch,
-            "folder": name.map(|name| format!("{}/{}", folder.trim_end_matches('/'), lifecycle::slug(&name))),
+            "folder": name.zip(folder).map(|(name, folder)| folder.join(lifecycle::slug(&name))),
             "base": base,
             "fetchedUnixS": fetched,
             "setup": setup,

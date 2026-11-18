@@ -10,7 +10,7 @@ import { type Profile } from "../core/lifecycle";
 import { DEFAULT_ROLE, defaultPlace, defaultTarget, targets, type Place, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
-import { message } from "./lifecycle-shared";
+import { ErrorLine, message } from "./lifecycle-shared";
 import { PlacePanel, placeLabel, placeReady } from "./place-lists";
 import { RunPicker, runModel, useRunCatalog } from "./run-picker";
 
@@ -260,7 +260,12 @@ function moveOption(e: KeyboardEvent<HTMLElement>) {
 
 function RunMenu({ app, current, draft, setDraft }: { app: App; current: Run; draft: Run; setDraft: (run: Run) => void }) {
   const catalog = useRunCatalog(app, current.provider);
-  return <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={setDraft} />;
+  return (
+    <>
+      <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={setDraft} />
+      <ErrorLine text={catalog.error} />
+    </>
+  );
 }
 
 function Chip({ testid, on, title, disabled, onClick, children }: { testid: string; on: boolean; title: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
