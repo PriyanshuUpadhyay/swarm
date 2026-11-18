@@ -9,6 +9,28 @@ final class UsageModel {
     var history: [HistorySample] = [] { didSet { updateWings() } }
     /// Working and waiting swarm agents per provider, from `swarm working --json`; empty when none or unknown.
     var agents = WorkingSnapshot() { didSet { updateWings() } }
+    /// ADR 0147: the waiting agents and the unseen chat results, from `swarm notices --inbox --json`.
+    var inbox = InboxSnapshot() { didSet { updateWings() } }
+    /// The card under the notch for what just came in; nil while the card is open.
+    var popup: Popup? {
+        didSet {
+            // The cursor that held the last popup does not hold the next one.
+            if popup == nil { popupHovered = false }
+            if popup != oldValue { wingsChanged?() }
+        }
+    }
+    /// Set by the app delegate: says a new popup line aloud for VoiceOver.
+    @ObservationIgnored var announce: ((String) -> Void)?
+    /// The cursor is on the popup, so a done popup waits for it to leave.
+    @ObservationIgnored var popupHovered = false
+    /// The keys of the last inbox read; nil before the first, so a new HUD pops nothing old.
+    @ObservationIgnored private var knownKeys: Set<String>?
+    /// Why the last Open, answer, or Clear failed, such as "the question changed; read it again".
+    var actionError: String?
+    /// A popup Open that failed: the chat's session and why, shown on its line for `Popup.peek`.
+    var popupError: (session: String, text: String)?
+    /// The need cards with an answer on the way, so a second click cannot send a second answer.
+    var answering: Set<String> = []
     /// The closed wings' words and how much they widen each wing, kept with their inputs, because
     /// the hover check reads the closed size on every mouse move.
     private(set) var wings = WingText()
@@ -51,6 +73,7 @@ final class UsageModel {
     private var reading = false
     private var readQueued = false
     private var readingWorking = false
+    private var readingInbox = false
     private var refreshQueued: Set<String> = []
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment, historyURL: URL? = nil) {
@@ -63,7 +86,7 @@ final class UsageModel {
     }
 
     private func updateWings() {
-        let text = wingText(agents, best: bestAccount(accounts, history: history, now: now ?? Date()))
+        let text = wingText(agents, best: bestAccount(accounts, history: history, now: now ?? Date()), inbox: inbox)
         guard text != wings else { return }
         (wings, wingExtra) = (text, Layout.wingExtra(text))
         wingsChanged?()
@@ -127,6 +150,104 @@ final class UsageModel {
             if let busy = busiest(agents.working), busy != lastWorking { lastWorking = busy }
             if agents != self.agents { self.agents = agents }
             readingWorking = false
+        }
+    }
+
+    /// The store and at most three screen reads; a failure keeps the last inbox on screen.
+    func readInbox() {
+        guard !readingInbox else { return }
+        readingInbox = true
+        let swarm = swarm
+        Task {
+            let result = await offPool { run(swarm, ["notices", "--inbox", "--json"], timeout: 3) }
+            if case .success(let data) = result, let inbox = InboxSnapshot.read(data) { apply(inbox: inbox, now: Date()) }
+            readingInbox = false
+        }
+    }
+
+    func apply(inbox: InboxSnapshot, now: Date) {
+        let new = newPopupItems(inbox, known: knownKeys)
+        knownKeys = inboxKeys(inbox)
+        if inbox != self.inbox { self.inbox = inbox }
+
+        var next = prunePopup(popup, inbox: inbox)
+        // The open card lists the same items, so it needs no popup.
+        if !isOpen { next = mergePopup(next, new: new, now: now) }
+        popup = next
+
+        if let first = new.first, popup != nil {
+            announce?("\(first.title) \(first.word): \(first.body)")
+        }
+        if !new.isEmpty, let shown = popup, !shown.stays {
+            Task {
+                try? await Task.sleep(for: .seconds(Popup.peek))
+                closeExpiredPopup()
+            }
+        }
+    }
+
+    /// A done popup closes once its peek ends and the cursor is off it.
+    func closeExpiredPopup(now: Date = Date()) {
+        if popup?.expired(now: now, hovered: popupHovered) == true { popup = nil }
+    }
+
+    /// Opens the chat where it lives (the app, or its terminal) and marks its rows seen.
+    func openChat(session: String, agent: String?) {
+        let swarm = swarm
+        Task {
+            // `focus` takes the chair's pane when the agent's pane is gone. A chat that did not open
+            // is not seen, so it stays in the inbox, and its popup line says why.
+            if case .failure(let error) = await offPool({ run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5) }) {
+                actionError = error.text
+                if popup?.items.contains(where: { $0.session == session }) == true { showPopupError(session, error.text) }
+                return
+            }
+            popup?.items.removeAll { $0.session == session }
+            if popup?.items.isEmpty == true { popup = nil }
+            let seen = await offPool { run(swarm, ["notices", "seen", session], timeout: 3) }
+            if case .failure(let error) = seen { actionError = error.text } else { actionError = nil }
+            readInbox()
+        }
+    }
+
+    private func showPopupError(_ session: String, _ text: String) {
+        popupError = (session, text)
+        announce?(text)
+        Task {
+            try? await Task.sleep(for: .seconds(Popup.peek))
+            if popupError?.session == session && popupError?.text == text { popupError = nil }
+        }
+    }
+
+    /// `swarm answer` refuses when the prompt on screen is no longer `prompt.id`.
+    func answer(_ need: NeedCard, choice: Int) {
+        guard let prompt = need.prompt, answering.insert(need.key).inserted else { return }
+        let environment = ["SWARM_SESSION_ID": need.session].merging(need.adapter.map { ["SWARM_ADAPTER": $0] } ?? [:]) { $1 }
+        let swarm = swarm
+        Task {
+            let result = await offPool {
+                run(swarm, ["answer", need.agent, prompt.id, String(choice)], timeout: 10, environment: environment)
+            }
+            if case .failure(let error) = result { actionError = error.text } else { actionError = nil }
+            answering.remove(need.key)
+            readInbox()
+        }
+    }
+
+    /// Marks the chats the HUD shows seen, so the inbox list and the closed wing's count empty. A
+    /// row that came after this read stays.
+    func clearInbox() {
+        let sessions = inbox.rows.map(\.session)
+        guard !sessions.isEmpty else { return }
+        inbox.rows = []
+        inbox.rowsTotal = 0
+        popup = nil
+        let swarm = swarm
+        Task {
+            if case .failure(let error) = await offPool({ run(swarm, ["notices", "seen"] + sessions, timeout: 3) }) {
+                actionError = error.text
+            }
+            readInbox()
         }
     }
 
@@ -217,11 +338,15 @@ nonisolated func runRenewal(_ executable: String?, _ arguments: [String], timeou
 }
 
 /// Runs `swarm` with a deadline and returns its stdout. stderr names the failure.
-nonisolated func run(_ executable: String?, _ arguments: [String], timeout: TimeInterval) -> Result<Data, RunError> {
+nonisolated func run(_ executable: String?, _ arguments: [String], timeout: TimeInterval,
+                     environment: [String: String] = [:]) -> Result<Data, RunError> {
     guard let executable else { return .failure(RunError(text: "swarm not found; set SWARM_BIN")) }
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = arguments
+    if !environment.isEmpty {
+        process.environment = ProcessInfo.processInfo.environment.merging(environment) { $1 }
+    }
     let out = Pipe(), err = Pipe()
     process.standardOutput = out
     process.standardError = err

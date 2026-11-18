@@ -11,6 +11,7 @@ async fn transcript_and_snapshot_read_real_synthetic_store_without_marking_notic
         &connection,
         Some(&fixture.session),
         None,
+        None,
         "synthetic",
         "notice",
     )

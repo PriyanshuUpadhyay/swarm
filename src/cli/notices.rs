@@ -11,10 +11,11 @@ const BUNDLE: &str = "io.github.priyanshuupadhyay.swarm.notify";
 const NOTIFICATIONS_URL: &str = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=io.github.priyanshuupadhyay.swarm.notify";
 const FOCUS_URL: &str = "x-apple.systempreferences:com.apple.Focus-Settings.extension";
 
-/// The title of `swarm notices test`'s notice, which `notices --due` posts with the done switch off.
-pub(crate) const TEST_NOTICE_TITLE: &str = "Swarm test";
+/// The title of `swarm notices test`'s notice.
+const TEST_NOTICE_TITLE: &str = "Swarm test";
 
-/// `swarm notices health|allow|test --json` and `swarm notices settings <notifications|focus>`.
+/// `swarm notices health|allow|test --json`, `swarm notices settings <notifications|focus>`, and
+/// the HUD's `swarm notices --inbox --json` and `swarm notices seen` (ADR 0147).
 pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let json = |rest: &[String]| -> Result<(), Box<dyn std::error::Error>> {
         match rest {
@@ -23,6 +24,22 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
         }
     };
     match args {
+        [flag, rest @ ..] if flag == "--inbox" => {
+            json(rest)?;
+            let root = swarm::paths::root_dir()?;
+            let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+            print_json(&inbox(&root, &connection)?)
+        }
+        [verb, rest @ ..] if verb == "seen" => {
+            let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+            let sessions: Vec<&str> = rest.iter().map(String::as_str).collect();
+            // Clear names the chats it shows, so a row that came after the HUD drew stays.
+            if sessions.is_empty() || sessions.iter().any(|session| session.starts_with('-')) {
+                return Err(USAGE.into());
+            }
+            swarm::store::mark_notices_seen(&connection, &sessions)?;
+            Ok(())
+        }
         [verb, rest @ ..] if verb == "health" => {
             json(rest)?;
             print_json(&health())
@@ -33,7 +50,9 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
             if let Some(helper) = helper_executable() {
                 let mut command = std::process::Command::new(helper);
                 command.arg("--authorize");
-                if bounded_output(command, std::time::Duration::from_secs(120)).is_none() {
+                if swarm::hud::bounded_output(command, std::time::Duration::from_secs(120))
+                    .is_none()
+                {
                     return print_json(&row(
                         "unknown",
                         "The notice helper did not answer the permission request within 2 minutes",
@@ -64,6 +83,77 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
     }
 }
 
+/// At most this many waiting agents get a screen read for the HUD's cards.
+const INBOX_NEEDS: usize = 3;
+/// At most this many unseen chats show in the HUD's "Since you looked" list.
+const INBOX_ROWS: usize = 20;
+
+/// ADR 0147: the HUD's inbox. `needs` holds each waiting agent with the prompt on its screen, whose
+/// id `swarm answer` accepts; `rows` holds the newest unseen result of each chat. Each list is cut,
+/// so `needs_total` and `rows_total` give the full counts.
+pub(crate) fn inbox(
+    root: &std::path::Path,
+    connection: &rusqlite::Connection,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let waiting: Vec<_> = swarm::store::running_agents(connection)?
+        .into_iter()
+        .filter(|agent| agent.state == "blocked")
+        .collect();
+    let needs_total = waiting.len();
+    let mut needs = Vec::new();
+    for waiting in waiting.into_iter().take(INBOX_NEEDS) {
+        let (session, agent) = (waiting.session.as_str(), waiting.id.as_str());
+        let row = swarm::store::agents(connection, session)?
+            .into_iter()
+            .find(|row| row.id == agent);
+        let log = row.as_ref().and_then(|row| row.log.clone());
+        let adapter = swarm::store::adapter_of(connection, session)?;
+
+        // A failed screen read keeps the card with Open only.
+        let prompt = match (&adapter, row.as_ref().and_then(|row| row.pane.as_deref())) {
+            (Some(adapter), Some(pane)) => swarm::adapter::load(root, adapter)
+                .ok()
+                .and_then(|loaded| {
+                    read_screen(&loaded, pane, Some(&waiting.provider), log.as_deref())
+                })
+                .and_then(|(_, _, prompt, _)| prompt),
+            _ => None,
+        };
+
+        let prompt = match prompt {
+            Some(mut prompt) => {
+                if waiting.provider == "claude" {
+                    tag_permission_prompt(root, session, agent, &mut prompt)?;
+                }
+                Some(serde_json::json!({
+                    "id": prompt.id,
+                    "question": prompt.question,
+                    "choices": prompt.choices,
+                }))
+            }
+            None => None,
+        };
+
+        needs.push(serde_json::json!({
+            "session": session,
+            "agent": agent,
+            "adapter": adapter,
+            "title": chat_title(connection, session, agent, log.as_deref())?,
+            "kind": row.and_then(|row| row.state_kind),
+            "prompt": prompt,
+        }));
+    }
+
+    let (rows, rows_total) = swarm::store::notice_inbox(connection, INBOX_ROWS)?;
+    Ok(serde_json::json!({
+        "schema": "swarm.inbox.v1",
+        "needs": needs,
+        "needs_total": needs_total,
+        "rows": rows,
+        "rows_total": rows_total,
+    }))
+}
+
 /// The notice health: `state` is ok, allow, blocked, held, missing, or unknown, and more may come.
 /// `action` names what the owner's button does, or is null.
 pub(crate) fn health() -> serde_json::Value {
@@ -72,7 +162,7 @@ pub(crate) fn health() -> serde_json::Value {
     };
     let mut command = std::process::Command::new(helper);
     command.arg("--status");
-    let status = bounded_output(command, std::time::Duration::from_secs(5))
+    let status = swarm::hud::bounded_output(command, std::time::Duration::from_secs(5))
         .and_then(|out| serde_json::from_str::<serde_json::Value>(&out).ok())
         .ok_or_else(|| "Could not read the notice permission from the notice helper".to_string());
     judge(status, || last_notice_held("1h"))
@@ -179,7 +269,7 @@ fn last_notice_held(window: &str) -> Result<Option<bool>, String> {
         "--predicate",
         &predicate,
     ]);
-    let out = bounded_output(command, std::time::Duration::from_secs(15))
+    let out = swarm::hud::bounded_output(command, std::time::Duration::from_secs(15))
         .ok_or_else(|| "log show failed or took over 15 s".to_string())?;
     held_in(&out)
 }
@@ -214,6 +304,7 @@ fn send_test() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         &connection,
         None,
         None,
+        Some(swarm::store::notice_kind::TEST),
         TEST_NOTICE_TITLE,
         "Test notice: swarm's notices reach you.",
     )?;
@@ -249,40 +340,6 @@ fn helper_executable() -> Option<std::path::PathBuf> {
     notify_helper()
         .map(|app| app.join("Contents/MacOS/SwarmNotify"))
         .filter(|path| path.exists())
-}
-
-/// The stdout of `command`, or None when it fails, or runs past `timeout` and is killed.
-fn bounded_output(
-    mut command: std::process::Command,
-    timeout: std::time::Duration,
-) -> Option<String> {
-    let mut child = command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let mut stdout = child.stdout.take()?;
-    // The read runs on its own thread, so a full pipe cannot stall the deadline loop.
-    let reader = std::thread::spawn(move || {
-        let mut text = String::new();
-        std::io::Read::read_to_string(&mut stdout, &mut text).map(|_| text)
-    });
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => return reader.join().ok()?.ok(),
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(20));
-            }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-            _ => return None,
-        }
-    }
 }
 
 #[cfg(test)]

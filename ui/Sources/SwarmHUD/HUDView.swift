@@ -122,6 +122,8 @@ enum Layout {
     static let wingFont: CGFloat = 11
     static let tagFont: CGFloat = 10
     static let tagPadding: CGFloat = 5
+    /// The coloured dot of an inbox kind, in the closed wing and the card's rows.
+    static let dot: CGFloat = 6
 
     /// The width of a closed wing's words, in its semibold font, rounded up. `digits` measures
     /// fixed-width digits, as the count and the percent draw.
@@ -133,7 +135,8 @@ enum Layout {
 
     /// How much each closed wing grows for `text`: the wider side, so the shape stays centred.
     static func wingExtra(_ text: WingText) -> CGFloat {
-        let left = text.left.map { wingGap + textWidth($0, size: wingFont, digits: true) } ?? 0
+        let left = (text.left.map { wingGap + textWidth($0, size: wingFont, digits: true) } ?? 0)
+            + (text.dot == nil ? 0 : wingGap + dot)
         let right = text.tags.reduce(0) { $0 + wingGap + textWidth($1, size: tagFont, digits: false) + 2 * tagPadding }
             + (text.number.map { wingGap + textWidth($0, size: wingFont, digits: true) } ?? 0)
         return max(left, right)
@@ -163,6 +166,7 @@ extension UsageModel {
     var openSize: CGSize {
         let table = ledger(accounts)
         var height = Layout.header(notch: notch) + Layout.belowStatus + Layout.bottom
+            + InboxLayout.height(inbox, error: actionError != nil)
         if !agents.agents.isEmpty { height += Layout.running }
         if !table.rows.isEmpty {
             height += Layout.headings + CGFloat(table.rows.count) * Layout.row(dense: Layout.isDense(rows: table.rows.count))
@@ -206,8 +210,11 @@ struct HUDView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var open: Bool { model.isOpen }
-    private var size: CGSize { open ? model.openSize : model.closedSize }
-    private var shape: NotchShape { NotchShape(ear: open ? Layout.ear : Layout.closedEar, radius: open ? 28 : 13) }
+    private var size: CGSize { model.shownSize }
+    private var popup: Bool { !open && model.popup != nil }
+    private var shape: NotchShape {
+        NotchShape(ear: open || popup ? Layout.ear : Layout.closedEar, radius: open ? 28 : popup ? 20 : 13)
+    }
     private var theme: Theme { Theme(model.phase) }
 
     private var geometryAnimation: Animation? {
@@ -224,14 +231,18 @@ struct HUDView: View {
                 if open {
                     OpenContent(model: model, theme: theme, live: live, now: now)
                         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+                } else if popup {
+                    PopupContent(model: model, theme: theme, live: live, now: now)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 } else {
                     ClosedWings(model: model, theme: theme, live: live, now: now)
                 }
             }
             .frame(width: size.width, height: size.height, alignment: .top)
             .clipShape(shape)
-            .shadow(color: .black.opacity(open ? 0.46 : 0), radius: open ? 13 : 0, y: open ? 10 : 0)
+            .shadow(color: .black.opacity(open || popup ? 0.46 : 0), radius: open || popup ? 13 : 0, y: open || popup ? 10 : 0)
             .animation(geometryAnimation, value: open)
+            .animation(geometryAnimation, value: model.popup?.items.count ?? 0)
             // A new count or model tag widens the closed wings with the same spring, not a snap.
             .animation(geometryAnimation, value: model.wingExtra)
             .animation(live && !reduceMotion ? .easeInOut(duration: 2) : nil, value: model.phase)

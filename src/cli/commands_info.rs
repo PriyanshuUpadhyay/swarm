@@ -101,6 +101,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
             &connection,
             caller.as_ref().map(|(session, _)| session.as_str()),
             caller.as_ref().map(|(_, agent)| agent.as_str()),
+            Some(swarm::store::notice_kind::DONE),
             title,
             body,
         )?;

@@ -145,12 +145,10 @@ unsafe extern "C" {
 fn strays(job: Option<u32>) -> Vec<u32> {
     // SAFETY: getuid has no preconditions and cannot fail.
     let uid = unsafe { getuid() }.to_string();
-    let pgrep = std::process::Command::new("/usr/bin/pgrep")
-        .args(["-x", "-U", &uid, "SwarmHUD"])
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
-        .unwrap_or_default();
+    let mut command = std::process::Command::new("/usr/bin/pgrep");
+    command.args(["-x", "-U", &uid, "SwarmHUD"]);
+    // pgrep exits 1 when it finds none, which reads as no strays.
+    let pgrep = bounded_output(command, STATUS_WITHIN).unwrap_or_default();
     others(&pgrep, job)
 }
 
@@ -158,6 +156,44 @@ fn stop(pids: &[u32]) {
     for &pid in pids {
         // SAFETY: kill only sends a signal; a pid that is gone returns an error we ignore.
         unsafe { kill(pid as i32, 15) };
+    }
+}
+
+/// The notice hook reads `status` at each turn end, so a hung launchctl or pgrep must not hold the
+/// turn; past this the HUD reads as not running, and the banner posts.
+const STATUS_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The stdout of `command`, or None when it fails, or runs past `timeout` and is killed.
+pub fn bounded_output(
+    mut command: std::process::Command,
+    timeout: std::time::Duration,
+) -> Option<String> {
+    let mut child = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdout = child.stdout.take()?;
+    // The read runs on its own thread, so a full pipe cannot stall the deadline loop.
+    let reader = std::thread::spawn(move || {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut stdout, &mut text).map(|_| text)
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => return reader.join().ok()?.ok(),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            _ => return None,
+        }
     }
 }
 
@@ -187,9 +223,9 @@ pub fn kickstart() -> std::io::Result<std::process::Output> {
 }
 
 pub fn status(home: &Path) -> Status {
-    let print = launchctl(&["print", &service_target()])
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
-        .unwrap_or_default();
+    let mut command = std::process::Command::new("/bin/launchctl");
+    command.args(["print", &service_target()]);
+    let print = bounded_output(command, STATUS_WITHIN).unwrap_or_default();
     let running = running(&print);
     Status {
         installed: plist_path(home).exists(),

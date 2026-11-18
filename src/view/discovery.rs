@@ -1,6 +1,6 @@
 //! Slow filesystem and subprocess reads, kept outside the pure view models.
 mod titles;
-use titles::read_title;
+pub use titles::{last_reply, read_title};
 
 use super::{
     choices::OwnerChoices,

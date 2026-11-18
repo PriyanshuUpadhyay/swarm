@@ -80,7 +80,15 @@ impl Server {
         swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
         swarm::store::set_provider(&connection, &session, "worker", "claude").unwrap();
         swarm::store::set_log(&connection, &session, "worker", &log).unwrap();
-        swarm::store::add_notice(&connection, Some(&session), None, "synthetic", "notice").unwrap();
+        swarm::store::add_notice(
+            &connection,
+            Some(&session),
+            None,
+            None,
+            "synthetic",
+            "notice",
+        )
+        .unwrap();
         let bin = home.join("bin");
         fs::create_dir_all(&bin).unwrap();
         if actions {

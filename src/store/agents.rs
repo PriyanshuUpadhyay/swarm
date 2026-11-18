@@ -127,8 +127,9 @@ pub fn require_pane(
 
 /// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
 /// `chair_provider`.
-/// How long a `working` or `blocked` report counts without a newer one. A turn reports at each tool
-/// call, and an agent that died keeps its last report, so the usage HUD stops showing it after this.
+/// How long a `working` report counts without a newer one. A turn reports at each tool call, and an
+/// agent that died keeps its last report, so the usage HUD stops showing it after this. A wait
+/// sends no reports while it lasts, so a `blocked` agent counts while its pane is open (ADR 0147).
 const WORKING_FOR_S: i64 = 600;
 
 /// The number of `agents` in `state` (`working` or `blocked`), by provider. Counting the one list
@@ -144,7 +145,7 @@ pub fn agents_by_provider(
     counts
 }
 
-/// One agent with a pane that reported `working` or `blocked` within `WORKING_FOR_S`. A chair with
+/// One agent with a pane that is `blocked`, or that reported `working` within `WORKING_FOR_S`. A chair with
 /// no provider of its own runs under its session's chair provider.
 #[derive(Debug, serde::Serialize)]
 pub struct RunningAgent {
@@ -170,8 +171,9 @@ pub fn running_agents(
                                   THEN session.chair_provider END) AS provider,
                     agent.model, agent.account, agent.state
              FROM agent JOIN session ON session.id = agent.session_id
-             WHERE agent.pane_id IS NOT NULL AND agent.state IN ('working', 'blocked')
-               AND agent.state_at >= unixepoch() - ?1)
+             WHERE agent.pane_id IS NOT NULL
+               AND (agent.state = 'blocked'
+                    OR (agent.state = 'working' AND agent.state_at >= unixepoch() - ?1)))
          WHERE provider IS NOT NULL
          ORDER BY state = 'blocked' DESC, session_id, id",
     )?;

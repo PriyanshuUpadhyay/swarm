@@ -324,20 +324,26 @@ public func usageRing(_ best: BestAccount?, readFailed: Bool) -> UsageRing {
 /// The closed wings' words: beside the mascot the working count or "needs you", beside the ring
 /// up to two model tags, the blocked agent's name, or the used percent once the ring is red.
 public struct WingText: Equatable, Sendable {
+    public enum Dot: Equatable, Sendable { case done, failed }
+
     public var left: String?
     public var blocked = false
     public var tags: [String] = []
     public var number: String?
+    /// A coloured dot before `left` for unseen inbox rows (ADR 0147).
+    public var dot: Dot?
 
-    public init(left: String? = nil, blocked: Bool = false, tags: [String] = [], number: String? = nil) {
-        (self.left, self.blocked, self.tags, self.number) = (left, blocked, tags, number)
+    public init(left: String? = nil, blocked: Bool = false, tags: [String] = [], number: String? = nil, dot: Dot? = nil) {
+        (self.left, self.blocked, self.tags, self.number, self.dot) = (left, blocked, tags, number, dot)
     }
 }
 
-public func wingText(_ agents: WorkingSnapshot, best: BestAccount?) -> WingText {
+public func wingText(_ agents: WorkingSnapshot, best: BestAccount?, inbox: InboxSnapshot = InboxSnapshot()) -> WingText {
     var text = WingText()
     let working = agents.working.values.reduce(0, +)
-    if !agents.blocked.isEmpty {
+    if let inboxText = inboxWing(inbox), inboxText.blocked || agents.blocked.isEmpty {
+        text = inboxText
+    } else if !agents.blocked.isEmpty {
         text = WingText(left: "needs you", blocked: true,
                         tags: agents.agents.first(where: \.blocked).map { [String($0.id.prefix(12))] } ?? [])
     } else if working > 0 {

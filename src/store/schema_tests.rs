@@ -15,7 +15,15 @@ mod tests {
         }
         connection.pragma_update(None, "user_version", 8).unwrap();
         migrate(&mut connection).unwrap();
-        add_notice(&connection, Some("session"), Some("chair"), "Done", "body").unwrap();
+        add_notice(
+            &connection,
+            Some("session"),
+            Some("chair"),
+            Some("done"),
+            "Done",
+            "body",
+        )
+        .unwrap();
         let notices = take_notices(&mut connection).unwrap();
         assert_eq!(notices.len(), 1);
         assert_eq!(notices[0].session_id.as_deref(), Some("session"));

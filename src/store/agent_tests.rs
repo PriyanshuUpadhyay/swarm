@@ -100,7 +100,8 @@ mod tests {
             "hook",
             None,
             Some("question"),
-            now - 5,
+            // A wait sends no reports, so an old one still counts.
+            now - 601,
         )
         .unwrap();
         connection

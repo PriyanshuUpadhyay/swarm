@@ -248,6 +248,20 @@ pub fn contains(path: &str, root: &str) -> bool {
 pub fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+/// `text` cut to at most `max` chars, the last of them an ellipsis when it was longer. `max` must
+/// be at least 1.
+pub fn shorten(text: &str, max: usize) -> String {
+    if text.chars().count() > max {
+        text.chars()
+            .take(max.saturating_sub(1))
+            .collect::<String>()
+            .trim_end()
+            .to_owned()
+            + "…"
+    } else {
+        text.into()
+    }
+}
 pub fn nonblank(text: Option<&str>) -> Option<String> {
     text.map(one_line).filter(|s| !s.is_empty())
 }

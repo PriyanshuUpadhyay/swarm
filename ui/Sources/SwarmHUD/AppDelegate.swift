@@ -53,8 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         readTimer?.tolerance = 10
         model.readWorking()
+        model.readInbox()
         workingTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
-            MainActor.assumeIsolated { self.model.readWorking() }
+            MainActor.assumeIsolated {
+                self.model.readWorking()
+                self.model.readInbox()
+            }
         }
         workingTimer?.tolerance = 1
         schedulePhaseChange()
@@ -116,6 +120,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.activeRect = { [weak self] in self?.visibleRectInScreen() ?? .zero }
         view.makeMenu = { [weak self] in self?.contextMenu() }
         model.toggleFromKeyboard = { [weak self] in self?.toggleFromKeyboard() }
+
+        // The popup takes no focus, so VoiceOver hears its new line as an announcement.
+        model.announce = { text in
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                                 userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
+
         // Clicks follow the new width; opening still waits for a real mouse move, so wings that
         // grow under a resting cursor do not open the card.
         model.wingsChanged = { [weak self] in
@@ -151,7 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The shape the owner sees, in screen coordinates: the closed wings or the open card.
     private func visibleRectInScreen() -> NSRect {
-        let size = model.isOpen ? model.openSize : model.closedSize
+        let size = model.shownSize
         let frame = panel.frame
         return NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height)
     }
@@ -160,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the top of the screen still counts as inside.
     private func hoverRectInScreen() -> NSRect {
         let rect = visibleRectInScreen()
-        return model.isOpen ? NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height + 1)
+        return model.isOpen || model.popup != nil ? NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height + 1)
                             : rect.insetBy(dx: -8, dy: -4)
     }
 
@@ -197,6 +208,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let inside = hoverRectInScreen().contains(NSEvent.mouseLocation)
         setClickThrough(!inside)
         if keyOpen { return }
+        // The popup's lines take clicks, so hovering them never opens the card over their buttons.
+        // The notch row above them opens the card as usual; the card lists the same items, so it
+        // takes the popup's place.
+        if !model.isOpen, model.popup != nil {
+            model.popupHovered = inside
+            if !inside { model.closeExpiredPopup(); hoverHeld = false }
+            let hover = hoverRectInScreen()
+            let onNotch = inside && NSEvent.mouseLocation.y >= hover.maxY - model.notch.height - 1
+            if onNotch && !hoverHeld { scheduleOpen() } else { pendingOpen?.cancel(); pendingOpen = nil }
+            return
+        }
         if hoverHeld {
             if inside { return }
             hoverHeld = false
@@ -238,6 +260,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingOpen?.cancel(); pendingOpen = nil
         model.isOpen = open
         if open {
+            // The card's Inbox section lists the same items.
+            model.popup = nil
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
             // The minute timer keeps it current; this only catches up after a long closed spell.
             if model.readAt.map({ Date().timeIntervalSince($0) > 5 }) ?? true { model.read() }

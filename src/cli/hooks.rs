@@ -275,8 +275,9 @@ pub(crate) fn store_log(
 }
 
 /// Stores an agent's own report of its state, from `source` (`hook` or `host`) at `at`, and posts
-/// a notice when it starts to wait or when the chair ends a turn. False when the session holds no
-/// such agent.
+/// a notice when it becomes blocked, or when the chair ends a turn or its turn ends in an error. A
+/// turn that the owner stopped posts nothing, because the owner was there. False when the session
+/// holds no such agent.
 pub(crate) fn store_state(
     connection: &rusqlite::Connection,
     session: &str,
@@ -299,11 +300,16 @@ pub(crate) fn store_state(
     else {
         return Ok(false);
     };
+
+    let busy = matches!(old.as_deref(), Some("working" | "blocked"));
     if report.state == "blocked" && old.as_deref() != Some("blocked") {
         notice_blocked(connection, session, agent, report.kind)?;
     }
-    if report.state == "done" && matches!(old.as_deref(), Some("working" | "blocked")) {
-        notice_chair_done(connection, session, agent)?;
+    if report.state == "done" && busy && !report.stopped_by_owner {
+        notice_chair_done(connection, session, agent, report.reply.as_deref(), at)?;
+    }
+    if report.state == "error" && busy {
+        notice_failed(connection, session, agent, report.detail.as_deref())?;
     }
     Ok(true)
 }

@@ -58,6 +58,7 @@ pub(super) fn board_pings(
                 tx,
                 Some(session_id),
                 Some(author),
+                Some(notice_kind::ASKS),
                 "swarm: a decision waits for you",
                 &format!("B-{n}: {}", new.subject.trim()),
             )?;

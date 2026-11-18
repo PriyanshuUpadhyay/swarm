@@ -1,45 +1,30 @@
-// Read chat titles from agent logs and thread names.
+// Read chat titles and the last reply from agent logs and thread names.
 use super::tree;
 use serde_json::Value;
 use std::{io::Read, path::Path};
+/// The most chars of a chat title.
+const TITLE_CHARS: usize = 80;
+
 /// A chat's title: the agent's own (a Claude rename or AI title, a pi `/name`, a Codex thread
 /// name), else the owner's first message.
-pub(super) fn read_title(path: &str) -> Option<String> {
+pub fn read_title(path: &str) -> Option<String> {
     agent_title(path)
         .or_else(|| codex_thread_name(path))
         .or_else(|| first_message(path))
-        .map(|title| short(&tree::one_line(&title)))
+        .map(|title| tree::shorten(&tree::one_line(&title), TITLE_CHARS))
 }
 
-fn short(title: &str) -> String {
-    if title.chars().count() > 80 {
-        title
-            .chars()
-            .take(79)
-            .collect::<String>()
-            .trim_end()
-            .to_owned()
-            + "…"
-    } else {
-        title.into()
-    }
-}
-
-/// The newest title in the last 256 KiB of the log. Claude's `-n` gives a chair the custom title
+/// The newest title in the log's tail (`screen::log_tail`). Claude's `-n` gives a chair the custom title
 /// "orchestrator", which is no name for the owner.
 fn agent_title(path: &str) -> Option<String> {
-    use std::io::{Seek, SeekFrom};
-    let mut file = std::fs::File::open(path).ok()?;
-    let len = file.metadata().ok()?.len();
-    file.seek(SeekFrom::Start(len.saturating_sub(256 * 1024)))
-        .ok()?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes).ok()?;
+    let bytes = crate::screen::log_tail(Path::new(path))?;
     let (mut custom, mut ai, mut pi) = (None, None, None);
+
     for line in bytes.split(|b| *b == b'\n') {
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
         };
+
         let text = |key: &str| value[key].as_str().map(str::trim).map(str::to_owned);
         match value["type"].as_str() {
             Some("custom-title") => {
@@ -115,11 +100,48 @@ fn first_message(path: &str) -> Option<String> {
     }
     None
 }
+/// ADR 0147: the agent's last reply with words in its log's tail, for the done
+/// notice of a CLI whose turn end does not give it. It reads Claude, pi, and Codex logs.
+pub fn last_reply(path: &str) -> Option<String> {
+    let bytes = crate::screen::log_tail(Path::new(path))?;
+    let mut last = None;
+    for line in bytes.split(|b| *b == b'\n') {
+        let Ok(value) = serde_json::from_slice::<Value>(line) else {
+            continue;
+        };
+
+        // Claude and pi keep a reply under `message`, Codex under `payload`.
+        let content = if value["type"] == "assistant"
+            || (value["type"] == "message" && value["message"]["role"] == "assistant")
+        {
+            &value["message"]["content"]
+        } else if value["type"] == "response_item"
+            && value["payload"]["type"] == "message"
+            && value["payload"]["role"] == "assistant"
+        {
+            &value["payload"]["content"]
+        } else {
+            continue;
+        };
+
+        if let Some(text) = content_text(content).filter(|text| !text.trim().is_empty()) {
+            last = Some(text.trim().to_owned());
+        }
+    }
+    last
+}
+
+/// The text blocks of a message: an owner's (`text`, `input_text`) or a reply's (`output_text`).
 fn content_text(content: &Value) -> Option<String> {
     content.as_str().map(str::to_owned).or_else(|| {
         content.as_array().map(|a| {
             a.iter()
-                .filter(|b| b["type"] == "text" || b["type"] == "input_text")
+                .filter(|b| {
+                    matches!(
+                        b["type"].as_str(),
+                        Some("text" | "input_text" | "output_text")
+                    )
+                })
                 .filter_map(|b| b["text"].as_str())
                 .collect::<Vec<_>>()
                 .join("\n")

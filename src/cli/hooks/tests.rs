@@ -6,6 +6,26 @@ mod cases {
     use super::*;
     use crate::cli::test_support::*;
 
+    /// ADR 0147: while the HUD runs, it shows each chat's notices, so a chat's row gets no
+    /// banner, and a row with no chat, such as the Settings test or a shell's notify, keeps it.
+    #[test]
+    fn no_banner_is_due_while_the_hud_runs_but_for_a_row_with_no_chat() {
+        let root = std::env::temp_dir().join(format!("swarm-hud-due-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut connection = swarm::store::open(&root.join("swarm.db")).unwrap();
+        let chat = swarm::store::create_session(&connection, "lane", &root, None, None).unwrap();
+        let done = Some(swarm::store::notice_kind::DONE);
+        swarm::store::add_notice(&connection, Some(&chat), None, done, "Chat", "Done.").unwrap();
+        swarm::store::add_notice(&connection, None, None, done, "Build", "Done.").unwrap();
+
+        let due = due_notices(&mut connection, &root, true).unwrap();
+
+        let titles: Vec<_> = due.iter().map(|row| row["title"].clone()).collect();
+        assert_eq!(titles, ["Build"]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn a_cli_run_inside_the_agents_own_cli_is_nested() {
         let chain = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
@@ -87,6 +107,8 @@ mod cases {
                     state: "blocked",
                     detail: None,
                     kind: Some("permission"),
+                    reply: None,
+                    stopped_by_owner: false,
                 }),
                 None
             )
@@ -105,6 +127,8 @@ mod cases {
                     state: "error",
                     detail: Some("quota".to_string()),
                     kind: None,
+                    reply: None,
+                    stopped_by_owner: false,
                 }),
                 None
             )

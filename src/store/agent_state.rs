@@ -26,6 +26,7 @@ pub fn set_state(
     use rusqlite::OptionalExtension;
     let transaction =
         rusqlite::Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+
     let Some(old) = transaction
         .query_row(
             "SELECT state FROM agent WHERE session_id = ?1 AND id = ?2",
@@ -36,17 +37,50 @@ pub fn set_state(
     else {
         return Ok(None);
     };
+
     transaction.execute(
-        "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5,
+        &format!(
+            "UPDATE agent SET state = ?3, state_source = ?4, state_detail = ?5,
             state_kind = CASE WHEN ?3 = 'blocked' AND ?6 IS NULL AND state = 'blocked'
-                              THEN state_kind ELSE ?6 END, state_at = ?7
+                              THEN state_kind ELSE ?6 END, state_at = ?7,
+            turn_at = {}
          WHERE session_id = ?1 AND id = ?2
            AND NOT (?3 = 'done' AND ?4 IN ('hook', 'host')
                     AND state IS 'error' AND state_source IN ('hook', 'host'))",
+            turn_at_sql("?7")
+        ),
         (session_id, agent_id, state, source, detail, kind, now),
     )?;
+
     transaction.commit()?;
     Ok(Some(old))
+}
+
+/// ADR 0147: the new `turn_at` of an update that sets state `?3` at time `now`. A move to `working`
+/// from a state other than `working` or `blocked` starts a turn; an answered block goes on with it.
+fn turn_at_sql(now: &str) -> String {
+    format!(
+        "CASE WHEN ?3 = 'working' AND state IS NOT 'working' AND state IS NOT 'blocked'
+              THEN {now} ELSE turn_at END"
+    )
+}
+
+/// When the agent's current turn began (ADR 0147), or None before its first turn; see
+/// `turn_at_sql`. Both a hook report and a screen check can start a turn.
+pub fn turn_at(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> rusqlite::Result<Option<i64>> {
+    use rusqlite::OptionalExtension;
+    Ok(connection
+        .query_row(
+            "SELECT turn_at FROM agent WHERE session_id = ?1 AND id = ?2",
+            (session_id, agent_id),
+            |row| row.get(0),
+        )
+        .optional()?
+        .flatten())
 }
 
 /// The report a listing read for one agent: (state, state_source, state_at, state_kind).
@@ -71,10 +105,12 @@ pub fn set_screen_state(
     read: ReadState<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let (read_state, read_source, read_at, read_kind) = read;
+
     let changed = connection.execute(
-        "UPDATE agent SET state = ?3, state_source = 'screen', state_detail = ?4, state_kind = NULL, state_at = ?5
+        &format!("UPDATE agent SET state = ?3, state_source = 'screen', state_detail = ?4, state_kind = NULL, state_at = ?5,
+            turn_at = {}
          WHERE session_id = ?1 AND id = ?2
-           AND state IS ?6 AND state_source IS ?7 AND state_at IS ?8 AND state_kind IS ?9",
+           AND state IS ?6 AND state_source IS ?7 AND state_at IS ?8 AND state_kind IS ?9", turn_at_sql("?5")),
         (
             session_id,
             agent_id,
@@ -87,6 +123,7 @@ pub fn set_screen_state(
             read_kind,
         ),
     )?;
+
     Ok(changed == 1)
 }
 

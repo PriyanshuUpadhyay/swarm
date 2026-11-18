@@ -134,3 +134,27 @@ async fn tree_handler_keeps_last_good_choices_on_busy_or_invalid_state() {
     );
     assert!(!fixture.app.root.join("choices.json").exists());
 }
+
+/// ADR 0147: a chat that the owner opens in the app has no unseen notice rows left for the HUD.
+#[tokio::test]
+async fn opening_a_chat_marks_its_notice_rows_seen() {
+    let fixture = action_fixture();
+    let workspace = env!("CARGO_MANIFEST_DIR");
+    refresh_tree(&fixture.app).unwrap();
+    let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let done = Some(swarm::store::notice_kind::DONE);
+    swarm::store::add_notice(&db, Some(&fixture.session), None, done, "Chat", "Done.").unwrap();
+    assert_eq!(swarm::store::notice_inbox(&db, 20).unwrap().0.len(), 1);
+
+    // The app sends the session id of the chat it opens (app-navigation.ts `selected_chat`).
+    let saved = choices_store::load(&fixture.app.root, true).unwrap();
+    let body: choices::ChoiceWrite = serde_json::from_value(json!({
+        "revision": saved.revision, "op": "selected_chat", "workspace": workspace, "chat": fixture.session,
+    }))
+    .unwrap();
+    let _reply = choice_write(State(fixture.app.clone()), Ok(Json(body)))
+        .await
+        .unwrap();
+
+    assert!(swarm::store::notice_inbox(&db, 20).unwrap().0.is_empty());
+}

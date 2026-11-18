@@ -279,8 +279,8 @@ fn a_change_to_waiting_stores_one_notice_and_starts_the_helper_not_the_app() {
     for row in rows.as_array().unwrap() {
         assert_eq!(row["session_id"], session.as_str());
         assert_eq!(row["agent_id"], "coder");
-        assert_eq!(row["title"], "Swarm");
-        assert_eq!(row["body"], format!("{folder}: blocked on a permission"));
+        assert_eq!(row["title"], folder);
+        assert_eq!(row["body"], "Blocked on a permission.");
     }
     assert_eq!(rows.as_array().unwrap().len(), 2);
     std::fs::remove_dir_all(home).unwrap();
@@ -322,8 +322,11 @@ fn notices_due_applies_the_notice_preferences() {
         )
         .unwrap();
     };
+    let add_kind = |session: Option<&str>, agent: Option<&str>, kind, title: &str| {
+        swarm::store::add_notice(&connection, session, agent, kind, title, "").unwrap();
+    };
     let add = |session: Option<&str>, agent: Option<&str>, title: &str| {
-        swarm::store::add_notice(&connection, session, agent, title, "").unwrap();
+        add_kind(session, agent, None, title);
     };
     let due = || -> Vec<(String, bool)> {
         let out: serde_json::Value =
@@ -340,16 +343,23 @@ fn notices_due_applies_the_notice_preferences() {
         muted.display()
     ));
     add(Some(&in_muted), Some("coder"), "muted");
-    add(Some(&in_open), Some("coder"), "blocked");
-    add(None, None, "done");
-    // A test notice from Settings checks delivery, so the done switch does not drop it.
-    add(None, None, "Swarm test");
+    add(Some(&in_open), Some("coder"), "waiting");
+    use swarm::store::notice_kind::{ASKS, DONE, FAILED, TEST};
+    add_kind(None, None, Some(DONE), "done");
+    // The done switch mutes only plain results: a question or a failure needs the owner, and a
+    // test notice from Settings checks delivery.
+    for kind in [ASKS, FAILED, TEST] {
+        add_kind(None, None, Some(kind), kind);
+    }
     assert_eq!(
         due(),
         [
-            ("blocked".to_string(), false),
-            ("Swarm test".to_string(), false)
+            ("waiting", false),
+            (ASKS, false),
+            (FAILED, false),
+            (TEST, false)
         ]
+        .map(|(title, sound)| (title.to_string(), sound))
     );
     assert_eq!(due(), []);
 
@@ -360,56 +370,5 @@ fn notices_due_applies_the_notice_preferences() {
     std::fs::remove_file(home.join(".swarm/choices.json")).unwrap();
     add(Some(&in_muted), Some("coder"), "default");
     assert_eq!(due(), [("default".to_string(), true)]);
-    std::fs::remove_dir_all(home).unwrap();
-}
-
-/// ADR 0138: the chair's turn end is one done notice; a child's turn end is none, and so is a
-/// chair turn end while a child still works.
-#[test]
-fn only_the_chair_turn_end_with_no_working_child_stores_a_done_notice() {
-    let home = scratch("notice-chair-done");
-    let session = stdout(&swarm(&home, &[], &["session", "new", "lane"], ""))
-        .trim()
-        .to_string();
-    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
-    swarm::store::add_agent(&connection, &session, "orchestrator", "orchestrator").unwrap();
-    swarm::store::add_agent(&connection, &session, "coder", "coder").unwrap();
-    let missing = home.join("missing.app");
-    let turn = |agent: &str, event: &str| {
-        let env = [
-            ("SWARM_SESSION_ID", session.as_str()),
-            ("SWARM_AGENT_ID", agent),
-            ("SWARM_NOTIFY_APP", missing.to_str().unwrap()),
-        ];
-        let payload = format!(r#"{{"hook_event_name":"{event}"}}"#);
-        assert!(
-            swarm(&home, &env, &["hook", "claude"], &payload)
-                .status
-                .success()
-        );
-    };
-    let notices = || -> Vec<serde_json::Value> {
-        serde_json::from_str(&stdout(&swarm(&home, &[], &["notices", "--json"], ""))).unwrap()
-    };
-    turn("coder", "UserPromptSubmit");
-    turn("orchestrator", "UserPromptSubmit");
-    turn("orchestrator", "Stop");
-    assert!(
-        notices().is_empty(),
-        "a working child holds the chair's notice"
-    );
-    turn("coder", "Stop");
-    assert!(notices().is_empty(), "a child's turn end is no notice");
-    turn("orchestrator", "UserPromptSubmit");
-    turn("orchestrator", "Stop");
-    turn("orchestrator", "Stop");
-    let rows = notices();
-    assert_eq!(rows.len(), 1, "{rows:?}");
-    let folder = home.file_name().unwrap().to_str().unwrap();
-    assert_eq!(rows[0]["agent_id"], "orchestrator");
-    assert_eq!(
-        rows[0]["body"],
-        format!("{folder}: the orchestrator is done")
-    );
     std::fs::remove_dir_all(home).unwrap();
 }

@@ -15,6 +15,7 @@ struct OpenContent: View {
         let dense = Layout.isDense(rows: table.rows.count)
         VStack(spacing: 0) {
             status.frame(height: Layout.header(notch: model.notch))
+            InboxSection(model: model, theme: theme)
             if !model.agents.agents.isEmpty {
                 RunningLine(agents: model.agents.agents, theme: theme, shown: model.openSize.width > Layout.chipBreak ? Layout.wideChips : Layout.narrowChips).frame(height: Layout.running)
             }

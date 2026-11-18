@@ -84,7 +84,19 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0014.sql"),
     include_str!("../migrations/0015.sql"),
     include_str!("../migrations/0016.sql"),
+    include_str!("../migrations/0017.sql"),
 ];
+
+/// ADR 0147: the kinds of a notice row. The HUD decodes the same words (`Inbox.swift`).
+pub mod notice_kind {
+    pub const DONE: &str = "done";
+    /// A chair reply that ends with a question, or a board decision that waits for the owner.
+    pub const ASKS: &str = "asks";
+    pub const FAILED: &str = "failed";
+    pub const WAITING: &str = "waiting";
+    /// The Settings test notice, which checks macOS delivery.
+    pub const TEST: &str = "test";
+}
 
 #[derive(serde::Serialize)]
 pub struct Notice {
@@ -93,18 +105,37 @@ pub struct Notice {
     pub agent_id: Option<String>,
     pub title: String,
     pub body: String,
+    /// One of `notice_kind`, and more may come; None for an old row.
+    pub kind: Option<String>,
 }
+
+impl Notice {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Notice {
+            id: row.get(0)?,
+            session_id: row.get(1)?,
+            agent_id: row.get(2)?,
+            title: row.get(3)?,
+            body: row.get(4)?,
+            kind: row.get(5)?,
+        })
+    }
+}
+
+/// The columns of `Notice::from_row`, in its order.
+const NOTICE_COLUMNS: &str = "id, session_id, agent_id, title, body, kind";
 
 pub fn add_notice(
     connection: &Connection,
     session: Option<&str>,
     agent: Option<&str>,
+    kind: Option<&str>,
     title: &str,
     body: &str,
 ) -> rusqlite::Result<()> {
     connection.execute(
-        "INSERT INTO notice (session_id, agent_id, title, body) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![session, agent, title, body],
+        "INSERT INTO notice (session_id, agent_id, kind, title, body) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![session, agent, kind, title, body],
     )?;
     Ok(())
 }
@@ -113,25 +144,58 @@ pub fn add_notice(
 pub fn take_notices(connection: &mut Connection) -> rusqlite::Result<Vec<Notice>> {
     let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let notices = {
-        let mut query = tx.prepare("SELECT id, session_id, agent_id, title, body FROM notice WHERE posted_at IS NULL ORDER BY id")?;
+        let mut query = tx.prepare(&format!(
+            "SELECT {NOTICE_COLUMNS} FROM notice WHERE posted_at IS NULL ORDER BY id"
+        ))?;
         query
-            .query_map([], |row| {
-                Ok(Notice {
-                    id: row.get(0)?,
-                    session_id: row.get(1)?,
-                    agent_id: row.get(2)?,
-                    title: row.get(3)?,
-                    body: row.get(4)?,
-                })
-            })?
+            .query_map([], Notice::from_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?
     };
+
     tx.execute(
         "UPDATE notice SET posted_at = unixepoch() WHERE posted_at IS NULL",
         [],
     )?;
     tx.commit()?;
     Ok(notices)
+}
+
+/// The id of each chat's newest unseen done, asks, or failed row; `?2` to `?4` are those kinds.
+const INBOX_IDS: &str = "SELECT max(id) FROM notice
+     WHERE seen_at IS NULL AND session_id IS NOT NULL AND kind IN (?2, ?3, ?4)
+     GROUP BY session_id";
+
+/// ADR 0147: the newest unseen done, asks, or failed row of each chat, newest first, at most
+/// `limit`, and the number of such chats. A wait is not here: the HUD reads waiting agents live,
+/// so an answered wait never stays.
+pub fn notice_inbox(
+    connection: &Connection,
+    limit: usize,
+) -> rusqlite::Result<(Vec<Notice>, usize)> {
+    use notice_kind::{ASKS, DONE, FAILED};
+    let mut query = connection.prepare(&format!(
+        "SELECT {NOTICE_COLUMNS}, count(*) OVER () FROM notice WHERE id IN ({INBOX_IDS})
+         ORDER BY id DESC LIMIT ?1"
+    ))?;
+    let mut total = 0;
+    let rows = query
+        .query_map(rusqlite::params![limit as i64, DONE, ASKS, FAILED], |row| {
+            total = row.get::<_, i64>(6)? as usize;
+            Notice::from_row(row)
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok((rows, total))
+}
+
+/// Marks the rows of these sessions seen. Returns how many rows changed.
+pub fn mark_notices_seen(connection: &Connection, sessions: &[&str]) -> rusqlite::Result<usize> {
+    let marks = vec!["?"; sessions.len()].join(", ");
+    connection.execute(
+        &format!(
+            "UPDATE notice SET seen_at = unixepoch() WHERE seen_at IS NULL AND session_id IN ({marks})"
+        ),
+        rusqlite::params_from_iter(sessions),
+    )
 }
 
 fn known_version(version: i64) -> bool {
@@ -282,6 +346,11 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
         tx.pragma_update(None, "user_version", 16)?;
     }
 
+    if version < 17 {
+        tx.execute_batch(MIGRATIONS[16])?;
+        tx.pragma_update(None, "user_version", 17)?;
+    }
+
     let added = broken(&tx)? - broken_before;
     if added > 0 {
         return Err(format!(
@@ -314,6 +383,20 @@ mod tests {
             ))
             .unwrap();
         connection
+    }
+
+    /// ADR 0147: the HUD shows "+N more" from the full count, not from the cut list.
+    #[test]
+    fn the_inbox_counts_every_unseen_chat_past_its_limit() {
+        let connection = seed();
+        for session in [SESSION, OTHER_SESSION] {
+            let done = Some(notice_kind::DONE);
+            add_notice(&connection, Some(session), None, done, "Chat", "Done.").unwrap();
+        }
+
+        let (rows, total) = notice_inbox(&connection, 1).unwrap();
+
+        assert_eq!((rows.len(), total), (1, 2));
     }
 
     pub(super) fn unix_now() -> i64 {

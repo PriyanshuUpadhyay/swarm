@@ -5,6 +5,11 @@ pub struct HookState {
     pub state: &'static str,
     pub detail: Option<String>,
     pub kind: Option<&'static str>,
+    /// The agent's last reply when the provider's turn end gives it, such as Claude's
+    /// `last_assistant_message`; the done notice quotes it (ADR 0147).
+    pub reply: Option<String>,
+    /// The owner stopped the turn, such as with Esc, so they were there and get no done notice.
+    pub stopped_by_owner: bool,
 }
 
 /// The agent state one provider hook event reports, with its detail and wait kind, or None when
@@ -69,6 +74,14 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
             None
         },
         kind,
+        reply: if state == "done" {
+            text("last_assistant_message")
+                .filter(|reply| !reply.trim().is_empty())
+                .map(str::to_string)
+        } else {
+            None
+        },
+        stopped_by_owner: (provider, event) == ("codex", "Interrupt"),
     })
 }
 
@@ -117,6 +130,8 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
         state,
         detail: if state == "error" { message } else { None },
         kind,
+        reply: None,
+        stopped_by_owner: pairs.get("state") == Some(&"idle"),
     })
 }
 

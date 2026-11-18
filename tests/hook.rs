@@ -191,6 +191,8 @@ fn helper_start(home: &Path, helper: &Path) -> String {
     )
 }
 
+#[path = "hook/chair_notices.rs"]
+mod chair_notices;
 #[path = "hook/consent.rs"]
 mod consent;
 #[path = "hook/focus.rs"]

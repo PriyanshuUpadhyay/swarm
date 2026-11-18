@@ -3,7 +3,7 @@ import SwarmHUDCore
 import SwiftUI
 
 // `SwarmHUD --snapshot <dir> --fixture <usage.json> [--closed <usage.json>] [--history <history.json>]
-// [--working <working.json>] [--now <seconds>]` renders the HUD to PNG files with no window, for
+// [--working <working.json>] [--inbox <inbox.json>] [--now <seconds>]` renders the HUD to PNG files with no window, for
 // design review and tests: open and closed for every phase, the closed wings for each mascot family
 // and state, the ring's edge cases, a sheet of every own mascot frame, and a sheet of every guest
 // mascot in each state at the closed and the open size. `--closed` is the reading
@@ -164,6 +164,28 @@ func snapshot(to directory: URL, arguments: [String]) {
     render("closed-models", open: false)
     model.accounts = at(96)
     render("closed-models-full", open: false)
+
+    // ADR 0147: the inbox's wing, the popup for a question and a done chat, and the card's section.
+    if let inbox = readFile("--inbox").flatMap(InboxSnapshot.read) {
+        model.accounts = closedAccounts
+        model.agents = WorkingSnapshot()
+        model.inbox = InboxSnapshot(rows: inbox.rows, rowsTotal: inbox.rowsTotal)
+        render("closed-inbox-done", open: false)
+        model.inbox = inbox
+        render("closed-inbox-needs", open: false)
+
+        model.popup = mergePopup(nil, new: inbox.rows.map(PopupItem.init(row:)), now: now)
+        model.isOpen = false
+        write(HUDView(model: model, live: false)
+            .frame(width: Layout.openWidth + 40, height: model.popupSize.height + 40, alignment: .top)
+            .background(Color(hex: 0x6F8FB8)), "popup")
+
+        model.popup = nil
+        model.agents = fileAgents
+        model.accounts = openAccounts
+        render("open-inbox", open: true)
+        model.inbox = InboxSnapshot()
+    }
 
     // Every own frame at the closed size, a row per family, for judging the art.
     let ticks: [MascotState: [Int]] = [.working: [0, 1], .waiting: [0, 1], .idle: [0, 13], .sleeping: [0, 1, 2]]

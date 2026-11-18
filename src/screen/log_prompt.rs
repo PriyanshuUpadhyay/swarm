@@ -171,7 +171,7 @@ fn open_questions(path: &Path) -> Option<Vec<Question>> {
 }
 
 /// The last whole records of a log, up to `LOG_TAIL_BYTES`.
-fn log_tail(path: &Path) -> Option<Vec<u8>> {
+pub(crate) fn log_tail(path: &Path) -> Option<Vec<u8>> {
     if !std::fs::metadata(path).ok()?.is_file() {
         return None;
     }

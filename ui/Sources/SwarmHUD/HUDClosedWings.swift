@@ -53,9 +53,12 @@ struct ClosedWings: View {
             model.mascot(now: now, height: Layout.closedMascot, live: live)
                 .frame(width: Layout.wing - Layout.closedEar)
                 .padding(.leading, Layout.closedEar)
+            if let dot = text.dot {
+                Circle().fill(dot == .failed ? Palette.critical : Palette.resets).frame(width: Layout.dot, height: Layout.dot)
+            }
             if let left = text.left {
                 Text(left).font(.system(size: Layout.wingFont, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(text.blocked ? Palette.warn : Palette.secondary)
+                    .foregroundStyle(text.blocked ? Palette.warn : text.dot == .failed ? Palette.critical : Palette.secondary)
                     .fixedSize()
             }
             Spacer(minLength: 0)
@@ -89,6 +92,11 @@ struct ClosedWings: View {
     // One long `+` chain with `?:` parts made the CI compiler give up on type-checking `body`.
     private func spokenLabel(best: BestAccount?, text: WingText) -> String {
         var label = agentsSpoken(model.agents)
+        if let need = model.inbox.needs.first {
+            label = "\(need.title) needs you, " + label
+        } else if !model.inbox.rows.isEmpty {
+            label = "\(model.inbox.rowsTotal) unseen \(model.inbox.rowsTotal == 1 ? "chat" : "chats"), " + label
+        }
         if !text.tags.isEmpty && !text.blocked {
             label += ", " + modelsSpoken(model.agents.agents)
         }

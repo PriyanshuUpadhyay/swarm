@@ -66,6 +66,8 @@ fn a_hook_state_report_reads_back_as_the_same_state() {
             state,
             detail: None,
             kind,
+            reply: None,
+            stopped_by_owner: false,
         };
         program_status_report("claude", &hook)
     };

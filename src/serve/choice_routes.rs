@@ -11,10 +11,27 @@ pub(super) fn apply_choice(app: &App, body: choices::ChoiceWrite) -> Result<Valu
                 .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?
         }
     };
+
     let mut invalid = None;
+    let mut seen_sessions = Vec::new();
     let saved = choices_store::update(&app.root, Some(&body.revision), |owner, state| {
         let tree = tree::build(&snapshot, owner);
-        match choices::apply(owner, state, &tree, body.operation, discovery::now()) {
+        // ADR 0147: a chat the owner opens or looks at has no unseen notice rows in the HUD.
+        if let Some(chat) = looked_at(&tree, owner, state, &body.operation) {
+            seen_sessions = chat
+                .sessions
+                .iter()
+                .filter_map(|session| session["id"].as_str().map(str::to_owned))
+                .collect();
+        }
+
+        match choices::apply(
+            owner,
+            state,
+            &tree,
+            body.operation.clone(),
+            discovery::now(),
+        ) {
             Ok(()) => Ok(()),
             Err(e) => {
                 invalid = Some(e.clone());
@@ -29,6 +46,11 @@ pub(super) fn apply_choice(app: &App, body: choices::ChoiceWrite) -> Result<Valu
             choice_error(e)
         }
     })?;
+
+    if !seen_sessions.is_empty() {
+        mark_chat_seen(app, &seen_sessions);
+    }
+
     if saved.revision != body.revision {
         app.hub.lock().unwrap().bump();
     }
@@ -40,6 +62,43 @@ pub(super) fn apply_choice(app: &App, body: choices::ChoiceWrite) -> Result<Valu
     }
     Ok(json!({"revision":saved.revision,"version":app.hub.lock().unwrap().version}))
 }
+/// The chat that a choice shows the owner: the one it opens or looks at. A workspace row sends no
+/// chat, so its remembered chat opens, as `choices::apply` resolves it.
+fn looked_at<'a>(
+    tree: &'a tree::Tree,
+    owner: &choices::OwnerChoices,
+    state: &choices::ViewState,
+    op: &choices::ChoiceOp,
+) -> Option<&'a tree::Chat> {
+    match op {
+        choices::ChoiceOp::Seen { workspace, chat }
+        | choices::ChoiceOp::SelectedChat {
+            workspace,
+            chat: Some(chat),
+            ..
+        } => tree.chat_in(workspace, chat),
+        choices::ChoiceOp::SelectedChat {
+            workspace,
+            chat: None,
+            ..
+        } => navigation::selected_chat(tree, owner, state, workspace),
+        _ => None,
+    }
+}
+
+/// The choice is saved already, so a busy store only leaves the HUD rows until the next look.
+fn mark_chat_seen(app: &App, sessions: &[String]) {
+    let sessions: Vec<&str> = sessions.iter().map(String::as_str).collect();
+    let marked = swarm::store::open(&app.root.join("swarm.db")).and_then(|db| {
+        swarm::store::mark_notices_seen(&db, &sessions)
+            .map(drop)
+            .map_err(Into::into)
+    });
+    if let Err(err) = marked {
+        eprintln!("swarm serve: could not mark notices seen: {err}");
+    }
+}
+
 pub(super) fn refresh_tree(app: &App) -> Result<Value, ApiError> {
     let saved = choices_store::load(&app.root, false).map_err(choice_error)?;
     let mut snapshot = snapshot_value(app)
