@@ -183,8 +183,8 @@ export class NewChat {
     // ⌘N again on the same open composer keeps it, with its typed text.
     const open = this.composing();
     if (open && open.cwd === target.cwd && !place && !text) return;
-    // A composer hidden by a move away keeps its typed text for this one.
-    const hidden = this.state.composer && !open ? this.state.composer.text : "";
+    // A composer that this one replaces, open or hidden by a move away, gives it its typed text.
+    const hidden = this.state.composer?.text ?? "";
     // The composer replaces a start's view; the start keeps its tab.
     const composer = { cwd: target.cwd, place: place ?? defaultPlace(target), text: text || this.state.unsent || hidden, seq: ++this.seq, nav: this.app.navSeq };
     this.set({ composer, unsent: "", viewing: null });
@@ -208,9 +208,11 @@ export class NewChat {
     this.set({ unsent: "" });
   }
 
-  /** The composer's text as the owner types, so a move away does not lose it; no render needs it. */
+  /** The composer's text as the owner types, so a move away does not lose it; no render needs it.
+   *  The start page's composer has no `composer` state, so its text waits in `unsent`. */
   typed(text: string) {
     if (this.state.composer) this.state.composer.text = text;
+    else this.state.unsent = text;
   }
 
   /** The card's read of what place `new` in `cwd` makes from `prompt`. */
@@ -232,6 +234,7 @@ export class NewChat {
     // strip and not over the view the owner moved to.
     const from = this.app.view.workspace ?? cwd;
     const nav = this.app.navSeq;
+    const sent = this.state.composer?.seq;
     let id: string;
     try {
       ({ start: id } = await this.app.api.post<{ start: string }>("/api/chat/new", startBody(cwd, prompt, place, run), AbortSignal.timeout(START_TIMEOUT_MS)));
@@ -245,7 +248,9 @@ export class NewChat {
     }
 
     const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), steps: [], workspace: null, branch: null, setup: null, error: null, queued: [], draft: "" };
-    this.set({ composer: null, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
+    // A composer the owner opened while this one posted stays open, with its text.
+    const composer = this.state.composer?.seq === sent ? null : this.state.composer;
+    this.set({ composer, unsent: composer ? this.state.unsent : "", starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
     const early = this.early.filter((data) => data.start === id);
     this.early = this.early.filter((data) => data.start !== id);
     for (const data of early) void this.onFrame("chat-start", data);
@@ -298,8 +303,8 @@ export class NewChat {
    *  composer, so none is lost. */
   dismiss(id: string) {
     const { [id]: gone, ...starts } = this.state.starts;
-    const kept = gone?.error ? [gone.prompt, ...gone.queued, gone.draft.trim()].filter(Boolean).join("\n\n") : "";
-    const unsent = kept || this.state.unsent;
+    const kept = gone?.error ? [gone.prompt, ...gone.queued, gone.draft.trim()] : [];
+    const unsent = [this.state.unsent, ...kept].filter(Boolean).join("\n\n");
     this.set({ starts, unsent, viewing: this.state.viewing?.id === id ? null : this.state.viewing });
   }
 

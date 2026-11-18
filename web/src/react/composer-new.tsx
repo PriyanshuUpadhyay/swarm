@@ -71,7 +71,10 @@ function Overlay({ app, target, place, text }: { app: App; target: Target; place
   };
   const backdrop = (e: React.MouseEvent) => {
     const prompt = root.current?.querySelector<HTMLTextAreaElement>('[data-testid="new-chat-prompt"]');
-    if (e.target === e.currentTarget && !prompt?.value.trim()) app.newChat.close();
+    if (e.target !== e.currentTarget) return;
+    // A press on the backdrop keeps the focus in the dialog, so its keys still work.
+    e.preventDefault();
+    if (!prompt?.value.trim()) app.newChat.close();
   };
 
   return (
@@ -174,7 +177,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
     }
   };
 
-  const runText = shown ? [cliName(shown.provider), shown.model ?? "Default model", shown.effort && levelWord(shown.effort)].filter(Boolean).join(" · ") : typeof profiles === "string" ? "Profiles unavailable" : "Reading profiles…";
+  const runText = shown ? [cliName(shown.provider), shown.model ?? "Default model", shown.effort && levelWord(shown.effort)].filter(Boolean).join(" · ") : typeof profiles === "string" ? `Profiles unavailable: ${profiles}` : "Reading profiles…";
 
   return (
     <div className={`grid w-full gap-3 ${overlay ? "max-w-[min(960px,calc(100vw-32px))]" : "max-w-[960px] px-4"}`} data-testid="new-chat-composer" data-cwd={target.cwd} data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
@@ -216,7 +219,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
           {menu === "project" && (
             <div ref={projects} role="listbox" aria-label="Project" data-testid="project-menu" className="grid max-h-[240px] overflow-y-auto rounded-md border border-border" onKeyDown={moveOption}>
               {list.map((t) => (
-                <button key={t.cwd} type="button" role="option" aria-selected={t.cwd === target.cwd} className="flex gap-2 px-2 py-1.5 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none aria-selected:bg-selected" onClick={() => pickTarget(t)}>
+                <button key={t.cwd} type="button" role="option" aria-selected={t.cwd === target.cwd} className="flex gap-2 px-2 py-1.5 text-left hover:bg-hover focus-visible:bg-hover aria-selected:bg-selected" onClick={() => pickTarget(t)}>
                   <span className="flex-1 truncate">{t.title}</span>
                   <span className="text-xs text-muted-foreground">{t.git ? "git" : "folder"}</span>
                 </button>

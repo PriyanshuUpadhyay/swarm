@@ -51,7 +51,8 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
   };
   const options = opts?.options ?? null;
   const unborn = options !== null && options.defaultBranch === null;
-  const pick = (kind: Kind) => onPlace(KINDS[kind][1]);
+  // The tab of the kind already picked keeps its pick.
+  const pick = (kind: Kind) => kind !== place.kind && onPlace(KINDS[kind][1]);
   const kinds = Object.entries(KINDS) as [Kind, [string, Place]][];
 
   return (
