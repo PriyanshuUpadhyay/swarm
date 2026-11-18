@@ -210,4 +210,14 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
         .collect();
     branches.sort();
     assert_eq!(branches, ["swarm/add-cache", "swarm/add-cache-2"]);
+
+    // A free branch whose folder is taken, such as a worktree another tool made, takes the next name.
+    std::fs::create_dir(Path::new(made).with_file_name("add-docs")).unwrap();
+    let body = json!({"cwd":clone_path,"prompt":"Add docs","place":{"kind":"new"}});
+    let started = start_chat(fixture, body).await.unwrap_or_else(|e| panic!("{e:?}"));
+    let docs = started["workspace"].as_str().unwrap();
+    assert_eq!(
+        lifecycle::check_git(docs, &["branch", "--show-current"]).unwrap(),
+        "swarm/add-docs-2"
+    );
 }

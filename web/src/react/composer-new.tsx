@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import type { App } from "../core/app";
 import { cliName, levelWord, type Run } from "../core/composer";
 import { type Profile } from "../core/lifecycle";
-import { DEFAULT_ROLE, defaultPlace, placeLabel, placeReady, defaultTarget, targets, type Place, type Target } from "../core/new-chat";
+import { DEFAULT_ROLE, defaultPlace, placeLabel, placeReady, defaultTarget, targets, type Place, type Preview, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 import { ErrorLine, message } from "./lifecycle-shared";
@@ -15,7 +15,6 @@ import { PlacePanel } from "./place-lists";
 import { RunPicker, runModel, useRunCatalog } from "./run-picker";
 
 /** The card of a new worktree; the composer asks only for a git project's place `new`. */
-type Preview = { branch: string | null; folder: string | null; base: string | null; fetchedUnixS: number | null; setup: string | null };
 
 /** A profile's run: its first runner, on the CLI's login. */
 function profileRun(profile: Profile | undefined): Run | null {
@@ -25,7 +24,8 @@ function profileRun(profile: Profile | undefined): Run | null {
 
 const sameRun = (a: Run | null, b: Run | null) => a?.provider === b?.provider && a?.model === b?.model && a?.effort === b?.effort && a?.account === b?.account;
 
-function useNewChat<T>(app: App, read: () => T): T {
+/** A read of NewChat that also renders again when navSeq moves, because shown() and composing() read it. */
+export function useNewChat<T>(app: App, read: () => T): T {
   useSyncExternalStore(app.subscribe, () => app.navSeq);
   return useSyncExternalStore(app.newChat.subscribe, read);
 }
@@ -188,7 +188,10 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
             placeholder={`What should this chat do in ${target.title}?`}
             className="min-h-[96px] w-full resize-none bg-transparent outline-none"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              app.newChat.typed(e.target.value);
+            }}
           />
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
             <Chip testid="chip-project" on={menu === "project"} title="Project (⌘P)" onClick={() => setMenu((m) => (m === "project" ? null : "project"))}>
@@ -281,17 +284,17 @@ function Chip({ testid, on, title, disabled, onClick, children }: { testid: stri
 }
 
 /** `/api/chat/new-preview`, read 250 ms after the typing stops, for a new worktree only. */
-function usePreview(app: App, target: Target, place: Place, text: string): Preview | null {
-  const [preview, setPreview] = useState<Preview | null>(null);
+function usePreview(app: App, target: Target, place: Place, text: string): Preview | "failed" | null {
+  const [preview, setPreview] = useState<Preview | "failed" | null>(null);
   const wanted = place.kind === "new" && target.git;
 
   useEffect(() => {
     if (!wanted) return setPreview(null);
     let live = true;
     const timer = setTimeout(() => {
-      app.api.get<Preview>("/api/chat/new-preview", { cwd: target.cwd, prompt: text }).then(
+      app.newChat.preview(target.cwd, text).then(
         (p) => live && setPreview(p),
-        () => live && setPreview(null), // The card is a hint; the send checks the name again.
+        () => live && setPreview("failed"), // The card is a hint; the send checks the name again.
       );
     }, 250);
     return () => {
@@ -303,9 +306,11 @@ function usePreview(app: App, target: Target, place: Place, text: string): Previ
   return wanted ? preview : null;
 }
 
-function PreviewCard({ target, place, preview }: { target: Target; place: Place; preview: Preview | null }) {
+function PreviewCard({ target, place, preview }: { target: Target; place: Place; preview: Preview | "failed" | null }) {
   const rows: [string, string][] =
-    preview
+    preview === "failed"
+      ? [["Branch", "Not known yet; the send names it"]]
+      : preview
       ? [
           ["Branch", preview.branch ?? "swarm/chat-…, renamed from the first prompt"],
           ["Folder", preview.folder ?? "named from the branch"],

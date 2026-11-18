@@ -176,13 +176,16 @@ fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
 
     let prompt = "Fix the login redirect bug now please";
     // The preview gives the same name and claims nothing.
-    assert_eq!(chat_preview(&main, prompt).as_deref(), Some(expected));
+    assert_eq!(
+        chat_preview(&main, prompt, |_| true).as_deref(),
+        Some(expected)
+    );
 
     // A long taken name keeps its -2 through the 40-character workspace slug.
     let long = "Refactor authentication middleware validation layer";
-    let base = chat_preview(&main, long).unwrap();
+    let base = chat_preview(&main, long, |_| true).unwrap();
     git(&main, &["branch", &base]).unwrap();
-    let second = chat_preview(&main, long).unwrap();
+    let second = chat_preview(&main, long, |_| true).unwrap();
     let name = second.trim_start_matches(PREFIX);
     assert_eq!(
         (name.ends_with("-2"), crate::view::lifecycle::slug(name)),

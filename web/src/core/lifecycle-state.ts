@@ -73,7 +73,7 @@ export type LifeState = {
   imports: boolean;
 };
 
-// ponytail: the dialog keeps the last 256 KiB of setup output; a log view if scripts get chatty.
+// ponytail: the start view keeps the last 256 KiB of setup output; a log view if scripts get chatty.
 const OUTPUT_CAP = 256 * 1024;
 
 /** Applies one `setup` frame. A run follows the first workspace that starts while it waits. */

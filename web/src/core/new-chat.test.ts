@@ -109,6 +109,25 @@ describe("new chat composer", () => {
 
     chats.onFrame("chat-start", { start: "s1", step: "send", state: "failed", error: "chair is gone" });
     await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
-    expect(calls).toEqual(["open chat-9", "draft chat-9 Fix it\n\nThen the docs", "notice Your first prompt did not send: chair is gone. It is in the chat's text box."]);
+    expect(calls).toEqual(["open chat-9", "draft chat-9 Fix it\n\nThen the docs", "notice Your first prompt did not send: chair is gone. Your text is in the chat's text box."]);
+  });
+
+  it("gives a failed start's prompt, queued text and draft to the next composer when it closes", async () => {
+    const app = {
+      navSeq: 1,
+      view: { tree, workspace: "/hub/wt/fix", openId: null },
+      notice: () => {},
+      api: { post: async () => ({ start: "s1" }) },
+    };
+    const chats = new NewChat(app as unknown as App);
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { role: "chat", run: null });
+    chats.setDraft("s1", "Then the docs");
+    chats.queue("s1");
+    chats.setDraft("s1", "And the tests");
+
+    await chats.onFrame("chat-start", { start: "s1", step: "done", state: "failed", error: "setup failed" });
+    chats.dismiss("s1");
+    chats.open();
+    expect(chats.composing()?.text).toBe("Fix it\n\nThen the docs\n\nAnd the tests");
   });
 });

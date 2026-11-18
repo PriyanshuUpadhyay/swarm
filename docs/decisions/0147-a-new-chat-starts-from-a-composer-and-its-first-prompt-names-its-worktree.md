@@ -76,6 +76,8 @@ change; one of another place stays, as the dialog kept it.
   start cuts the start off; a worktree it made stays, and the page shows that the start is lost.
 - Starts in one project pick their worktree names one at a time, under a lock for each project,
   so two composers that send the same prompt at once get `swarm/<name>` and `swarm/<name>-2`.
+  A name is taken when its branch exists here or on origin, or when its worktree folder exists,
+  for example one that another tool made; the start then takes the next name.
   Their setup scripts still run at the same time, outside the shared action lane.
 - The preview card rebuilds the project tree and runs about 20 git commands on each pause in
   typing. A local server with one owner takes that; a cache waits for a real need.

@@ -4,9 +4,12 @@
 import { CircleCheckIcon, LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
 import type { App } from "../core/app";
 import { setupFailure } from "../core/lifecycle";
-import { STEP_WORDS, type Starting, type StartStep } from "../core/new-chat";
+import type { Starting, StartStep } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
+
+/** The words of each start step that the server sends; a step with none shows its name. */
+const STEP_WORDS: Record<string, string> = { worktree: "Make the worktree", setup: "Run the setup script", start: "Start the agent", send: "Send your prompt" };
 
 export function StartingView({ app, start }: { app: App; start: Starting }) {
   // The steps in the order the server sent them; a step with no words here shows its name.

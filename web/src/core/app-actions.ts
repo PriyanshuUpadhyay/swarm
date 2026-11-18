@@ -15,7 +15,7 @@ export class AppActions {
   constructor(private readonly app: App) {}
 
   /** ⌘T: a chat in `workspace` itself at once, with no prompt and no new worktree, also on a
-   *  hub's main (ADR 0147). It opens when its `chat-start` frames end. */
+   *  hub's main (ADR 0147). It opens when its `chat-start` frames end, if its start is still on screen. */
   async startChat(workspace = this.app.workspace) {
     const reason = this.newChatReason(workspace);
     if (reason || !workspace) return this.app.notice(reason ?? "Pick a workspace to start a chat.");

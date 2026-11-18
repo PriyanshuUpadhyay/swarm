@@ -249,7 +249,7 @@ describe("a new chat", () => {
     const app = new App(api);
     app.notice = () => {};
     await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
-    await app.startChat("/r/app");
+    await app.actions.startChat("/r/app");
     await app.newChat.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "new" });
     expect(reads).toBeGreaterThan(2);
     expect(app.view.openId).toBe("new");
@@ -277,7 +277,7 @@ describe("a chat started from the tab strip", () => {
     const app = new App(api);
     app.notice = () => {};
     await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
-    await app.startChat("/r/app");
+    await app.actions.startChat("/r/app");
     await app.newChat.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "new" });
     expect(writes.find((w) => w.op === "open_tab")).toEqual({ op: "open_tab", workspace: "/r/app", chat: "new" });
     await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();

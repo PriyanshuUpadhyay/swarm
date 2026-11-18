@@ -70,7 +70,8 @@ pub fn setup_script<'a>(owner: &'a OwnerChoices, project: &str) -> Option<&'a st
 }
 
 /// The folder that holds a project's new worktrees, from the worktree folder setting: `~/` is
-/// the home folder, and any other relative path is under the project.
+/// the home folder, and any other relative path starts at the project's folder, so the default
+/// `../<name>-worktrees` sits beside it.
 pub fn worktree_folder(project: &Project, setting: &str) -> Result<PathBuf> {
     let setting = setting.trim();
     if setting.is_empty() {

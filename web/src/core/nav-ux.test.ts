@@ -107,7 +107,7 @@ describe("navigation UX", () => {
       app.tree = { ...tree, sections: [{ ...tree.sections[0], rows: [{ ...ws, newChatEnabled: false, archived: reason === "archived" }] }] };
     }
     app.notice = vi.fn();
-    await app.startChat();
+    await app.actions.startChat();
     expect(app.notice).toHaveBeenCalledWith(reason ? `This workspace is ${reason}.` : "Pick a workspace to start a chat.");
   });
   it("disables palette actions whose command cannot run and checks again on execution", () => {

@@ -11,6 +11,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { copyText as copy } from "./copy";
 import { StatusGlyph } from "./status";
+import { useNewChat } from "./composer-new";
 
 const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 
@@ -35,9 +36,7 @@ export function TabStrip({ app }: { app: App }) {
 
   const starts = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.state.starts);
   // What the main view shows: a move to another chat bumps navSeq, so the start is no longer shown.
-  const viewing = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.shown()?.id ?? null);
-  // shown() reads navSeq, which the app's store owns; a move away must render the strip again.
-  useSyncExternalStore(app.subscribe, () => app.navSeq);
+  const viewing = useNewChat(app, () => app.newChat.shown()?.id ?? null);
   const ws = workspaceRow(tree, workspace);
   // A starting chat is a tab of the workspace it started from until it opens (ADR 0147).
   const startTabs = useMemo(() => Object.values(starts).filter((s) => s.from === workspace).map(startTab), [starts, workspace]);
@@ -87,11 +86,9 @@ export function TabStrip({ app }: { app: App }) {
     const tab = tabOf(e);
     if (!tab) return;
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
-    if (startOf(tab)) return action === "close" ? close(tab) : show(tab);
-    if (action === "close") return void app.closeTab(tab.id);
-    app.newChat.hide();
-    if (tab.session !== openId) app.openChat(tab.session);
-    if (action === "children" && tab.children?.firstBlocked) app.focusPane(tab.children.firstBlocked);
+    if (action === "close") return close(tab);
+    show(tab);
+    if (!startOf(tab) && action === "children" && tab.children?.firstBlocked) app.focusPane(tab.children.firstBlocked);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

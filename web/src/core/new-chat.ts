@@ -8,11 +8,14 @@ import { setupFrame, type SetupRun } from "./lifecycle-state";
 import { workspaceRow, type TreeView } from "./nav";
 
 /** Where a new chat runs; `new` makes the chat its own worktree. */
-export type Place = { kind: "new" } | { kind: "here" } | { kind: "branch"; branch: string } | { kind: "pr"; number: number } | { kind: "issue"; number: number; title?: string };
+export type Place = { kind: "new" } | { kind: "here" } | { kind: "branch"; branch: string } | { kind: "pr"; number: number } | { kind: "issue"; number: number };
 
 /** A project the composer can start in: the folder a new chat names, and whether it is a git
  *  project, which can make a new worktree; a plain folder starts the chat in itself. */
 export type Target = { cwd: string; project: string; title: string; git: boolean };
+
+/** What a new worktree from this prompt gets, for the composer's card. */
+export type Preview = { branch: string | null; folder: string | null; base: string | null; fetchedUnixS: number | null; setup: string | null };
 
 /** The composer's run: a profile, and a run the owner picked instead of its default. */
 export type ComposerRun = { role: string; run: Run | null };
@@ -57,9 +60,6 @@ export const composerInPage = (view: { openId: string | null; workspace: string 
 /** The profile a new chat starts on unless the owner picks another. */
 export const DEFAULT_ROLE = "chat";
 
-/** The words of each start step that the server sends. */
-export const STEP_WORDS: Record<string, string> = { worktree: "Make the worktree", setup: "Run the setup script", start: "Start the agent", send: "Send your prompt" };
-
 /** How long the start's POST may take. The server answers in under a second, after its checks. */
 const START_TIMEOUT_MS = 10_000;
 
@@ -92,13 +92,11 @@ export const defaultPlace = (target: Target): Place => ({ kind: target.git ? "ne
 /** The `/api/chat/new` body for a composer send. An issue's own text goes first on the server. */
 function startBody(cwd: string, prompt: string, place: Place, run: ComposerRun) {
   const text = prompt.trim();
-  // An issue's title is only for the chip; the server reads the issue itself.
-  const where = place.kind === "issue" ? { kind: place.kind, number: place.number } : place;
   return {
     cwd,
     role: run.role,
     ...(text ? { prompt: text } : {}),
-    place: where,
+    place,
     ...(run.run ? { provider: run.run.provider, model: run.run.model ?? undefined, effort: run.run.effort ?? undefined, account: run.run.account ?? undefined } : {}),
   };
 }
@@ -112,12 +110,14 @@ export function placeLabel(place: Place, target: Target): string {
       return "New worktree";
     case "here":
       return "In this folder";
+
     case "branch":
       return place.branch ? `Branch ${place.branch}` : "Pick a branch";
     case "pr":
       return place.number ? `PR #${place.number}` : "Pick a pull request";
     case "issue":
       return place.number ? `Issue #${place.number}` : "Pick an issue";
+
     default: {
       const _exhaustive: never = place;
       return _exhaustive;
@@ -143,8 +143,11 @@ export function placeReady(place: Place): boolean {
   }
 }
 
+/** The most characters of a prompt's first line that a start's tab shows. */
+const TITLE_CHARS = 60;
+
 /** The tab title of a start: the prompt's first line, else New chat. It cuts whole characters. */
-const startTitle = (prompt: string) => Array.from(prompt.trim().split("\n")[0]).slice(0, 60).join("") || "New chat";
+const startTitle = (prompt: string) => Array.from(prompt.trim().split("\n")[0]).slice(0, TITLE_CHARS).join("") || "New chat";
 
 export class NewChat {
   state: NewChatState = { composer: null, unsent: "", starts: {}, viewing: null };
@@ -180,8 +183,10 @@ export class NewChat {
     // ⌘N again on the same open composer keeps it, with its typed text.
     const open = this.composing();
     if (open && open.cwd === target.cwd && !place && !text) return;
+    // A composer hidden by a move away keeps its typed text for this one.
+    const hidden = this.state.composer && !open ? this.state.composer.text : "";
     // The composer replaces a start's view; the start keeps its tab.
-    const composer = { cwd: target.cwd, place: place ?? defaultPlace(target), text: text || this.state.unsent, seq: ++this.seq, nav: this.app.navSeq };
+    const composer = { cwd: target.cwd, place: place ?? defaultPlace(target), text: text || this.state.unsent || hidden, seq: ++this.seq, nav: this.app.navSeq };
     this.set({ composer, unsent: "", viewing: null });
   }
 
@@ -191,12 +196,26 @@ export class NewChat {
     return c && c.nav === this.app.navSeq ? c : null;
   }
 
-  /** A failed start's Edit and retry: the composer again, with its prompt, folder and place. */
+  /** A failed start's Edit and retry: the composer again, with its text, folder and place. A ⌘T
+   *  start's folder is no composer target, so it starts again as ⌘T did. */
   retry(id: string) {
     const start = this.state.starts[id];
     if (!start) return;
     this.dismiss(id);
-    this.open(start.cwd, start.place, start.prompt);
+    const composed = targets(this.app.view.tree, start.cwd).some((t) => t.cwd === start.cwd);
+    if (!composed) return void this.start(start.cwd, start.prompt, start.place, { role: DEFAULT_ROLE, run: null });
+    this.open(start.cwd, start.place, this.state.unsent || start.prompt);
+    this.set({ unsent: "" });
+  }
+
+  /** The composer's text as the owner types, so a move away does not lose it; no render needs it. */
+  typed(text: string) {
+    if (this.state.composer) this.state.composer.text = text;
+  }
+
+  /** The card's read of what place `new` in `cwd` makes from `prompt`. */
+  preview(cwd: string, prompt: string) {
+    return this.app.api.get<Preview>("/api/chat/new-preview", { cwd, prompt });
   }
 
   /** Closes the composer; its `text` waits for the next one. */
@@ -272,10 +291,12 @@ export class NewChat {
     this.setStart(id, { draft });
   }
 
-  /** Drops a start's tab. A failed start's prompt waits for the next composer, so it is not lost. */
+  /** Drops a start's tab. A failed start's prompt, queued text and draft wait for the next
+   *  composer, so none is lost. */
   dismiss(id: string) {
     const { [id]: gone, ...starts } = this.state.starts;
-    const unsent = gone?.error && gone.prompt ? gone.prompt : this.state.unsent;
+    const kept = gone?.error ? [gone.prompt, ...gone.queued, gone.draft.trim()].filter(Boolean).join("\n\n") : "";
+    const unsent = kept || this.state.unsent;
     this.set({ starts, unsent, viewing: this.state.viewing?.id === id ? null : this.state.viewing });
   }
 
@@ -326,14 +347,18 @@ export class NewChat {
   private async opened(start: Starting, session: string) {
     const shown = this.shown()?.id === start.id;
     const texts = [...start.queued, start.draft.trim()].filter(Boolean);
-    // The chat runs, but its first prompt did not go: nothing goes before it, and a notice keeps it all.
-    const failed = start.prompt ? start.steps.find((s) => s.step === "send" && s.state === "failed") : undefined;
+    // The chat runs, but its first prompt or the issue's text did not go: nothing goes before it,
+    // and the chat's text box keeps the rest.
+    const failed = start.steps.find((s) => s.step === "send" && s.state === "failed");
     this.dismiss(start.id);
     await this.app.actions.openNew(session, shown).catch((err) => this.app.notice(message(err), true));
 
     if (failed) {
-      this.app.composing.setDraft(session, [start.prompt, ...texts].join("\n\n"));
-      return this.app.notice(`Your first prompt did not send: ${failed.error ?? "the send failed"}. It is in the chat's text box.`, true);
+      const kept = [start.prompt, ...texts].filter(Boolean).join("\n\n");
+      if (kept) this.app.composing.setDraft(session, kept);
+      const what = start.prompt ? "Your first prompt" : "The issue's text";
+      const where = kept ? " Your text is in the chat's text box." : "";
+      return this.app.notice(`${what} did not send: ${failed.error ?? "the send failed"}.${where}`, true);
     }
 
     for (const [i, text] of texts.entries()) {

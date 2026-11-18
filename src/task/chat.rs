@@ -154,13 +154,18 @@ fn free_branch(common: &Path, name: &str) -> bool {
 }
 
 /// The branch a new chat worktree of the git checkout `project` gets from `prompt`: the first
-/// free name of `name_chat`'s list. It writes nothing, so the composer can call it on each pause
-/// in typing. None when the prompt has no ASCII word, when its nine names are taken, or when
-/// `project` is in no git checkout; the chat then starts on a placeholder name.
-pub fn chat_preview(project: &Path, prompt: &str) -> Option<String> {
+/// name of `name_chat`'s list that no branch has and whose folder `free_folder` accepts. It
+/// writes nothing, so the composer can call it on each pause in typing. None when the prompt has
+/// no ASCII word, when its nine names are taken, or when `project` is in no git checkout; the
+/// chat then starts on a placeholder name.
+pub fn chat_preview(
+    project: &Path,
+    prompt: &str,
+    free_folder: impl Fn(&str) -> bool,
+) -> Option<String> {
     let common = crate::task::common_dir(project)?;
     let base = chat_branch(prompt).filter(|name| !unnamed_chat(name))?;
-    prompt_names(&base).find(|name| free_branch(&common, name))
+    prompt_names(&base).find(|name| free_branch(&common, name) && free_folder(name))
 }
 
 /// Writes the record of `task` under the new branch `name`, only when no record has that name.

@@ -50,7 +50,7 @@ pub(super) struct Start {
 
 impl Start {
     /// Publishes a `chat-start` frame for this start.
-    fn frame(&self, step: &str, state: &str, extra: Value) {
+    pub(super) fn frame(&self, step: &str, state: &str, extra: Value) {
         let mut payload = json!({"start": self.id, "step": step, "state": state});
         if let Value::Object(extra) = extra {
             payload.as_object_mut().unwrap().extend(extra);
@@ -118,7 +118,8 @@ impl Start {
         };
 
         self.enter("start");
-        // A chat that did not start removes its own worktree, so a retry does not add another.
+        // In a hub, a chat that did not start removes its own worktree, so a retry does not add
+        // another; outside a hub the worktree stays (ADR 0147).
         let session = match open_session(&app, &cwd).await {
             Ok(session) => session,
             Err(err) => {
@@ -169,8 +170,8 @@ impl Start {
     /// A worktree for the chat in `project`, made by the New workspace path, so it starts from a
     /// fresh origin and runs the project's setup script. Place `new` makes `swarm/` and the
     /// prompt's name (ADR 0147), or `swarm/chat-<8 hex>` with no prompt, which the first prompt
-    /// names later (ADR 0146). A failed setup starts no chat (ADR 0097); a worktree of place
-    /// `new` then goes when it holds no change, and one of another place stays, as New workspace
+    /// names later (ADR 0146). A failed setup starts no chat (ADR 0097); in a hub, a worktree of
+    /// place `new` then goes when it holds no change. Any other worktree stays, as New workspace
     /// kept it.
     async fn chat_worktree(
         &mut self,
@@ -197,11 +198,15 @@ impl Start {
         let named = match (&place, prompt) {
             (Worktree::New, Some(prompt)) => {
                 let prompt = prompt.to_owned();
+                let app = self.app.clone();
                 tokio::task::spawn_blocking(move || {
-                    swarm::task::chat_preview(Path::new(&checkout), &prompt)
+                    let target = chat_target(&app, &checkout)?;
+                    let project = lifecycle::project(&target.tree, &target.project)
+                        .map_err(lifecycle_error)?;
+                    Ok::<_, ApiError>(prompt_worktree(&target, project, &checkout, &prompt).0)
                 })
                 .await
-                .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "chat name task failed"))?
+                .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "chat name task failed"))??
             }
             _ => None,
         };

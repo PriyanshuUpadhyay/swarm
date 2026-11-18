@@ -96,7 +96,7 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
           />
         </label>
       )}
-      {place.kind === "issue" && <IssuePicker app={app} project={project} selected={place.number} onSelect={(i) => onPlace({ kind: "issue", number: i.number, title: i.title })} />}
+      {place.kind === "issue" && <IssuePicker app={app} project={project} selected={place.number} onSelect={(i) => onPlace({ kind: "issue", number: i.number })} />}
       {options?.setup_script && place.kind !== "here" && (
         <p className="text-xs text-muted-foreground">
           The setup script runs in the new worktree: <code className="font-mono">{options.setup_script.split("\n")[0]}</code>

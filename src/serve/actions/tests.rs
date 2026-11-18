@@ -190,6 +190,7 @@ async fn a_session_send_finishes_while_another_session_action_is_running() {
     )
     .unwrap();
     swarm::store::add_agent(&connection, &other, "worker", "chat").unwrap();
+
     let new_id = uuid::Uuid::now_v7();
     std::fs::write(
         &fixture.app.cli,
@@ -208,6 +209,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
         ),
     )
     .unwrap();
+
     let slow_app = fixture.app.clone();
     let slow_body = json!({"session": other, "agent": "worker"});
     let slow = tokio::spawn(async move {
@@ -218,6 +220,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
         )
         .await
     });
+
     let home = fixture.app.root.parent().unwrap();
     tokio::time::timeout(Duration::from_secs(30), async {
         while !home.join("slow-start").exists() {
@@ -226,6 +229,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
     })
     .await
     .unwrap();
+
     let send = tokio::time::timeout(
         Duration::from_secs(30),
         call_action(
@@ -235,6 +239,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
         ),
     )
     .await;
+
     let still_running = !slow.is_finished();
     // Release the stand-in before an assertion so a failed test cannot leave it waiting.
     std::fs::write(home.join("release"), "release").unwrap();
@@ -243,6 +248,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
         .unwrap()
         .unwrap()
         .unwrap();
+
     assert!(still_running, "slow action ended before the send finished");
     assert_eq!(
         send.expect("send must not wait for another session or launch")

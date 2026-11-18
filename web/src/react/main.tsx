@@ -15,7 +15,7 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import "../styles.css";
 import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
-import { ComposerOverlay } from "./composer-new";
+import { ComposerOverlay, useNewChat } from "./composer-new";
 import { StartingView } from "./starting-view";
 import { composerInPage } from "../core/new-chat";
 import { LifecycleDialogs } from "./lifecycle";
@@ -104,8 +104,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
 function Main({ app, changes }: { app: App; changes: Changes }) {
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
   // A starting chat shows its steps until the owner moves away (ADR 0147).
-  useSyncExternalStore(app.subscribe, () => app.navSeq);
-  const start = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.shown());
+  const start = useNewChat(app, () => app.newChat.shown());
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   const reconnecting = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
   // Home and a workspace that takes new chats show the composer in the page; elsewhere ⌘N opens it over the view.

@@ -24,13 +24,8 @@ pub(in crate::serve) async fn new_chat_preview(
             return Ok(Json(json!({"place": "folder"})));
         };
 
-        let branch = swarm::task::chat_preview(Path::new(&cwd), &prompt);
-        let name = branch
-            .as_deref()
-            .map(|branch| branch.trim_start_matches(swarm::task::PREFIX).to_owned());
-        // The same folder and base as create_workspace, so the card matches what starts.
-        let (folder, _, _) = lifecycle::defaults(project, &target.saved.owner);
-        let folder = lifecycle::worktree_folder(project, &folder).ok();
+        let (branch, folder) = prompt_worktree(&target, project, &cwd, &prompt);
+        // The same base as create_workspace, so the card matches what starts.
         let base = lifecycle::references(common)
             .map_err(lifecycle_error)?
             .bases
@@ -49,7 +44,7 @@ pub(in crate::serve) async fn new_chat_preview(
         Ok(Json(json!({
             "place": "worktree",
             "branch": branch,
-            "folder": name.zip(folder).map(|(name, folder)| folder.join(lifecycle::slug(&name))),
+            "folder": folder,
             "base": base,
             "fetchedUnixS": fetched,
             "setup": setup,
@@ -57,4 +52,27 @@ pub(in crate::serve) async fn new_chat_preview(
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "preview task failed"))?
+}
+
+/// The branch and folder that a new worktree named from `prompt` gets: the first name whose
+/// branch and folder are both free, with the folder create_workspace makes for it.
+pub(super) fn prompt_worktree(
+    target: &Target,
+    project: &tree::Project,
+    cwd: &str,
+    prompt: &str,
+) -> (Option<String>, Option<PathBuf>) {
+    let (setting, _, _) = lifecycle::defaults(project, &target.saved.owner);
+    let parent = lifecycle::worktree_folder(project, &setting).ok();
+    let folder_of = |branch: &str| {
+        let name = branch.trim_start_matches(swarm::task::PREFIX);
+        parent
+            .as_ref()
+            .map(|parent| parent.join(lifecycle::slug(name)))
+    };
+    let branch = swarm::task::chat_preview(Path::new(cwd), prompt, |branch| {
+        folder_of(branch).is_none_or(|folder| !folder.exists())
+    });
+    let folder = branch.as_deref().and_then(folder_of);
+    (branch, folder)
 }
