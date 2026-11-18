@@ -238,8 +238,7 @@ impl Start {
 
                 tokio::task::spawn_blocking(move || {
                     let target = chat_target(&app, &checkout)?;
-                    let project = lifecycle::project(&target.tree, &target.project)
-                        .map_err(lifecycle_error)?;
+                    let project = target.tree_project()?;
                     Ok::<_, ApiError>(
                         prompt_worktree(&app.root, &target, project, &checkout, &prompt).0,
                     )
@@ -254,7 +253,7 @@ impl Start {
         let (mode, name, branch, pr, issue) = match place {
             Worktree::New => {
                 let name = named
-                    .map(|branch| branch.trim_start_matches(swarm::task::PREFIX).to_owned())
+                    .map(|branch| swarm::task::task_name(&branch).to_owned())
                     .unwrap_or_else(swarm::task::chat_placeholder);
                 (lifecycle::Mode::NewBranch, name, None, None, None)
             }
@@ -329,7 +328,8 @@ impl Start {
         // Only a hub keeps a record of the chat's worktree, so only there does the chat own it:
         // the rename and the cleanup of a failed start need that record (ADR 0146).
         let in_hub = swarm::task::hub(Path::new(&path)).is_some();
-        let own_branch = (own && in_hub).then(|| format!("{}{name}", swarm::task::PREFIX));
+        let branch = lifecycle::check_git(&path, &["branch", "--show-current"]).ok();
+        let own_branch = branch.clone().filter(|_| own && in_hub);
 
         // An issue's text goes before the prompt, as the New workspace dialog put it in the draft.
         let issue_text = made["issue"].as_object().map(|issue| {
@@ -347,7 +347,6 @@ impl Start {
             (issue, prompt) => issue.or(prompt.map(str::to_owned)),
         };
 
-        let branch = lifecycle::check_git(&path, &["branch", "--show-current"]).ok();
         self.complete(json!({"workspace": path, "branch": branch}));
 
         if let Some(script) = setup {

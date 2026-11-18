@@ -19,7 +19,7 @@ pub(in crate::serve) async fn new_chat_preview(
 
     tokio::task::spawn_blocking(move || {
         let target = chat_target(&app, &cwd)?;
-        let project = lifecycle::project(&target.tree, &target.project).map_err(lifecycle_error)?;
+        let project = target.tree_project()?;
         let Some(common) = lifecycle::common(project) else {
             return Ok(Json(json!({"place": "folder"})));
         };
@@ -52,30 +52,4 @@ pub(in crate::serve) async fn new_chat_preview(
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "preview task failed"))?
-}
-
-/// The branch and folder that a new worktree named from `prompt` gets: the first name whose
-/// branch and folder are both free, with the folder create_workspace makes for it.
-pub(super) fn prompt_worktree(
-    root: &Path,
-    target: &Target,
-    project: &tree::Project,
-    cwd: &str,
-    prompt: &str,
-) -> (Option<String>, Option<PathBuf>) {
-    let (setting, _, _) = lifecycle::defaults(project, &target.saved.owner);
-    let parent = lifecycle::worktree_parent(root, project, &setting).ok();
-
-    let folder_of = |branch: &str| {
-        let name = branch.trim_start_matches(swarm::task::PREFIX);
-        parent
-            .as_ref()
-            .map(|parent| parent.join(lifecycle::slug(name)))
-    };
-
-    let branch = swarm::task::chat_preview(Path::new(cwd), prompt, |branch| {
-        folder_of(branch).is_none_or(|folder| !folder.exists())
-    });
-    let folder = branch.as_deref().and_then(folder_of);
-    (branch, folder)
 }

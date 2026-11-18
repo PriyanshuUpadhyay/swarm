@@ -50,11 +50,11 @@ fn chat_branch(prompt: &str) -> Option<String> {
         return None;
     }
 
-    // The workspace slug lowercases, joins with `-`, and keeps 40 characters; 38 leave room for
-    // the `-2` to `-9` of a taken name, which the new worktree's name passes through that slug.
+    // The workspace slug lowercases and joins with `-`; two characters fewer than it keeps leave
+    // room for the `-2` to `-9` of a taken name, which the new worktree's name passes through it.
     let slug: String = crate::view::lifecycle::slug(&words.join(" "))
         .chars()
-        .take(38)
+        .take(crate::view::lifecycle::SLUG_MAX_CHARS - 2)
         .collect();
     Some(branch_name(slug.trim_end_matches('-')))
 }

@@ -109,7 +109,7 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
 
 /** The Existing branch list: the open worktrees first, then the free branches. */
 function branchChoices(options: NewOptions): string[] {
-  return [...Object.keys(options.checkouts ?? {}), ...options.branches];
+  return [...Object.keys(options.checkouts), ...options.branches];
 }
 
 /** A filter box over a branch list, so a long list needs no scrolling. Arrow keys move the pick.

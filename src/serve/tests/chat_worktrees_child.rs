@@ -166,12 +166,8 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
 
     // ADR 0147: place `new` in a git project that is no hub still starts the chat in a new worktree.
     let clone = root.join("clone");
-    let status = std::process::Command::new("/bin/sh")
-        .args(["-c", "git init -q -b main clone && cd clone && echo a > a.txt && git add a.txt && git -c user.name=t -c user.email=t@t commit -q -m a"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success());
+    sh("cd .. && git init -q -b main clone && cd clone && echo a > a.txt && git add a.txt \
+        && git -c user.name=t -c user.email=t@t commit -q -m a");
 
     let clone_path = clone.to_string_lossy().into_owned();
     choices_store::update(&fixture.app.root, None, |owner, _| {

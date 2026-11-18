@@ -36,6 +36,8 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio_stream::Stream;
 
 const QUEUE_LIMIT: usize = 1024;
+/// How many ended chat starts keep their `done` frame for a page whose stream was down.
+const STARTS_KEPT: usize = 64;
 type ApiError = (StatusCode, Json<Value>);
 type App = Arc<Server>;
 
@@ -174,11 +176,11 @@ impl Hub {
         self.starts_running.insert(id);
     }
 
-    /// Ends a chat start and keeps its `done` frame, with the last 64, for a page whose stream
-    /// was down (ADR 0147).
+    /// Ends a chat start and keeps its `done` frame, with the last `STARTS_KEPT`, for a page
+    /// whose stream was down (ADR 0147).
     fn finish_start(&mut self, id: &str, frame: Value) {
         self.starts_running.remove(id);
-        if self.starts_done.len() == 64 {
+        if self.starts_done.len() == STARTS_KEPT {
             self.starts_done.pop_front();
         }
         self.starts_done.push_back((id.to_owned(), frame));

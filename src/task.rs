@@ -77,7 +77,7 @@ pub fn resolve(cwd: &Path, path: &Path) -> PathBuf {
 }
 
 /// The git common folder of the checkout that `path`, or its nearest existing parent, is in.
-pub fn common_dir(path: &Path) -> Option<PathBuf> {
+fn common_dir(path: &Path) -> Option<PathBuf> {
     let mut dir = resolve(Path::new("/"), path);
     while !dir.is_dir() {
         dir = dir.parent()?.to_path_buf();
@@ -286,6 +286,11 @@ fn branch_name(name: &str) -> String {
     } else {
         format!("{PREFIX}{name}")
     }
+}
+
+/// The task name of a branch: `swarm/fix-x` gives `fix-x`, the reverse of `branch_name`.
+pub fn task_name(branch: &str) -> &str {
+    branch.trim_start_matches(PREFIX)
 }
 
 /// The task that `name` names in the hub of `cwd`, or, with no name, the task worktree that holds

@@ -231,7 +231,7 @@ async fn name_chat_worktree(app: &App, cwd: PathBuf, prompt: String) {
         let placeholder = Path::new(&path)
             .file_name()
             .map(|name| name.to_string_lossy().into_owned());
-        let name = branch.trim_start_matches(swarm::task::PREFIX).to_owned();
+        let name = swarm::task::task_name(&branch).to_owned();
 
         choices_store::update(&root, None, |owner, _| {
             if owner.names.get(&path) == placeholder.as_ref() {

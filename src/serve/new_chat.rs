@@ -131,6 +131,39 @@ fn chat_target(app: &App, cwd: &str) -> Result<Target, ApiError> {
     })
 }
 
+impl Target {
+    /// The tree's entry for the target's project.
+    fn tree_project(&self) -> Result<&tree::Project, ApiError> {
+        lifecycle::project(&self.tree, &self.project).map_err(lifecycle_error)
+    }
+}
+
+/// The branch and folder that a new worktree named from `prompt` gets: the first name whose
+/// branch and folder are both free, with the folder create_workspace makes for it.
+fn prompt_worktree(
+    root: &Path,
+    target: &Target,
+    project: &tree::Project,
+    cwd: &str,
+    prompt: &str,
+) -> (Option<String>, Option<PathBuf>) {
+    let (setting, _, _) = lifecycle::defaults(project, &target.saved.owner);
+    let parent = lifecycle::worktree_parent(root, project, &setting).ok();
+
+    let folder_of = |branch: &str| {
+        let name = swarm::task::task_name(branch);
+        parent
+            .as_ref()
+            .map(|parent| parent.join(lifecycle::slug(name)))
+    };
+
+    let branch = swarm::task::chat_preview(Path::new(cwd), prompt, |branch| {
+        folder_of(branch).is_none_or(|folder| !folder.exists())
+    });
+    let folder = branch.as_deref().and_then(folder_of);
+    (branch, folder)
+}
+
 fn chat_call(cwd: &str, session: Option<&str>) -> CliCall {
     CliCall {
         args: Vec::new(),
@@ -295,7 +328,6 @@ pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, Ap
 #[path = "new_chat/preview.rs"]
 mod preview;
 pub(super) use preview::new_chat_preview;
-use preview::prompt_worktree;
 #[path = "new_chat/start.rs"]
 pub(super) mod start;
 use start::{Launch, Start, Step, Worktree};

@@ -45,7 +45,7 @@ export type Starting = {
   draft: string;
 };
 
-export type NewChatState = {
+type NewChatState = {
   /** The open composer, and the app's navigation count then; any move away hides it. */
   composer: { cwd: string; place: Place; text: string; run: ComposerRun | null; seq: number; nav: number } | null;
   /** The prompt of a composer that Escape closed, which the next one starts with. */

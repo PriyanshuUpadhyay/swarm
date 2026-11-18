@@ -1,8 +1,7 @@
 //! Workspace and project rules shared by the guarded HTTP actions.
 mod workspace;
 pub use workspace::{
-    Mode, NewWorkspace, create_workspace, defaults, options, setup_script, worktree_folder,
-    worktree_parent,
+    Mode, NewWorkspace, create_workspace, defaults, options, setup_script, worktree_parent,
 };
 
 use super::{
@@ -131,6 +130,7 @@ pub fn workspace<'a>(tree: &'a Tree, path: &str) -> Result<(&'a Project, &'a Wor
         .find_map(|p| p.workspaces.iter().find(|w| w.path == path).map(|w| (p, w)))
         .ok_or(Error::Forbidden)
 }
+pub const SLUG_MAX_CHARS: usize = 40;
 pub fn slug(name: &str) -> String {
     let mut slug = String::new();
     for c in name.trim().chars() {
@@ -144,7 +144,7 @@ pub fn slug(name: &str) -> String {
     if slug.is_empty() {
         "task".into()
     } else {
-        slug.chars().take(40).collect()
+        slug.chars().take(SLUG_MAX_CHARS).collect()
     }
 }
 pub fn branch_name(name: &str, prefix: &str) -> Option<String> {
