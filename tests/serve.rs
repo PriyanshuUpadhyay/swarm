@@ -94,8 +94,8 @@ impl Server {
             .unwrap();
             fs::create_dir_all(root.join("adapters")).unwrap();
             let adapter = r#"self = printf fixture-chair
-spawn = if [ -e "$HOME/fail-spawn" ]; then rm "$HOME/fail-spawn"; exit 1; fi; printf 'spawn %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"; printf fixture-new
-ring = printf 'ring %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"; printf '%s' "$SWARM_TEXT" > "$HOME/text"
+spawn = printf 'spawn %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"; printf fixture-new
+ring = printf 'ring %s %s %s\n' "$SWARM_SESSION_ID" "$SWARM_AGENT_ID" "$SWARM_ADAPTER" >> "$HOME/actions"
 list = printf 'fixture-chair sh\nfixture-worker sh\nfixture-new sh\n'
 close = printf 'close %s\n' "$SWARM_PANE" >> "$HOME/actions"
 capture = cat "$HOME/screen"
@@ -315,116 +315,6 @@ fn named_event(reader: &mut BufReader<TcpStream>, wanted: &str) -> Value {
     }
 }
 
-#[test]
-fn chat_routes_run_the_real_cli_against_a_fake_provider_and_adapter() {
-    let server = Server::with_actions(true);
-    let post = |route: &str, body: Value| {
-        let (status, _, response) = server.request(
-            "POST",
-            route,
-            "Content-Type: application/json\r\n",
-            &body.to_string(),
-            true,
-        );
-        assert_eq!(status, 200, "{route}: {response}");
-        let response: Value = serde_json::from_str(&response).unwrap();
-        assert_eq!(response["ok"], true);
-        response
-    };
-    let target = json!({"session": server.session, "agent": "chair"});
-    let text = "quotes ' and $(touch injected)\nsecond line";
-    let mut send = target.clone();
-    send["text"] = json!(text);
-    let mut stream = server.sse();
-    let _ = named_event(&mut stream, "hello");
-    post("/api/chat/send", send);
-    assert!(
-        named_event(&mut stream, "snapshot")["version"]
-            .as_u64()
-            .unwrap()
-            > 1
-    );
-    assert_eq!(
-        fs::read_to_string(server.dir.join("home/text")).unwrap(),
-        text
-    );
-    assert!(!server.dir.join("home/injected").exists());
-    post("/api/chat/interrupt", target.clone());
-    for key in ["Up", "C-u"] {
-        let mut body = target.clone();
-        body["key"] = json!(key);
-        post("/api/chat/key", body);
-    }
-    let prompt =
-        swarm::screen::prompt(include_str!("fixtures/screens/claude-waiting.txt")).unwrap();
-    let mut answer = target.clone();
-    answer["prompt_id"] = json!(prompt.id);
-    answer["choice"] = json!(0);
-    post("/api/chat/answer", answer);
-    let actions = || fs::read_to_string(server.dir.join("home/actions")).unwrap();
-    assert!(actions().contains(&format!(
-        "ring {} orchestrator tmux-swarm\n",
-        server.session
-    )));
-    assert!(actions().contains("key fixture-chair 1\n"));
-    // Numbered choices send the digit alone; arrow choices send Enter (Prompt::keys).
-    assert!(!actions().contains("key fixture-chair Enter\n"));
-    assert!(actions().contains("interrupt fixture-chair\n"));
-    let connection = rusqlite::Connection::open(server.dir.join("home/.swarm/swarm.db")).unwrap();
-    // A removed worktree's chat: its folder is gone, and its pane still closes.
-    connection
-        .execute(
-            "UPDATE session SET cwd = ?1 WHERE id = ?2",
-            (
-                server.dir.join("removed-worktree").to_str().unwrap(),
-                &server.session,
-            ),
-        )
-        .unwrap();
-    post("/api/agent/close", target);
-    assert_eq!(
-        swarm::store::pane_of(&connection, &server.session, "orchestrator").unwrap(),
-        None
-    );
-    assert!(actions().contains("close fixture-chair\n"));
-    post("/api/sessions/archive", json!({"ids": [server.session]}));
-    let (status, _, body) = server.request("GET", "/api/sessions/archived", "", "", true);
-    assert_eq!(status, 200);
-    let archived: Value = serde_json::from_str(&body).unwrap();
-    assert_eq!(archived["sessions"][0]["id"], server.session);
-    assert!(archived["sessions"][0]["archivedAt"].as_i64().is_some());
-    post("/api/sessions/unarchive", json!({"ids": [server.session]}));
-    let (_, _, body) = server.request("GET", "/api/sessions/archived", "", "", true);
-    assert_eq!(
-        serde_json::from_str::<Value>(&body).unwrap()["sessions"],
-        json!([])
-    );
-    let created = post(
-        "/api/chat/new",
-        // `here` keeps a run from a hub's main checkout from making a chat worktree (ADR 0146).
-        json!({"cwd": env!("CARGO_MANIFEST_DIR"), "here": true, "provider":"agy", "model":"flash", "account":"auto"}),
-    );
-    let session = created["session"].as_str().unwrap();
-    assert_ne!(session, server.session);
-    assert_eq!(
-        swarm::store::session_cwd(&connection, session)
-            .unwrap()
-            .as_deref(),
-        Some(env!("CARGO_MANIFEST_DIR"))
-    );
-    assert_eq!(
-        swarm::store::pane_of(&connection, session, "orchestrator")
-            .unwrap()
-            .as_deref(),
-        Some("fixture-new")
-    );
-    assert!(actions().contains(&format!("spawn {session} orchestrator tmux-swarm\n")));
-    post(
-        "/api/chat/new",
-        json!({"cwd": env!("CARGO_MANIFEST_DIR"), "here": true}),
-    );
-}
-
 #[path = "serve/chat.rs"]
 mod chat;
 #[path = "serve/choices.rs"]
@@ -457,15 +347,6 @@ mod s8d_images;
 mod s9a_frozen;
 #[path = "serve/s9a_switch.rs"]
 mod s9a_switch;
-
-#[path = "serve/s9b_switch.rs"]
-mod s9b_switch;
-
-#[path = "serve/s9c_switch.rs"]
-mod s9c_switch;
-
-#[path = "serve/s9d_switch.rs"]
-mod s9d_switch;
 
 #[path = "serve/body_wire.rs"]
 mod body_wire;

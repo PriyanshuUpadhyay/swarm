@@ -14,6 +14,7 @@ jobs:
   # Swarm ships only for macOS, and the e2e keys assume a Mac.
   serve-tests:
     runs-on: macos-26
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

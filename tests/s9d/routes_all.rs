@@ -220,13 +220,14 @@ fn collect(stream: &mut SseStream, expected: &[Value]) -> Vec<Value> {
     );
     let r = &mut stream.reader;
     loop {
+        if complete(&values) {
+            break;
+        }
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             break;
         }
-        r.get_ref()
-            .set_read_timeout(Some(remaining.min(Duration::from_millis(900))))
-            .unwrap();
+        r.get_ref().set_read_timeout(Some(remaining)).unwrap();
         match r.read_line(&mut line) {
             Ok(0) => break,
             Ok(_) => {
@@ -242,11 +243,7 @@ fn collect(stream: &mut SseStream, expected: &[Value]) -> Vec<Value> {
                     values.push(json!({"event":name,"data":serde_json::from_str::<Value>(v.trim()).unwrap()}));
                 }
             }
-            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                if complete(&values) {
-                    break;
-                }
-            }
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
             Err(e) => panic!("{e}"),
         }
     }

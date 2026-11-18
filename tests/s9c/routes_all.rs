@@ -52,10 +52,20 @@ fn ids(value: &Value, found: &mut Vec<String>) {
     }
 }
 
-fn collect(reader: &mut BufReader<TcpStream>, quiet: Duration) -> Vec<Value> {
-    reader.get_ref().set_read_timeout(Some(quiet)).unwrap();
+// Returns once each event type in `expected` has arrived as often, or after 3 s.
+fn collect(reader: &mut BufReader<TcpStream>, expected: &[Value]) -> Vec<Value> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    let count = |values: &[Value], event: &Value| values.iter().filter(|v| v["event"] == *event).count();
     let (mut found, mut name, mut line) = (Vec::new(), String::new(), String::new());
     loop {
+        if expected.iter().all(|wanted| count(&found, &wanted["event"]) >= count(expected, &wanted["event"])) {
+            break;
+        }
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        reader.get_ref().set_read_timeout(Some(remaining)).unwrap();
         match reader.read_line(&mut line) {
             Ok(0) => break,
             Ok(_) => {
@@ -73,9 +83,7 @@ fn collect(reader: &mut BufReader<TcpStream>, quiet: Duration) -> Vec<Value> {
                     found.push(json!({"event": name, "data": serde_json::from_str::<Value>(value.trim()).unwrap()}));
                 }
             }
-            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                break;
-            }
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
             Err(error) => panic!("{error}"),
         }
     }
@@ -159,8 +167,12 @@ fn pages(name: &str) {
     }
 }
 fn frames(cap: &Cap, label: &str, rows: &mut BufReader<TcpStream>, raw: &mut BufReader<TcpStream>) {
-    let quiet = Duration::from_millis(350);
-    let value = json!({"rows": collect(rows,quiet), "raw": collect(raw,quiet)});
+    let expected = &frozen::expected(&["routes.json"])["routes.json"]
+        [format!("{}/{label}.json", cap.case)];
+    let value = json!({
+        "rows": collect(rows, expected["rows"].as_array().unwrap()),
+        "raw": collect(raw, expected["raw"].as_array().unwrap()),
+    });
     cap.put(
         &format!("{label}.json"),
         &serde_json::to_string_pretty(&value).unwrap(),
