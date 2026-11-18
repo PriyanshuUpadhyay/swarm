@@ -11,26 +11,53 @@ import { FIELD, message, ErrorLine } from "./lifecycle-shared";
 
 type Kind = Place["kind"];
 
-const KINDS: [Kind, string][] = [
-  ["new", "New worktree"],
-  ["branch", "Existing branch"],
-  ["pr", "Pull request"],
-  ["issue", "Issue"],
-  ["here", "This folder"],
-];
+/** Each kind's tab word and its place before a pick; the type needs every kind. */
+const KINDS: { [K in Kind]: [string, Extract<Place, { kind: K }>] } = {
+  new: ["New worktree", { kind: "new" }],
+  branch: ["Existing branch", { kind: "branch", branch: "" }],
+  pr: ["Pull request", { kind: "pr", number: 0 }],
+  issue: ["Issue", { kind: "issue", number: 0 }],
+  here: ["This folder", { kind: "here" }],
+};
 
 /** The chip's words for a place. */
 export function placeLabel(place: Place, target: Target | null): string {
   if (!target?.git) return "In folder";
-  if (place.kind === "new") return "New worktree";
-  if (place.kind === "here") return "In this folder";
-  if (place.kind === "branch") return place.branch ? `Branch ${place.branch}` : "Pick a branch";
-  if (place.kind === "pr") return place.number ? `PR #${place.number}` : "Pick a pull request";
-  return place.number ? `Issue #${place.number}` : "Pick an issue";
+  switch (place.kind) {
+    case "new":
+      return "New worktree";
+    case "here":
+      return "In this folder";
+    case "branch":
+      return place.branch ? `Branch ${place.branch}` : "Pick a branch";
+    case "pr":
+      return place.number ? `PR #${place.number}` : "Pick a pull request";
+    case "issue":
+      return place.number ? `Issue #${place.number}` : "Pick an issue";
+    default: {
+      const _exhaustive: never = place;
+      return _exhaustive;
+    }
+  }
 }
 
 /** Whether a send can go with this place: a branch, PR or issue needs its pick. */
-export const placeReady = (place: Place) => (place.kind === "branch" ? place.branch !== "" : place.kind === "pr" || place.kind === "issue" ? place.number > 0 : true);
+export function placeReady(place: Place): boolean {
+  switch (place.kind) {
+    case "new":
+    case "here":
+      return true;
+    case "branch":
+      return place.branch !== "";
+    case "pr":
+    case "issue":
+      return place.number > 0;
+    default: {
+      const _exhaustive: never = place;
+      return _exhaustive;
+    }
+  }
+}
 
 /** The menu body: the kinds, then the list of the picked kind. */
 export function PlacePanel({ app, target, place, onPlace }: { app: App; target: Target; place: Place; onPlace: (place: Place) => void }) {
@@ -38,8 +65,6 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
   const [opts, setOpts] = useState<{ options: NewOptions | null; error: string | null } | null>(null);
   const [reads, setReads] = useState(0);
   const [fetching, setFetching] = useState<{ error: string | null } | null>(null);
-  const [pr, setPr] = useState(place.kind === "pr" && place.number ? String(place.number) : "");
-  const kinds = KINDS.filter(([k]) => k !== "new" || target.worktree);
 
   useEffect(() => {
     let live = true;
@@ -65,12 +90,13 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
   };
   const options = opts?.options ?? null;
   const unborn = options !== null && options.defaultBranch === null;
-  const pick = (kind: Kind) => onPlace(kind === "branch" ? { kind, branch: "" } : kind === "pr" || kind === "issue" ? { kind, number: 0 } : { kind });
+  const pick = (kind: Kind) => onPlace(KINDS[kind][1]);
+  const kinds = Object.entries(KINDS) as [Kind, [string, Place]][];
 
   return (
     <div className="grid gap-3" data-testid="place-panel">
       <div role="tablist" aria-label="Start in" className="view-switch !mx-0 !mb-0">
-        {kinds.map(([k, label]) => (
+        {kinds.map(([k, [label]]) => (
           <button key={k} type="button" role="tab" aria-selected={place.kind === k} data-testid={`place-kind-${k}`} disabled={unborn && k !== "new" && k !== "here"} onClick={() => pick(k)}>
             {label}
           </button>
@@ -103,13 +129,9 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
             className={FIELD}
             data-testid="place-pr"
             inputMode="numeric"
-            value={pr}
+            value={place.number ? String(place.number) : ""}
             placeholder="42"
-            onChange={(e) => {
-              const digits = e.target.value.replace(/\D/g, "");
-              setPr(digits);
-              onPlace({ kind: "pr", number: Number(digits) || 0 });
-            }}
+            onChange={(e) => onPlace({ kind: "pr", number: Number(e.target.value.replace(/\D/g, "")) })}
           />
         </label>
       )}

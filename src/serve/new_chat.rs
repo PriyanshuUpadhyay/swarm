@@ -277,7 +277,7 @@ pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, Ap
 mod preview;
 pub(super) use preview::new_chat_preview;
 #[path = "new_chat/start.rs"]
-mod start;
+pub(super) mod start;
 use start::{Launch, Start};
 
 #[cfg(test)]

@@ -14,12 +14,13 @@ const tree = {
 describe("new chat composer", () => {
   it("starts on a hub's main for a new worktree, and in a plain folder itself", () => {
     expect(targets(tree, "/hub/wt/fix")).toEqual([
-      { cwd: "/hub/wt/main", project: "/hub", title: "hub", git: true, worktree: true },
-      { cwd: "/notes", project: "/notes", title: "notes", git: false, worktree: false },
+      { cwd: "/hub/wt/main", project: "/hub", title: "hub", git: true },
+      { cwd: "/notes", project: "/notes", title: "notes", git: false },
     ]);
   });
 
   it("posts the prompt, place and run, shows the steps, then opens the chat and sends queued text", async () => {
+    // A frame can beat the POST reply, and a failed send of the box's text shows a notice.
     const calls: string[] = [];
     const app = {
       navSeq: 1,
@@ -27,7 +28,10 @@ describe("new chat composer", () => {
       notice: (text: string) => calls.push(`notice ${text}`),
       api: {
         post: async (path: string, body: unknown) => (calls.push(`${path} ${JSON.stringify(body)}`), { start: "s1" }),
-        action: async (path: string, body: unknown) => void calls.push(`${path} ${JSON.stringify(body)}`),
+        action: async (path: string, body: { text: string }) => {
+          if (body.text === "Then the docs") throw new Error("chair is gone");
+          calls.push(`${path} ${JSON.stringify(body)}`);
+        },
       },
       actions: { openNew: async (session: string, open: boolean) => void calls.push(`open ${session} ${open}`) },
     };
@@ -36,20 +40,28 @@ describe("new chat composer", () => {
     expect(chats.state.composer).toMatchObject({ cwd: "/hub/wt/main", place: { kind: "new" } });
 
     const run = { provider: "codex", model: "gpt-5", effort: "high", account: null };
-    await chats.start("/hub/wt/main", "Fix the flaky smoke test\n", { kind: "new" }, { role: "chat", run });
+    const posted = chats.start("/hub/wt/main", "Fix the flaky smoke test\n", { kind: "new" }, { role: "chat", run });
+    chats.onFrame("chat-start", { start: "s1", step: "worktree", state: "running" });
+    await posted;
     expect(calls[0]).toBe('/api/chat/new {"cwd":"/hub/wt/main","role":"chat","prompt":"Fix the flaky smoke test","place":{"kind":"new"},"provider":"codex","model":"gpt-5","effort":"high"}');
     expect(chats.state.composer).toBeNull();
     expect(chats.shown()).toMatchObject({ id: "s1", title: "Fix the flaky smoke test", from: "/hub/wt/fix" });
 
-    chats.onFrame("chat-start", { start: "s1", step: "worktree", state: "running" });
+    expect(chats.shown()?.steps).toEqual([{ step: "worktree", state: "running", error: null }]);
     chats.onFrame("chat-start", { start: "s1", step: "worktree", state: "completed", workspace: "/hub/wt/fix-flaky-smoke-test", branch: "swarm/fix-flaky-smoke-test" });
     chats.onFrame("setup", { workspace: "/hub/wt/fix-flaky-smoke-test", state: "running" });
     chats.onFrame("setup", { workspace: "/hub/wt/fix-flaky-smoke-test", state: "output", text: "npm ci\n" });
-    chats.queue("s1", "Also run the e2e suite");
+    chats.setDraft("s1", "Also run the e2e suite");
+    chats.queue("s1");
+    chats.setDraft("s1", "Then the docs");
     expect(chats.shown()).toMatchObject({ branch: "swarm/fix-flaky-smoke-test", steps: [{ step: "worktree", state: "completed" }], setup: { output: "npm ci\n" } });
 
     await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
     expect(chats.state.starts).toEqual({});
-    expect(calls.slice(1)).toEqual(["open chat-9 true", '/api/chat/send {"session":"chat-9","agent":"chair","text":"Also run the e2e suite"}']);
+    expect(calls.slice(1)).toEqual([
+      "open chat-9 true",
+      '/api/chat/send {"session":"chat-9","agent":"chair","text":"Also run the e2e suite"}',
+      "notice Your next message did not send: chair is gone. Its text: Then the docs",
+    ]);
   });
 });

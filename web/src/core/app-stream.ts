@@ -95,6 +95,8 @@ export class AppStream {
         this.app.streamId = String(data.stream);
         this.syncSubscriptions();
         void this.app.navigation.refreshSnapshot();
+        // Fire-and-forget is safe: recheck keeps its own errors.
+        void this.app.newChat.recheck();
         break;
       case "snapshot":
         if (data.version !== this.app.snapshot?.version) void this.app.navigation.refreshSnapshot();
@@ -126,8 +128,8 @@ export class AppStream {
         if (typeof data.session === "string") void this.show(data.session);
         break;
       case "setup":
+        // Fire-and-forget is safe: onFrame never rejects.
         void this.app.newChat.onFrame(e.event, data);
-        this.app.life.onFrame(e.event, data);
         break;
       case "handoff":
         this.app.life.onFrame(e.event, data);

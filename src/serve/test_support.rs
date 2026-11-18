@@ -109,6 +109,7 @@ impl Fixture {
                 followers: HashMap::new(),
                 retiring: HashMap::new(),
                 row_cache: VecDeque::new(),
+                starts_done: VecDeque::new(),
             }),
             directories: Mutex::new(HashMap::new()),
             stopped: AtomicBool::new(false),

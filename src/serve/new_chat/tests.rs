@@ -10,6 +10,10 @@ async fn new_chat_route() {
     let response = start_chat(&fixture, body).await.unwrap();
     assert!(uuid::Uuid::parse_str(response["session"].as_str().unwrap()).is_ok());
     assert_eq!(response["workspace"], env!("CARGO_MANIFEST_DIR"));
+    // A page whose stream was down reads the done frame again.
+    let query = HashMap::from([("id".into(), response["start"].as_str().unwrap().to_owned())]);
+    let kept = start::chat_start_done(State(fixture.app.clone()), Query(query)).await;
+    assert_eq!(kept.0["done"], response);
     let calls = action_calls(&fixture);
     let lines: Vec<_> = calls.lines().collect();
     assert_eq!(lines.len(), 3);

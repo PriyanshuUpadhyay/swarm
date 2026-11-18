@@ -78,6 +78,7 @@ pub(super) fn start(
             followers: HashMap::new(),
             retiring: HashMap::new(),
             row_cache: VecDeque::new(),
+            starts_done: VecDeque::new(),
         }),
         directories: Mutex::new(HashMap::new()),
         stopped: AtomicBool::new(false),
@@ -194,6 +195,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/chat/branch", post(branch_chat))
         .route("/api/chat/continue/cancel", post(cancel_continue))
         .route("/api/chat/new-preview", get(new_chat_preview))
+        .route("/api/chat/start", get(new_chat::start::chat_start_done))
         .route("/api/workspace/new-options", get(lifecycle_read))
         .route("/api/workspace/fetch", post(workspace_fetch))
         .route("/api/workspace/impact", get(lifecycle_read))

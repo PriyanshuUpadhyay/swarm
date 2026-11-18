@@ -42,6 +42,7 @@ function liveApp() {
     reading: { changed: (c: Chat) => c.version++ }, serverBuild: null, streamId: null,
     sentKeys: "", lru: [], visible: [], pane: { zoomed: null },
     navigation: { refreshSnapshot: async () => {} },
+    newChat: { recheck: async () => {} },
   };
   const stream = new AppStream(app as unknown as App);
   const reader = new AppReader(app as unknown as App);

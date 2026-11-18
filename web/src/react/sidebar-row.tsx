@@ -98,7 +98,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, a
             </button>
           )}
           {i === 0 && canNew && (
-            <button tabIndex={-1} className="row-btn" data-action="new-chat" aria-label={`New chat in ${r.title}`} title="New chat (⌘T)">
+            <button tabIndex={-1} className="row-btn" data-action="new-chat" aria-label={`New chat in ${r.title}`} title="New chat (⌘N)">
               <PlusIcon />
             </button>
           )}

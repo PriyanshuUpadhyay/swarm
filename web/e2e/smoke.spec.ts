@@ -207,6 +207,7 @@ test("the tab strip's + opens the composer over the chat, and Esc closes it with
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
   await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
+
   const started: string[] = [];
   tab.on("request", (r) => r.url().endsWith("/api/chat/new") && started.push(r.url()));
   await tab.getByTestId("tab-new-chat").click();
@@ -215,6 +216,7 @@ test("the tab strip's + opens the composer over the chat, and Esc closes it with
   await expect(tab.getByTestId("transcript")).toBeAttached();
   await tab.keyboard.press("Escape");
   await expect(overlay).toBeHidden();
+
   // ⌘N opens it again from the chat.
   await tab.keyboard.press("Meta+n");
   await expect(overlay).toBeVisible();

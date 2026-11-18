@@ -89,6 +89,8 @@ struct Hub {
     followers: HashMap<String, Follower>,
     retiring: HashMap<String, watch::Receiver<bool>>,
     row_cache: VecDeque<(String, LiveRows)>,
+    /// The `done` frames of the last chat starts, for a page whose stream was down (ADR 0147).
+    starts_done: VecDeque<(String, Value)>,
 }
 
 struct Client {

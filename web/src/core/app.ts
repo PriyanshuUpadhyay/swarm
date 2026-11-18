@@ -248,8 +248,8 @@ export class App {
     return this.navigation.selectWorkspace(path, e);
   }
 
-  startChat(workspace = this.workspace, role?: string) {
-    return this.actions.startChat(workspace, role);
+  startChat(workspace = this.workspace) {
+    return this.actions.startChat(workspace);
   }
 
   markedChats(): string[] {

@@ -17,6 +17,9 @@ const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
 /** The id prefix of a starting chat's tab, which the server's strip never lists. */
 const START = "start:";
 
+/** The start id of a starting chat's tab, else null for a server tab. */
+const startOf = (tab: Tab) => (tab.id.startsWith(START) ? tab.id.slice(START.length) : null);
+
 const startTab = (s: Starting): Tab => ({ id: START + s.id, session: "", title: s.title, status: null, badge: null, canClose: false, canHide: s.error !== null, pending: s.error ? "failed" : "starting", fields: [], children: null });
 
 export function TabStrip({ app }: { app: App }) {
@@ -29,8 +32,10 @@ export function TabStrip({ app }: { app: App }) {
   const dragged = useRef<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [overflow, setOverflow] = useState<Tab[]>([]);
+
   const starts = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.state.starts);
-  const viewing = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.state.viewing?.id ?? null);
+  // What the main view shows: a move to another chat bumps navSeq, so the start is no longer shown.
+  const viewing = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.shown()?.id ?? null);
   const ws = workspaceRow(tree, workspace);
   // A starting chat is a tab of the workspace it started from until it opens (ADR 0147).
   const startTabs = useMemo(() => Object.values(starts).filter((s) => s.from === workspace).map(startTab), [starts, workspace]);
@@ -62,11 +67,23 @@ export function TabStrip({ app }: { app: App }) {
     const el = (e.target as Element).closest<HTMLElement>("[data-testid=tab]");
     return el ? list.find((t) => t.id === el.dataset.id) : undefined;
   };
+  const show = (tab: Tab) => {
+    const start = startOf(tab);
+    if (start) return app.newChat.view(start);
+    app.newChat.hide();
+    if (tab.session !== openId) app.openChat(tab.session);
+  };
+  const close = (tab: Tab) => {
+    const start = startOf(tab);
+    if (start) app.newChat.dismiss(start);
+    else void app.closeTab(tab.id);
+  };
+
   const onClick = (e: MouseEvent) => {
     const tab = tabOf(e);
     if (!tab) return;
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
-    if (tab.id.startsWith(START)) return action === "close" ? app.newChat.dismiss(tab.id.slice(START.length)) : app.newChat.view(tab.id.slice(START.length));
+    if (startOf(tab)) return action === "close" ? close(tab) : show(tab);
     if (action === "close") return void app.closeTab(tab.id);
     app.newChat.hide();
     if (tab.session !== openId) app.openChat(tab.session);
@@ -103,7 +120,7 @@ export function TabStrip({ app }: { app: App }) {
     },
     onDragOver: (e: DragEvent) => {
       const tab = tabOf(e);
-      if (tab && dragged.current && tab.id !== dragged.current) {
+      if (tab && !startOf(tab) && dragged.current && tab.id !== dragged.current) {
         e.preventDefault();
         setDropTarget(tab.id);
       }
@@ -111,7 +128,7 @@ export function TabStrip({ app }: { app: App }) {
     onDrop: (e: DragEvent) => {
       const tab = tabOf(e);
       const chat = dragged.current;
-      if (!tab || !chat || !tabs || tab.id === chat) return;
+      if (!tab || startOf(tab) || !chat || !tabs || tab.id === chat) return;
       e.preventDefault();
       setDropTarget(null);
       void app.choose({ op: "move_tab", workspace: tabs.workspace, chat, target: tab.id });
@@ -155,7 +172,7 @@ export function TabStrip({ app }: { app: App }) {
             onKeyDown={onKeyDown}
             onAuxClick={(e) => {
               const tab = tabOf(e);
-              if (e.button === 1 && tab?.canHide) { e.preventDefault(); void app.closeTab(tab.id); }
+              if (e.button === 1 && tab?.canHide) { e.preventDefault(); close(tab); }
             }}
             {...dragProps}
           >
@@ -175,7 +192,7 @@ export function TabStrip({ app }: { app: App }) {
         <DropdownMenuContent align="end" data-testid="tab-overflow">
           {overflow.length === 0 && <DropdownMenuItem disabled>All tabs are in view</DropdownMenuItem>}
           {overflow.map((t) => (
-            <DropdownMenuItem key={t.id} onSelect={() => app.openChat(t.session)}>
+            <DropdownMenuItem key={t.id} onSelect={() => show(t)}>
               {t.status && <StatusGlyph status={t.status} />}
               <span className="max-w-[260px] truncate">{t.title}</span>
             </DropdownMenuItem>

@@ -43,8 +43,10 @@ folder, then answers at once with a start id. The worktree, the setup script, th
 first send run in the background. Each step goes out as a `chat-start` frame
 `{start, step, state}` with step `worktree`, `setup`, `start`, `send` and last `done`; `done`
 carries the session and its folder, or the error. Setup output keeps its `setup` frames. The
-app shows a starting tab with these steps at once, and opens the chat when `done` comes. Text
-typed in that tab goes after the first prompt. A model switch waits for its chat as before.
+app shows a starting tab with these steps at once, and opens the chat when `done` comes. The
+server keeps the last 64 `done` frames, and `GET /api/chat/start?id=` returns one or null, so a
+page whose stream reconnected reads a `done` it missed. Text typed in that tab goes after the
+first prompt; a send that fails shows that text in a notice. A model switch waits for its chat as before.
 
 With a prompt, the server names the worktree when it makes it: `swarm/` and the first five
 ASCII words of the prompt that are not filler, lowercase and joined by `-`, at most 38

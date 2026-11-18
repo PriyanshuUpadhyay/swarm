@@ -1,15 +1,12 @@
 import type { SwitchCarry } from "./composer";
 
-/** `GET /api/workspace/new-options`. */
+/** The fields of `GET /api/workspace/new-options` that the place menu reads. */
 export type NewOptions = {
   defaultBranch: string | null;
   /** Free branches, which a new worktree checks out. */
   branches: string[];
   /** Each checked-out branch but the default, with its worktree; picking one opens it. */
   checkouts: Record<string, string>;
-  bases: string[];
-  folder: string;
-  prefix: string;
   setup_script: string | null;
 };
 
@@ -56,7 +53,7 @@ export type ClosedChat = { title?: string; id: string; cwd: string; archivedAt: 
 /** `GET /api/chats/importable`: a chat on another adapter that the app can show. */
 export type ImportableChat = { id: string; workspace: string; title: string; provider: string | null; lastActivity: number; running: boolean };
 
-export type Profile = { name: string; runners: { provider: string; model?: string }[] };
+export type Profile = { name: string; runners: { provider: string; model?: string; effort?: string }[] };
 
 export type LifeState = {
   project: "create" | "import" | null;

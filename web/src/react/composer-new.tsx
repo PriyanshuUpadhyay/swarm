@@ -2,26 +2,24 @@
 // overlay over the open chat. The owner types the first prompt, keeps or changes the project, the
 // place and the run, and presses ⌘Enter. A starting chat shows its steps in `StartingView`.
 
-import { CircleCheckIcon, CircleIcon, LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
+import { LoaderCircleIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import type { App } from "../core/app";
 import { cliName, levelWord, type Run } from "../core/composer";
-import { setupFailure, type Profile } from "../core/lifecycle";
-import { defaultPlace, defaultTarget, STEP_WORDS, targets, type Place, type Starting, type Target } from "../core/new-chat";
+import { type Profile } from "../core/lifecycle";
+import { DEFAULT_ROLE, defaultPlace, defaultTarget, targets, type Place, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 import { message } from "./lifecycle-shared";
 import { PlacePanel, placeLabel, placeReady } from "./place-lists";
 import { RunPicker, runModel, useRunCatalog } from "./run-picker";
 
-type Preview = { place: "folder" } | { place: "worktree"; branch: string | null; folder: string | null; base: string | null; fetchedUnixS: number | null; setup: string | null };
-
-/** The profile a new chat starts on unless the owner picks another: `chat`, else the first. */
-const DEFAULT_ROLE = "chat";
+/** The card of a new worktree; the composer asks only for a git project's place `new`. */
+type Preview = { branch: string | null; folder: string | null; base: string | null; fetchedUnixS: number | null; setup: string | null };
 
 /** A profile's run: its first runner, on the CLI's login. */
 function profileRun(profile: Profile | undefined): Run | null {
-  const r = profile?.runners[0] as (Profile["runners"][number] & { effort?: string }) | undefined;
+  const r = profile?.runners[0];
   return r ? { provider: r.provider, model: r.model ?? null, effort: r.effort ?? null, account: null } : null;
 }
 
@@ -50,9 +48,35 @@ export function ComposerOverlay({ app }: { app: App }) {
   if (!composer) return null;
   const target = targets(tree, composer.cwd).find((t) => t.cwd === composer.cwd) ?? null;
   if (!target) return null;
+  return <Overlay app={app} key={composer.seq} target={target} place={composer.place} />;
+}
+
+/** A modal dialog: Tab stays inside, focus goes back where it was on close, and a click on the
+ *  backdrop closes it only while the prompt is empty, so a stray click keeps typed text. */
+function Overlay({ app, target, place }: { app: App; target: Target; place: Place }) {
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => before?.focus();
+  }, []);
+
+  const trap = (e: KeyboardEvent) => {
+    if (e.key !== "Tab" || !root.current) return;
+    const items = [...root.current.querySelectorAll<HTMLElement>("button:not([disabled]), textarea, input, [tabindex]:not([tabindex='-1'])")];
+    const [first, last] = [items[0], items[items.length - 1]];
+    if (e.shiftKey && document.activeElement === first) last?.focus();
+    else if (!e.shiftKey && document.activeElement === last) first?.focus();
+    else return;
+    e.preventDefault();
+  };
+  const backdrop = (e: React.MouseEvent) => {
+    const prompt = root.current?.querySelector<HTMLTextAreaElement>('[data-testid="new-chat-prompt"]');
+    if (e.target === e.currentTarget && !prompt?.value.trim()) app.newChat.close();
+  };
+
   return (
-    <div className="absolute inset-0 z-40 grid place-items-start justify-center bg-background/70 pt-[12vh] backdrop-blur-[2px]" data-testid="composer-overlay" onMouseDown={(e) => e.target === e.currentTarget && app.newChat.close()}>
-      <NewChatComposer app={app} key={composer.seq} initial={target} place={composer.place} focus overlay />
+    <div ref={root} role="dialog" aria-modal="true" aria-label="New chat" className="absolute inset-0 z-40 grid place-items-start justify-center bg-background/70 pt-[12vh] backdrop-blur-[2px]" data-testid="composer-overlay" onMouseDown={backdrop} onKeyDown={trap}>
+      <NewChatComposer app={app} initial={target} place={place} focus overlay />
     </div>
   );
 }
@@ -64,6 +88,7 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
   const [cwd, setCwd] = useState(initial.cwd);
   const list = targets(tree, cwd);
   const target = list.find((t) => t.cwd === cwd) ?? initial;
+
   const [place, setPlace] = useState<Place>(firstPlace);
   const [text, setText] = useState("");
   const [menu, setMenu] = useState<Menu>(firstPlace.kind === "branch" && !firstPlace.branch ? "place" : null);
@@ -72,10 +97,15 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
   const [run, setRun] = useState<Run | null>(null);
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
+  const projects = useRef<HTMLDivElement>(null);
   const preview = usePreview(app, target, place, text);
+
   const profile = Array.isArray(profiles) ? (profiles.find((p) => p.name === role) ?? profiles[0]) : undefined;
   const base = profileRun(profile);
   const shown = run ?? base;
+  // The run on screen now, for a step that ends after an await.
+  const shownNow = useRef(shown);
+  shownNow.current = shown;
 
   useEffect(() => {
     app.life.profiles().then(
@@ -89,12 +119,16 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
   useEffect(() => {
     if (focus) box.current?.focus();
   }, [focus]);
+  useEffect(() => {
+    if (menu === "project") projects.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+  }, [menu]);
 
   const pickTarget = (next: Target) => {
     setCwd(next.cwd);
     setPlace(defaultPlace(next));
     setMenu(null);
   };
+
   const ready = placeReady(place) && !sending;
   const send = async () => {
     if (!ready) return setMenu("place");
@@ -103,6 +137,7 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
     const ok = await app.newChat.start(target.cwd, text, place, { role: profile?.name ?? role, run: changed });
     if (!ok) setSending(false);
   };
+
   // ⌘⇧/ steps to the next thinking level the picked model takes. Each list read runs a CLI, so
   // only this key and the run menu read them.
   const cycleThinking = async () => {
@@ -110,13 +145,15 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
     try {
       const [{ providers }, { models }] = await Promise.all([app.life.runs.providers(), app.life.runs.models(shown.provider)]);
       const { levels } = runModel({ providers, models: { [shown.provider]: models }, error: null }, shown);
-      if (!levels.length) return;
+      // The owner picked another run while the lists were read: that pick stays.
+      if (!levels.length || !sameRun(shownNow.current, shown)) return;
       const at = shown.effort ? levels.indexOf(shown.effort) : -1;
       setRun({ ...shown, effort: levels[(at + 1) % levels.length] });
     } catch (err) {
       app.notice(message(err), true);
     }
   };
+
   const onKeyDown = (e: KeyboardEvent) => {
     const meta = e.metaKey || e.ctrlKey;
     let done = true;
@@ -134,10 +171,11 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
   };
 
   const runText = shown ? [cliName(shown.provider), shown.model ?? "Default model", shown.effort && levelWord(shown.effort)].filter(Boolean).join(" · ") : typeof profiles === "string" ? "Profiles unavailable" : "Reading profiles…";
+
   return (
     <div className={`grid w-full gap-3 ${overlay ? "max-w-[min(960px,calc(100vw-32px))]" : "max-w-[960px] px-4"}`} data-testid="new-chat-composer" data-cwd={target.cwd} data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
       <div className="grid gap-3 min-[1000px]:grid-cols-[1fr_280px]">
-        <div className="grid gap-2 rounded-xl border border-border-strong bg-popover p-3 shadow-panel">
+        <div className="grid gap-2 rounded-xl border border-border-strong bg-popover p-3 shadow-panel has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring">
           <textarea
             ref={box}
             rows={overlay ? 4 : 5}
@@ -169,11 +207,11 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
             </Button>
           </div>
           {menu === "project" && (
-            <div role="listbox" aria-label="Project" data-testid="project-menu" className="grid max-h-[240px] overflow-y-auto rounded-md border border-border">
+            <div ref={projects} role="listbox" aria-label="Project" data-testid="project-menu" className="grid max-h-[240px] overflow-y-auto rounded-md border border-border" onKeyDown={moveOption}>
               {list.map((t) => (
-                <button key={t.cwd} type="button" role="option" aria-selected={t.cwd === target.cwd} className="flex gap-2 px-2 py-1.5 text-left hover:bg-hover aria-selected:bg-selected" onClick={() => pickTarget(t)}>
+                <button key={t.cwd} type="button" role="option" aria-selected={t.cwd === target.cwd} className="flex gap-2 px-2 py-1.5 text-left hover:bg-hover focus-visible:bg-hover focus-visible:outline-none aria-selected:bg-selected" onClick={() => pickTarget(t)}>
                   <span className="flex-1 truncate">{t.title}</span>
-                  <span className="text-xs text-muted-foreground">{t.worktree ? "new worktree" : t.git ? "git" : "folder"}</span>
+                  <span className="text-xs text-muted-foreground">{t.git ? "git" : "folder"}</span>
                 </button>
               ))}
             </div>
@@ -210,6 +248,16 @@ function NewChatComposer({ app, initial, place: firstPlace, focus, overlay = fal
   );
 }
 
+/** ↑ ↓ Home End move the focus between a listbox's options. */
+function moveOption(e: KeyboardEvent<HTMLElement>) {
+  const options = [...e.currentTarget.querySelectorAll<HTMLElement>('[role="option"]')];
+  const at = options.indexOf(document.activeElement as HTMLElement);
+  const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: options.length - 1 }[e.key];
+  if (next === undefined) return;
+  e.preventDefault();
+  options[Math.max(0, Math.min(options.length - 1, next))]?.focus();
+}
+
 function RunMenu({ app, current, draft, setDraft }: { app: App; current: Run; draft: Run; setDraft: (run: Run) => void }) {
   const catalog = useRunCatalog(app, current.provider);
   return <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={setDraft} />;
@@ -226,7 +274,8 @@ function Chip({ testid, on, title, disabled, onClick, children }: { testid: stri
 /** `/api/chat/new-preview`, read 250 ms after the typing stops, for a new worktree only. */
 function usePreview(app: App, target: Target, place: Place, text: string): Preview | null {
   const [preview, setPreview] = useState<Preview | null>(null);
-  const wanted = place.kind === "new" && target.worktree;
+  const wanted = place.kind === "new" && target.git;
+
   useEffect(() => {
     if (!wanted) return setPreview(null);
     let live = true;
@@ -241,12 +290,13 @@ function usePreview(app: App, target: Target, place: Place, text: string): Previ
       clearTimeout(timer);
     };
   }, [app, target.cwd, text, wanted]);
+
   return wanted ? preview : null;
 }
 
 function PreviewCard({ target, place, preview }: { target: Target; place: Place; preview: Preview | null }) {
   const rows: [string, string][] =
-    preview?.place === "worktree"
+    preview
       ? [
           ["Branch", preview.branch ?? "swarm/chat-…, renamed from the first prompt"],
           ["Folder", preview.folder ?? "named from the branch"],
@@ -254,14 +304,15 @@ function PreviewCard({ target, place, preview }: { target: Target; place: Place;
           ["Fetched", preview.fetchedUnixS ? new Date(preview.fetchedUnixS * 1000).toLocaleString() : "never"],
           ...(preview.setup ? ([["Setup", preview.setup]] as [string, string][]) : []),
         ]
-      : place.kind === "new" && target.worktree
+      : place.kind === "new" && target.git
         ? [["Branch", "Reading…"]]
         : place.kind === "here" || !target.git
           ? [["Folder", target.cwd]]
           : [["Starts on", placeLabel(place, target)]];
+
   return (
     <aside className="grid content-start gap-1.5 rounded-xl border border-border p-3 text-sm" aria-label="What starts" data-testid="new-chat-preview">
-      <h3 className="text-xs font-medium text-muted-foreground">{place.kind === "new" && target.worktree ? "A new worktree" : "Where the chat runs"}</h3>
+      <h3 className="text-xs font-medium text-muted-foreground">{place.kind === "new" && target.git ? "A new worktree" : "Where the chat runs"}</h3>
       {rows.map(([k, v]) => (
         <div key={k} className="grid grid-cols-[72px_1fr] gap-2">
           <span className="text-muted-foreground">{k}</span>
@@ -271,90 +322,5 @@ function PreviewCard({ target, place, preview }: { target: Target; place: Place;
         </div>
       ))}
     </aside>
-  );
-}
-
-/** A starting chat's view: its steps and setup output, and a box whose text goes after the first prompt. */
-export function StartingView({ app, start }: { app: App; start: Starting }) {
-  const [text, setText] = useState("");
-  const steps = ["worktree", "setup", "start", "send"].map((step) => start.steps.find((s) => s.step === step)).filter((s) => s !== undefined);
-  const queue = () => {
-    app.newChat.queue(start.id, text);
-    setText("");
-  };
-  return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto p-6" data-testid="starting-chat" data-state={start.error ? "failed" : "starting"}>
-      <div className="grid w-full max-w-[720px] gap-3">
-        <h2 className="truncate text-lg font-semibold">{start.title}</h2>
-        {start.prompt && start.prompt !== start.title && <p className="line-clamp-4 text-sm whitespace-pre-wrap text-muted-foreground">{start.prompt}</p>}
-        <ol className="grid gap-1.5" aria-label="Start steps" data-testid="start-steps">
-          {steps.length === 0 && !start.error && <Step state="running" text="Getting ready" />}
-          {steps.map((s) => (
-            <Step key={s.step} state={s.state} text={`${STEP_WORDS[s.step] ?? s.step}${s.step === "worktree" && start.branch ? `: ${start.branch}` : ""}`} error={s.error} />
-          ))}
-        </ol>
-        {start.setup && (
-          <pre data-testid="setup-output" aria-label="Setup output" className="max-h-[260px] overflow-auto rounded-md border border-border bg-code p-2 font-mono text-xs break-words whitespace-pre-wrap select-text">
-            {start.setup.output || (start.setup.state === "running" ? "Waiting for output…" : "(no output)")}
-          </pre>
-        )}
-        {start.setup && start.setup.state !== "running" && start.setup.state !== "completed" && <p className="text-sm text-failed">{setupFailure(start.setup)}</p>}
-        {start.error ? (
-          <div className="grid gap-2">
-            <p className="text-sm break-words text-failed" role="alert" data-testid="start-error">
-              {start.error}
-            </p>
-            <div>
-              <Button type="button" size="sm" variant="outline" onClick={() => app.newChat.dismiss(start.id)}>
-                Close
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="grid gap-1.5">
-            <textarea
-              rows={3}
-              aria-label="Next message"
-              data-testid="starting-prompt"
-              placeholder="Type the next message. It goes after the first prompt."
-              className="w-full resize-none rounded-lg border border-border-strong bg-popover p-2 outline-none"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                  e.preventDefault();
-                  queue();
-                }
-              }}
-            />
-            {start.queued.length > 0 && (
-              <p className="text-xs text-muted-foreground" data-testid="start-queued">
-                {start.queued.length === 1 ? "1 message waits" : `${start.queued.length} messages wait`} for the chat to start.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Step({ state, text, error }: { state: "running" | "completed" | "failed"; text: string; error?: string | null }) {
-  return (
-    <li className="flex items-start gap-2 text-sm" data-state={state}>
-      {state === "completed" ? (
-        <CircleCheckIcon className="mt-0.5 size-4 text-done" aria-label="Done" />
-      ) : state === "failed" ? (
-        <TriangleAlertIcon className="mt-0.5 size-4 text-failed" aria-label="Failed" />
-      ) : state === "running" ? (
-        <LoaderCircleIcon className="mt-0.5 size-4 animate-spin motion-reduce:animate-none" aria-label="Running" />
-      ) : (
-        <CircleIcon className="mt-0.5 size-4 text-muted-foreground" />
-      )}
-      <span className="min-w-0 break-words">
-        {text}
-        {error && <span className="block text-xs text-failed">{error}</span>}
-      </span>
-    </li>
   );
 }

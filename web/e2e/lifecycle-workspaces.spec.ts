@@ -43,10 +43,12 @@ test("⌘Enter makes a worktree named from the prompt and shows each start step 
     await expect(start.getByTestId("start-steps")).toContainText(`Make the worktree: ${branch}`);
     await expect(start.getByTestId("setup-output")).toContainText("setup-started");
     await shoot(tab, "new-chat-starting", info.project.name);
+
     writeFileSync(gate, "");
     await expect(start).toHaveAttribute("data-state", "failed");
     await expect(start.getByTestId("setup-output")).toContainText("to-stderr");
     await expect(start.getByTestId("start-error")).toContainText("no chat started");
+
     path = execFileSync("git", ["-C", ghProject(), "worktree", "list", "--porcelain"], { encoding: "utf8" })
       .split("\n\n")
       .find((block) => block.includes(`branch refs/heads/${branch}`))
@@ -66,6 +68,7 @@ test("the place menu sends a branch, a pull request or an issue as the chat's pl
   const bodies = await holdChatStart(tab);
   const b = runName(info);
   execFileSync("git", ["-C", ghProject(), "branch", `topic-${b}`]);
+
   try {
     let composer = await compose(tab, "proj-gh", "Review the topic");
     await composer.getByTestId("chip-place").click();
@@ -75,6 +78,7 @@ test("the place menu sends a branch, a pull request or an issue as the chat's pl
     await composer.getByTestId("place-branch-filter").press("Enter");
     await expect(composer.getByTestId("chip-place")).toHaveText(`Branch topic-${b}`);
     await shoot(tab, "place-menu", info.project.name);
+
     await composer.getByTestId("new-chat-start").click();
     await expect.poll(() => bodies.length).toBe(1);
     expect(bodies[0]).toMatchObject({ prompt: "Review the topic", place: { kind: "branch", branch: `topic-${b}` } });

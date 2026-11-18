@@ -2,6 +2,21 @@
 
 use super::*;
 
+/// How many `done` frames the hub keeps for pages that reconnect.
+const STARTS_KEPT: usize = 64;
+
+/// `GET /api/chat/start?id=`: the `done` frame of a recent start, or null while it runs or when
+/// it is too old. A page whose stream was down reads it, as the frame then never reached it.
+pub(in crate::serve) async fn chat_start_done(
+    State(app): State<App>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Json<Value> {
+    let id = query.get("id").map(String::as_str).unwrap_or_default();
+    let hub = app.hub.lock().unwrap();
+    let done = hub.starts_done.iter().find(|(start, _)| start == id);
+    Json(json!({"done": done.map(|(_, frame)| frame)}))
+}
+
 /// What a checked start launches, and where.
 pub(super) struct Launch {
     pub(super) body: NewChat,
@@ -24,11 +39,16 @@ impl Start {
         if let Value::Object(extra) = extra {
             payload.as_object_mut().unwrap().extend(extra);
         }
-        self.app
-            .hub
-            .lock()
-            .unwrap()
-            .publish(Frame::new("chat-start", payload, None));
+
+        let mut hub = self.app.hub.lock().unwrap();
+        if step == "done" {
+            if hub.starts_done.len() == STARTS_KEPT {
+                hub.starts_done.pop_front();
+            }
+            hub.starts_done
+                .push_back((self.id.clone(), payload.clone()));
+        }
+        hub.publish(Frame::new("chat-start", payload, None));
     }
 
     /// Marks `step` running; the previous step completed.
