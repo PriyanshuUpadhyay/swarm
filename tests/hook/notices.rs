@@ -305,6 +305,7 @@ fn notices_due_applies_the_notice_preferences() {
         swarm::store::add_agent(&connection, session, "coder", "coder").unwrap();
     }
     swarm::store::add_agent(&connection, &in_open, "ended", "coder").unwrap();
+
     swarm::store::set_state(
         &connection,
         &in_open,

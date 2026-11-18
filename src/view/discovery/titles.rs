@@ -60,6 +60,19 @@ fn codex_thread_name(path: &str) -> Option<String> {
         .next()
 }
 
+/// The content of a user record, which Claude writes as `user`, pi as a user `message`, and Codex
+/// as a user `response_item`; None for any other record.
+fn user_content(value: &Value) -> Option<&Value> {
+    if value["type"] == "user" || (value["type"] == "message" && value["message"]["role"] == "user")
+    {
+        Some(&value["message"]["content"])
+    } else if value["type"] == "response_item" && value["payload"]["role"] == "user" {
+        Some(&value["payload"]["content"])
+    } else {
+        None
+    }
+}
+
 fn first_message(path: &str) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let mut bytes = Vec::new();
@@ -68,12 +81,8 @@ fn first_message(path: &str) -> Option<String> {
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
         };
-        let text = if value["type"] == "user"
-            || (value["type"] == "message" && value["message"]["role"] == "user")
-        {
-            content_text(&value["message"]["content"])
-        } else if value["type"] == "response_item" && value["payload"]["role"] == "user" {
-            content_text(&value["payload"]["content"])
+        let text = if let Some(content) = user_content(&value) {
+            content_text(content)
         } else if value["type"] == "event_msg" && value["payload"]["type"] == "user_message" {
             value["payload"]["message"].as_str().map(str::to_owned)
         } else {
@@ -113,10 +122,7 @@ pub fn last_reply(path: &str) -> Option<String> {
 
         // A user record starts a new turn, so an older turn's reply is not this turn's. A Claude
         // tool result is a user record too, so a turn that ends on a tool has no reply.
-        let user = value["type"] == "user"
-            || value["message"]["role"] == "user"
-            || (value["type"] == "response_item" && value["payload"]["role"] == "user");
-        if user {
+        if user_content(&value).is_some() {
             last = None;
             continue;
         }
@@ -239,6 +245,7 @@ mod tests {
             ],
         );
         assert_eq!(last_reply(&codex).as_deref(), Some("Tests pass."));
+
         let silent = log(
             "codex-silent.jsonl",
             &[

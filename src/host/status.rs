@@ -120,8 +120,11 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
         None => None,
     };
 
-    let mut stopped_by_owner = false;
-    let (state, kind) = match *pairs.get("state")? {
+    // An `idle` after work is a turn that the owner stopped.
+    let reported = *pairs.get("state")?;
+    let stopped_by_owner = reported == "idle" && seen_work;
+
+    let (state, kind) = match reported {
         "working" => ("working", None),
         "blocked" => match pairs.get("kind").copied() {
             Some("permission") => ("blocked", Some("permission")),
@@ -132,10 +135,7 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
             _ => ("blocked", None),
         },
         "done" => ("done", None),
-        "idle" if seen_work => {
-            stopped_by_owner = true;
-            ("done", None)
-        }
+        "idle" if seen_work => ("done", None),
         "error" => ("error", None),
         _ => return None,
     };

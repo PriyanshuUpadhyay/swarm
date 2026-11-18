@@ -94,9 +94,9 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
             );
         }
         let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
-        let caller = identity().ok().filter(|(session, agent)| {
-            swarm::store::orchestrator_of(&connection, session).is_ok_and(|chair| chair == *agent)
-        });
+        let caller = identity()
+            .ok()
+            .filter(|(session, agent)| swarm::store::is_lead(&connection, session, agent));
         swarm::store::add_notice(
             &connection,
             caller.as_ref().map(|(session, _)| session.as_str()),

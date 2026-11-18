@@ -53,8 +53,7 @@ pub fn set_pane(
     if pane_id.trim().is_empty() {
         return Err(format!("swarm: adapter gave no pane for {agent_id}").into());
     }
-    let moves_orchestrator =
-        orchestrator_of(connection, session_id).is_ok_and(|orchestrator| orchestrator == agent_id);
+    let moves_orchestrator = is_lead(connection, session_id, agent_id);
     connection.execute(
         "UPDATE agent AS existing
          SET pane_id = CASE WHEN existing.session_id = ?2 AND existing.id = ?3 THEN ?1 ELSE NULL END
@@ -333,6 +332,11 @@ pub fn live_children(
     )?;
     let rows = statement.query_map((session_id, except), |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Whether `agent_id` is the session's orchestrator; a read error reads as no.
+pub fn is_lead(connection: &Connection, session_id: &str, agent_id: &str) -> bool {
+    orchestrator_of(connection, session_id).is_ok_and(|lead| lead == agent_id)
 }
 
 pub fn orchestrator_of(

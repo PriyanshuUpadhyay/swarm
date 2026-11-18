@@ -18,7 +18,7 @@ pub(crate) fn notice_chair_done(
     reply: Option<&str>,
     now: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !swarm::store::is_lead(connection, session, agent)? {
+    if !swarm::store::is_lead(connection, session, agent) {
         return Ok(());
     }
 
@@ -60,7 +60,7 @@ pub(crate) fn notice_failed(
     agent: &str,
     detail: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !swarm::store::is_lead(connection, session, agent)? {
+    if !swarm::store::is_lead(connection, session, agent) {
         return Ok(());
     }
     let body = detail
@@ -180,8 +180,10 @@ fn ends_with_question(reply: &str) -> bool {
 /// The most chars of a reply that a notice quotes.
 const NOTICE_BODY_CHARS: usize = 160;
 
-/// The first sentence of the first line with words, without bold, code, heading, quote, or list
-/// marks, at most `NOTICE_BODY_CHARS`. A single `*` or `_` stays. A dot after a short abbreviation ends no sentence.
+/// The first sentence of the first line with words, at most `NOTICE_BODY_CHARS`. It drops every
+/// `**` and backtick, a list number, and every `#`, `>`, `-`, `*`, or space at the line's start,
+/// also one with no space after it, so `-5 degrees` reads `5 degrees`. A dot after a short
+/// abbreviation ends no sentence.
 fn first_sentence(text: &str) -> Option<String> {
     let line = text
         .lines()
@@ -276,10 +278,12 @@ pub(crate) fn notices_due() -> Result<(), Box<dyn std::error::Error>> {
     let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
     // The login item in this HOME, so another home, such as a test's, keeps its banners. The HUD
     // reads the store in HOME, so a dev build's own store (ADR 0027) keeps its banners too.
-    let home = env::var("HOME").ok();
-    let hud_runs = home.is_some() && swarm::paths::home().ok() == home && {
-        let status = swarm::hud::status(std::path::Path::new(home.as_deref().unwrap_or_default()));
-        status.installed && status.running
+    let hud_runs = match env::var("HOME") {
+        Ok(home) if swarm::paths::home().ok().as_ref() == Some(&home) => {
+            let status = swarm::hud::status(std::path::Path::new(&home));
+            status.installed && status.running
+        }
+        _ => false,
     };
     print_json(&due_notices(&mut connection, &root, hud_runs)?)
 }

@@ -210,7 +210,7 @@ struct RunningLine: View {
                 .foregroundStyle(agent.blocked ? Palette.warn : Palette.primary)
                 .fixedSize()
             // "needs you" first, so a crowded chip cuts the model, not the call to act.
-            Text(((agent.blocked ? ["needs you"] : []) + [modelLabel(agent.model, provider: agent.provider)]
+            Text(((agent.blocked ? [InboxKind.waiting.word] : []) + [modelLabel(agent.model, provider: agent.provider)]
                   + [agent.account].compactMap { $0 }).joined(separator: " · "))
                 .lineLimit(1)
                 .foregroundStyle(agent.blocked ? Palette.warn : Palette.secondary)

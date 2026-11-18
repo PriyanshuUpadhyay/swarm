@@ -119,7 +119,7 @@ pub(super) fn claim_fence(
                 (project_id, work, CHECKER_ROLE),
                 |r| r.get(0),
             )?;
-            if !tested && role != CHECKER_ROLE && !is_lead(tx, session_id, author)? {
+            if !tested && role != CHECKER_ROLE && !is_lead(tx, session_id, author) {
                 return Err(format!(
                     "swarm: no checker test recorded for {work}; the checker posts a finding with --work {work} first"
                 )

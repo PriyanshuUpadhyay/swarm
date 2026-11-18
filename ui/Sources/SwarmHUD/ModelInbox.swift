@@ -7,6 +7,7 @@ extension UsageModel {
     /// key of the popup line that asked, which shows the error when the chat does not open.
     func openChat(session: String, agent: String?, line: String? = nil) {
         guard opening.insert(session).inserted else { return }
+        inboxChanging()
         let swarm = swarm
         Task {
             // `focus` takes the chair's pane when the agent's pane is gone. A chat that did not open
@@ -14,11 +15,13 @@ extension UsageModel {
             let focused = await offPool { run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5) }
             opening.remove(session)
             if case .failure(let error) = focused {
-                // The card's error line also says it aloud, so the popup line does not.
-                actionError = "Could not open: \(error.text)"
+                // Setting actionError says it aloud, so the popup line does not.
+                let message = "Could not open: \(error.text)"
+                actionError = message
                 if let line, popup?.items.contains(where: { $0.key == line }) == true {
-                    showPopupError(line, "Could not open: \(error.text)")
+                    showPopupError(line, message)
                 }
+                inboxChanged()
                 return
             }
 
@@ -26,7 +29,7 @@ extension UsageModel {
             if popup?.items.isEmpty == true { popup = nil }
             let seen = await offPool { run(swarm, ["notices", "seen", session], timeout: 3) }
             if case .failure(let error) = seen { actionError = "Could not mark it seen: \(error.text)" } else { actionError = nil }
-            readInbox()
+            inboxChanged()
         }
     }
 
@@ -47,6 +50,7 @@ extension UsageModel {
     func answer(_ need: NeedCard, choice: Int) {
         guard let prompt = need.prompt, answering.insert(need.key).inserted else { return }
         let environment = ["SWARM_SESSION_ID": need.session].merging(need.adapter.map { ["SWARM_ADAPTER": $0] } ?? [:]) { $1 }
+        inboxChanging()
         let swarm = swarm
         Task {
             let result = await offPool {
@@ -54,7 +58,7 @@ extension UsageModel {
             }
             if case .failure(let error) = result { actionError = "Could not answer: \(error.text)" } else { actionError = nil }
             answering.remove(need.key)
-            readInbox()
+            inboxChanged()
         }
     }
 
@@ -67,11 +71,12 @@ extension UsageModel {
         inbox.rows = []
         inbox.rowsTotal = 0
         popup = nil
+        inboxChanging()
         let swarm = swarm
         Task {
             let seen = await offPool { run(swarm, ["notices", "seen", "--through", String(through)] + sessions, timeout: 3) }
             if case .failure(let error) = seen { actionError = "Could not clear: \(error.text)" } else { actionError = nil }
-            readInbox()
+            inboxChanged()
         }
     }
 }

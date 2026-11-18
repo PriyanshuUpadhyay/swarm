@@ -106,15 +106,6 @@ pub fn body_path(project_id: &str, n: i64) -> String {
     format!("boards/{hex}/{n}.md")
 }
 
-/// Whether `agent_id` is the session's orchestrator; a read error reads as no.
-pub fn is_lead(
-    tx: &Connection,
-    session_id: &str,
-    agent_id: &str,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    Ok(orchestrator_of(tx, session_id).is_ok_and(|lead| lead == agent_id))
-}
-
 pub(super) fn kind_of(
     tx: &Connection,
     project_id: &str,
@@ -186,7 +177,7 @@ pub fn post(
         )
         .optional()?
         .ok_or_else(|| format!("swarm: {author} is not an agent of session {session_id}"))?;
-    let lead = is_lead(&tx, session_id, author)?;
+    let lead = is_lead(&tx, session_id, author);
 
     if matches!(new.kind, "finding" | "decision" | "answer") && new.sources.is_empty() {
         return Err("swarm: needs --source path@blob or URL".into());

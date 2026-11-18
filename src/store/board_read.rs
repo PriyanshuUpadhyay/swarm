@@ -19,7 +19,7 @@ pub fn posts_for(
     let Some((session, agent)) = reader else {
         return Ok(all);
     };
-    if is_checker(connection, session, agent)? || is_lead(connection, session, agent)? {
+    if is_checker(connection, session, agent)? || is_lead(connection, session, agent) {
         return Ok(all);
     }
     let mine = |p: &Post| p.session_id == session && p.author == agent;

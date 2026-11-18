@@ -23,7 +23,8 @@ pub fn home() -> Result<String, Box<dyn std::error::Error>> {
         Ok(explicit) if explicit.is_empty() => Err("SWARM_HOME is set but empty".into()),
         explicit => {
             let explicit = explicit?;
-            // With no home in the user database, HOME stands in, so the guard does not open.
+
+            // With no home in the user database, HOME stands in, so the guard still applies.
             if let Some(owner) = account_home().or_else(|| std::env::var("HOME").ok())
                 && let Some(refusal) =
                     refuse_owner_home(&explicit, &owner, env!("SWARM_BUILD_BRANCH"))
@@ -37,23 +38,12 @@ pub fn home() -> Result<String, Box<dyn std::error::Error>> {
 
 /// ADR 0148: the refusal when a dev build of `branch` gets an explicit `SWARM_HOME` that names the
 /// folder `owner`, else None. A release build (`branch` is `""`) takes any folder. Each path is
-/// compared after it resolves, or, when it does not, with its `.` and `..` parts folded by text.
+/// compared as `task::resolve` gives it, against the current folder, so a symlink, `..`, a
+/// relative path, or a trailing `/` does not get past the guard.
 fn refuse_owner_home(explicit: &str, owner: &str, branch: &str) -> Option<String> {
-    let resolve = |path: &str| {
-        std::fs::canonicalize(path).unwrap_or_else(|_| {
-            let mut folded = std::path::PathBuf::new();
-            for part in std::path::Path::new(path).components() {
-                match part {
-                    std::path::Component::CurDir => {}
-                    std::path::Component::ParentDir => {
-                        folded.pop();
-                    }
-                    other => folded.push(other),
-                }
-            }
-            folded
-        })
-    };
+    let cwd = std::env::current_dir().unwrap_or_else(|_| "/".into());
+    let resolve = |path: &str| crate::task::resolve(&cwd, std::path::Path::new(path));
+
     (!branch.is_empty() && resolve(explicit) == resolve(owner)).then(|| {
         format!(
             "this is a dev build of branch {branch}, so it does not open the owner's ~/.swarm \
@@ -278,8 +268,8 @@ pub fn on_path(name: &str) -> bool {
 mod tests {
     use super::{branch_folder, branch_home};
 
-    /// ADR 0148: a dev build refuses the owner's home, also written with `..` and a trailing `/`, and a
-    /// release build takes it.
+    /// ADR 0148: a dev build refuses the owner's home, also written with `..` and a trailing `/`
+    /// or through a symlink, and a release build takes it.
     #[test]
     fn a_dev_build_refuses_the_owners_home() {
         let refusal = super::refuse_owner_home("/owner/missing/../", "/owner", "feat").unwrap();
@@ -289,6 +279,15 @@ mod tests {
         );
         assert_eq!(super::refuse_owner_home("/owner", "/owner", ""), None);
         assert_eq!(super::refuse_owner_home("/scratch", "/owner", "feat"), None);
+
+        let root = std::env::temp_dir().join(format!("swarm-guard-{}", std::process::id()));
+        let owner = root.join("owner");
+        std::fs::create_dir_all(&owner).unwrap();
+        std::os::unix::fs::symlink(&owner, root.join("alias")).unwrap();
+        let through_link = format!("{}/alias/missing/..", root.display());
+        let refused = super::refuse_owner_home(&through_link, owner.to_str().unwrap(), "feat");
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(refused.is_some());
     }
 
     #[test]

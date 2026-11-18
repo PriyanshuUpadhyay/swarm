@@ -169,7 +169,7 @@ extension UsageModel {
     var openSize: CGSize {
         let table = ledger(accounts)
         var height = Layout.header(notch: notch) + Layout.belowStatus + Layout.bottom
-            + InboxLayout.height(inbox, error: (actionError ?? inboxError) != nil)
+            + InboxLayout.height(inbox, error: shownError != nil)
         if !agents.agents.isEmpty { height += Layout.running }
         if !table.rows.isEmpty {
             height += Layout.headings + CGFloat(table.rows.count) * Layout.row(dense: Layout.isDense(rows: table.rows.count))

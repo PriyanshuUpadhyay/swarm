@@ -123,6 +123,7 @@ struct InboxSection: View {
                         .frame(height: InboxLayout.needCard)
                 }
             }
+
             if !inbox.rows.isEmpty {
                 HStack {
                     header("Since you looked", more: inbox.rowsTotal - min(inbox.rows.count, InboxLayout.shownRows))
@@ -133,7 +134,8 @@ struct InboxSection: View {
                     rowView(row).frame(height: InboxLayout.row)
                 }
             }
-            if let error = model.actionError ?? model.inboxError {
+
+            if let error = model.shownError {
                 Text(error).font(.system(size: 11)).foregroundStyle(Palette.warn)
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity, minHeight: InboxLayout.row, alignment: .leading)

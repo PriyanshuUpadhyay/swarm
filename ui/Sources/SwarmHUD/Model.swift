@@ -28,8 +28,9 @@ final class UsageModel {
     /// The keys of the last inbox read; nil before the first, so a new HUD pops nothing old.
     @ObservationIgnored private var knownKeys: Set<String>?
     /// Why the last Open, answer, or Clear failed, such as "the question changed; read it again".
+    /// Each failure is said aloud, also one with the same text as the last.
     var actionError: String? {
-        didSet { if let actionError, actionError != oldValue { announce?(actionError) } }
+        didSet { if let actionError { announce?(actionError) } }
     }
     /// A popup Open that failed: its line's key and why, shown on that line for `Popup.peek`.
     var popupError: (key: String, text: String)?
@@ -82,9 +83,15 @@ final class UsageModel {
     private var readingWorking = false
     private var readingInbox = false
     /// Why the last inbox read failed; nil after a good one. The last good inbox stays.
-    var inboxError: String?
-    /// An action changed the store while a read ran, so that read is old: drop it and read again.
-    @ObservationIgnored private var readAgain = false
+    var inboxError: String? {
+        didSet { if let inboxError, inboxError != oldValue { announce?(inboxError) } }
+    }
+    /// The card's one error line: a failed action first, because the owner just did it.
+    var shownError: String? { actionError ?? inboxError }
+    /// Goes up when an Open, answer, or Clear starts and when it ends. A read that saw it change
+    /// may hold rows from before the action, so it is dropped and read again. The poll never
+    /// changes it, so a slow read still lands.
+    @ObservationIgnored private var inboxEpoch = 0
     private var refreshQueued: Set<String> = []
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment, historyURL: URL? = nil) {
@@ -166,18 +173,15 @@ final class UsageModel {
 
     /// The store and at most three screen reads; a failure keeps the last inbox on screen.
     func readInbox() {
-        guard !readingInbox else { readAgain = true; return }
+        guard !readingInbox else { return }
         readingInbox = true
-        let swarm = swarm
+        let swarm = swarm, epoch = inboxEpoch
         Task {
             let result = await offPool { run(swarm, ["notices", "--inbox", "--json"], timeout: 3) }
             readingInbox = false
-            if readAgain {
-                readAgain = false
-                readInbox()
-                return
-            }
-            // A failed read keeps the last inbox on screen, and the card says it is old.
+            guard epoch == inboxEpoch else { readInbox(); return }
+
+            // A failed read keeps the last inbox on screen, and the error line says it is old.
             switch result {
             case .success(let data):
                 if let inbox = InboxSnapshot.read(data) {
@@ -190,6 +194,15 @@ final class UsageModel {
                 inboxError = "Could not read the inbox: \(error.text)"
             }
         }
+    }
+
+    /// An Open, answer, or Clear starts to change the store.
+    func inboxChanging() { inboxEpoch += 1 }
+
+    /// The action is done, so the inbox is read again.
+    func inboxChanged() {
+        inboxEpoch += 1
+        readInbox()
     }
 
     func apply(inbox: InboxSnapshot, now: Date) {

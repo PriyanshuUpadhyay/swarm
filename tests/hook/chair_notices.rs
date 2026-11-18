@@ -109,7 +109,18 @@ fn a_chair_turn_end_names_the_chat_quotes_the_reply_and_stays_in_the_inbox_until
         "hook_event_name": "Stop",
         "last_assistant_message": "1. **Added chat titles to notices (e.g. HUD rows).** 212 tests pass.\n\nNot landed yet.",
     }));
-    let rows = inbox()["rows"].clone();
+    // The HUD needs the schema and both totals, or it reads none of the inbox.
+    let first = inbox();
+    assert_eq!(
+        (
+            &first["schema"],
+            &first["needs_total"],
+            &first["rows_total"]
+        ),
+        (&"swarm.inbox.v1".into(), &0.into(), &1.into()),
+        "{first}"
+    );
+    let rows = first["rows"].clone();
     assert_eq!(rows.as_array().unwrap().len(), 1, "{rows}");
     assert_eq!(rows[0]["session_id"], session.as_str());
     assert_eq!(rows[0]["title"], "Notice redesign");
