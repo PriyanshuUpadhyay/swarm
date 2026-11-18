@@ -127,13 +127,7 @@ esac
     // ADR 0147: a first prompt names the new worktree when it is made, and goes to the chair.
     let id = uuid::Uuid::new_v4().to_string();
     let named = hub.join("wt/fix-flaky-smoke-test").to_string_lossy().into_owned();
-    connection
-        .execute(
-            "INSERT INTO session (id, talk_mode, cwd, adapter) VALUES (?1, 'lane', ?2, 'tmux-swarm')",
-            (&id, &named),
-        )
-        .unwrap();
-    swarm::store::add_agent(connection, &id, "orchestrator", "chat").unwrap();
+    chat_session(&json!({"session": id}), &named);
 
     let cli = format!(
         r#"#!/bin/sh

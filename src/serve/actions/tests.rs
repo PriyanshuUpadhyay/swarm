@@ -191,22 +191,16 @@ async fn a_session_send_finishes_while_another_session_action_is_running() {
     .unwrap();
     swarm::store::add_agent(&connection, &other, "worker", "chat").unwrap();
 
-    let new_id = uuid::Uuid::now_v7();
     std::fs::write(
         &fixture.app.cli,
-        format!(
-            r#"#!/bin/sh
-case "$1 $2" in
-  'session new') printf '%s\n' '{new_id}'; exit 0 ;;
-esac
+        r#"#!/bin/sh
 if [ "$1" = interrupt ]; then
   printf 'running\n' > "$SWARM_HOME/slow-start"
   while [ ! -f "$SWARM_HOME/release" ]; do sleep 0.01; done
   printf 'fixture-pane\n'
 fi
 if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
-"#
-        ),
+"#,
     )
     .unwrap();
 
