@@ -119,7 +119,7 @@ async fn handoff_successful_handoff() {
         [
             "preparing",
             "starting",
-            "blocked",
+            "waiting",
             "delivering",
             "completed"
         ]
@@ -185,7 +185,7 @@ async fn handoff_live_summary() {
             "preparing",
             "summarizing",
             "starting",
-            "blocked",
+            "waiting",
             "delivering",
             "completed"
         ]
