@@ -175,6 +175,7 @@ pub fn notice_inbox(
                       GROUP BY session_id)
          ORDER BY id DESC LIMIT ?1"
     ))?;
+
     let mut total = 0;
     let rows = query
         .query_map(rusqlite::params![limit as i64, DONE, ASKS, FAILED], |row| {

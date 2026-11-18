@@ -109,6 +109,7 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
             pairs.insert(key, value);
         }
     }
+
     if pairs.get("id").is_some_and(|id| !id.is_empty()) {
         return None;
     }
@@ -138,6 +139,7 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
         "error" => ("error", None),
         _ => return None,
     };
+
     Some(HookState {
         state,
         detail: if state == "error" { message } else { None },

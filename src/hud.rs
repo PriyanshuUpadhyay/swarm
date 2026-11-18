@@ -160,8 +160,9 @@ fn stop(pids: &[u32]) {
 }
 
 /// `swarm notices --due`, which the notice helper runs, reads `status` before each banner, so a
-/// hung launchctl or pgrep must not hold the banners. Each of the two commands gets this long; past
-/// it the HUD reads as not running, and the banner posts.
+/// hung launchctl or pgrep must not hold the banners. Each of the two commands gets this long. A
+/// launchctl print past it reads as not running, so the banner posts; a pgrep past it finds no
+/// strays.
 const STATUS_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// The step of each wait on launchctl below.
@@ -192,6 +193,7 @@ pub fn kickstart() -> std::io::Result<std::process::Output> {
 pub fn status(home: &Path) -> Status {
     let mut command = std::process::Command::new("/bin/launchctl");
     command.args(["print", &service_target()]);
+
     // A print that timed out says nothing of the job, so no HUD reads as a stray, and `setup hud`
     // plans no stop for the live one. A print that fails means no job is loaded.
     let print = crate::process::bounded_run(command, STATUS_WITHIN);
@@ -200,6 +202,7 @@ pub fn status(home: &Path) -> Status {
         _ => "",
     };
     let running = running(text);
+
     Status {
         installed: plist_path(home).exists(),
         running,

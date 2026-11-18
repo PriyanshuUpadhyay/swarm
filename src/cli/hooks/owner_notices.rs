@@ -187,8 +187,8 @@ fn ends_with_question(reply: &str) -> bool {
 /// The most chars of a reply that a notice quotes.
 const NOTICE_BODY_CHARS: usize = 160;
 
-/// The first sentence of the first line with words, without Markdown marks or a list number, at
-/// most `NOTICE_BODY_CHARS`. A dot after a short abbreviation ends no sentence.
+/// The first sentence of the first line with words, without bold, code, heading, quote, or list
+/// marks, at most `NOTICE_BODY_CHARS`. A single `*` or `_` stays. A dot after a short abbreviation ends no sentence.
 fn first_sentence(text: &str) -> Option<String> {
     let line = text
         .lines()
@@ -281,11 +281,13 @@ pub(crate) fn notify_helper() -> Option<std::path::PathBuf> {
 pub(crate) fn notices_due() -> Result<(), Box<dyn std::error::Error>> {
     let root = swarm::paths::root_dir()?;
     let mut connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
-    // The login item in this HOME, so another home, such as a test's, keeps its banners.
-    let hud_runs = env::var_os("HOME").is_some_and(|home| {
-        let status = swarm::hud::status(std::path::Path::new(&home));
+    // The login item in this HOME, so another home, such as a test's, keeps its banners. The HUD
+    // reads the store in HOME, so a dev build's own store (ADR 0027) keeps its banners too.
+    let home = env::var("HOME").ok();
+    let hud_runs = home.is_some() && swarm::paths::home().ok() == home && {
+        let status = swarm::hud::status(std::path::Path::new(home.as_deref().unwrap_or_default()));
         status.installed && status.running
-    });
+    };
     print_json(&due_notices(&mut connection, &root, hud_runs)?)
 }
 
@@ -341,6 +343,7 @@ pub(crate) fn due_notices(
             row.kind.as_deref(),
             Some(notice_kind::ASKS | notice_kind::FAILED | notice_kind::TEST)
         );
+
         if waiting || must_post || on("done") {
             due.push(serde_json::json!({
                 "session_id": row.session_id,
@@ -351,5 +354,6 @@ pub(crate) fn due_notices(
             }));
         }
     }
+
     Ok(due)
 }

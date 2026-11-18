@@ -169,12 +169,12 @@ public func inboxKeys(_ inbox: InboxSnapshot) -> Set<String> {
     Set(inbox.needs.map { PopupItem(need: $0).key } + inbox.rows.map { PopupItem(row: $0).key })
 }
 
-/// `new` joins `popup` inside its merge window, else starts a new one. A chat keeps one line: its
-/// newer item takes the place of the older.
+/// `new` joins `popup` inside its merge window, else starts a new one, which keeps the old lines that
+/// stay, such as a question. A chat keeps one line: its newer item takes the place of the older.
 public func mergePopup(_ popup: Popup?, new: [PopupItem], now: Date) -> Popup? {
     guard !new.isEmpty else { return popup }
     var result = popup.flatMap { now.timeIntervalSince($0.startedAt) < Popup.merge ? $0 : nil }
-        ?? Popup(items: [], startedAt: now)
+        ?? Popup(items: popup?.items.filter(\.stays) ?? [], startedAt: now)
     // `new` is newest first, as the inbox lists it, so the newest ends on top.
     for item in new.reversed() {
         result.items.removeAll { $0.session == item.session }

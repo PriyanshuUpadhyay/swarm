@@ -89,6 +89,7 @@ fn a_chair_turn_end_names_the_chat_quotes_the_reply_and_stays_in_the_inbox_until
         let out = swarm(&home, &env, &["hook", "claude"], &payload.to_string());
         assert!(out.status.success(), "{out:?}");
     };
+
     let long_turn = |end: serde_json::Value| {
         hook(serde_json::json!({"hook_event_name": "UserPromptSubmit"}));
         connection
@@ -96,6 +97,7 @@ fn a_chair_turn_end_names_the_chat_quotes_the_reply_and_stays_in_the_inbox_until
             .unwrap();
         hook(end);
     };
+
     let inbox = || -> serde_json::Value {
         let out = swarm(&home, &[], &["notices", "--inbox", "--json"], "");
         assert!(out.status.success(), "{out:?}");

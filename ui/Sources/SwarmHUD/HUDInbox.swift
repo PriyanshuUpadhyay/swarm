@@ -148,7 +148,7 @@ struct InboxSection: View {
     private func header(_ title: String, more: Int) -> some View {
         HStack(spacing: 6) {
             Text(title).foregroundStyle(Palette.tertiary)
-            if more > 0 { Text("+\(more) more").foregroundStyle(Palette.tertiary.opacity(0.8)) }
+            if more > 0 { Text("+\(more) more").foregroundStyle(Palette.tertiary) }
             Spacer(minLength: 0)
         }
         .font(.system(size: 11, weight: .medium))

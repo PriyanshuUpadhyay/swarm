@@ -208,6 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let inside = hoverRectInScreen().contains(NSEvent.mouseLocation)
         setClickThrough(!inside)
         if keyOpen { return }
+
         // The popup's lines take clicks, so hovering them never opens the card over their buttons.
         // The notch row above them opens the card as usual; the card lists the same items, so it
         // takes the popup's place.
@@ -221,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if onNotch && !hoverHeld { scheduleOpen() } else { pendingOpen?.cancel(); pendingOpen = nil }
             return
         }
+
         if hoverHeld {
             if inside { return }
             hoverHeld = false

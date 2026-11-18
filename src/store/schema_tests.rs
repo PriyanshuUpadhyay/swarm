@@ -24,6 +24,7 @@ mod tests {
             "body",
         )
         .unwrap();
+
         let notices = take_notices(&mut connection).unwrap();
         assert_eq!(notices.len(), 1);
         assert_eq!(notices[0].session_id.as_deref(), Some("session"));

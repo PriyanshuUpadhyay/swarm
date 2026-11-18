@@ -100,6 +100,7 @@ fn first_message(path: &str) -> Option<String> {
     }
     None
 }
+
 /// ADR 0147: the agent's last reply with words in its log's tail, for the done
 /// notice of a CLI whose turn end does not give it. It reads Claude, pi, and Codex logs.
 pub fn last_reply(path: &str) -> Option<String> {
@@ -151,7 +152,7 @@ fn content_text(content: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::read_title;
+    use super::{last_reply, read_title};
 
     fn log(name: &str, lines: &[&str]) -> String {
         let dir = std::env::temp_dir().join(format!("swarm-title-{}-{name}", std::process::id()));
@@ -213,6 +214,21 @@ mod tests {
             &[r#"{"type":"custom-title","customTitle":"Build\u2028the\n  app"}"#],
         );
         assert_eq!(read_title(&broken).as_deref(), Some("Build the app"));
+    }
+
+    /// ADR 0147: a done notice of a CLI whose turn end gives no reply quotes the last reply in
+    /// its log, so a newer owner message does not count.
+    #[test]
+    fn the_last_reply_is_the_newest_assistant_text_of_the_log() {
+        let codex = log(
+            "codex-reply.jsonl",
+            &[
+                r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Old reply."}]}}"#,
+                r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Tests pass."}]}}"#,
+                r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"thanks"}]}}"#,
+            ],
+        );
+        assert_eq!(last_reply(&codex).as_deref(), Some("Tests pass."));
     }
 
     #[test]

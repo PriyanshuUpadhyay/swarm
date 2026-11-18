@@ -41,9 +41,11 @@ pub fn bounded_run(
                     String::from_utf8_lossy(&bytes).into_owned(),
                 ));
             }
+
             Ok(None) if std::time::Instant::now() < deadline => {
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
+
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();

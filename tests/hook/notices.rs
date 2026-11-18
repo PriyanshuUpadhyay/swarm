@@ -304,6 +304,7 @@ fn notices_due_applies_the_notice_preferences() {
     for session in [&in_muted, &in_open] {
         swarm::store::add_agent(&connection, session, "coder", "coder").unwrap();
     }
+    swarm::store::add_agent(&connection, &in_open, "ended", "coder").unwrap();
     swarm::store::set_state(
         &connection,
         &in_open,
@@ -346,7 +347,11 @@ fn notices_due_applies_the_notice_preferences() {
     add(Some(&in_open), Some("coder"), "waiting");
     use swarm::store::notice_kind::{ASKS, DONE, FAILED, TEST};
     add_kind(None, None, Some(DONE), "done");
-    // The done switch mutes only plain results: a question or a failure needs the owner, and a
+    // A shell `swarm notify` and a wait whose agent no longer waits are muted too.
+    add(None, None, "notify");
+    add(Some(&in_open), Some("ended"), "ended");
+
+    // The done switch mutes every other row: a question or a failure needs the owner, and a
     // test notice from Settings checks delivery.
     for kind in [ASKS, FAILED, TEST] {
         add_kind(None, None, Some(kind), kind);

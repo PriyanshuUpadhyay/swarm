@@ -23,6 +23,7 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
             _ => Err(USAGE.into()),
         }
     };
+
     match args {
         [flag, rest @ ..] if flag == "--inbox" => {
             json(rest)?;
@@ -30,6 +31,7 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
             let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
             print_json(&inbox(&root, &connection)?)
         }
+
         [verb, rest @ ..] if verb == "seen" => {
             let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
             // Clear names the chats it shows and its newest row, so a row that came after the HUD
@@ -38,6 +40,7 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
                 [flag, id, rest @ ..] if flag == "--through" => (Some(id.parse::<i64>()?), rest),
                 _ => (None, rest),
             };
+
             let sessions: Vec<&str> = rest.iter().map(String::as_str).collect();
             if sessions.is_empty() || sessions.iter().any(|session| session.starts_with('-')) {
                 return Err(USAGE.into());
@@ -45,10 +48,12 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
             swarm::store::mark_notices_seen(&connection, &sessions, through)?;
             Ok(())
         }
+
         [verb, rest @ ..] if verb == "health" => {
             json(rest)?;
             print_json(&health())
         }
+
         [verb, rest @ ..] if verb == "allow" => {
             json(rest)?;
             // The macOS prompt waits for the owner, so this gives them two minutes.
@@ -68,10 +73,12 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
             }
             print_json(&health())
         }
+
         [verb, rest @ ..] if verb == "test" => {
             json(rest)?;
             print_json(&send_test()?)
         }
+
         [verb, pane] if verb == "settings" => {
             let url = match pane.as_str() {
                 "notifications" => NOTIFICATIONS_URL,
@@ -84,6 +91,7 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
             }
             Ok(())
         }
+
         _ => Err(USAGE.into()),
     }
 }

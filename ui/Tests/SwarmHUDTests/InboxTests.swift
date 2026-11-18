@@ -45,6 +45,10 @@ import Testing
     popup = mergePopup(popup, new: newPopupItems(second, known: inboxKeys(first)), now: at.addingTimeInterval(5))
     #expect(popup?.items.map(\.title) == ["Chat B", "Chat A"])
     #expect(popup?.expired(now: at.addingTimeInterval(60), hovered: false) == false)
+    // A done chat 30 s later starts a new popup, and the question stays in it.
+    let third = InboxRow(id: 3, session: "c", kind: .done, title: "Chat C", body: "Done.")
+    let later = mergePopup(popup, new: [PopupItem(row: third)], now: at.addingTimeInterval(30))
+    #expect(later?.items.map(\.title) == ["Chat C", "Chat B"])
 
     // The owner saw chat B in the app, so its line leaves.
     #expect(prunePopup(popup, inbox: first)?.items.map(\.title) == ["Chat A"])

@@ -34,11 +34,22 @@ pub fn home() -> Result<String, Box<dyn std::error::Error>> {
 
 /// ADR 0148: the refusal when a dev build of `branch` gets an explicit `SWARM_HOME` that names the
 /// folder `owner`, else None. A release build (`branch` is `""`) takes any folder. Each path is
-/// compared after it resolves, or as text without a trailing `/` when it does not.
+/// compared after it resolves, or, when it does not, with its `.` and `..` parts folded by text.
 fn refuse_owner_home(explicit: &str, owner: &str, branch: &str) -> Option<String> {
     let resolve = |path: &str| {
-        std::fs::canonicalize(path)
-            .unwrap_or_else(|_| std::path::PathBuf::from(path.trim_end_matches('/')))
+        std::fs::canonicalize(path).unwrap_or_else(|_| {
+            let mut folded = std::path::PathBuf::new();
+            for part in std::path::Path::new(path).components() {
+                match part {
+                    std::path::Component::CurDir => {}
+                    std::path::Component::ParentDir => {
+                        folded.pop();
+                    }
+                    other => folded.push(other),
+                }
+            }
+            folded
+        })
     };
     (!branch.is_empty() && resolve(explicit) == resolve(owner)).then(|| {
         format!(
@@ -56,6 +67,7 @@ fn account_home() -> Option<String> {
     let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
     let mut found: *mut libc::passwd = std::ptr::null_mut();
     let mut buffer = vec![0 as libc::c_char; 16 * 1024];
+
     // SAFETY: every pointer is valid for the call, and `buffer` outlives the read of `pw_dir`.
     let code = unsafe {
         libc::getpwuid_r(
@@ -69,6 +81,7 @@ fn account_home() -> Option<String> {
     if code != 0 || found.is_null() || entry.pw_dir.is_null() {
         return None;
     }
+
     let dir = unsafe { std::ffi::CStr::from_ptr(entry.pw_dir) };
     dir.to_str().ok().map(String::from)
 }
@@ -262,11 +275,11 @@ pub fn on_path(name: &str) -> bool {
 mod tests {
     use super::{branch_folder, branch_home};
 
-    /// ADR 0148: a dev build refuses the owner's home, also written with a trailing `/`, and a
+    /// ADR 0148: a dev build refuses the owner's home, also written with `..` and a trailing `/`, and a
     /// release build takes it.
     #[test]
     fn a_dev_build_refuses_the_owners_home() {
-        let refusal = super::refuse_owner_home("/owner/", "/owner", "feat").unwrap();
+        let refusal = super::refuse_owner_home("/owner/missing/../", "/owner", "feat").unwrap();
         assert!(
             refusal.contains("unset SWARM_HOME to use /owner/.swarm-feat"),
             "{refusal}"

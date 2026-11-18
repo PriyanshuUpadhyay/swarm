@@ -28,7 +28,9 @@ final class UsageModel {
     /// The keys of the last inbox read; nil before the first, so a new HUD pops nothing old.
     @ObservationIgnored private var knownKeys: Set<String>?
     /// Why the last Open, answer, or Clear failed, such as "the question changed; read it again".
-    var actionError: String?
+    var actionError: String? {
+        didSet { if let actionError, actionError != oldValue { announce?(actionError) } }
+    }
     /// A popup Open that failed: its line's key and why, shown on that line for `Popup.peek`.
     var popupError: (key: String, text: String)?
     @ObservationIgnored private var popupErrorTimer: Task<Void, Never>?
@@ -79,6 +81,8 @@ final class UsageModel {
     private var readQueued = false
     private var readingWorking = false
     private var readingInbox = false
+    /// An action changed the store while a read ran, so that read is old: drop it and read again.
+    @ObservationIgnored private var readAgain = false
     private var refreshQueued: Set<String> = []
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment, historyURL: URL? = nil) {
@@ -160,13 +164,18 @@ final class UsageModel {
 
     /// The store and at most three screen reads; a failure keeps the last inbox on screen.
     func readInbox() {
-        guard !readingInbox else { return }
+        guard !readingInbox else { readAgain = true; return }
         readingInbox = true
         let swarm = swarm
         Task {
             let result = await offPool { run(swarm, ["notices", "--inbox", "--json"], timeout: 3) }
-            if case .success(let data) = result, let inbox = InboxSnapshot.read(data) { apply(inbox: inbox, now: Date()) }
             readingInbox = false
+            if readAgain {
+                readAgain = false
+                readInbox()
+                return
+            }
+            if case .success(let data) = result, let inbox = InboxSnapshot.read(data) { apply(inbox: inbox, now: Date()) }
         }
     }
 
@@ -207,16 +216,18 @@ final class UsageModel {
             let focused = await offPool { run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5) }
             opening.remove(session)
             if case .failure(let error) = focused {
-                actionError = error.text
+                // The card's error line also says it aloud, so the popup line does not.
+                actionError = "Could not open: \(error.text)"
                 if let line, popup?.items.contains(where: { $0.key == line }) == true {
                     showPopupError(line, "Could not open: \(error.text)")
                 }
                 return
             }
+
             popup?.items.removeAll { $0.session == session }
             if popup?.items.isEmpty == true { popup = nil }
             let seen = await offPool { run(swarm, ["notices", "seen", session], timeout: 3) }
-            if case .failure(let error) = seen { actionError = error.text } else { actionError = nil }
+            if case .failure(let error) = seen { actionError = "Could not mark it seen: \(error.text)" } else { actionError = nil }
             readInbox()
         }
     }
@@ -225,7 +236,6 @@ final class UsageModel {
     private func showPopupError(_ line: String, _ text: String) {
         popupError = (line, text)
         popup?.lastAt = Date()
-        announce?(text)
         popupErrorTimer?.cancel()
         popupErrorTimer = Task {
             try? await Task.sleep(for: .seconds(Popup.peek))
@@ -244,7 +254,7 @@ final class UsageModel {
             let result = await offPool {
                 run(swarm, ["answer", need.agent, prompt.id, String(choice)], timeout: 10, environment: environment)
             }
-            if case .failure(let error) = result { actionError = error.text } else { actionError = nil }
+            if case .failure(let error) = result { actionError = "Could not answer: \(error.text)" } else { actionError = nil }
             answering.remove(need.key)
             readInbox()
         }
@@ -261,9 +271,8 @@ final class UsageModel {
         popup = nil
         let swarm = swarm
         Task {
-            if case .failure(let error) = await offPool({ run(swarm, ["notices", "seen", "--through", String(through)] + sessions, timeout: 3) }) {
-                actionError = error.text
-            }
+            let seen = await offPool { run(swarm, ["notices", "seen", "--through", String(through)] + sessions, timeout: 3) }
+            if case .failure(let error) = seen { actionError = "Could not clear: \(error.text)" } else { actionError = nil }
             readInbox()
         }
     }
