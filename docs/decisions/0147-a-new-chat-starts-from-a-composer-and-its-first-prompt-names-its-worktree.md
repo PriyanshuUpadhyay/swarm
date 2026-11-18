@@ -47,7 +47,7 @@ app shows a starting tab with these steps at once, and opens the chat when `done
 server keeps the last 64 `done` frames, and `GET /api/chat/start?id=` returns `{done}`, or
 `{running: true}` while the start runs, or `{}` for an id it does not know, so a page whose
 stream reconnected reads a `done` it missed and stops waiting on a start the server lost. Text typed in that tab goes after the
-first prompt; a send that fails shows that text in a notice. The app waits 10 s for the start id; then it
+first prompt; text whose send fails, the first prompt too, goes in the chat's text box with a notice. The app waits 10 s for the start id; then it
 shows a notice and keeps the composer, because the server may have started the chat. A failed
 start offers Edit and retry, which opens the composer again with its prompt, folder and place. A model switch waits for its chat as before.
 

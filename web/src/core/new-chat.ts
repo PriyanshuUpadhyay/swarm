@@ -322,7 +322,7 @@ export class NewChat {
   }
 
   /** The chat runs: open it where the owner still looks at its start, then send the queued text
-   *  and the box's draft. A failed send keeps the rest in a notice, so no text goes unseen. */
+   *  and the box's draft. Text that did not send goes in the chat's text box, so none is lost. */
   private async opened(start: Starting, session: string) {
     const shown = this.shown()?.id === start.id;
     const texts = [...start.queued, start.draft.trim()].filter(Boolean);
@@ -332,15 +332,16 @@ export class NewChat {
     await this.app.actions.openNew(session, shown).catch((err) => this.app.notice(message(err), true));
 
     if (failed) {
-      const all = [start.prompt, ...texts].join("\n\n");
-      return this.app.notice(`Your first prompt did not send: ${failed.error ?? "the send failed"}. Its text: ${all}`, true);
+      this.app.composing.setDraft(session, [start.prompt, ...texts].join("\n\n"));
+      return this.app.notice(`Your first prompt did not send: ${failed.error ?? "the send failed"}. It is in the chat's text box.`, true);
     }
 
     for (const [i, text] of texts.entries()) {
       try {
         await this.app.api.action("/api/chat/send", { session, agent: "chair", text });
       } catch (err) {
-        this.app.notice(`Your next message did not send: ${message(err)}. Its text: ${texts.slice(i).join("\n\n")}`, true);
+        this.app.composing.setDraft(session, texts.slice(i).join("\n\n"));
+        this.app.notice(`Your next message did not send: ${message(err)}. It is in the chat's text box.`, true);
         return;
       }
     }

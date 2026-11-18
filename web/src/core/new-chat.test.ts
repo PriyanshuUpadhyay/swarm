@@ -35,6 +35,7 @@ describe("new chat composer", () => {
         },
       },
       actions: { openNew: async (session: string, open: boolean) => void calls.push(`open ${session} ${open}`) },
+      composing: { setDraft: (session: string, text: string) => void calls.push(`draft ${session} ${text}`) },
     };
     const chats = new NewChat(app as unknown as App);
 
@@ -63,7 +64,8 @@ describe("new chat composer", () => {
     expect(calls.slice(1)).toEqual([
       "open chat-9 true",
       '/api/chat/send {"session":"chat-9","agent":"chair","text":"Also run the e2e suite"}',
-      "notice Your next message did not send: chair is gone. Its text: Then the docs",
+      "draft chat-9 Then the docs",
+      "notice Your next message did not send: chair is gone. It is in the chat's text box.",
     ]);
   });
 
@@ -90,7 +92,7 @@ describe("new chat composer", () => {
     expect(chats.state.composer).not.toBeNull();
   });
 
-  it("keeps a first prompt whose send failed in a notice, and sends nothing after it", async () => {
+  it("puts a first prompt whose send failed in the chat's text box, and sends nothing after it", async () => {
     const calls: string[] = [];
     const app = {
       navSeq: 1,
@@ -98,6 +100,7 @@ describe("new chat composer", () => {
       notice: (text: string) => calls.push(`notice ${text}`),
       api: { post: async () => ({ start: "s1" }), action: async (path: string) => void calls.push(path) },
       actions: { openNew: async (session: string) => void calls.push(`open ${session}`) },
+      composing: { setDraft: (session: string, text: string) => void calls.push(`draft ${session} ${text}`) },
     };
     const chats = new NewChat(app as unknown as App);
     await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { role: "chat", run: null });
@@ -105,6 +108,6 @@ describe("new chat composer", () => {
 
     chats.onFrame("chat-start", { start: "s1", step: "send", state: "failed", error: "chair is gone" });
     await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
-    expect(calls).toEqual(["open chat-9", "notice Your first prompt did not send: chair is gone. Its text: Fix it\n\nThen the docs"]);
+    expect(calls).toEqual(["open chat-9", "draft chat-9 Fix it\n\nThen the docs", "notice Your first prompt did not send: chair is gone. It is in the chat's text box."]);
   });
 });

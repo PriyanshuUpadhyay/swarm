@@ -125,6 +125,8 @@ function BranchPicker({ label, testid, branches, open, value, onChange }: { labe
     else if (e.key === "Enter" && shown.length) onChange(at >= 0 ? value : shown[0]);
     else return;
     e.preventDefault();
+    // ⌘Enter here only picks: the send would still carry the place from before the pick.
+    e.stopPropagation();
   };
   return (
     <div className="grid gap-1">
