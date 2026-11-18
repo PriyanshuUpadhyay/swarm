@@ -9,9 +9,8 @@ import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 
 export function StartingView({ app, start }: { app: App; start: Starting }) {
-  const steps = Object.keys(STEP_WORDS)
-    .map((step) => start.steps.find((s) => s.step === step))
-    .filter((s) => s !== undefined);
+  // The steps in the order the server sent them; a step with no words here shows its name.
+  const steps = start.steps;
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto p-6" data-testid="starting-chat" data-state={start.error ? "failed" : "starting"}>
@@ -21,7 +20,7 @@ export function StartingView({ app, start }: { app: App; start: Starting }) {
         <ol className="grid gap-1.5" aria-label="Start steps" aria-live="polite" data-testid="start-steps">
           {steps.length === 0 && !start.error && <Step state="running" text="Getting ready" />}
           {steps.map((s) => (
-            <Step key={s.step} state={s.state} text={`${STEP_WORDS[s.step]}${s.step === "worktree" && start.branch ? `: ${start.branch}` : ""}`} error={s.error} />
+            <Step key={s.step} state={s.state} text={`${STEP_WORDS[s.step] ?? s.step}${s.step === "worktree" && start.branch ? `: ${start.branch}` : ""}`} error={s.error} />
           ))}
         </ol>
         {start.setup && (
@@ -74,7 +73,7 @@ function NextMessage({ app, start }: { app: App; start: Starting }) {
           }
         }}
       />
-      <p className="text-xs text-muted-foreground" data-testid="start-queued">
+      <p className="text-xs text-muted-foreground" role="status" data-testid="start-queued">
         <Kbd>⌘↵</Kbd> queues it; the box's text also goes when the chat opens.
         {waiting > 0 && <> {waiting === 1 ? "1 message waits." : `${waiting} messages wait.`}</>}
       </p>

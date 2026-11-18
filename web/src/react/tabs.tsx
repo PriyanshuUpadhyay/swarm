@@ -36,12 +36,16 @@ export function TabStrip({ app }: { app: App }) {
   const starts = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.state.starts);
   // What the main view shows: a move to another chat bumps navSeq, so the start is no longer shown.
   const viewing = useSyncExternalStore(app.newChat.subscribe, () => app.newChat.shown()?.id ?? null);
+  // shown() reads navSeq, which the app's store owns; a move away must render the strip again.
+  useSyncExternalStore(app.subscribe, () => app.navSeq);
   const ws = workspaceRow(tree, workspace);
   // A starting chat is a tab of the workspace it started from until it opens (ADR 0147).
   const startTabs = useMemo(() => Object.values(starts).filter((s) => s.from === workspace).map(startTab), [starts, workspace]);
   const list = useMemo(() => [...(tabs?.tabs ?? []), ...startTabs], [tabs, startTabs]);
   const selected = viewing ? list.find((t) => t.id === START + viewing) : list.find((t) => t.session === openId);
-  const focusable = selected?.pending === null ? selected : list.find((tab) => tab.pending === null);
+  // The keys reach open chats and starting chats; a server tab that starts or closes waits.
+  const keyed = list.filter((tab) => tab.pending === null || startOf(tab));
+  const focusable = selected && keyed.includes(selected) ? selected : keyed[0];
 
   useEffect(() => {
     const el = scroller.current;
@@ -93,11 +97,11 @@ export function TabStrip({ app }: { app: App }) {
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if ((e.target as Element).closest("button") || e.metaKey || e.ctrlKey || e.altKey) return;
     const tab = tabOf(e);
-    const choices = list.filter((item) => item.pending === null);
-    if (!tab || tab.pending !== null) return;
+    const choices = keyed;
+    if (!tab || !choices.includes(tab)) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      app.openChat(tab.session);
+      show(tab);
       return;
     }
     const index = choices.indexOf(tab);

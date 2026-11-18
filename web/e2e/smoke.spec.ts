@@ -218,9 +218,13 @@ test("the tab strip's + opens the composer over the chat, and Esc closes it with
   await tab.keyboard.press("Escape");
   await expect(overlay).toBeHidden();
 
-  // ⌘N opens it again from the chat.
+  // ⌘N opens it again from the chat, and a prompt that Escape closed comes back.
   await tab.keyboard.press("Meta+n");
   await expect(overlay).toBeVisible();
+  await overlay.getByTestId("new-chat-prompt").fill("Keep this text");
+  await tab.keyboard.press("Escape");
+  await tab.keyboard.press("Meta+n");
+  await expect(overlay.getByTestId("new-chat-prompt")).toHaveValue("Keep this text");
   await tab.keyboard.press("Escape");
   expect(started).toEqual([]);
 });

@@ -91,6 +91,8 @@ struct Hub {
     row_cache: VecDeque<(String, LiveRows)>,
     /// The `done` frames of the last chat starts, for a page whose stream was down (ADR 0147).
     starts_done: VecDeque<(String, Value)>,
+    /// The ids of chat starts that have not sent their `done` frame yet.
+    starts_running: HashSet<String>,
 }
 
 struct Client {

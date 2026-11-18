@@ -240,13 +240,7 @@ pub(super) async fn apply_lifecycle_action(
         }
     }
     let setup = if let LifecycleAction::New(request) = &action {
-        saved
-            .owner
-            .project_defaults
-            .get(&request.project)
-            .and_then(|s| s["setup_script"].as_str())
-            .filter(|s| !s.trim().is_empty())
-            .map(String::from)
+        lifecycle::setup_script(&saved.owner, &request.project).map(String::from)
     } else {
         None
     };

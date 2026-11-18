@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
 import { StatusGlyph } from "./status";
 import { NoticesCard } from "./notices";
 import { ComposerPage } from "./composer-new";
+import { composerInPage } from "../core/new-chat";
 
 export function Home({ app }: { app: App }) {
   const view = useSyncExternalStore(app.subscribe, () => app.view);
@@ -133,9 +134,9 @@ export function WorkspaceLanding({ app }: { app: App }) {
   const row = workspaceRow(view.tree, view.workspace);
   const chats = recentWork(view.tree, app.snapshot, Infinity).filter((chat) => chat.workspacePath === view.workspace);
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 overflow-y-auto py-6" data-testid="workspace-landing">
+    <div className="flex flex-1 flex-col items-center justify-center-safe gap-4 overflow-y-auto py-6" data-testid="workspace-landing">
       <h2 className="text-lg font-semibold">{row?.title ?? view.workspace?.split("/").pop()}</h2>
-      {row?.newChatEnabled && <ComposerPage app={app} />}
+      {composerInPage(view) && <ComposerPage app={app} />}
       <p className="text-muted-foreground">{view.tabs?.tabs.some((tab) => tab.pending === null) ? "Pick a tab, or start a new chat." : "This workspace has no open chats."}</p>
       {chats.length > 0 && <div className="grid w-full max-w-lg gap-1 px-4" aria-label="Workspace chats">
         {chats.map((chat) => <button key={chat.session} data-testid="workspace-chat" onClick={() => app.openChat(chat.session)}

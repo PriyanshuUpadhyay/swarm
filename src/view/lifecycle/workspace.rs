@@ -56,13 +56,17 @@ pub fn options(project: &Project, owner: &OwnerChoices) -> Result<Value> {
     value["prefix"] = prefix.into();
     value["seedFolder"] = seed.into();
     value["seedPrefix"] = "swarm/".into();
-    value["setup_script"] = owner
-        .project_defaults
-        .get(&project.path)
-        .and_then(|s| s.get("setup_script"))
-        .cloned()
-        .unwrap_or(Value::Null);
+    value["setup_script"] = setup_script(owner, &project.path).map_or(Value::Null, Into::into);
     Ok(value)
+}
+
+/// The project's saved setup script, which runs in each new worktree; None when it has none.
+pub fn setup_script<'a>(owner: &'a OwnerChoices, project: &str) -> Option<&'a str> {
+    owner
+        .project_defaults
+        .get(project)
+        .and_then(|s| s["setup_script"].as_str())
+        .filter(|s| !s.trim().is_empty())
 }
 
 /// The folder that holds a project's new worktrees, from the worktree folder setting: `~/` is

@@ -44,8 +44,9 @@ first send run in the background. Each step goes out as a `chat-start` frame
 `{start, step, state}` with step `worktree`, `setup`, `start`, `send` and last `done`; `done`
 carries the session and its folder, or the error. Setup output keeps its `setup` frames. The
 app shows a starting tab with these steps at once, and opens the chat when `done` comes. The
-server keeps the last 64 `done` frames, and `GET /api/chat/start?id=` returns one or null, so a
-page whose stream reconnected reads a `done` it missed. Text typed in that tab goes after the
+server keeps the last 64 `done` frames, and `GET /api/chat/start?id=` returns `{done}`, or
+`{running: true}` while the start runs, or `{}` for an id it does not know, so a page whose
+stream reconnected reads a `done` it missed and stops waiting on a start the server lost. Text typed in that tab goes after the
 first prompt; a send that fails shows that text in a notice. The app waits 10 s for the start id; then it
 shows a notice and keeps the composer, because the server may have started the chat. A failed
 start offers Edit and retry, which opens the composer again with its prompt, folder and place. A model switch waits for its chat as before.
@@ -70,8 +71,9 @@ change; one of another place stays, as the dialog kept it.
 ## Consequences
 
 - The fetch is part of the worktree step; the card shows the last fetch time instead.
-- A starting chat lives only in the app. A page reload or a server restart during a start loses
-  its tab, and the chat appears in the sidebar when it starts.
+- A starting chat lives only in the app, and its start is one task in the server. A page reload
+  loses its tab, and the chat appears in the sidebar when it starts. A server restart during a
+  start cuts the start off; a worktree it made stays, and the page shows that the start is lost.
 - Two composers that send the same prompt at once can both read one name as free. The second
   create then fails with "The branch … already exists", and nothing is made.
 - Outside a worktree hub, the rename and the cleanup of ADR 0146 do not run: a new worktree with

@@ -1,6 +1,8 @@
 //! Workspace and project rules shared by the guarded HTTP actions.
 mod workspace;
-pub use workspace::{Mode, NewWorkspace, create_workspace, defaults, options, worktree_folder};
+pub use workspace::{
+    Mode, NewWorkspace, create_workspace, defaults, options, setup_script, worktree_folder,
+};
 
 use super::{
     choices::{OwnerChoices, ViewState},

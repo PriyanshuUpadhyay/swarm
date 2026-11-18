@@ -26,7 +26,7 @@ export type SidebarRow = {
   archived: boolean;
   missing: boolean;
   newChatEnabled: boolean;
-  // A new chat here gets its own worktree, so the + menu offers "no new worktree" (ADR 0146).
+  // A hub's main: the composer starts a project's new chat here, in its own worktree (ADR 0146).
   startsChatWorktree: boolean;
   dimmed: boolean;
   fields: Field[];

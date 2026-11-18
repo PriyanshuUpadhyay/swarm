@@ -20,45 +20,6 @@ const KINDS: { [K in Kind]: [string, Extract<Place, { kind: K }>] } = {
   here: ["This folder", { kind: "here" }],
 };
 
-/** The chip's words for a place. */
-export function placeLabel(place: Place, target: Target | null): string {
-  if (!target?.git) return "In folder";
-  switch (place.kind) {
-    case "new":
-      return "New worktree";
-    case "here":
-      return "In this folder";
-    case "branch":
-      return place.branch ? `Branch ${place.branch}` : "Pick a branch";
-    case "pr":
-      return place.number ? `PR #${place.number}` : "Pick a pull request";
-    case "issue":
-      return place.number ? `Issue #${place.number}` : "Pick an issue";
-    default: {
-      const _exhaustive: never = place;
-      return _exhaustive;
-    }
-  }
-}
-
-/** Whether a send can go with this place: a branch, PR or issue needs its pick. */
-export function placeReady(place: Place): boolean {
-  switch (place.kind) {
-    case "new":
-    case "here":
-      return true;
-    case "branch":
-      return place.branch !== "";
-    case "pr":
-    case "issue":
-      return place.number > 0;
-    default: {
-      const _exhaustive: never = place;
-      return _exhaustive;
-    }
-  }
-}
-
 /** The menu body: the kinds, then the list of the picked kind. */
 export function PlacePanel({ app, target, place, onPlace }: { app: App; target: Target; place: Place; onPlace: (place: Place) => void }) {
   const project = target.project;

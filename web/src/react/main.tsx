@@ -17,7 +17,7 @@ import { PanelToggles, WorkspacePanel } from "./changes";
 import { AskDialog, Home, WorkspaceLanding } from "./home";
 import { ComposerOverlay } from "./composer-new";
 import { StartingView } from "./starting-view";
-import { workspaceRow } from "../core/nav";
+import { composerInPage } from "../core/new-chat";
 import { LifecycleDialogs } from "./lifecycle";
 import { SettingsDialog } from "./settings";
 import { LoadFailed } from "./load-failed";
@@ -109,7 +109,7 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   const reconnecting = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
   // Home and a workspace that takes new chats show the composer in the page; elsewhere ⌘N opens it over the view.
-  const inPage = useSyncExternalStore(app.subscribe, () => !app.view.openId && (!app.view.workspace || workspaceRow(app.view.tree, app.view.workspace)?.newChatEnabled === true));
+  const inPage = useSyncExternalStore(app.subscribe, () => composerInPage(app.view));
 
   return (
     <div className="flex h-full min-w-0 flex-col">

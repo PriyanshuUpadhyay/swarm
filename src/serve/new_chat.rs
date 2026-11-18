@@ -8,6 +8,7 @@ use super::*;
 pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError> {
     let (start, launch) = checked_start(app, body).await?;
     let id = start.id.clone();
+    app.hub.lock().unwrap().starts_running.insert(id.clone());
     tokio::spawn(start.run(launch));
     Ok(json!({"ok": true, "start": id}))
 }
@@ -56,8 +57,11 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
         // the chat in itself (ADR 0146); the composer's `new` makes one in any git project.
         Ok::<_, ApiError>(match place {
             Some(Place::Here) => None,
-            None => target.hub_main.then_some((target.project, Place::New)),
-            Some(other) => Some((target.project, other)),
+            None => target.hub_main.then_some((target.project, Worktree::New)),
+            Some(Place::New) => Some((target.project, Worktree::New)),
+            Some(Place::Branch { branch }) => Some((target.project, Worktree::Branch { branch })),
+            Some(Place::Pr { number }) => Some((target.project, Worktree::Pr { number })),
+            Some(Place::Issue { number }) => Some((target.project, Worktree::Issue { number })),
         })
     })
     .await
@@ -278,7 +282,7 @@ mod preview;
 pub(super) use preview::new_chat_preview;
 #[path = "new_chat/start.rs"]
 pub(super) mod start;
-use start::{Launch, Start};
+use start::{Launch, Start, Worktree};
 
 #[cfg(test)]
 #[path = "new_chat/tests.rs"]

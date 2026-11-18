@@ -41,12 +41,7 @@ pub(in crate::serve) async fn new_chat_preview(
             .ok()
             .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|since_epoch| since_epoch.as_secs());
-        let setup = target
-            .saved
-            .owner
-            .project_defaults
-            .get(&target.project)
-            .and_then(|s| s["setup_script"].as_str())
+        let setup = lifecycle::setup_script(&target.saved.owner, &target.project)
             .and_then(|script| script.lines().map(str::trim).find(|line| !line.is_empty()))
             .map(str::to_owned);
 

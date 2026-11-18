@@ -110,6 +110,7 @@ impl Fixture {
                 retiring: HashMap::new(),
                 row_cache: VecDeque::new(),
                 starts_done: VecDeque::new(),
+                starts_running: HashSet::new(),
             }),
             directories: Mutex::new(HashMap::new()),
             stopped: AtomicBool::new(false),

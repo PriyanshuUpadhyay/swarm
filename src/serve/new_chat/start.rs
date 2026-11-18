@@ -5,16 +5,32 @@ use super::*;
 /// How many `done` frames the hub keeps for pages that reconnect.
 const STARTS_KEPT: usize = 64;
 
-/// `GET /api/chat/start?id=`: the `done` frame of a recent start, or null while it runs or when
-/// it is too old. A page whose stream was down reads it, as the frame then never reached it.
+/// `GET /api/chat/start?id=`: `{done: frame}` for a recent start, `{running: true}` while it
+/// runs, and `{}` for an id the server does not know or no longer keeps. A page whose stream
+/// was down reads it, as the frame then never reached it.
 pub(in crate::serve) async fn chat_start_done(
     State(app): State<App>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Json<Value> {
     let id = query.get("id").map(String::as_str).unwrap_or_default();
     let hub = app.hub.lock().unwrap();
-    let done = hub.starts_done.iter().find(|(start, _)| start == id);
-    Json(json!({"done": done.map(|(_, frame)| frame)}))
+    if let Some((_, frame)) = hub.starts_done.iter().find(|(start, _)| start == id) {
+        return Json(json!({"done": frame}));
+    }
+    Json(if hub.starts_running.contains(id) {
+        json!({"running": true})
+    } else {
+        json!({})
+    })
+}
+
+/// The worktree a start makes or opens: the places of `Place` other than `here`.
+#[derive(Clone)]
+pub(super) enum Worktree {
+    New,
+    Branch { branch: String },
+    Pr { number: u64 },
+    Issue { number: u64 },
 }
 
 /// What a checked start launches, and where.
@@ -22,7 +38,7 @@ pub(super) struct Launch {
     pub(super) body: NewChat,
     pub(super) role: String,
     pub(super) account: Option<String>,
-    pub(super) worktree: Option<(String, Place)>,
+    pub(super) worktree: Option<(String, Worktree)>,
 }
 
 /// One chat start in the background, and the step it is on.
@@ -42,6 +58,7 @@ impl Start {
 
         let mut hub = self.app.hub.lock().unwrap();
         if step == "done" {
+            hub.starts_running.remove(&self.id);
             if hub.starts_done.len() == STARTS_KEPT {
                 hub.starts_done.pop_front();
             }
@@ -159,7 +176,7 @@ impl Start {
         &mut self,
         project: String,
         cwd: &str,
-        place: Place,
+        place: Worktree,
         prompt: Option<&str>,
     ) -> Result<Made, ApiError> {
         self.enter("worktree");
@@ -167,7 +184,7 @@ impl Start {
         let checkout = cwd.to_owned();
 
         let named = match (&place, prompt) {
-            (Place::New, Some(prompt)) => {
+            (Worktree::New, Some(prompt)) => {
                 let prompt = prompt.to_owned();
                 tokio::task::spawn_blocking(move || {
                     swarm::task::chat_preview(Path::new(&checkout), &prompt)
@@ -178,19 +195,16 @@ impl Start {
             _ => None,
         };
 
-        let own = matches!(place, Place::New);
+        let own = matches!(place, Worktree::New);
         let (mode, name, branch, pr, issue) = match place {
-            // checked_start starts a `here` chat in its folder, so it never asks for a worktree.
-            Place::Here => unreachable!("place here makes no worktree"),
-
-            Place::New => {
+            Worktree::New => {
                 let name = named
                     .map(|branch| branch.trim_start_matches(swarm::task::PREFIX).to_owned())
                     .unwrap_or_else(swarm::task::chat_placeholder);
                 (lifecycle::Mode::NewBranch, name, None, None, None)
             }
 
-            Place::Branch { branch } => {
+            Worktree::Branch { branch } => {
                 let name = branch.rsplit('/').next().unwrap_or(&branch).to_owned();
                 (
                     lifecycle::Mode::ExistingBranch,
@@ -201,7 +215,7 @@ impl Start {
                 )
             }
 
-            Place::Pr { number } => (
+            Worktree::Pr { number } => (
                 lifecycle::Mode::Pr,
                 format!("pr-{number}"),
                 None,
@@ -209,7 +223,7 @@ impl Start {
                 None,
             ),
 
-            Place::Issue { number } => (
+            Worktree::Issue { number } => (
                 lifecycle::Mode::Issue,
                 String::new(),
                 None,
@@ -280,10 +294,12 @@ impl Start {
         if let Some(script) = setup {
             self.enter("setup");
             let result = run_setup(&self.app, &path, &script, SETUP_TIMEOUT).await;
+
             if result["state"] != "completed" {
                 if let Some(branch) = &own_branch {
                     forget_chat(&self.app, &path, None, branch).await;
                 }
+
                 return Err(error(
                     StatusCode::BAD_GATEWAY,
                     &format!(

@@ -14,6 +14,9 @@ async fn new_chat_route() {
     let query = HashMap::from([("id".into(), response["start"].as_str().unwrap().to_owned())]);
     let kept = start::chat_start_done(State(fixture.app.clone()), Query(query)).await;
     assert_eq!(kept.0["done"], response);
+    let query = HashMap::from([("id".into(), "unknown".to_owned())]);
+    let unknown = start::chat_start_done(State(fixture.app.clone()), Query(query)).await;
+    assert_eq!(unknown.0, json!({}));
     let calls = action_calls(&fixture);
     let lines: Vec<_> = calls.lines().collect();
     assert_eq!(lines.len(), 3);

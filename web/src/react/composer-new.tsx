@@ -3,15 +3,15 @@
 // place and the run, and presses ⌘Enter. A starting chat shows its steps in `StartingView`.
 
 import { LoaderCircleIcon } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import type { App } from "../core/app";
 import { cliName, levelWord, type Run } from "../core/composer";
 import { type Profile } from "../core/lifecycle";
-import { DEFAULT_ROLE, defaultPlace, defaultTarget, targets, type Place, type Target } from "../core/new-chat";
+import { DEFAULT_ROLE, defaultPlace, placeLabel, placeReady, defaultTarget, targets, type Place, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 import { ErrorLine, message } from "./lifecycle-shared";
-import { PlacePanel, placeLabel, placeReady } from "./place-lists";
+import { PlacePanel } from "./place-lists";
 import { RunPicker, runModel, useRunCatalog } from "./run-picker";
 
 /** The card of a new worktree; the composer asks only for a git project's place `new`. */
@@ -32,18 +32,19 @@ function useNewChat<T>(app: App, read: () => T): T {
 
 /** The start page: the composer on the open workspace's project, or on the one ⌘N picked. */
 export function ComposerPage({ app }: { app: App }) {
-  const composer = useNewChat(app, () => app.newChat.state.composer);
+  const composer = useNewChat(app, () => app.newChat.composing());
+  const unsent = useNewChat(app, () => app.newChat.state.unsent);
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   const list = targets(tree, composer?.cwd ?? workspace);
   const target = (composer && list.find((t) => t.cwd === composer.cwd)) || defaultTarget(list, tree, workspace);
   if (!target) return null;
-  return <NewChatComposer app={app} key={composer?.seq ?? `page:${target.cwd}`} initial={target} place={composer?.place ?? defaultPlace(target)} text={composer?.text ?? ""} focus={composer !== null} />;
+  return <NewChatComposer app={app} key={composer?.seq ?? `page:${target.cwd}`} initial={target} place={composer?.place ?? defaultPlace(target)} text={composer?.text ?? unsent} focus={composer !== null} />;
 }
 
 /** The overlay over an open chat, while ⌘N or a "+" has it open. */
 export function ComposerOverlay({ app }: { app: App }) {
-  const composer = useNewChat(app, () => app.newChat.state.composer);
+  const composer = useNewChat(app, () => app.newChat.composing());
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   if (!composer) return null;
   const target = targets(tree, composer.cwd).find((t) => t.cwd === composer.cwd) ?? null;
@@ -55,10 +56,9 @@ export function ComposerOverlay({ app }: { app: App }) {
  *  backdrop closes it only while the prompt is empty, so a stray click keeps typed text. */
 function Overlay({ app, target, place, text }: { app: App; target: Target; place: Place; text: string }) {
   const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    return () => before?.focus();
-  }, []);
+  // Read in the first render, before the composer's own effect moves the focus into it.
+  const [before] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  useEffect(() => () => before?.focus(), [before]);
 
   const trap = (e: KeyboardEvent) => {
     if (e.key !== "Tab" || !root.current) return;
@@ -75,7 +75,7 @@ function Overlay({ app, target, place, text }: { app: App; target: Target; place
   };
 
   return (
-    <div ref={root} role="dialog" aria-modal="true" aria-label="New chat" className="absolute inset-0 z-40 grid place-items-start justify-center bg-background/70 pt-[12vh] backdrop-blur-[2px]" data-testid="composer-overlay" onMouseDown={backdrop} onKeyDown={trap}>
+    <div ref={root} role="dialog" data-state="open" aria-modal="true" aria-label="New chat" className="absolute inset-0 z-40 grid place-items-start justify-center bg-background/70 pt-[12vh] backdrop-blur-[2px]" data-testid="composer-overlay" onMouseDown={backdrop} onKeyDown={trap}>
       <NewChatComposer app={app} initial={target} place={place} text={text} focus overlay />
     </div>
   );
@@ -105,7 +105,9 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
   const shown = run ?? base;
   // The run on screen now, for a step that ends after an await.
   const shownNow = useRef(shown);
-  shownNow.current = shown;
+  useLayoutEffect(() => {
+    shownNow.current = shown;
+  });
 
   useEffect(() => {
     app.life.profiles().then(
@@ -131,6 +133,8 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
 
   const ready = placeReady(place) && !sending;
   const send = async () => {
+    // A second ⌘Enter while the first one posts does nothing.
+    if (sending) return;
     if (!ready) return setMenu("place");
     setSending(true);
     const changed = run && !sameRun(run, base) ? run : null;
@@ -162,7 +166,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
     else if (meta && e.key === "/") setMenu((m) => (m === "run" ? null : "run"));
     else if (meta && !e.shiftKey && e.key.toLowerCase() === "p") setMenu((m) => (m === "project" ? null : "project"));
     else if (e.key === "Escape" && menu) setMenu(null);
-    else if (e.key === "Escape") app.newChat.close();
+    else if (e.key === "Escape") app.newChat.close(text);
     else done = false;
     if (done) {
       e.preventDefault();

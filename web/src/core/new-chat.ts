@@ -5,7 +5,7 @@ import type { App } from "./app";
 import { message } from "./app-types";
 import type { Run } from "./composer";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
-import type { TreeView } from "./nav";
+import { workspaceRow, type TreeView } from "./nav";
 
 /** Where a new chat runs; `new` makes the chat its own worktree. */
 export type Place = { kind: "new" } | { kind: "here" } | { kind: "branch"; branch: string } | { kind: "pr"; number: number } | { kind: "issue"; number: number; title?: string };
@@ -40,16 +40,24 @@ export type Starting = {
 };
 
 export type NewChatState = {
-  composer: { cwd: string; place: Place; text: string; seq: number } | null;
+  /** The open composer, and the app's navigation count then; any move away hides it. */
+  composer: { cwd: string; place: Place; text: string; seq: number; nav: number } | null;
+  /** The prompt of a composer that Escape closed, which the next one starts with. */
+  unsent: string;
   starts: Record<string, Starting>;
   /** The start on screen, and the app's navigation count then; any move away hides it. */
   viewing: { id: string; nav: number } | null;
 };
 
+/** Whether the view shows the composer in its page: Home, and a workspace's landing that takes
+ *  new chats. Elsewhere ⌘N opens it over the view. */
+export const composerInPage = (view: { openId: string | null; workspace: string | null; tree: TreeView | null }) =>
+  !view.openId && (!view.workspace || workspaceRow(view.tree, view.workspace)?.newChatEnabled === true);
+
 /** The profile a new chat starts on unless the owner picks another. */
 export const DEFAULT_ROLE = "chat";
 
-/** The start steps in their order, with their words. */
+/** The words of each start step that the server sends. */
 export const STEP_WORDS: Record<string, string> = { worktree: "Make the worktree", setup: "Run the setup script", start: "Start the agent", send: "Send your prompt" };
 
 /** How long the start's POST may take. The server answers in under a second, after its checks. */
@@ -79,7 +87,7 @@ export function defaultTarget(list: Target[], tree: TreeView | null, workspace: 
 }
 
 /** The place a target starts on unless the owner picks another. */
-export const defaultPlace = (target: Target | null): Place => ({ kind: target?.git ? "new" : "here" });
+export const defaultPlace = (target: Target): Place => ({ kind: target.git ? "new" : "here" });
 
 /** The `/api/chat/new` body for a composer send. An issue's own text goes first on the server. */
 function startBody(cwd: string, prompt: string, place: Place, run: ComposerRun) {
@@ -95,11 +103,51 @@ function startBody(cwd: string, prompt: string, place: Place, run: ComposerRun) 
   };
 }
 
+/** The chip's words for a place. */
+export function placeLabel(place: Place, target: Target): string {
+  if (!target.git) return "In folder";
+
+  switch (place.kind) {
+    case "new":
+      return "New worktree";
+    case "here":
+      return "In this folder";
+    case "branch":
+      return place.branch ? `Branch ${place.branch}` : "Pick a branch";
+    case "pr":
+      return place.number ? `PR #${place.number}` : "Pick a pull request";
+    case "issue":
+      return place.number ? `Issue #${place.number}` : "Pick an issue";
+    default: {
+      const _exhaustive: never = place;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Whether a send can go with this place: a branch, PR or issue needs its pick. */
+export function placeReady(place: Place): boolean {
+  switch (place.kind) {
+    case "new":
+    case "here":
+      return true;
+    case "branch":
+      return place.branch !== "";
+    case "pr":
+    case "issue":
+      return place.number > 0;
+    default: {
+      const _exhaustive: never = place;
+      return _exhaustive;
+    }
+  }
+}
+
 /** The tab title of a start: the prompt's first line, else New chat. It cuts whole characters. */
 const startTitle = (prompt: string) => Array.from(prompt.trim().split("\n")[0]).slice(0, 60).join("") || "New chat";
 
 export class NewChat {
-  state: NewChatState = { composer: null, starts: {}, viewing: null };
+  state: NewChatState = { composer: null, unsent: "", starts: {}, viewing: null };
   private listeners = new Set<() => void>();
   private seq = 0;
   private posting = false;
@@ -129,8 +177,18 @@ export class NewChat {
     const list = targets(this.app.view.tree, at ?? this.app.view.workspace);
     const target = (at && list.find((t) => t.cwd === at || t.project === at)) || defaultTarget(list, this.app.view.tree, at ?? this.app.view.workspace);
     if (!target) return this.app.notice("Import or create a project first.");
+    // ⌘N again on the same open composer keeps it, with its typed text.
+    const open = this.composing();
+    if (open && open.cwd === target.cwd && !place && !text) return;
     // The composer replaces a start's view; the start keeps its tab.
-    this.set({ composer: { cwd: target.cwd, place: place ?? defaultPlace(target), text, seq: ++this.seq }, viewing: null });
+    const composer = { cwd: target.cwd, place: place ?? defaultPlace(target), text: text || this.state.unsent, seq: ++this.seq, nav: this.app.navSeq };
+    this.set({ composer, unsent: "", viewing: null });
+  }
+
+  /** The composer while the owner has not moved to another view since it opened. */
+  composing() {
+    const c = this.state.composer;
+    return c && c.nav === this.app.navSeq ? c : null;
   }
 
   /** A failed start's Edit and retry: the composer again, with its prompt, folder and place. */
@@ -141,8 +199,9 @@ export class NewChat {
     this.open(start.cwd, start.place, start.prompt);
   }
 
-  close() {
-    if (this.state.composer) this.set({ composer: null });
+  /** Closes the composer; its `text` waits for the next one. */
+  close(text = "") {
+    if (this.state.composer) this.set({ composer: null, unsent: text.trim() ? text : "" });
   }
 
   /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. */
@@ -176,8 +235,10 @@ export class NewChat {
     for (const start of Object.values(this.state.starts)) {
       if (start.error) continue;
       try {
-        const { done } = await this.app.api.get<{ done: Record<string, unknown> | null }>("/api/chat/start", { id: start.id });
-        if (done) this.onFrame("chat-start", done);
+        const { done, running } = await this.app.api.get<{ done?: Record<string, unknown>; running?: boolean }>("/api/chat/start", { id: start.id });
+        if (done) void this.onFrame("chat-start", done);
+        // A restarted server, or one past its last 64 starts, no longer knows the start.
+        else if (!running) this.setStart(start.id, { error: "The server no longer knows this start. Look for the chat in the sidebar." });
       } catch {
         // The next reconnect reads it again.
       }
@@ -211,10 +272,11 @@ export class NewChat {
     this.setStart(id, { draft });
   }
 
-  /** Drops a failed start's tab. */
+  /** Drops a start's tab. A failed start's prompt waits for the next composer, so it is not lost. */
   dismiss(id: string) {
-    const { [id]: _, ...starts } = this.state.starts;
-    this.set({ starts, viewing: this.state.viewing?.id === id ? null : this.state.viewing });
+    const { [id]: gone, ...starts } = this.state.starts;
+    const unsent = gone?.error && gone.prompt ? gone.prompt : this.state.unsent;
+    this.set({ starts, unsent, viewing: this.state.viewing?.id === id ? null : this.state.viewing });
   }
 
   /** A `setup` or `chat-start` frame; the promise ends when a started chat has opened and its
@@ -228,9 +290,11 @@ export class NewChat {
       }
       return;
     }
+
     const id = String(data.start);
     const start = this.state.starts[id];
     if (event !== "chat-start") return;
+
     if (!start) {
       // The frame can come before the POST reply; start() takes it then.
       this.early = [...this.early, data].slice(-EARLY_KEPT);
