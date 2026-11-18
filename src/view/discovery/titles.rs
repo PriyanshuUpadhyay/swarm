@@ -101,8 +101,8 @@ fn first_message(path: &str) -> Option<String> {
     None
 }
 
-/// ADR 0147: the agent's last reply with words in its log's tail, for the done
-/// notice of a CLI whose turn end does not give it. It reads Claude, pi, and Codex logs.
+/// ADR 0147: the agent's last reply with words in its log's tail since the last user record, for
+/// the done notice of a CLI whose turn end does not give it. It reads Claude, pi, and Codex logs.
 pub fn last_reply(path: &str) -> Option<String> {
     let bytes = crate::screen::log_tail(Path::new(path))?;
     let mut last = None;
@@ -110,6 +110,16 @@ pub fn last_reply(path: &str) -> Option<String> {
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
         };
+
+        // A user record starts a new turn, so an older turn's reply is not this turn's. A Claude
+        // tool result is a user record too, so a turn that ends on a tool has no reply.
+        let user = value["type"] == "user"
+            || value["message"]["role"] == "user"
+            || (value["type"] == "response_item" && value["payload"]["role"] == "user");
+        if user {
+            last = None;
+            continue;
+        }
 
         // Claude and pi keep a reply under `message`, Codex under `payload`.
         let content = if value["type"] == "assistant"
@@ -216,19 +226,27 @@ mod tests {
         assert_eq!(read_title(&broken).as_deref(), Some("Build the app"));
     }
 
-    /// ADR 0147: a done notice of a CLI whose turn end gives no reply quotes the last reply in
-    /// its log, so a newer owner message does not count.
+    /// ADR 0147: a done notice of a CLI whose turn end gives no reply quotes the last reply of
+    /// the turn in its log, and not one from an older turn.
     #[test]
     fn the_last_reply_is_the_newest_assistant_text_of_the_log() {
         let codex = log(
             "codex-reply.jsonl",
             &[
                 r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Old reply."}]}}"#,
+                r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"go on"}]}}"#,
                 r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Tests pass."}]}}"#,
-                r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"thanks"}]}}"#,
             ],
         );
         assert_eq!(last_reply(&codex).as_deref(), Some("Tests pass."));
+        let silent = log(
+            "codex-silent.jsonl",
+            &[
+                r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Old reply."}]}}"#,
+                r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"go on"}]}}"#,
+            ],
+        );
+        assert_eq!(last_reply(&silent), None);
     }
 
     #[test]

@@ -23,7 +23,8 @@ pub fn home() -> Result<String, Box<dyn std::error::Error>> {
         Ok(explicit) if explicit.is_empty() => Err("SWARM_HOME is set but empty".into()),
         explicit => {
             let explicit = explicit?;
-            match account_home() {
+            // With no home in the user database, HOME stands in, so the guard does not open.
+            match account_home().or_else(|| std::env::var("HOME").ok()) {
                 Some(owner) => refuse_owner_home(&explicit, &owner, env!("SWARM_BUILD_BRANCH"))
                     .map_or(Ok(explicit), |refusal| Err(refusal.into())),
                 None => Ok(explicit),

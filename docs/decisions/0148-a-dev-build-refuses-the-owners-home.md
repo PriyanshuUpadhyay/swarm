@@ -36,5 +36,6 @@ There is no override. A dev build that must read the real store is a release bui
 
 - Good: no dev build, run by hand or by an agent, can open, migrate, or write the real store in
   `~/.swarm`. A dev build still takes the shared `~/.swarm/trust.lock` (ADR 0043), which holds no data.
-- Bad: when the user database gives no home, the guard cannot check, so the build takes `SWARM_HOME`.
+- Bad: when the user database gives no home, `HOME` stands in, so a test that sets both `HOME` and
+  `SWARM_HOME` to one scratch folder is refused on such a machine.
 - Bad: a dev build in an app pane must run with `SWARM_HOME` unset or set to another folder.

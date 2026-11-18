@@ -33,9 +33,9 @@ final class UsageModel {
     }
     /// A popup Open that failed: its line's key and why, shown on that line for `Popup.peek`.
     var popupError: (key: String, text: String)?
-    @ObservationIgnored private var popupErrorTimer: Task<Void, Never>?
+    @ObservationIgnored var popupErrorTimer: Task<Void, Never>?
     /// The chats with an Open on the way, so a double click runs one `swarm focus`.
-    @ObservationIgnored private var opening: Set<String> = []
+    @ObservationIgnored var opening: Set<String> = []
     /// The need cards with an answer on the way, so a second click cannot send a second answer.
     var answering: Set<String> = []
     /// The closed wings' words and how much they widen each wing, kept with their inputs, because
@@ -75,12 +75,14 @@ final class UsageModel {
         didSet { UserDefaults.standard.set(pinnedPhase?.rawValue, forKey: "pinnedPhase"); updatePhase() }
     }
 
-    private let swarm: String?
+    let swarm: String?
     private let historyURL: URL
     private var reading = false
     private var readQueued = false
     private var readingWorking = false
     private var readingInbox = false
+    /// Why the last inbox read failed; nil after a good one. The last good inbox stays.
+    var inboxError: String?
     /// An action changed the store while a read ran, so that read is old: drop it and read again.
     @ObservationIgnored private var readAgain = false
     private var refreshQueued: Set<String> = []
@@ -175,7 +177,18 @@ final class UsageModel {
                 readInbox()
                 return
             }
-            if case .success(let data) = result, let inbox = InboxSnapshot.read(data) { apply(inbox: inbox, now: Date()) }
+            // A failed read keeps the last inbox on screen, and the card says it is old.
+            switch result {
+            case .success(let data):
+                if let inbox = InboxSnapshot.read(data) {
+                    inboxError = nil
+                    apply(inbox: inbox, now: Date())
+                } else {
+                    inboxError = "Could not read the inbox: this swarm prints another format"
+                }
+            case .failure(let error):
+                inboxError = "Could not read the inbox: \(error.text)"
+            }
         }
     }
 
@@ -189,7 +202,8 @@ final class UsageModel {
         if !isOpen { next = mergePopup(next, new: new, now: now) }
         popup = next
 
-        if let first = new.first, popup != nil {
+        // The open card shows a new item at once, so VoiceOver hears it there too.
+        if let first = new.first, popup != nil || isOpen {
             announce?("\(first.title) \(first.word): \(first.body)")
         }
         if !new.isEmpty, let shown = popup, !shown.stays {
@@ -203,78 +217,6 @@ final class UsageModel {
     /// A done popup closes once its peek ends and the cursor is off it.
     func closeExpiredPopup(now: Date = Date()) {
         if popup?.expired(now: now, hovered: popupHovered) == true { popup = nil }
-    }
-
-    /// Opens the chat where it lives (the app, or its terminal) and marks its rows seen. `line` is the
-    /// key of the popup line that asked, which shows the error when the chat does not open.
-    func openChat(session: String, agent: String?, line: String? = nil) {
-        guard opening.insert(session).inserted else { return }
-        let swarm = swarm
-        Task {
-            // `focus` takes the chair's pane when the agent's pane is gone. A chat that did not open
-            // is not seen, so it stays in the inbox, and its popup line says why.
-            let focused = await offPool { run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5) }
-            opening.remove(session)
-            if case .failure(let error) = focused {
-                // The card's error line also says it aloud, so the popup line does not.
-                actionError = "Could not open: \(error.text)"
-                if let line, popup?.items.contains(where: { $0.key == line }) == true {
-                    showPopupError(line, "Could not open: \(error.text)")
-                }
-                return
-            }
-
-            popup?.items.removeAll { $0.session == session }
-            if popup?.items.isEmpty == true { popup = nil }
-            let seen = await offPool { run(swarm, ["notices", "seen", session], timeout: 3) }
-            if case .failure(let error) = seen { actionError = "Could not mark it seen: \(error.text)" } else { actionError = nil }
-            readInbox()
-        }
-    }
-
-    /// Shows the error for `Popup.peek`, and keeps a done popup up that long too.
-    private func showPopupError(_ line: String, _ text: String) {
-        popupError = (line, text)
-        popup?.lastAt = Date()
-        popupErrorTimer?.cancel()
-        popupErrorTimer = Task {
-            try? await Task.sleep(for: .seconds(Popup.peek))
-            guard !Task.isCancelled else { return }
-            popupError = nil
-            closeExpiredPopup()
-        }
-    }
-
-    /// `swarm answer` refuses when the prompt on screen is no longer `prompt.id`.
-    func answer(_ need: NeedCard, choice: Int) {
-        guard let prompt = need.prompt, answering.insert(need.key).inserted else { return }
-        let environment = ["SWARM_SESSION_ID": need.session].merging(need.adapter.map { ["SWARM_ADAPTER": $0] } ?? [:]) { $1 }
-        let swarm = swarm
-        Task {
-            let result = await offPool {
-                run(swarm, ["answer", need.agent, prompt.id, String(choice)], timeout: 10, environment: environment)
-            }
-            if case .failure(let error) = result { actionError = "Could not answer: \(error.text)" } else { actionError = nil }
-            answering.remove(need.key)
-            readInbox()
-        }
-    }
-
-    /// Marks the chats of this read seen, also those under "+N more", so the inbox list and the
-    /// closed wing's count empty. Only rows up to the newest one read are marked, so a row that came
-    /// after this read stays.
-    func clearInbox() {
-        let sessions = inbox.rows.map(\.session)
-        guard let through = inbox.rows.map(\.id).max() else { return }
-        inbox.rows = []
-        inbox.rowsTotal = 0
-        popup = nil
-        let swarm = swarm
-        Task {
-            let seen = await offPool { run(swarm, ["notices", "seen", "--through", String(through)] + sessions, timeout: 3) }
-            if case .failure(let error) = seen { actionError = "Could not clear: \(error.text)" } else { actionError = nil }
-            readInbox()
-        }
     }
 
     /// A provider call per provider with a meter, never automatic, at most once in 300 s each.

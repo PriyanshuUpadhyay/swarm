@@ -161,8 +161,9 @@ pub fn take_notices(connection: &mut Connection) -> rusqlite::Result<Vec<Notice>
 }
 
 /// ADR 0147: the newest unseen done, asks, or failed row of each chat, newest first, at most
-/// `limit`, and the number of such chats. A wait is not here: the HUD reads waiting agents live,
-/// so an answered wait never stays.
+/// `limit`, and the number of such chats. A session that a newer one continues is part of that
+/// chat, so its rows do not count. A wait is not here: the HUD reads waiting agents live, so an
+/// answered wait never stays.
 pub fn notice_inbox(
     connection: &Connection,
     limit: usize,
@@ -172,6 +173,8 @@ pub fn notice_inbox(
         "SELECT {NOTICE_COLUMNS}, count(*) OVER () AS total FROM notice
          WHERE id IN (SELECT max(id) FROM notice
                       WHERE seen_at IS NULL AND session_id IS NOT NULL AND kind IN (?2, ?3, ?4)
+                        AND session_id NOT IN (SELECT continuation_of FROM session
+                                               WHERE continuation_of IS NOT NULL)
                       GROUP BY session_id)
          ORDER BY id DESC LIMIT ?1"
     ))?;
@@ -404,6 +407,17 @@ mod tests {
         let (rows, total) = notice_inbox(&connection, 1).unwrap();
 
         assert_eq!((rows.len(), total), (1, 2));
+
+        // A continued chat is one chat, so only its newest session's row counts.
+        connection
+            .execute(
+                "UPDATE session SET continuation_of = ?1 WHERE id = ?2",
+                (SESSION, OTHER_SESSION),
+            )
+            .unwrap();
+        let (rows, total) = notice_inbox(&connection, 20).unwrap();
+        assert_eq!((rows.len(), total), (1, 1));
+        assert_eq!(rows[0].session_id.as_deref(), Some(OTHER_SESSION));
     }
 
     pub(super) fn unix_now() -> i64 {

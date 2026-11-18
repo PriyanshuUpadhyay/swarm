@@ -136,7 +136,7 @@ struct InboxSection: View {
                     rowView(row).frame(height: InboxLayout.row)
                 }
             }
-            if let error = model.actionError {
+            if let error = model.actionError ?? model.inboxError {
                 Text(error).font(.system(size: 11)).foregroundStyle(Palette.warn)
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity, minHeight: InboxLayout.row, alignment: .leading)
