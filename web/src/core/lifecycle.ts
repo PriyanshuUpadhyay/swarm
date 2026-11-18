@@ -55,9 +55,9 @@ export class Lifecycle {
     return this.app.api;
   }
 
-  /** `handoff` stream frames. */
-  onFrame(event: string, data: Record<string, unknown>) {
-    const h = event === "handoff" ? this.state.handoffs[String(data.old_session)] : undefined;
+  /** A `handoff` stream frame. */
+  onHandoff(data: Record<string, unknown>) {
+    const h = this.state.handoffs[String(data.old_session)];
     if (h && !isSettled(h.phase)) {
       const phase = String(data.phase);
       // A resume closes the chair's pane from `starting` on; its popover goes with the composer

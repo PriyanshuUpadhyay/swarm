@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
-import { header, open } from "./lifecycle-helpers";
+import { compose, header, open } from "./lifecycle-helpers";
 
 async function settings(page: Page, section = "profiles") {
   await page.getByTestId("settings-button").click();
@@ -127,9 +127,7 @@ test("chat pickers filter, move with arrow keys, and refresh imports without clo
 
 test("the composer's project change resets a picked issue to the new project's default place", async ({ page }) => {
   await open(page);
-  await header(page, "proj-gh").hover();
-  await header(page, "proj-gh").locator('[data-action="new-chat-project"]').click();
-  const composer = page.getByTestId("new-chat-composer");
+  const composer = await compose(page, "proj-gh");
   await composer.getByTestId("chip-place").click();
   await composer.getByTestId("place-kind-issue").click();
   await composer.getByTestId("place-issue").first().click();

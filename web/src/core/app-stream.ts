@@ -132,7 +132,7 @@ export class AppStream {
         void this.app.newChat.onFrame(e.event, data);
         break;
       case "handoff":
-        this.app.life.onFrame(e.event, data);
+        this.app.life.onHandoff(data);
         break;
       case "chat-start":
         void this.app.newChat.onFrame(e.event, data);

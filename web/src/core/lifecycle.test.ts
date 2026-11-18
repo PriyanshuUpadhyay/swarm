@@ -103,7 +103,7 @@ describe("chats", () => {
     const { life } = fakeApp(() => new Promise(() => {}));
     life.openSwitchModel("chat-1");
     void life.switchModel("chat-1", "claude", "sonnet", null, null, "resume");
-    life.onFrame("handoff", { old_session: "chat-1", phase: "starting", canCancel: false });
+    life.onHandoff({ old_session: "chat-1", phase: "starting", canCancel: false });
     expect(life.state.switchModel).toBeNull();
   });
 
@@ -159,11 +159,11 @@ describe("chats", () => {
   it("follows handoff frames for its own chat until a final phase", () => {
     const { life } = fakeApp(() => new Promise(() => {}));
     void life.switchModel("chat-1", "codex", "gpt-5", null);
-    life.onFrame("handoff", { old_session: "other-chat", phase: "starting", canCancel: false });
-    life.onFrame("handoff", { old_session: "chat-1", phase: "summarizing", canCancel: true });
+    life.onHandoff({ old_session: "other-chat", phase: "starting", canCancel: false });
+    life.onHandoff({ old_session: "chat-1", phase: "summarizing", canCancel: true });
     expect(life.state.handoffs["chat-1"]).toEqual({ old: "chat-1", phase: "summarizing", canCancel: true, error: null, carry: "summary" });
-    life.onFrame("handoff", { old_session: "chat-1", phase: "cancelled", canCancel: false });
-    life.onFrame("handoff", { old_session: "chat-1", phase: "starting", canCancel: false });
+    life.onHandoff({ old_session: "chat-1", phase: "cancelled", canCancel: false });
+    life.onHandoff({ old_session: "chat-1", phase: "starting", canCancel: false });
     expect(life.state.handoffs["chat-1"]?.phase).toBe("cancelled");
   });
 });

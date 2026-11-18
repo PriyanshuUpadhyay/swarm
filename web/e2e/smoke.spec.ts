@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { holdChatStart } from "./lifecycle-helpers";
 
 test("a chat with two children shows their panes; keys move focus and zoom; a pane types, asks and closes", async ({ page: tab }, info) => {
   const errors: string[] = [];
@@ -228,12 +229,7 @@ test("⌘T starts a chat in a hub's main with no prompt and no new worktree", as
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
-  const bodies: unknown[] = [];
-  // The request is answered here, so no chat starts in the fixture.
-  await tab.route("**/api/chat/new", async (route) => {
-    bodies.push(route.request().postDataJSON());
-    await route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"stopped by the test"}' });
-  });
+  const bodies = await holdChatStart(tab);
 
   await tab.locator(`[data-testid="tree-row"][data-id="${process.env.SWARM_E2E_HUB_MAIN}"]`).click();
   await expect(tab.getByTestId("workspace-landing")).toBeVisible();

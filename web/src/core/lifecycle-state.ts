@@ -53,7 +53,7 @@ export type ClosedChat = { title?: string; id: string; cwd: string; archivedAt: 
 /** `GET /api/chats/importable`: a chat on another adapter that the app can show. */
 export type ImportableChat = { id: string; workspace: string; title: string; provider: string | null; lastActivity: number; running: boolean };
 
-export type Profile = { name: string; runners: { provider: string; model?: string; effort?: string }[] };
+export type { Profile } from "./settings-types";
 
 export type LifeState = {
   project: "create" | "import" | null;

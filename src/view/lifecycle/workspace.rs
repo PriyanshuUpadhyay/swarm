@@ -64,9 +64,7 @@ pub fn options(project: &Project, owner: &OwnerChoices) -> Result<Value> {
         .unwrap_or(Value::Null);
     Ok(value)
 }
-/// Creates a workspace, or opens the worktree that already has the picked existing branch.
-/// Returns its path, the project's new defaults, and whether git made a new worktree. A new
-/// branch whose name is taken is `Error::Exists`, so the dialog can offer to open or reopen it.
+
 /// The folder that holds a project's new worktrees, from the worktree folder setting: `~/` is
 /// the home folder, and any other relative path is under the project.
 pub fn worktree_folder(project: &Project, setting: &str) -> Result<PathBuf> {
@@ -81,6 +79,9 @@ pub fn worktree_folder(project: &Project, setting: &str) -> Result<PathBuf> {
     })
 }
 
+/// Creates a workspace, or opens the worktree that already has the picked existing branch.
+/// Returns its path, the project's new defaults, and whether git made a new worktree. A new
+/// branch whose name is taken is `Error::Exists`, so the dialog can offer to open or reopen it.
 pub fn create_workspace(
     root: &Path,
     project: &Project,

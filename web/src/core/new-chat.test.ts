@@ -21,6 +21,7 @@ describe("new chat composer", () => {
 
   it("posts the prompt, place and run, shows the steps, then opens the chat and sends queued text", async () => {
     // A frame can beat the POST reply, and a failed send of the box's text shows a notice.
+
     const calls: string[] = [];
     const app = {
       navSeq: 1,
@@ -36,6 +37,7 @@ describe("new chat composer", () => {
       actions: { openNew: async (session: string, open: boolean) => void calls.push(`open ${session} ${open}`) },
     };
     const chats = new NewChat(app as unknown as App);
+
     chats.open();
     expect(chats.state.composer).toMatchObject({ cwd: "/hub/wt/main", place: { kind: "new" } });
 
