@@ -365,7 +365,7 @@ isolated!(
 );
 
 isolated!(
-    setup_choice_preserves_defaults_and_workspace_creation_keeps_script,
+    setup_choice_preserves_defaults_and_workspace_creation_returns_only_its_keys,
     |fixture| {
         let home = fixture.root.join(".swarm");
         fs::create_dir(&home).unwrap();
@@ -387,8 +387,11 @@ isolated!(
         let request = serde_json::from_value(json!({"project":fixture.repo,"name":"task","mode":"new-branch","prefix":"","folder":"../workspaces"})).unwrap();
         let (_, defaults, _) =
             lifecycle::create_workspace(&home, &tree.projects[0], &owner, &request).unwrap();
-        assert_eq!(defaults["custom"], "keep");
-        assert_eq!(defaults["setup_script"], "printf ready");
+        // Only the keys it changes; the caller merges them, so `custom` and the script stay.
+        assert_eq!(
+            defaults,
+            json!({"worktreeFolder":"../workspaces","branchPrefix":""})
+        );
         let unknown = serde_json::from_value(
             json!({"op":"setup_script","project":"/unlisted","setup_script":"true"}),
         )

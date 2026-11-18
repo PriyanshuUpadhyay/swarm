@@ -54,8 +54,8 @@ pub(super) fn apply_lifecycle(
                 None,
                 |owner: &mut choices::OwnerChoices, state: &mut choices::ViewState| {
                     lifecycle::remember(owner, &path, &project.path);
-                    // Only the two keys this path owns: a chat start runs this off the action
-                    // lane, so other keys may have changed since its snapshot (ADR 0147).
+                    // Only the keys that create_workspace changed: a chat start runs this off the
+                    // action lane, so other keys may have changed since its snapshot (ADR 0147).
                     let saved = owner
                         .project_defaults
                         .entry(project.path.clone())
@@ -63,8 +63,8 @@ pub(super) fn apply_lifecycle(
                     if !saved.is_object() {
                         *saved = json!({});
                     }
-                    for key in ["worktreeFolder", "branchPrefix"] {
-                        saved[key] = settings[key].clone();
+                    for (key, value) in settings.as_object().into_iter().flatten() {
+                        saved[key] = value.clone();
                     }
                     if created {
                         owner.names.insert(path.clone(), request.name.trim().into());

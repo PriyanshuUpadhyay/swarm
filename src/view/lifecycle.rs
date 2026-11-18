@@ -2,6 +2,7 @@
 mod workspace;
 pub use workspace::{
     Mode, NewWorkspace, create_workspace, defaults, options, setup_script, worktree_folder,
+    worktree_parent,
 };
 
 use super::{

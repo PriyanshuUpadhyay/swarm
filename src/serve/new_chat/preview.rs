@@ -38,7 +38,7 @@ pub(in crate::serve) async fn new_chat_preview(
             .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|since_epoch| since_epoch.as_secs());
         let setup = lifecycle::setup_script(&target.saved.owner, &target.project)
-            .and_then(|script| script.lines().map(str::trim).find(|line| !line.is_empty()))
+            .and_then(first_line)
             .map(str::to_owned);
 
         Ok(Json(json!({
@@ -64,16 +64,15 @@ pub(super) fn prompt_worktree(
     prompt: &str,
 ) -> (Option<String>, Option<PathBuf>) {
     let (setting, _, _) = lifecycle::defaults(project, &target.saved.owner);
-    // The same checked path as create_workspace, so a `..` in the setting resolves as it does.
-    let parent = lifecycle::worktree_folder(project, &setting)
-        .and_then(|folder| lifecycle::checked_path(root, &folder.to_string_lossy(), false))
-        .ok();
+    let parent = lifecycle::worktree_parent(root, project, &setting).ok();
+
     let folder_of = |branch: &str| {
         let name = branch.trim_start_matches(swarm::task::PREFIX);
         parent
             .as_ref()
             .map(|parent| parent.join(lifecycle::slug(name)))
     };
+
     let branch = swarm::task::chat_preview(Path::new(cwd), prompt, |branch| {
         folder_of(branch).is_none_or(|folder| !folder.exists())
     });

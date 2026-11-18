@@ -3,6 +3,16 @@
 use super::*;
 use crate::serve::test_support::*;
 
+/// Waits up to 30 s for a CLI stand-in to write its `slow-start` file in `home`.
+async fn stand_in_started(home: &Path) -> Result<(), tokio::time::error::Elapsed> {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while !home.join("slow-start").exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+}
+
 macro_rules! target_route_test {
     ($name:ident, $route:literal, $extra:expr, $args:literal) => {
         #[tokio::test]
@@ -216,13 +226,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
     });
 
     let home = fixture.app.root.parent().unwrap();
-    tokio::time::timeout(Duration::from_secs(30), async {
-        while !home.join("slow-start").exists() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
+    stand_in_started(home).await.unwrap();
 
     let send = tokio::time::timeout(
         Duration::from_secs(30),
@@ -260,6 +264,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
 async fn a_new_chat_replies_with_its_start_id_while_its_launch_still_runs() {
     // ADR 0147: the page opens the chat at once and follows its steps.
     let fixture = action_fixture();
+
     std::fs::write(
         &fixture.app.cli,
         r#"#!/bin/sh
@@ -287,12 +292,7 @@ fi
     )
     .await;
 
-    let waited = tokio::time::timeout(Duration::from_secs(30), async {
-        while !home.join("slow-start").exists() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await;
+    let waited = stand_in_started(home).await;
     // Release the stand-in before an assertion so a failed test cannot leave it waiting.
     std::fs::write(home.join("release"), "release").unwrap();
 
@@ -332,13 +332,7 @@ esac
         )
         .await
     });
-    tokio::time::timeout(Duration::from_secs(30), async {
-        while !home.join("slow-start").exists() {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
+    stand_in_started(home).await.unwrap();
     let restore_app = fixture.app.clone();
     let restore = tokio::spawn(async move {
         chat_action(

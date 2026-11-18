@@ -235,6 +235,7 @@ impl Start {
             (Worktree::New, Some(prompt)) => {
                 let prompt = prompt.to_owned();
                 let app = self.app.clone();
+
                 tokio::task::spawn_blocking(move || {
                     let target = chat_target(&app, &checkout)?;
                     let project = lifecycle::project(&target.tree, &target.project)

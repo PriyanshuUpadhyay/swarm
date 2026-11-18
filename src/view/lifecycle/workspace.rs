@@ -83,8 +83,14 @@ pub fn worktree_folder(project: &Project, setting: &str) -> Result<PathBuf> {
     })
 }
 
+/// The checked folder that holds a project's new worktrees; each one is `slug(name)` in it.
+pub fn worktree_parent(root: &Path, project: &Project, setting: &str) -> Result<PathBuf> {
+    let folder = worktree_folder(project, setting)?;
+    checked_path(root, &folder.to_string_lossy(), false)
+}
+
 /// Creates a workspace, or opens the worktree that already has the picked existing branch.
-/// Returns its path, the project's new defaults, and whether git made a new worktree. A new
+/// Returns its path, the project settings it changes, and whether git made a new worktree. A new
 /// branch whose name is taken is `Error::Exists`, so the dialog can offer to open or reopen it.
 pub fn create_workspace(
     root: &Path,
@@ -101,12 +107,6 @@ pub fn create_workspace(
     let branch = branch_name(&request.name, prefix).ok_or_else(|| {
         Error::Invalid("Enter a name and prefix that make a valid Git branch".into())
     })?;
-    let current = owner
-        .project_defaults
-        .get(&project.path)
-        .filter(|s| s.is_object())
-        .cloned()
-        .unwrap_or_else(|| json!({}));
     let state = |name: &str| crate::task::branch_state(Path::new(common), name);
     match request.mode {
         Mode::ExistingBranch => {
@@ -115,7 +115,7 @@ pub fn create_workspace(
             if let crate::task::BranchState::Checkout(path) = state(name)
                 && references(common)?.checkouts.contains_key(name)
             {
-                return Ok((path.to_string_lossy().into_owned(), current, false));
+                return Ok((path.to_string_lossy().into_owned(), json!({}), false));
             }
         }
         _ => match state(&branch) {
@@ -132,8 +132,7 @@ pub fn create_workspace(
         },
     }
     let folder_setting = request.folder.as_deref().unwrap_or(&folder).trim();
-    let folder = worktree_folder(project, folder_setting)?;
-    let parent = checked_path(root, &folder.to_string_lossy(), false)?;
+    let parent = worktree_parent(root, project, folder_setting)?;
     let target = parent.join(slug(&request.name));
     if std::fs::symlink_metadata(&target).is_ok() {
         return Err(Error::Invalid(format!(
@@ -236,16 +235,9 @@ pub fn create_workspace(
                 "Git created {expected}, but did not list its worktree"
             ))
         })?;
-    let mut settings = current;
-    settings["worktreeFolder"] = json!(if folder_setting == seed {
-        None
-    } else {
-        Some(folder_setting)
-    });
-    settings["branchPrefix"] = json!(if prefix == "swarm/" {
-        None
-    } else {
-        Some(prefix)
+    let settings = json!({
+        "worktreeFolder": (folder_setting != seed).then_some(folder_setting),
+        "branchPrefix": (prefix != "swarm/").then_some(prefix),
     });
     Ok((created.path, settings, true))
 }
