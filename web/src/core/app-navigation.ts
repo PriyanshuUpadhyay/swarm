@@ -261,9 +261,14 @@ export class AppNavigation {
   }
 
   /** ⌘W and a tab's ×. Closing the open tab shows the chat the server picks, else the landing.
-   *  While a start is on screen, ⌘W closes it if it failed, and never the chat behind it. */
+   *  While a start or the composer is on screen, ⌘W acts on it, and never on the chat behind it. */
   closeTab(key?: string): Promise<void> {
     if (this.app.life.state.confirm) return Promise.resolve();
+    const composer = key ? null : this.app.newChat.composing();
+    if (composer) {
+      this.app.newChat.close(composer.text);
+      return Promise.resolve();
+    }
     const start = key ? null : this.app.newChat.shown();
     if (start) {
       if (start.error) this.app.newChat.dismiss(start.id);

@@ -131,6 +131,7 @@ export function placeReady(place: Place): boolean {
     case "new":
     case "here":
       return true;
+
     case "branch":
       return place.branch !== "";
     case "pr":
@@ -235,6 +236,7 @@ export class NewChat {
     const from = this.app.view.workspace ?? cwd;
     const nav = this.app.navSeq;
     const sent = this.state.composer?.seq;
+
     let id: string;
     try {
       ({ start: id } = await this.app.api.post<{ start: string }>("/api/chat/new", startBody(cwd, prompt, place, run), AbortSignal.timeout(START_TIMEOUT_MS)));

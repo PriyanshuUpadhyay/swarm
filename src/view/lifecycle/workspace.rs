@@ -66,7 +66,6 @@ pub fn setup_script<'a>(owner: &'a OwnerChoices, project: &str) -> Option<&'a st
         .project_defaults
         .get(project)
         .and_then(|s| s["setup_script"].as_str())
-        .filter(|s| !s.trim().is_empty())
 }
 
 /// The folder that holds a project's new worktrees, from the worktree folder setting: `~/` is
