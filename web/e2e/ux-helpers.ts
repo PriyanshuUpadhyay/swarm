@@ -30,7 +30,7 @@ export function bodyMode(display: Display | null | undefined): "tree" | "plain" 
       case "heading": case "link": return node.value.children.every(ready);
       case "list": return node.value.items.every((item) => item.every(ready));
       case "table": return [...node.value.head, ...node.value.rows.flat()].every((cell) => cell.every(ready));
-      case "text": case "code": case "break": case "thematic_break": return true;
+      case "text": case "code": case "break": case "thematic_break": case "image": return true;
     }
   };
   return display != null && display.blocks.every(ready) ? "tree" : "plain";
