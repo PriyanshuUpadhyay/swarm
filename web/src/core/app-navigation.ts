@@ -264,14 +264,15 @@ export class AppNavigation {
    *  While a start or the composer is on screen, ⌘W acts on it, and never on the chat behind it. */
   closeTab(key?: string): Promise<void> {
     if (this.app.life.state.confirm) return Promise.resolve();
-    const composer = key ? null : this.app.newChat.composing();
-    if (composer) {
-      this.app.newChat.close(composer.text);
-      return Promise.resolve();
-    }
+    // A start's view draws over a hidden composer, so the start on screen goes first.
     const start = key ? null : this.app.newChat.shown();
     if (start) {
       if (start.error) this.app.newChat.dismiss(start.id);
+      return Promise.resolve();
+    }
+    const composer = key ? null : this.app.newChat.composing();
+    if (composer) {
+      this.app.newChat.close(composer.text);
       return Promise.resolve();
     }
     const run = this.closes.then(() => this.closeTabNow(key));

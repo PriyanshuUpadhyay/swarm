@@ -9,17 +9,15 @@ import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 
 export function StartingView({ app, start }: { app: App; start: Starting }) {
-  // The steps in the order the server sent them; a step with no words here shows its name.
-  const steps = start.steps;
-
+  // The steps come in the order the server sent them; a step with no words shows its name.
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto p-6" data-testid="starting-chat" data-state={start.error ? "failed" : "starting"}>
       <div className="grid w-full max-w-[720px] gap-3">
         <h2 className="truncate text-lg font-semibold">{start.title}</h2>
         {start.prompt && start.prompt !== start.title && <p className="line-clamp-4 text-sm whitespace-pre-wrap text-muted-foreground">{start.prompt}</p>}
         <ol className="grid gap-1.5" aria-label="Start steps" aria-live="polite" data-testid="start-steps">
-          {steps.length === 0 && !start.error && <Step state="running" text="Getting ready" />}
-          {steps.map((s) => (
+          {start.steps.length === 0 && !start.error && <Step state="running" text="Getting ready" />}
+          {start.steps.map((s) => (
             <Step key={s.step} state={s.state} text={`${s.words ?? s.step}${s.step === "worktree" && start.branch ? `: ${start.branch}` : ""}`} error={s.error} />
           ))}
         </ol>

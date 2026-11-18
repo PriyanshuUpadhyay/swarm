@@ -11,6 +11,9 @@ import { FIELD, message } from "./lifecycle-shared";
 import { modelPickerKey } from "./model-picker";
 import { meterTone } from "./usage-meters";
 
+/** A one-of-N pill that shows its pick with `aria-pressed`. */
+export const PRESSED_PILL = "rounded-md border border-border px-2 py-1 text-xs hover:bg-hover aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background";
+
 export type Catalog = { providers: ProviderInfo[]; models: Record<string, ModelInfo[] | string>; error: string | null };
 
 /** The CLIs and their models. A failed CLI read still lists `provider`'s models. */
@@ -149,7 +152,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
                   key={l}
                   type="button"
                   aria-pressed={draft.effort === l}
-                  className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-hover aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background"
+                  className={`flex items-center gap-1 ${PRESSED_PILL}`}
                   onClick={() => setDraft({ ...draft, effort: l })}
                 >
                   {levelWord(l)}

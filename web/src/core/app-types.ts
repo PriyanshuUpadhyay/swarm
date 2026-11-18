@@ -201,6 +201,13 @@ export const NO_PANE: Pane = {
   composer: null,
 };
 export const NO_CELLS: PaneCell[] = [];
+/** The first line of `text`, cut to `chars` characters as a reader counts them, so an emoji at
+ *  the cut, also a flag or a family, stays whole. */
+export const firstLine = (text: string, chars: number) =>
+  Array.from(new Intl.Segmenter().segment(text.split("\n")[0]), (s) => s.segment)
+    .slice(0, chars)
+    .join("");
+
 export const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 /** A live chat row, the rows that End and Archive act on. */
 export const markable = (r: NavRow) => r.kind === "chat" && !r.row?.archived && !!r.row?.selection?.chat;

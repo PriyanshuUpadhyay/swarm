@@ -11,6 +11,9 @@ const tree = {
   ],
 } as unknown as TreeView;
 
+/** An App stand-in on the hub's fix worktree, with the fields that a test adds. */
+const stub = <T extends object>(extra: T) => ({ navSeq: 1, view: { tree, workspace: "/hub/wt/fix", openId: null }, notice: (_text: string) => {}, ...extra });
+
 describe("new chat composer", () => {
   it("starts on a hub's main for a new worktree, and in a plain folder itself", () => {
     expect(targets(tree, "/hub/wt/fix")).toEqual([
@@ -23,9 +26,7 @@ describe("new chat composer", () => {
     // A frame can beat the POST reply, and a failed send of the box's text shows a notice.
     const calls: string[] = [];
 
-    const app = {
-      navSeq: 1,
-      view: { tree, workspace: "/hub/wt/fix", openId: null },
+    const app = stub({
       notice: (text: string) => calls.push(`notice ${text}`),
       api: {
         post: async (path: string, body: unknown) => (calls.push(`${path} ${JSON.stringify(body)}`), { start: "s1" }),
@@ -36,14 +37,14 @@ describe("new chat composer", () => {
       },
       actions: { openNew: async (session: string, open: boolean) => void calls.push(`open ${session} ${open}`) },
       composing: { setDraft: (session: string, text: string) => void calls.push(`draft ${session} ${text}`) },
-    };
+    });
     const chats = new NewChat(app as unknown as App);
 
     chats.open();
     expect(chats.state.composer).toMatchObject({ cwd: "/hub/wt/main", place: { kind: "new" } });
 
     const run = { provider: "codex", model: "gpt-5", effort: "high", account: null };
-    const posted = chats.start("/hub/wt/main", "Fix the flaky smoke test\n", { kind: "new" }, { role: "chat", run });
+    const posted = chats.start("/hub/wt/main", "Fix the flaky smoke test\n", { kind: "new" }, { role: "chat", run }, { composer: true });
     chats.onFrame("chat-start", { start: "s1", step: "worktree", words: "Make the worktree", state: "running" });
     await posted;
     expect(calls[0]).toBe('/api/chat/new {"cwd":"/hub/wt/main","role":"chat","prompt":"Fix the flaky smoke test","place":{"kind":"new"},"provider":"codex","model":"gpt-5","effort":"high"}');
@@ -73,9 +74,7 @@ describe("new chat composer", () => {
     const notices: string[] = [];
     let signal: AbortSignal | undefined;
 
-    const app = {
-      navSeq: 1,
-      view: { tree, workspace: "/hub/wt/fix", openId: null },
+    const app = stub({
       notice: (text: string) => notices.push(text),
       api: {
         post: async (_path: string, _body: unknown, s?: AbortSignal) => {
@@ -83,7 +82,7 @@ describe("new chat composer", () => {
           throw new DOMException("timed out", "TimeoutError");
         },
       },
-    };
+    });
     const chats = new NewChat(app as unknown as App);
     chats.open();
 
@@ -95,14 +94,12 @@ describe("new chat composer", () => {
 
   it("puts a first prompt whose send failed in the chat's text box, and sends nothing after it", async () => {
     const calls: string[] = [];
-    const app = {
-      navSeq: 1,
-      view: { tree, workspace: "/hub/wt/fix", openId: null },
+    const app = stub({
       notice: (text: string) => calls.push(`notice ${text}`),
       api: { post: async () => ({ start: "s1" }), action: async (path: string) => void calls.push(path) },
       actions: { openNew: async (session: string) => void calls.push(`open ${session}`) },
       composing: { setDraft: (session: string, text: string) => void calls.push(`draft ${session} ${text}`) },
-    };
+    });
     const chats = new NewChat(app as unknown as App);
     await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { role: "chat", run: null });
     chats.setDraft("s1", "Then the docs");
@@ -113,12 +110,9 @@ describe("new chat composer", () => {
   });
 
   it("gives a failed start's prompt, queued text and draft to the next composer when it closes", async () => {
-    const app = {
-      navSeq: 1,
-      view: { tree, workspace: "/hub/wt/fix", openId: null },
-      notice: () => {},
+    const app = stub({
       api: { post: async () => ({ start: "s1" }) },
-    };
+    });
     const chats = new NewChat(app as unknown as App);
     await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { role: "chat", run: null });
     chats.setDraft("s1", "Then the docs");
@@ -131,14 +125,11 @@ describe("new chat composer", () => {
     expect(chats.composing()?.text).toBe("Fix it\n\nThen the docs\n\nAnd the tests");
   });
 
-  it("starts a failed ⌘T start again with its queued text, as its folder is no composer target", async () => {
+  it("starts a failed ⌘T start again with its queued text, and keeps text typed during the POST", async () => {
     const posts: unknown[] = [];
-    const app = {
-      navSeq: 1,
-      view: { tree, workspace: "/hub/wt/fix", openId: null },
-      notice: () => {},
+    const app = stub({
       api: { post: async (_path: string, body: unknown) => (posts.push(body), { start: `s${posts.length}` }) },
-    };
+    });
     const chats = new NewChat(app as unknown as App);
     await chats.start("/hub/wt/fix", "", { kind: "here" }, { role: "chat", run: null });
     chats.setDraft("s1", "Then the docs");
@@ -147,27 +138,48 @@ describe("new chat composer", () => {
     await chats.onFrame("chat-start", { start: "s1", step: "done", state: "failed", error: "" });
     expect(chats.state.starts.s1.error).toBe("The chat did not start.");
     chats.retry("s1");
+    chats.typed("Typed meanwhile");
     await new Promise((done) => setTimeout(done));
     expect(chats.state.starts.s2.queued).toEqual(["Then the docs"]);
-    expect(chats.state.unsent).toBe("");
+    expect(chats.state.unsent).toBe("Typed meanwhile");
+  });
+
+  it("keeps the open composer and its text when a ⌘T start posts", async () => {
+    const app = stub({ api: { post: async () => ({ start: "s1" }) } });
+    const chats = new NewChat(app as unknown as App);
+    chats.open();
+    chats.typed("My long prompt");
+
+    await chats.start("/hub/wt/fix", "", { kind: "here" }, { role: "chat", run: null });
+    expect(chats.state.composer?.text).toBe("My long prompt");
+  });
+
+  it("opens Edit and retry on the profile and run that the start posted", async () => {
+    const app = stub({ api: { post: async () => ({ start: "s1" }) } });
+    const chats = new NewChat(app as unknown as App);
+    const run = { role: "review", run: { provider: "codex", model: "gpt-5", effort: "high", account: null } };
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, run, { composer: true });
+
+    await chats.onFrame("chat-start", { start: "s1", step: "done", state: "failed", error: "setup failed" });
+    chats.retry("s1");
+    expect(chats.composing()).toMatchObject({ text: "Fix it", run });
   });
 
   it("gives the next composer both a hidden composer's text and a failed start's prompt", async () => {
-    const app = {
-      navSeq: 1,
-      view: { tree, workspace: "/hub/wt/fix", openId: null },
-      notice: () => {},
+    const app = stub({
       api: { post: async () => ({ start: "s1" }) },
-    };
+    });
     const chats = new NewChat(app as unknown as App);
     await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { role: "chat", run: null });
     await chats.onFrame("chat-start", { start: "s1", step: "done", state: "failed", error: "setup failed" });
     chats.open();
     chats.typed("Draft one");
     app.navSeq = 2;
+    // The page composer on screen now types into `unsent`, not into the hidden one.
+    chats.typed("Page text");
 
     chats.dismiss("s1");
     chats.open();
-    expect(chats.composing()?.text).toBe("Fix it\n\nDraft one");
+    expect(chats.composing()?.text).toBe("Page text\n\nFix it\n\nDraft one");
   });
 });

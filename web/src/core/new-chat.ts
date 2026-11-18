@@ -2,7 +2,7 @@
 // `/api/chat/new`, which answers with a start id at once, and `chat-start` frames report each step.
 
 import type { App } from "./app";
-import { message } from "./app-types";
+import { firstLine, message } from "./app-types";
 import type { Run } from "./composer";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
 import { workspaceRow, type TreeView } from "./nav";
@@ -33,6 +33,8 @@ export type Starting = {
   from: string | null;
   title: string;
   prompt: string;
+  /** The profile and run it posted, so Edit and retry keeps them. */
+  run: ComposerRun;
   steps: StartStep[];
   workspace: string | null;
   branch: string | null;
@@ -45,7 +47,7 @@ export type Starting = {
 
 export type NewChatState = {
   /** The open composer, and the app's navigation count then; any move away hides it. */
-  composer: { cwd: string; place: Place; text: string; seq: number; nav: number } | null;
+  composer: { cwd: string; place: Place; text: string; run: ComposerRun | null; seq: number; nav: number } | null;
   /** The prompt of a composer that Escape closed, which the next one starts with. */
   unsent: string;
   starts: Record<string, Starting>;
@@ -63,6 +65,9 @@ export const DEFAULT_ROLE = "chat";
 
 /** How long the start's POST may take. The server answers in under a second, after its checks. */
 const START_TIMEOUT_MS = 10_000;
+
+/** Options of a start: whether the composer sent it, and the text that goes after its prompt. */
+type StartOptions = { composer?: boolean; queued?: string[] };
 
 /** How many frames of unknown starts wait for their POST reply. */
 const EARLY_KEPT = 50;
@@ -151,13 +156,6 @@ const TITLE_CHARS = 60;
 /** The tab title of a start: the prompt's first line, else New chat. It cuts whole characters. */
 const startTitle = (prompt: string) => firstLine(prompt.trim(), TITLE_CHARS) || "New chat";
 
-/** The first line of `text`, cut to `chars` characters as a reader counts them, so an emoji at
- *  the cut, also a flag or a family, stays whole. */
-export const firstLine = (text: string, chars: number) =>
-  Array.from(new Intl.Segmenter().segment(text.split("\n")[0]), (s) => s.segment)
-    .slice(0, chars)
-    .join("");
-
 export class NewChat {
   state: NewChatState = { composer: null, unsent: "", starts: {}, viewing: null };
   private listeners = new Set<() => void>();
@@ -185,7 +183,7 @@ export class NewChat {
 
   /** ⌘N, New chat, a row "+" and the tab "+": the composer on the project of `at` (a workspace or
    *  a project path), else on the open one. */
-  open(at?: string, place?: Place, text = "") {
+  open(at?: string, place?: Place, text = "", run: ComposerRun | null = null) {
     const list = targets(this.app.view.tree, at ?? this.app.view.workspace);
     const target = (at && list.find((t) => t.cwd === at || t.project === at)) || defaultTarget(list, this.app.view.tree, at ?? this.app.view.workspace);
     if (!target) return this.app.notice("Import or create a project first.");
@@ -196,7 +194,7 @@ export class NewChat {
     // a composer that it replaces, open or hidden by a move away.
     const waiting = [text, this.state.unsent, this.state.composer?.text ?? ""].filter((t) => t.trim());
     // The composer replaces a start's view; the start keeps its tab.
-    const composer = { cwd: target.cwd, place: place ?? defaultPlace(target), text: [...new Set(waiting)].join("\n\n"), seq: ++this.seq, nav: this.app.navSeq };
+    const composer = { cwd: target.cwd, place: place ?? defaultPlace(target), text: [...new Set(waiting)].join("\n\n"), run, seq: ++this.seq, nav: this.app.navSeq };
     this.set({ composer, unsent: "", viewing: null });
   }
 
@@ -211,23 +209,28 @@ export class NewChat {
   retry(id: string) {
     const start = this.state.starts[id];
     if (!start) return;
-    const unsent = this.state.unsent;
-    const rest = [...start.queued, start.draft.trim()].filter(Boolean);
-    // The start's text waits in `unsent` until the next composer or start holds it.
-    this.dismiss(id);
     const composed = targets(this.app.view.tree, start.cwd).some((t) => t.cwd === start.cwd);
-    if (composed) return this.open(start.cwd, start.place);
+    if (composed) {
+      // The start's text waits in `unsent`, and open() gives it to the composer.
+      this.dismiss(id);
+      return this.open(start.cwd, start.place, "", start.run);
+    }
 
-    // Fire-and-forget is safe: start() shows a notice for a failed POST, and the text then waits.
-    void this.start(start.cwd, start.prompt, start.place, { role: DEFAULT_ROLE, run: null }, rest).then((ok) => {
-      if (ok) this.set({ unsent });
+    const rest = [...start.queued, start.draft.trim()].filter(Boolean);
+    this.remove(id, false);
+    // Fire-and-forget is safe: start() shows a notice for a failed POST, and the text then waits
+    // in `unsent`, joined to any text there.
+    void this.start(start.cwd, start.prompt, start.place, start.run, { queued: rest }).then((ok) => {
+      if (!ok) this.set({ unsent: [this.state.unsent, start.prompt, ...rest].filter(Boolean).join("\n\n") });
     });
   }
 
   /** The composer's text as the owner types, so a move away does not lose it; no render needs it.
    *  The start page's composer has no `composer` state, so its text waits in `unsent`. */
   typed(text: string) {
-    if (this.state.composer) this.state.composer.text = text;
+    // A hidden composer keeps its own text; open() joins it to `unsent` later.
+    const open = this.composing();
+    if (open) open.text = text;
     else this.state.unsent = text;
   }
 
@@ -241,8 +244,9 @@ export class NewChat {
     if (this.state.composer) this.set({ composer: null, unsent: text.trim() ? text : "" });
   }
 
-  /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. */
-  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, queued: string[] = []): Promise<boolean> {
+  /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. Only a
+   *  start that the composer sent closes it and takes its text. */
+  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, queued = [] }: StartOptions = {}): Promise<boolean> {
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
     this.posting = true;
@@ -258,16 +262,19 @@ export class NewChat {
     } catch (err) {
       // The server may have started the chat before the wait ended, so the notice says to look first.
       const timedOut = err instanceof DOMException && err.name === "TimeoutError";
-      this.app.notice(timedOut ? "The server did not answer in 10 s. Check the sidebar for the chat before you press ⌘Enter again." : message(err), true);
+      this.app.notice(timedOut ? `The server did not answer in ${START_TIMEOUT_MS / 1000} s. Check the sidebar for the chat before you press ⌘Enter again.` : message(err), true);
       return false;
     } finally {
       this.posting = false;
     }
 
-    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: "" };
+    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), run, steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: "" };
     // A composer the owner opened while this one posted stays open, with its text.
-    const composer = this.state.composer?.seq === sent ? null : this.state.composer;
-    this.set({ composer, unsent: composer ? this.state.unsent : "", starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
+    const closes = fromComposer && this.state.composer?.seq === sent;
+    const composer = closes ? null : this.state.composer;
+    // The page composer has no `composer` state, and its text in `unsent` is the prompt it sent.
+    const unsent = fromComposer && !composer ? "" : this.state.unsent;
+    this.set({ composer, unsent, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
     const early = this.early.filter((data) => data.start === id);
     this.early = this.early.filter((data) => data.start !== id);
     for (const data of early) void this.onFrame("chat-start", data);
@@ -319,8 +326,13 @@ export class NewChat {
   /** Drops a start's tab. A failed start's prompt, queued text and draft wait for the next
    *  composer, so none is lost. */
   dismiss(id: string) {
+    this.remove(id, Boolean(this.state.starts[id]?.error));
+  }
+
+  /** Drops a start's tab; with `keep`, its text waits in `unsent`. */
+  private remove(id: string, keep: boolean) {
     const { [id]: gone, ...starts } = this.state.starts;
-    const kept = gone?.error ? [gone.prompt, ...gone.queued, gone.draft.trim()] : [];
+    const kept = keep && gone ? [gone.prompt, ...gone.queued, gone.draft.trim()] : [];
     const unsent = [this.state.unsent, ...kept].filter(Boolean).join("\n\n");
     this.set({ starts, unsent, viewing: this.state.viewing?.id === id ? null : this.state.viewing });
   }

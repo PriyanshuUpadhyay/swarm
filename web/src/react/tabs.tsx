@@ -94,20 +94,19 @@ export function TabStrip({ app }: { app: App }) {
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if ((e.target as Element).closest("button") || e.metaKey || e.ctrlKey || e.altKey) return;
     const tab = tabOf(e);
-    const choices = keyed;
-    if (!tab || !choices.includes(tab)) return;
+    if (!tab || !keyed.includes(tab)) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       show(tab);
       return;
     }
-    const index = choices.indexOf(tab);
-    const next = e.key === "Home" ? 0 : e.key === "End" ? choices.length - 1 :
-      e.key === "ArrowLeft" ? (index + choices.length - 1) % choices.length :
-      e.key === "ArrowRight" ? (index + 1) % choices.length : null;
+    const index = keyed.indexOf(tab);
+    const next = e.key === "Home" ? 0 : e.key === "End" ? keyed.length - 1 :
+      e.key === "ArrowLeft" ? (index + keyed.length - 1) % keyed.length :
+      e.key === "ArrowRight" ? (index + 1) % keyed.length : null;
     if (next === null) return;
     e.preventDefault();
-    scroller.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(choices[next].id)}"]`)?.focus();
+    scroller.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(keyed[next].id)}"]`)?.focus();
   };
 
   // Drop a tab on another tab to move it there.

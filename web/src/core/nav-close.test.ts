@@ -126,6 +126,17 @@ describe("closing tabs", () => {
     expect(app.closedTabs).toEqual(["older"]);
   });
 
+  it("closes the failed start on screen, not the composer hidden behind it", async () => {
+    const { app } = harness();
+    const start = { id: "s1", cwd: workspace, place: { kind: "here" as const }, from: workspace, title: "New chat", prompt: "", run: { role: "chat", run: null }, steps: [], workspace: null, branch: null, setup: null, error: "failed", queued: [], draft: "" };
+    const composer = { cwd: workspace, place: { kind: "here" as const }, text: "Kept", run: null, seq: 1, nav: app.navSeq };
+    app.newChat.state = { composer, unsent: "", starts: { s1: start }, viewing: { id: "s1", nav: app.navSeq } };
+
+    await app.closeTab();
+    expect(app.newChat.state.starts).toEqual({});
+    expect(app.newChat.composing()?.text).toBe("Kept");
+  });
+
   it("does not add a refused close to the reopen list", async () => {
     const { app } = harness({ refuse: true });
     await app.closeTab();

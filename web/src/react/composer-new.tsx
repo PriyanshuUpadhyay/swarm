@@ -7,14 +7,12 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import type { App } from "../core/app";
 import { cliName, levelWord, profileRun, sameRun, type Run } from "../core/composer";
 import { type Profile } from "../core/lifecycle";
-import { DEFAULT_ROLE, defaultPlace, placeLabel, placeReady, defaultTarget, targets, type Place, type Preview, type Target } from "../core/new-chat";
+import { DEFAULT_ROLE, defaultPlace, type ComposerRun, placeLabel, placeReady, defaultTarget, targets, type Place, type Preview, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 import { ErrorLine, message } from "./lifecycle-shared";
 import { PlacePanel } from "./place-lists";
-import { RunPicker, runModel, useRunCatalog } from "./run-picker";
-
-/** The card of a new worktree; the composer asks only for a git project's place `new`. */
+import { PRESSED_PILL, RunPicker, runModel, useRunCatalog } from "./run-picker";
 
 /** A read of NewChat that also renders again when navSeq moves, because shown() and composing() read it. */
 export function useNewChat<T>(app: App, read: () => T): T {
@@ -31,7 +29,7 @@ export function ComposerPage({ app }: { app: App }) {
   const list = targets(tree, composer?.cwd ?? workspace);
   const target = (composer && list.find((t) => t.cwd === composer.cwd)) || defaultTarget(list, tree, workspace);
   if (!target) return null;
-  return <NewChatComposer app={app} key={composer?.seq ?? `page:${target.cwd}`} initial={target} place={composer?.place ?? defaultPlace(target)} text={composer?.text ?? unsent} focus={composer !== null} />;
+  return <NewChatComposer app={app} key={composer?.seq ?? `page:${target.cwd}`} initial={target} place={composer?.place ?? defaultPlace(target)} text={composer?.text ?? unsent} run={composer?.run ?? null} focus={composer !== null} />;
 }
 
 /** The overlay over an open chat, while ⌘N or a "+" has it open. */
@@ -41,12 +39,12 @@ export function ComposerOverlay({ app }: { app: App }) {
   if (!composer) return null;
   const target = targets(tree, composer.cwd).find((t) => t.cwd === composer.cwd) ?? null;
   if (!target) return null;
-  return <Overlay app={app} key={composer.seq} target={target} place={composer.place} text={composer.text} />;
+  return <Overlay app={app} key={composer.seq} target={target} place={composer.place} text={composer.text} run={composer.run} />;
 }
 
 /** A modal dialog: Tab stays inside, focus goes back where it was on close, and a click on the
  *  backdrop closes it only while the prompt is empty, so a stray click keeps typed text. */
-function Overlay({ app, target, place, text }: { app: App; target: Target; place: Place; text: string }) {
+function Overlay({ app, target, place, text, run }: { app: App; target: Target; place: Place; text: string; run: ComposerRun | null }) {
   const root = useRef<HTMLDivElement>(null);
   // Read in the first render, before the composer's own effect moves the focus into it.
   const [before] = useState(() => (document.activeElement instanceof HTMLElement ? document.activeElement : null));
@@ -72,14 +70,14 @@ function Overlay({ app, target, place, text }: { app: App; target: Target; place
 
   return (
     <div ref={root} role="dialog" data-state="open" aria-modal="true" aria-label="New chat" className="absolute inset-0 z-40 grid place-items-start justify-center bg-background/70 pt-[12vh] backdrop-blur-[2px]" data-testid="composer-overlay" onMouseDown={backdrop} onKeyDown={trap}>
-      <NewChatComposer app={app} initial={target} place={place} text={text} focus overlay />
+      <NewChatComposer app={app} initial={target} place={place} text={text} run={run} focus overlay />
     </div>
   );
 }
 
 type Menu = "project" | "place" | "run" | null;
 
-function NewChatComposer({ app, initial, place: firstPlace, text: firstText, focus, overlay = false }: { app: App; initial: Target; place: Place; text: string; focus: boolean; overlay?: boolean }) {
+function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run: firstRun, focus, overlay = false }: { app: App; initial: Target; place: Place; text: string; run: ComposerRun | null; focus: boolean; overlay?: boolean }) {
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   const [cwd, setCwd] = useState(initial.cwd);
   const list = targets(tree, cwd);
@@ -89,12 +87,14 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
   const [text, setText] = useState(firstText);
   const [menu, setMenu] = useState<Menu>(firstPlace.kind === "branch" && !firstPlace.branch ? "place" : null);
   const [profiles, setProfiles] = useState<Profile[] | string | null>(null);
-  const [role, setRole] = useState(DEFAULT_ROLE);
-  const [run, setRun] = useState<Run | null>(null);
+  // Edit and retry opens on the profile and run that the start posted.
+  const [role, setRole] = useState(firstRun?.role ?? DEFAULT_ROLE);
+  const [run, setRun] = useState<Run | null>(firstRun?.run ?? null);
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const projects = useRef<HTMLDivElement>(null);
-  const preview = usePreview(app, target, place, text);
+  const worktree = place.kind === "new" && target.git;
+  const preview = usePreview(app, target, worktree, text);
 
   const profile = Array.isArray(profiles) ? (profiles.find((p) => p.name === role) ?? profiles[0]) : undefined;
   const base = profileRun(profile);
@@ -134,8 +134,10 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
     if (!ready) return setMenu("place");
     setSending(true);
     const changed = run && !sameRun(run, base) ? run : null;
-    const ok = await app.newChat.start(target.cwd, text, place, { role: profile?.name ?? role, run: changed });
-    if (!ok) setSending(false);
+    const ok = await app.newChat.start(target.cwd, text, place, { role: profile?.name ?? role, run: changed }, { composer: true });
+    // A composer that stays on screen, as when the owner moved during the POST, sends again.
+    setSending(false);
+    if (ok) setText("");
   };
 
   // ⌘⇧/ steps to the next thinking level the picked model takes. Each list read runs a CLI, so
@@ -230,7 +232,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
                       type="button"
                       data-testid="profile-item"
                       aria-pressed={p.name === profile?.name}
-                      className="rounded-md border border-border px-2 py-1 text-xs hover:bg-hover aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background"
+                      className={PRESSED_PILL}
                       onClick={() => {
                         setRole(p.name);
                         setRun(null);
@@ -245,7 +247,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, foc
             </div>
           )}
         </div>
-        <PreviewCard target={target} place={place} preview={preview} />
+        <PreviewCard target={target} place={place} worktree={worktree} preview={preview} />
       </div>
     </div>
   );
@@ -280,9 +282,8 @@ function Chip({ testid, on, title, disabled, onClick, children }: { testid: stri
 }
 
 /** `/api/chat/new-preview`, read 250 ms after the typing stops, for a new worktree only. */
-function usePreview(app: App, target: Target, place: Place, text: string): Preview | "failed" | null {
+function usePreview(app: App, target: Target, wanted: boolean, text: string): Preview | "failed" | null {
   const [preview, setPreview] = useState<Preview | "failed" | null>(null);
-  const wanted = place.kind === "new" && target.git;
 
   useEffect(() => {
     if (!wanted) return setPreview(null);
@@ -302,10 +303,9 @@ function usePreview(app: App, target: Target, place: Place, text: string): Previ
   return wanted ? preview : null;
 }
 
-function PreviewCard({ target, place, preview }: { target: Target; place: Place; preview: Preview | "failed" | null }) {
-  const worktree = place.kind === "new" && target.git;
+function PreviewCard({ target, place, worktree, preview }: { target: Target; place: Place; worktree: boolean; preview: Preview | "failed" | null }) {
   const read = (p: Preview): [string, string][] => [
-    ["Branch", p.branch ?? "swarm/chat-…, renamed from the first prompt"],
+    ["Branch", p.branch ?? "named from the first prompt"],
     ["Folder", p.folder ?? "named from the branch"],
     ["Base", p.base ?? "none"],
     ["Fetched", p.fetchedUnixS ? new Date(p.fetchedUnixS * 1000).toLocaleString() : "never"],
