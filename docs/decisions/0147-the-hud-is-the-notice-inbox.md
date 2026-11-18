@@ -24,7 +24,8 @@ HUD (ADR 0087) is always on screen and already polls the store every 3 s.
 **A notice names the chat and quotes it.** The hook stores the chat's title (the chair log's
 title, else the workspace folder) and the first sentence of the chair's last reply, with a kind:
 `done`, `asks` when the reply ends with a question, `waiting`, or `failed` for a turn that
-stopped on an error (Claude `StopFailure`). A `done` or `asks` turn under 30 s posts nothing; a
+stopped on an error (Claude `StopFailure`; its sign-in errors are a wait of kind `auth`). A board
+decision that waits for the owner is an `asks` row too. A `done` or `asks` turn under 30 s posts nothing; a
 wait or a chair turn that failed posts at any turn length, because the owner has to act on it.
 A turn that the owner stopped, such as a Codex `Interrupt`, posts nothing, because the owner was
 there.
@@ -33,12 +34,14 @@ there.
 the owner opens the chat in the app (the `selected_chat` or `seen` choice), clicks Open on the
 row in the HUD, or clicks Clear. Open marks nothing seen when `swarm focus` fails.
 `swarm notices --inbox --json` (`swarm.inbox.v1`) gives up to 3 blocked agents with the prompt on
-their screen, and the newest unseen row of up to 20 chats, with the full count of each. A
+their screen, and the newest unseen row of up to 20 chats, with the full count of each. A session that a newer one
+continues is part of that chat, so its rows do not show. A
 blocked agent stays while its pane is open, because a block sends no new state reports.
 `swarm notices seen [--through <id>] <session>...` marks rows seen. Clear names the chats it read
 and the newest row id it shows, so a row that came after the HUD drew stays unseen.
 
-**The HUD shows it.** The closed wing says `needs you · <title>`, else `stopped`, else `N done`.
+**The HUD shows it.** The closed wing says `needs you` with the title as a chip on the right wing, else `stopped`,
+else `N done`. A red usage ring puts the used percent in the chip's place.
 A new item drops a popup out of the notch with the title, the kind, the reply's first sentence,
 and Open. Open runs `swarm focus` and marks the chat seen; when the focus fails, the popup line
 shows why for 4 s. A done popup closes after 4 s; a question, a stop, or a wait stays. A hover
