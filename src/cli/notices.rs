@@ -108,10 +108,12 @@ pub(crate) fn inbox(
     root: &std::path::Path,
     connection: &rusqlite::Connection,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    let waiting: Vec<_> = swarm::store::running_agents(connection)?
-        .into_iter()
-        .filter(|agent| agent.state == "blocked")
-        .collect();
+    let mut waiting = Vec::new();
+    for agent in swarm::store::running_agents(connection)? {
+        if agent.state == "blocked" && pane_open(root, connection, &agent.session, &agent.id)? {
+            waiting.push(agent);
+        }
+    }
     let needs_total = waiting.len();
     let mut needs = Vec::new();
     for waiting in waiting.into_iter().take(INBOX_NEEDS) {
@@ -165,6 +167,30 @@ pub(crate) fn inbox(
         "rows": rows,
         "rows_total": rows_total,
     }))
+}
+
+/// A wait lasts while its pane is open (ADR 0147). No sweep covers a chair, so a chair whose pane
+/// closed during a wait stays `blocked`; this forgets its pane. A pane that cannot be checked
+/// counts as open, so a failed listing never drops a real wait.
+fn pane_open(
+    root: &std::path::Path,
+    connection: &rusqlite::Connection,
+    session: &str,
+    agent: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let (Some(adapter), Some(pane)) = (
+        swarm::store::adapter_of(connection, session)?,
+        swarm::store::pane_of(connection, session, agent)?,
+    ) else {
+        return Ok(true);
+    };
+    let gone = swarm::adapter::load(root, &adapter)
+        .and_then(|adapter| adapter.has_pane(&pane))
+        .is_ok_and(|open| !open);
+    if gone {
+        swarm::store::clear_pane(connection, session, agent)?;
+    }
+    Ok(!gone)
 }
 
 /// The notice health: `state` is ok, allow, blocked, held, missing, or unknown, and more may come.

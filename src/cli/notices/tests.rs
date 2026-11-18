@@ -83,3 +83,56 @@ fn held_in_reads_only_the_newest_presented_notice() {
 fn the_settings_link_names_the_helper() {
     assert!(NOTIFICATIONS_URL.ends_with(BUNDLE));
 }
+
+/// ADR 0147: a wait lasts while its pane is open. A chair whose pane closed during a wait is no
+/// "needs you" card, and its pane is forgotten so the working list drops it too.
+#[test]
+fn the_inbox_drops_a_wait_whose_pane_is_gone() {
+    let root = std::env::temp_dir().join(format!("swarm-inbox-pane-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("adapters")).unwrap();
+    // Only %1 is open; `screen` prints nothing, so the live card has no prompt.
+    std::fs::write(
+        root.join("adapters/fake.conf"),
+        "self = true\nspawn = true\nring = true\nlist = echo %1\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+    let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+    let mut sessions = Vec::new();
+    for pane in ["%1", "%2"] {
+        let session = swarm::store::create_session(
+            &connection,
+            "lane",
+            std::path::Path::new("/test"),
+            Some(("claude", "chair-id")),
+            Some("fake"),
+        )
+        .unwrap();
+        swarm::store::add_agent(&connection, &session, "orchestrator", "orchestrator").unwrap();
+        swarm::store::set_pane(&connection, &session, "orchestrator", pane).unwrap();
+        swarm::store::set_state(
+            &connection,
+            &session,
+            "orchestrator",
+            "blocked",
+            "hook",
+            None,
+            None,
+            1,
+        )
+        .unwrap();
+        sessions.push(session);
+    }
+
+    let inbox = inbox(&root, &connection).unwrap();
+
+    assert_eq!(inbox["needs_total"], 1, "{inbox}");
+    assert_eq!(inbox["needs"][0]["session"], sessions[0].as_str());
+    let running: Vec<_> = swarm::store::running_agents(&connection)
+        .unwrap()
+        .into_iter()
+        .map(|agent| agent.session)
+        .collect();
+    assert_eq!(running, [sessions[0].clone()]);
+    std::fs::remove_dir_all(root).unwrap();
+}
