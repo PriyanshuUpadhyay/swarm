@@ -21,8 +21,56 @@ pub fn home() -> Result<String, Box<dyn std::error::Error>> {
             env!("SWARM_BUILD_BRANCH"),
         )),
         Ok(explicit) if explicit.is_empty() => Err("SWARM_HOME is set but empty".into()),
-        explicit => Ok(explicit?),
+        explicit => {
+            let explicit = explicit?;
+            match account_home() {
+                Some(owner) => refuse_owner_home(&explicit, &owner, env!("SWARM_BUILD_BRANCH"))
+                    .map_or(Ok(explicit), |refusal| Err(refusal.into())),
+                None => Ok(explicit),
+            }
+        }
     }
+}
+
+/// ADR 0148: the refusal when a dev build of `branch` gets an explicit `SWARM_HOME` that names the
+/// folder `owner`, else None. A release build (`branch` is `""`) takes any folder. Each path is
+/// compared after it resolves, or as text without a trailing `/` when it does not.
+fn refuse_owner_home(explicit: &str, owner: &str, branch: &str) -> Option<String> {
+    let resolve = |path: &str| {
+        std::fs::canonicalize(path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(path.trim_end_matches('/')))
+    };
+    (!branch.is_empty() && resolve(explicit) == resolve(owner)).then(|| {
+        format!(
+            "this is a dev build of branch {branch}, so it does not open the owner's ~/.swarm \
+             (SWARM_HOME={explicit}); unset SWARM_HOME to use {}, or set it to another folder \
+             (ADR 0148)",
+            branch_home(owner, branch)
+        )
+    })
+}
+
+/// The home folder of the account that runs this process, from the user database, not from
+/// `HOME`. A test sets `HOME` to a scratch folder, but the account's home stays the owner's.
+fn account_home() -> Option<String> {
+    let mut entry: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut found: *mut libc::passwd = std::ptr::null_mut();
+    let mut buffer = vec![0 as libc::c_char; 16 * 1024];
+    // SAFETY: every pointer is valid for the call, and `buffer` outlives the read of `pw_dir`.
+    let code = unsafe {
+        libc::getpwuid_r(
+            libc::getuid(),
+            &mut entry,
+            buffer.as_mut_ptr(),
+            buffer.len(),
+            &mut found,
+        )
+    };
+    if code != 0 || found.is_null() || entry.pw_dir.is_null() {
+        return None;
+    }
+    let dir = unsafe { std::ffi::CStr::from_ptr(entry.pw_dir) };
+    dir.to_str().ok().map(String::from)
 }
 
 /// HOME for a release build (`""`, see `build.rs`), else `HOME/<branch_folder>`. A dev build from
@@ -213,6 +261,19 @@ pub fn on_path(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{branch_folder, branch_home};
+
+    /// ADR 0148: a dev build refuses the owner's home, also written with a trailing `/`, and a
+    /// release build takes it.
+    #[test]
+    fn a_dev_build_refuses_the_owners_home() {
+        let refusal = super::refuse_owner_home("/owner/", "/owner", "feat").unwrap();
+        assert!(
+            refusal.contains("unset SWARM_HOME to use /owner/.swarm-feat"),
+            "{refusal}"
+        );
+        assert_eq!(super::refuse_owner_home("/owner", "/owner", ""), None);
+        assert_eq!(super::refuse_owner_home("/scratch", "/owner", "feat"), None);
+    }
 
     #[test]
     fn settings_paths_match_the_shared_swift_vectors() {

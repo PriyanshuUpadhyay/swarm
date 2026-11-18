@@ -10,7 +10,9 @@ to 200 bytes, and gets a hash of the whole name added, so `feat/login` uses
 the hash, because the default macOS disk ignores case, so `Feature` and `feature` get two folders. `branch_folder` in `src/paths.rs`
 states the exact rule.
 `swarm --version` prints the branch after the commit, nothing for a release build and `HEAD` for
-a detached one. An explicit `SWARM_HOME` always wins, and an empty one is an error. The data
+a detached one. An explicit `SWARM_HOME` always wins, and an empty one is an error. A dev build
+refuses a `SWARM_HOME` that is the account's own home folder, so it never opens the real
+`~/.swarm` (ADR 0148). The data
 directory is always `$SWARM_HOME/.swarm`.
 
 Swarm writes there only when the folder is its own (ADR 0036). A missing or empty folder gets the
