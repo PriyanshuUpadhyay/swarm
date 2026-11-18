@@ -129,14 +129,14 @@ export class AppStream {
         break;
       case "setup":
         // Fire-and-forget is safe: onFrame never rejects.
-        void this.app.newChat.onFrame(e.event, data);
+        void this.app.newChat.onFrame("setup", data);
         break;
       case "handoff":
         this.app.life.onHandoff(data);
         break;
       case "chat-start":
         // Fire-and-forget is safe: onFrame never rejects, and a failed open or send shows a notice.
-        void this.app.newChat.onFrame(e.event, data);
+        void this.app.newChat.onFrame("chat-start", data);
         break;
     }
   }

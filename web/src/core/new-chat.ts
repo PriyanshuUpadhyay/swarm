@@ -228,6 +228,10 @@ export class NewChat {
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
     this.posting = true;
+    // Read before the wait: a move during the POST then shows the start in the old workspace's
+    // strip and not over the view the owner moved to.
+    const from = this.app.view.workspace ?? cwd;
+    const nav = this.app.navSeq;
     let id: string;
     try {
       ({ start: id } = await this.app.api.post<{ start: string }>("/api/chat/new", startBody(cwd, prompt, place, run), AbortSignal.timeout(START_TIMEOUT_MS)));
@@ -240,9 +244,8 @@ export class NewChat {
       this.posting = false;
     }
 
-    const from = this.app.view.workspace ?? cwd;
     const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), steps: [], workspace: null, branch: null, setup: null, error: null, queued: [], draft: "" };
-    this.set({ composer: null, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav: this.app.navSeq } });
+    this.set({ composer: null, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
     const early = this.early.filter((data) => data.start === id);
     this.early = this.early.filter((data) => data.start !== id);
     for (const data of early) void this.onFrame("chat-start", data);
@@ -302,7 +305,7 @@ export class NewChat {
 
   /** A `setup` or `chat-start` frame; the promise ends when a started chat has opened and its
    *  queued text went. It never rejects: a failure shows a notice. */
-  onFrame(event: string, data: Record<string, unknown>): Promise<void> | undefined {
+  onFrame(event: "setup" | "chat-start", data: Record<string, unknown>): Promise<void> | undefined {
     if (event === "setup") {
       for (const start of Object.values(this.state.starts)) {
         if (start.workspace !== data.workspace) continue;
@@ -314,7 +317,6 @@ export class NewChat {
 
     const id = String(data.start);
     const start = this.state.starts[id];
-    if (event !== "chat-start") return;
 
     if (!start) {
       // The frame can come before the POST reply; start() takes it then.
