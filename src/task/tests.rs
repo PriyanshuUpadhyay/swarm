@@ -173,9 +173,11 @@ fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
     git(&main, &["branch", "swarm/fix-login-redirect-bug-now"]).unwrap();
     let origin_ref = "refs/remotes/origin/swarm/fix-login-redirect-bug-now-2";
     git(&main, &["update-ref", origin_ref, "HEAD"]).unwrap();
+
     let prompt = "Fix the login redirect bug now please";
     // The preview gives the same name and claims nothing.
     assert_eq!(chat_preview(&main, prompt).as_deref(), Some(expected));
+
     // A long taken name keeps its -2 through the 40-character workspace slug.
     let long = "Refactor authentication middleware validation layer";
     let base = chat_preview(&main, long).unwrap();
@@ -186,6 +188,7 @@ fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
         (name.ends_with("-2"), crate::view::lifecycle::slug(name)),
         (true, name.to_owned())
     );
+
     let named = name_chat(&root, &path, prompt).unwrap();
     assert_eq!(named.as_deref(), Some(expected));
     assert_eq!(name_chat(&root, &path, "a second prompt").unwrap(), None);

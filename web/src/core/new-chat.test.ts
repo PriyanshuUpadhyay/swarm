@@ -21,8 +21,8 @@ describe("new chat composer", () => {
 
   it("posts the prompt, place and run, shows the steps, then opens the chat and sends queued text", async () => {
     // A frame can beat the POST reply, and a failed send of the box's text shows a notice.
-
     const calls: string[] = [];
+
     const app = {
       navSeq: 1,
       view: { tree, workspace: "/hub/wt/fix", openId: null },
@@ -72,6 +72,7 @@ describe("new chat composer", () => {
   it("ends the start's wait after 10 s and keeps the composer, since the server may still start it", async () => {
     const notices: string[] = [];
     let signal: AbortSignal | undefined;
+
     const app = {
       navSeq: 1,
       view: { tree, workspace: "/hub/wt/fix", openId: null },
