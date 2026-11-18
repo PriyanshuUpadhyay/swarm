@@ -65,3 +65,28 @@ async fn a_pasted_image_is_saved_private_and_only_an_image_type_is_taken() {
     let gone = format!("{}.png", uuid::Uuid::now_v7());
     assert_eq!(read(&gone).await.unwrap_err().0, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn a_named_local_image_is_read_only_inside_an_allowed_folder() {
+    let fixture = Fixture::new();
+    let reports = fixture.app.root.join("reports/run");
+    std::fs::create_dir_all(&reports).unwrap();
+    std::fs::write(reports.join("shot.png"), b"\x89PNG").unwrap();
+    // The fixture's session works in the crate root, so a file outside it uses the temp folder.
+    let outside = std::env::temp_dir().join(format!("swarm-image-{}", uuid::Uuid::now_v7()));
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("shot.png"), b"\x89PNG").unwrap();
+    let read = |path: PathBuf| {
+        chat_image_file(
+            State(fixture.app.clone()),
+            Query(ImagePath {
+                path: path.to_string_lossy().into_owned(),
+            }),
+        )
+    };
+    let shown = read(reports.join("shot.png")).await.unwrap();
+    assert_eq!(shown.headers()[header::CONTENT_TYPE], "image/png");
+    let refused = read(outside.join("shot.png")).await.unwrap_err();
+    std::fs::remove_dir_all(&outside).unwrap();
+    assert_eq!(refused.0, StatusCode::NOT_FOUND);
+}

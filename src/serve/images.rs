@@ -98,6 +98,86 @@ pub(super) async fn chat_image_read(
         .into_response())
 }
 
+#[derive(Deserialize)]
+pub(super) struct ImagePath {
+    pub(super) path: String,
+}
+
+/// A local image that an agent named as `![alt](/path)`. The path comes from agent text, so it is
+/// checked: it must be an image type, and its real path must sit under `reports` or `uploads` in
+/// the swarm home, or under the working folder of a known session.
+pub(super) async fn chat_image_file(
+    State(app): State<App>,
+    Query(query): Query<ImagePath>,
+) -> Result<Response, ApiError> {
+    let refused = || error(StatusCode::NOT_FOUND, "not an image the app may show");
+    let ext = Path::new(&query.path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(refused)?;
+    let ext = if ext == "jpeg" { "jpg" } else { ext.as_str() };
+    let mime = IMAGE_TYPES
+        .iter()
+        .find(|(known, _)| *known == ext)
+        .map(|(_, mime)| *mime)
+        .filter(|_| Path::new(&query.path).is_absolute())
+        .ok_or_else(refused)?;
+    let root = app.root.clone();
+    let path = PathBuf::from(&query.path);
+    let bytes = tokio::task::spawn_blocking(move || {
+        let path = path.canonicalize().ok()?;
+        if !path.is_file() {
+            return None;
+        }
+        let mut folders = vec![root.join("reports"), root.join("uploads")];
+        folders.extend(session_folders(&root));
+        folders
+            .iter()
+            .filter_map(|folder| folder.canonicalize().ok())
+            .any(|folder| path.starts_with(folder))
+            .then(|| std::fs::read(&path).ok())
+            .flatten()
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "image task failed"))?
+    .ok_or_else(refused)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::CACHE_CONTROL, "private, no-cache"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+/// The working folder of each session in the swarm database. `/` and the home folder are left
+/// out, as a chat started there would admit every image on the disk.
+fn session_folders(root: &Path) -> Vec<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let Ok(connection) = read_connection(root) else {
+        return Vec::new();
+    };
+    let Ok(mut statement) = connection.prepare("SELECT DISTINCT cwd FROM session") else {
+        return Vec::new();
+    };
+    statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map(|rows| {
+            rows.filter_map(Result::ok)
+                .map(PathBuf::from)
+                .filter(|folder| {
+                    folder.is_absolute()
+                        && folder.parent().is_some()
+                        && Some(folder) != home.as_ref()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 #[path = "images/tests.rs"]
 mod tests;

@@ -1,5 +1,6 @@
 // HTTP client for `swarm serve`. The page saves the token in local storage (ADR 0088).
 
+import { imagePaths } from "./images";
 import type { ChoiceOp, TreeName, TreeView, TabsView } from "./nav";
 
 export type Session = {
@@ -144,6 +145,7 @@ export type Inline =
   | { type: "code"; value: string }
   | { type: "break" }
   | { type: "link"; value: { url: string; title: string | null; children: Inline[] } }
+  | { type: "image"; value: { alt: string; path: string } }
   | { type: "later"; value: string };
 
 export type Align = "none" | "left" | "center" | "right";
@@ -306,10 +308,11 @@ export class Api {
     throw new ApiError(res.status, errorText(text, res));
   }
 
-  /** A pasted image as a blob URL, for its preview; an <img> cannot send the bearer token. */
+  /** A pasted image, or a local image a reply names, as a blob URL; an <img> cannot send the bearer token. */
   async imageUrl(path: string): Promise<string> {
     const name = path.slice(path.lastIndexOf("/") + 1);
-    const res = await this.fetch(`/api/chat/image?name=${encodeURIComponent(name)}`, { headers: this.headers() });
+    const url = imagePaths(path)[0] === path ? `/api/chat/image?name=${encodeURIComponent(name)}` : `/api/chat/image/file?path=${encodeURIComponent(path)}`;
+    const res = await this.fetch(url, { headers: this.headers() });
     if (!res.ok) throw new ApiError(res.status, errorText(await res.text(), res));
     return URL.createObjectURL(await res.blob());
   }

@@ -7,7 +7,7 @@ import { duration, imagesOf, paintBodyOf, UNMAPPED, wordAt, type Line } from "..
 import { fold, type FoldLevel } from "../core/fold-display";
 import { copyText } from "./copy";
 import { ImageThumbs } from "./images";
-import { MarkdownView } from "./markdown-view";
+import { ImageLoader, MarkdownView } from "./markdown-view";
 import { DiffView, OutputBox } from "./transcript-output";
 import { PlanRow, TodoRow } from "./transcript-todo";
 import { SubagentRow } from "./subagent-chat";
@@ -26,7 +26,9 @@ function LineView({ app, line, index, full, match, composerId, branches }: Ctx &
       data-match={match}
       className={`line${line.fold ? " step" : ""}`}
     >
-      <RowBody app={app} line={line} full={full} composerId={composerId} branches={branches} />
+      <ImageLoader.Provider value={app.imageUrl}>
+        <RowBody app={app} line={line} full={full} composerId={composerId} branches={branches} />
+      </ImageLoader.Provider>
     </div>
   );
 }

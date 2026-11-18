@@ -1,4 +1,4 @@
-import { Fragment, createElement, type ReactNode } from "react";
+import { Fragment, createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Block, Display, Inline } from "../core/api";
 import { ColoredRow, PatchBody, useSplit } from "./patch-body";
 
@@ -15,6 +15,25 @@ function Head({ label, what, diff = false }: { label: string; what: "code" | "ta
       <button type="button" data-copy={what} aria-label={`Copy ${what}`}>Copy</button>
     </div>
   );
+}
+
+/** Loads a local image as a blob URL. Without one, an image shows as its alt text. */
+export const ImageLoader = createContext<((path: string) => Promise<string>) | null>(null);
+
+function Image({ alt, path }: { alt: string; path: string }) {
+  const load = useContext(ImageLoader);
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!load) return;
+    let live = true;
+    load(path).then((u) => live && setUrl(u), () => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [load, path]);
+  if (url) return <img className="md-image" src={url} alt={alt} title={path} />;
+  return <span className="md-image-missing" title={failed ? `Could not load ${path}` : path}>[{alt || "image"}]</span>;
 }
 
 function inlines(nodes: Inline[]): ReactNode[] {
@@ -38,6 +57,8 @@ function inlines(nodes: Inline[]): ReactNode[] {
           ? <a key={i} href={url} title={title ?? undefined} target="_blank" rel="noopener noreferrer">{inlines(children)}</a>
           : <Fragment key={i}>{inlines(children)}</Fragment>;
       }
+      case "image":
+        return <Image key={i} alt={node.value.alt} path={node.value.path} />;
       case "later":
         return null;
     }

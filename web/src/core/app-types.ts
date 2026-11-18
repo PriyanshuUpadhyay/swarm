@@ -147,7 +147,7 @@ export type Reader = {
   toggleLine(line: Line): void;
   loadFull(previewId: string): Promise<void>;
   fullText(previewId: string): Promise<string>;
-  /** A pasted image's preview URL. */
+  /** A pasted image's preview URL, or a local image that a reply names. */
   imageUrl(path: string): Promise<string>;
   loadOlder(): Promise<void>;
   retryRows?(): Promise<void>;

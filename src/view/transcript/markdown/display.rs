@@ -63,6 +63,12 @@ pub enum Inline {
         title: Option<String>,
         children: Vec<Inline>,
     },
+    /// A local image from `![alt](/absolute/path.png)`. The parser keeps images off, so this
+    /// comes from the literal text; the server decides which paths it may read.
+    Image {
+        alt: String,
+        path: String,
+    },
     Later(&'static str),
 }
 
@@ -136,6 +142,7 @@ impl LiveUnits {
             match inline {
                 Inline::Text(text) | Inline::Code(text) => self.text(text),
                 Inline::Break => self.total += 1,
+                Inline::Image { .. } => {}
                 Inline::Emphasis(children)
                 | Inline::Strong(children)
                 | Inline::Delete(children)
@@ -186,7 +193,7 @@ fn inline_ready(inline: &Inline) -> bool {
         | Inline::Strong(children)
         | Inline::Delete(children)
         | Inline::Link { children, .. } => children.iter().all(inline_ready),
-        Inline::Text(_) | Inline::Code(_) | Inline::Break => true,
+        Inline::Text(_) | Inline::Code(_) | Inline::Break | Inline::Image { .. } => true,
     }
 }
 
@@ -375,13 +382,14 @@ fn map_inlines(
                     if index > 0 {
                         inlines.push(Inline::Break);
                     }
-                    if !piece.is_empty() {
-                        inlines.push(Inline::Text(piece.to_owned()));
-                    }
+                    push_text(&mut inlines, piece);
                 }
                 continue;
             }
-            Node::Text(text) => Inline::Text(text.value.clone()),
+            Node::Text(text) => {
+                push_text(&mut inlines, &text.value);
+                continue;
+            }
             Node::Emphasis(emphasis) => {
                 Inline::Emphasis(map_inlines(&emphasis.children, definitions, breaks))
             }
@@ -417,6 +425,46 @@ fn map_inlines(
         inlines.push(inline);
     }
     inlines
+}
+
+/// Push text, with each `![alt](/absolute/path.ext)` of a known image type as an image.
+fn push_text(inlines: &mut Vec<Inline>, mut text: &str) {
+    while let Some((before, alt, path, after)) = local_image(text) {
+        if !before.is_empty() {
+            inlines.push(Inline::Text(before.to_owned()));
+        }
+        inlines.push(Inline::Image {
+            alt: alt.to_owned(),
+            path: path.to_owned(),
+        });
+        text = after;
+    }
+    if !text.is_empty() {
+        inlines.push(Inline::Text(text.to_owned()));
+    }
+}
+
+fn local_image(text: &str) -> Option<(&str, &str, &str, &str)> {
+    let mut from = 0;
+    while let Some(found) = text[from..].find("![") {
+        let start = from + found;
+        from = start + 2;
+        let rest = &text[start + 2..];
+        let (alt, rest) = rest.split_once("](")?;
+        let (path, after) = rest.split_once(')')?;
+        let image = !alt.contains(['[', ']', '\n'])
+            && path.starts_with('/')
+            && !path.contains(char::is_whitespace)
+            && path.rsplit_once('.').is_some_and(|(_, ext)| {
+                ["png", "jpg", "jpeg", "gif", "webp"]
+                    .iter()
+                    .any(|known| ext.eq_ignore_ascii_case(known))
+            });
+        if image {
+            return Some((&text[..start], alt, path, after));
+        }
+    }
+    None
 }
 
 fn code_label(code: &markdown::mdast::Code, offset_text: &str) -> Option<String> {

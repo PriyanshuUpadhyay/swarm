@@ -233,6 +233,7 @@ pub(super) fn router(app: App) -> Router {
                 .post(chat_image)
                 .layer(DefaultBodyLimit::max(IMAGE_LIMIT)),
         )
+        .route("/api/chat/image/file", get(chat_image_file))
         .route("/api/agent/close", post(chat_action))
         .route("/api/sessions/archive", post(chat_action))
         .route("/api/sessions/unarchive", post(chat_action))

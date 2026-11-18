@@ -221,3 +221,20 @@ fn row_displays_serialize_as_the_contract() {
     });
     assert_eq!(observed, expected);
 }
+
+/// Images stay off in the parser, so an agent's `![alt](/absolute/path.png)` comes from its literal
+/// text. A web URL or a non-image file stays text.
+#[test]
+fn a_local_image_in_reply_text_displays_as_an_image() {
+    let observed = serde_json::to_value(plain(
+        "See ![shot](/tmp/r/a.png) and ![doc](/tmp/r/a.txt)\n![b](/tmp/r/b.JPEG)",
+    ))
+    .unwrap();
+    let expected = json!({"blocks": [{"type": "paragraph", "value": [
+        {"type": "text", "value": "See "},
+        {"type": "image", "value": {"alt": "shot", "path": "/tmp/r/a.png"}},
+        {"type": "text", "value": " and ![doc](/tmp/r/a.txt)\n"},
+        {"type": "image", "value": {"alt": "b", "path": "/tmp/r/b.JPEG"}}
+    ]}]});
+    assert_eq!(observed, expected);
+}

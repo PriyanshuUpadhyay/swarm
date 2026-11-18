@@ -102,6 +102,7 @@ export function units(d: Display): string {
       case "list": return node.value.items.map(read).join("");
       case "table": return node.value.head.map(read).join("") + node.value.rows.map((row) => row.map(read).join("")).join("");
       case "thematic_break":
+      case "image":
       case "later": return "";
     }
   }).join("");
@@ -183,6 +184,7 @@ export function cut(d: Display, n: number): Display {
           break;
         }
         case "thematic_break":
+        case "image":
         case "later":
           out.push(node);
           break;

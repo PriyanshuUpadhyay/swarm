@@ -35,6 +35,7 @@ function plain(nodes: readonly Inline[]): { text: string; code: boolean[] } {
         case "strong":
         case "delete": walk(node.value); break;
         case "link": walk(node.value.children); break;
+        case "image":
         case "later": break;
       }
     }
