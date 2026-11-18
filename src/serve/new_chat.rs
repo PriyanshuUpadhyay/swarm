@@ -27,6 +27,7 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
     } else {
         None
     });
+
     for value in [
         Some(role.as_str()),
         body.provider.as_deref(),
@@ -41,9 +42,11 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
             return Err(error(StatusCode::BAD_REQUEST, "invalid launch option"));
         }
     }
+
     if body.cwd.contains('\0') || !Path::new(&body.cwd).is_absolute() {
         return Err(error(StatusCode::BAD_REQUEST, "absolute cwd required"));
     }
+
     let place = body.place.clone();
     let snapshot_app = app.clone();
     let allowed_cwd = body.cwd.clone();
@@ -94,10 +97,12 @@ fn chat_target(app: &App, cwd: &str) -> Result<Target, ApiError> {
         .ok_or_else(|| error(StatusCode::FORBIDDEN, "cwd is outside the workspace tree"))?
         .path
         .clone();
+
     lifecycle::checked_path(&app.root, cwd, true).map_err(lifecycle_error)?;
     if is_read_only(&tree, &saved, cwd) {
         return Err(read_only_error("chat"));
     }
+
     let hub_main = found.is_some_and(|(_, workspace)| workspace.hub_main);
     Ok(Target {
         project,

@@ -32,7 +32,7 @@ pub fn unnamed_chat(branch: &str) -> bool {
 }
 
 /// The branch name a first prompt gives: its first five ASCII words that are not filler,
-/// lowercase and joined by `-`, at most 40 characters, under `swarm/`. A prompt of filler only
+/// lowercase and joined by `-`, at most 38 characters, under `swarm/`. A prompt of filler only
 /// keeps its words. None when the prompt has no ASCII word.
 fn chat_branch(prompt: &str) -> Option<String> {
     let all: Vec<_> = prompt
@@ -50,8 +50,12 @@ fn chat_branch(prompt: &str) -> Option<String> {
         return None;
     }
 
-    // The workspace slug lowercases, joins with `-`, and keeps 40 characters.
-    let slug = crate::view::lifecycle::slug(&words.join(" "));
+    // The workspace slug lowercases, joins with `-`, and keeps 40 characters; 38 leave room for
+    // the `-2` to `-9` of a taken name, which the new worktree's name passes through that slug.
+    let slug: String = crate::view::lifecycle::slug(&words.join(" "))
+        .chars()
+        .take(38)
+        .collect();
     Some(branch_name(slug.trim_end_matches('-')))
 }
 

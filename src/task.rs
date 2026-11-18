@@ -76,7 +76,6 @@ pub fn resolve(cwd: &Path, path: &Path) -> PathBuf {
     }
 }
 
-/// The hub that holds `path`, or None for a plain clone or a path outside git.
 /// The git common folder of the checkout that `path`, or its nearest existing parent, is in.
 pub fn common_dir(path: &Path) -> Option<PathBuf> {
     let mut dir = resolve(Path::new("/"), path);
@@ -90,6 +89,7 @@ pub fn common_dir(path: &Path) -> Option<PathBuf> {
     std::fs::canonicalize(common).ok()
 }
 
+/// The hub that holds `path`, or None for a plain clone or a path outside git.
 pub fn hub(path: &Path) -> Option<Hub> {
     let common = common_dir(path)?;
     if git(&common, &["config", "--bool", "core.bare"]).as_deref() != Some("true") {

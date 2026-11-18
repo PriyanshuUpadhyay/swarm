@@ -179,23 +179,22 @@ exit 1
 #[tokio::test]
 async fn a_session_send_finishes_while_another_session_action_is_running() {
     // A new chat's launch runs off the queue (ADR 0147), so only a session action can hold it.
-    for slow_route in ["/api/chat/interrupt"] {
-        let fixture = action_fixture();
-        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-        let other = swarm::store::create_session(
-            &connection,
-            "lane",
-            Path::new(env!("CARGO_MANIFEST_DIR")),
-            None,
-            Some("fixture"),
-        )
-        .unwrap();
-        swarm::store::add_agent(&connection, &other, "worker", "chat").unwrap();
-        let new_id = uuid::Uuid::now_v7();
-        std::fs::write(
-            &fixture.app.cli,
-            format!(
-                r#"#!/bin/sh
+    let fixture = action_fixture();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let other = swarm::store::create_session(
+        &connection,
+        "lane",
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        None,
+        Some("fixture"),
+    )
+    .unwrap();
+    swarm::store::add_agent(&connection, &other, "worker", "chat").unwrap();
+    let new_id = uuid::Uuid::now_v7();
+    std::fs::write(
+        &fixture.app.cli,
+        format!(
+            r#"#!/bin/sh
 case "$1 $2" in
   'session new') printf '%s\n' '{new_id}'; exit 0 ;;
 esac
@@ -206,56 +205,55 @@ if [ "$1" = interrupt ]; then
 fi
 if [ "$1" = type ]; then cat > "$SWARM_HOME/text"; fi
 "#
-            ),
+        ),
+    )
+    .unwrap();
+    let slow_app = fixture.app.clone();
+    let slow_body = json!({"session": other, "agent": "worker"});
+    let slow = tokio::spawn(async move {
+        chat_action(
+            State(slow_app),
+            "/api/chat/interrupt".parse().unwrap(),
+            Ok(Json(slow_body)),
         )
-        .unwrap();
-        let slow_app = fixture.app.clone();
-        let slow_body = json!({"session": other, "agent": "worker"});
-        let slow = tokio::spawn(async move {
-            chat_action(
-                State(slow_app),
-                slow_route.parse().unwrap(),
-                Ok(Json(slow_body)),
-            )
-            .await
-        });
-        let home = fixture.app.root.parent().unwrap();
-        tokio::time::timeout(Duration::from_secs(30), async {
-            while !home.join("slow-start").exists() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
         .await
+    });
+    let home = fixture.app.root.parent().unwrap();
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while !home.join("slow-start").exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let send = tokio::time::timeout(
+        Duration::from_secs(30),
+        call_action(
+            &fixture,
+            "/api/chat/send",
+            json!({"session": fixture.session, "agent": "worker", "text": "parallel send"}),
+        ),
+    )
+    .await;
+    let still_running = !slow.is_finished();
+    // Release the stand-in before an assertion so a failed test cannot leave it waiting.
+    std::fs::write(home.join("release"), "release").unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(30), slow)
+        .await
+        .unwrap()
+        .unwrap()
         .unwrap();
-        let send = tokio::time::timeout(
-            Duration::from_secs(30),
-            call_action(
-                &fixture,
-                "/api/chat/send",
-                json!({"session": fixture.session, "agent": "worker", "text": "parallel send"}),
-            ),
-        )
-        .await;
-        let still_running = !slow.is_finished();
-        // Release the stand-in before an assertion so a failed test cannot leave it waiting.
-        std::fs::write(home.join("release"), "release").unwrap();
-        let _ = tokio::time::timeout(Duration::from_secs(30), slow)
-            .await
+    assert!(still_running, "slow action ended before the send finished");
+    assert_eq!(
+        send.expect("send must not wait for another session or launch")
             .unwrap()
-            .unwrap()
-            .unwrap();
-        assert!(still_running, "slow action ended before the send finished");
-        assert_eq!(
-            send.expect("send must not wait for another session or launch")
-                .unwrap()
-                .0,
-            json!({"ok": true})
-        );
-        assert_eq!(
-            std::fs::read_to_string(home.join("text")).unwrap(),
-            "parallel send"
-        );
-    }
+            .0,
+        json!({"ok": true})
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join("text")).unwrap(),
+        "parallel send"
+    );
 }
 
 #[tokio::test]

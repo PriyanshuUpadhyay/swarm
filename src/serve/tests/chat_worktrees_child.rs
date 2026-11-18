@@ -11,6 +11,7 @@ async fn chat_worktrees(fixture: &Fixture, root: &Path, connection: &rusqlite::C
             .unwrap();
         assert!(status.success(), "{script}");
     };
+
     sh("git init -q --bare .bare && git -C .bare symbolic-ref HEAD refs/heads/main \
         && git --git-dir=.bare worktree add -q --orphan -b main wt/main \
         && echo a > wt/main/a.txt && git -C wt/main add a.txt && git -C wt/main commit -q -m a \
@@ -133,6 +134,7 @@ esac
         )
         .unwrap();
     swarm::store::add_agent(connection, &id, "orchestrator", "chat").unwrap();
+
     let cli = format!(
         r#"#!/bin/sh
 printf '%s\n' "$PWD|$*" >> "$SWARM_HOME/actions"
@@ -143,7 +145,8 @@ esac
 if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
 "#
     );
-    std::fs::write(&fixture.app.cli, cli).unwrap();
+    std::fs::write(&fixture.app.cli, &cli).unwrap();
+
     let prompt = "Fix the flaky smoke test";
     let query = HashMap::from([("cwd".into(), main.clone()), ("prompt".into(), prompt.into())]);
     let preview = new_chat_preview(State(fixture.app.clone()), Query(query))
@@ -154,6 +157,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
         (&preview["branch"], &preview["folder"], &preview["setup"]),
         (&json!("swarm/fix-flaky-smoke-test"), &json!("wt/fix-flaky-smoke-test"), &json!("touch setup-ran"))
     );
+
     let started = start_chat(fixture, json!({"cwd":main,"prompt":prompt}))
         .await
         .unwrap_or_else(|e| panic!("{e:?} {}", action_calls(fixture)));
@@ -165,4 +169,32 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
     assert!(action_calls(fixture).ends_with(&format!("{named}|type orchestrator\n")));
     let home = fixture.app.root.parent().unwrap();
     assert_eq!(std::fs::read_to_string(home.join("typed")).unwrap(), prompt);
+
+    // ADR 0147: place `new` in a git project that is no hub still starts the chat in a new worktree.
+    let clone = root.join("clone");
+    let status = std::process::Command::new("/bin/sh")
+        .args(["-c", "git init -q -b main clone && cd clone && echo a > a.txt && git add a.txt && git -c user.name=t -c user.email=t@t commit -q -m a"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let clone_path = clone.to_string_lossy().into_owned();
+    choices_store::update(&fixture.app.root, None, |owner, _| {
+        lifecycle::remember(owner, &clone_path, &clone_path);
+        Ok(())
+    })
+    .unwrap();
+    std::fs::write(&fixture.app.cli, cli.replace(&format!("printf '%s\\n' '{id}'"), "/usr/bin/uuidgen | /usr/bin/tr A-Z a-z")).unwrap();
+
+    let body = json!({"cwd":clone_path,"prompt":"Add a retry","place":{"kind":"new"}});
+    let started = start_chat(fixture, body)
+        .await
+        .unwrap_or_else(|e| panic!("{e:?} {}", action_calls(fixture)));
+    let made = started["workspace"].as_str().unwrap();
+    assert_eq!(
+        lifecycle::check_git(made, &["branch", "--show-current"]).unwrap(),
+        "swarm/add-retry"
+    );
+    assert!(action_calls(fixture).contains(&format!("{made}|launch orchestrator chat")));
 }

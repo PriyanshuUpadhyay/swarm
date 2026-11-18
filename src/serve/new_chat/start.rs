@@ -21,8 +21,8 @@ impl Start {
     /// Publishes a `chat-start` frame for this start.
     fn frame(&self, step: &str, state: &str, extra: Value) {
         let mut payload = json!({"start": self.id, "step": step, "state": state});
-        if let (Some(payload), Value::Object(extra)) = (payload.as_object_mut(), extra) {
-            payload.extend(extra);
+        if let Value::Object(extra) = extra {
+            payload.as_object_mut().unwrap().extend(extra);
         }
         self.app
             .hub
@@ -69,6 +69,7 @@ impl Start {
             .as_deref()
             .map(str::trim)
             .filter(|p| !p.is_empty());
+
         let (cwd, own_branch, prompt) = match &launch.worktree {
             Some((project, place)) => {
                 let made = self
@@ -90,6 +91,7 @@ impl Start {
                 return Err(err);
             }
         };
+
         let started = start_chair(
             &app,
             body,
@@ -114,6 +116,7 @@ impl Start {
                 agent: "orchestrator".into(),
                 text,
             };
+
             // The chat runs, so a failed send leaves the prompt to the owner and still opens it.
             match enqueue_action(&app, Action::Send(send)).await {
                 Ok(_) => self.complete(json!({})),
@@ -122,6 +125,7 @@ impl Start {
                 }
             }
         }
+
         Ok((session, cwd))
     }
 
@@ -141,6 +145,7 @@ impl Start {
         self.enter("worktree");
         // The hub is found from the checkout; a hub project's own folder is no checkout.
         let checkout = cwd.to_owned();
+
         let named = match (&place, prompt) {
             (Place::New, Some(prompt)) => {
                 let prompt = prompt.to_owned();
@@ -152,14 +157,19 @@ impl Start {
             }
             _ => None,
         };
+
         let own = matches!(place, Place::New);
         let (mode, name, branch, pr, issue) = match place {
-            Place::New | Place::Here => {
+            // checked_start starts a `here` chat in its folder, so it never asks for a worktree.
+            Place::Here => unreachable!("place here makes no worktree"),
+
+            Place::New => {
                 let name = named
                     .map(|branch| branch.trim_start_matches(swarm::task::PREFIX).to_owned())
                     .unwrap_or_else(swarm::task::chat_placeholder);
                 (lifecycle::Mode::NewBranch, name, None, None, None)
             }
+
             Place::Branch { branch } => {
                 let name = branch.rsplit('/').next().unwrap_or(&branch).to_owned();
                 (
@@ -170,6 +180,7 @@ impl Start {
                     None,
                 )
             }
+
             Place::Pr { number } => (
                 lifecycle::Mode::Pr,
                 format!("pr-{number}"),
@@ -177,6 +188,7 @@ impl Start {
                 Some(number),
                 None,
             ),
+
             Place::Issue { number } => (
                 lifecycle::Mode::Issue,
                 String::new(),
@@ -185,6 +197,7 @@ impl Start {
                 Some(number),
             ),
         };
+
         let prefix = own.then(|| swarm::task::PREFIX.to_owned());
         let request = lifecycle::NewWorkspace {
             project,
@@ -209,6 +222,7 @@ impl Start {
                 ),
             ));
         }
+
         let path = made["workspace"]
             .as_str()
             .filter(|_| made["created"] == true || !own)
@@ -219,7 +233,11 @@ impl Start {
                 )
             })?
             .to_owned();
-        let own_branch = own.then(|| format!("{}{name}", swarm::task::PREFIX));
+        // Only a hub keeps a record of the chat's worktree, so only there does the chat own it:
+        // the rename and the cleanup of a failed start need that record (ADR 0146).
+        let in_hub = swarm::task::hub(Path::new(&path)).is_some();
+        let own_branch = (own && in_hub).then(|| format!("{}{name}", swarm::task::PREFIX));
+
         // An issue's text goes before the prompt, as the New workspace dialog put it in the draft.
         let issue_text = made["issue"].as_object().map(|issue| {
             let title = issue["title"].as_str().unwrap_or_default();
@@ -235,6 +253,7 @@ impl Start {
             (Some(issue), Some(prompt)) => Some(format!("{issue}\n\n{prompt}")),
             (issue, prompt) => issue.or(prompt.map(str::to_owned)),
         };
+
         let branch = lifecycle::check_git(&path, &["branch", "--show-current"]).ok();
         self.complete(json!({"workspace": path, "branch": branch}));
 
@@ -256,6 +275,7 @@ impl Start {
             }
             self.complete(json!({}));
         }
+
         Ok(Made {
             path,
             own_branch,

@@ -47,12 +47,13 @@ app shows a starting tab with these steps at once, and opens the chat when `done
 typed in that tab goes after the first prompt. A model switch waits for its chat as before.
 
 With a prompt, the server names the worktree when it makes it: `swarm/` and the first five
-ASCII words of the prompt that are not filler, lowercase and joined by `-`, at most 40
-characters. Filler words such as "the", "a", "please" and "make" go, so "Fix the flaky smoke
+ASCII words of the prompt that are not filler, lowercase and joined by `-`, at most 38
+characters, so a `-2` to `-9` still fits the 40 of a workspace name. Filler words such as "the", "a", "please" and "make" go, so "Fix the flaky smoke
 test" gives `swarm/fix-flaky-smoke-test`. A prompt of filler only keeps its words. A taken name
 gets `-2` to `-9`, as in ADR 0146; with all nine taken, or with no prompt, the worktree starts
 on `swarm/chat-<8 hex>` and the first send renames it as ADR 0146 says. The rename uses the same
-words. The folder takes the same name. The send goes through `swarm type`, which waits for the
+words and changes only the branch. A worktree made with a prompt takes the branch's name for its
+folder too. The send goes through `swarm type`, which waits for the
 agent's input box, so no timer in the app decides when to send.
 
 `GET /api/chat/new-preview?cwd=&prompt=` gives the composer's card: the branch, folder, base,

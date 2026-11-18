@@ -207,6 +207,7 @@ pub(super) async fn start_chat(fixture: &Fixture, body: Value) -> Result<Value, 
         .unwrap()
         .streams
         .insert(id.clone(), client(&[]));
+
     let started = call_action(fixture, "/api/chat/new", body).await;
     let start = match started {
         Ok(reply) => reply.0["start"].as_str().unwrap().to_owned(),
@@ -215,12 +216,14 @@ pub(super) async fn start_chat(fixture: &Fixture, body: Value) -> Result<Value, 
             return Err(err);
         }
     };
+
     let done = tokio::time::timeout(Duration::from_secs(60), async {
         loop {
             let frames: Vec<_> = {
                 let mut hub = fixture.app.hub.lock().unwrap();
                 hub.streams.get_mut(&id).unwrap().queue.drain(..).collect()
             };
+
             for frame in frames {
                 let data: Value = serde_json::from_str(&frame.data).unwrap();
                 if frame.name == "chat-start"
@@ -235,6 +238,7 @@ pub(super) async fn start_chat(fixture: &Fixture, body: Value) -> Result<Value, 
     })
     .await
     .expect("the chat start ended");
+
     fixture.app.hub.lock().unwrap().streams.remove(&id);
     if done["state"] == "completed" {
         Ok(done)

@@ -15,12 +15,14 @@ pub(in crate::serve) async fn new_chat_preview(
     if cwd.contains('\0') || !Path::new(&cwd).is_absolute() {
         return Err(error(StatusCode::BAD_REQUEST, "absolute cwd required"));
     }
+
     tokio::task::spawn_blocking(move || {
         let target = chat_target(&app, &cwd)?;
         let project = lifecycle::project(&target.tree, &target.project).map_err(lifecycle_error)?;
         let Some(common) = lifecycle::common(project) else {
             return Ok(Json(json!({"place": "folder"})));
         };
+
         let branch = swarm::task::chat_preview(Path::new(&cwd), &prompt);
         let name = branch
             .as_deref()
@@ -31,11 +33,12 @@ pub(in crate::serve) async fn new_chat_preview(
             .bases
             .into_iter()
             .next();
+
         let fetched = std::fs::metadata(Path::new(common).join("FETCH_HEAD"))
             .and_then(|meta| meta.modified())
             .ok()
             .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|age| age.as_secs());
+            .map(|since_epoch| since_epoch.as_secs());
         let setup = target
             .saved
             .owner
@@ -44,6 +47,7 @@ pub(in crate::serve) async fn new_chat_preview(
             .and_then(|s| s["setup_script"].as_str())
             .and_then(|script| script.lines().map(str::trim).find(|line| !line.is_empty()))
             .map(str::to_owned);
+
         Ok(Json(json!({
             "place": "worktree",
             "branch": branch,
