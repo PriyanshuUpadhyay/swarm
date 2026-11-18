@@ -327,14 +327,16 @@ pub(crate) fn due_notices(
         {
             continue;
         }
+
         let waiting = match (session, row.agent_id.as_deref()) {
             (Some(session), Some(agent)) => swarm::store::agents(connection, session)?
                 .iter()
                 .any(|found| found.id == agent && found.state.as_deref() == Some("blocked")),
             _ => false,
         };
-        // The done switch mutes only plain results: a question or a failure needs the owner, and
-        // the Settings test notice checks macOS delivery.
+
+        // The done switch mutes every other row: a question or a failure needs the owner, and the
+        // Settings test notice checks macOS delivery.
         let must_post = matches!(
             row.kind.as_deref(),
             Some(notice_kind::ASKS | notice_kind::FAILED | notice_kind::TEST)

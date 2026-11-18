@@ -88,6 +88,19 @@ fn a_hook_state_report_reads_back_as_the_same_state() {
         let back = program_status(&body, true).unwrap();
         assert_eq!((back.state, back.kind), (state, kind), "{body}");
     }
+    // A turn that the owner stopped reads back as stopped, so its echo posts no done notice.
+    let stopped = HookState {
+        state: "done",
+        detail: None,
+        kind: None,
+        reply: None,
+        stopped_by_owner: true,
+    };
+    let body = program_status_report("codex", &stopped).unwrap();
+    assert!(
+        program_status(&body, true).unwrap().stopped_by_owner,
+        "{body}"
+    );
 }
 
 #[test]

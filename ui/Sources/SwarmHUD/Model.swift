@@ -16,6 +16,8 @@ final class UsageModel {
         didSet {
             // The cursor that held the last popup does not hold the next one.
             if popup == nil { popupHovered = false }
+            // An error belongs to one popup line, so it goes with that line.
+            if let error = popupError, popup?.items.contains(where: { $0.key == error.key }) != true { popupError = nil }
             if popup != oldValue { wingsChanged?() }
         }
     }
@@ -27,8 +29,11 @@ final class UsageModel {
     @ObservationIgnored private var knownKeys: Set<String>?
     /// Why the last Open, answer, or Clear failed, such as "the question changed; read it again".
     var actionError: String?
-    /// A popup Open that failed: the chat's session and why, shown on its line for `Popup.peek`.
-    var popupError: (session: String, text: String)?
+    /// A popup Open that failed: its line's key and why, shown on that line for `Popup.peek`.
+    var popupError: (key: String, text: String)?
+    @ObservationIgnored private var popupErrorTimer: Task<Void, Never>?
+    /// The chats with an Open on the way, so a double click runs one `swarm focus`.
+    @ObservationIgnored private var opening: Set<String> = []
     /// The need cards with an answer on the way, so a second click cannot send a second answer.
     var answering: Set<String> = []
     /// The closed wings' words and how much they widen each wing, kept with their inputs, because
@@ -191,15 +196,21 @@ final class UsageModel {
         if popup?.expired(now: now, hovered: popupHovered) == true { popup = nil }
     }
 
-    /// Opens the chat where it lives (the app, or its terminal) and marks its rows seen.
-    func openChat(session: String, agent: String?) {
+    /// Opens the chat where it lives (the app, or its terminal) and marks its rows seen. `line` is the
+    /// key of the popup line that asked, which shows the error when the chat does not open.
+    func openChat(session: String, agent: String?, line: String? = nil) {
+        guard opening.insert(session).inserted else { return }
         let swarm = swarm
         Task {
             // `focus` takes the chair's pane when the agent's pane is gone. A chat that did not open
             // is not seen, so it stays in the inbox, and its popup line says why.
-            if case .failure(let error) = await offPool({ run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5) }) {
+            let focused = await offPool { run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5) }
+            opening.remove(session)
+            if case .failure(let error) = focused {
                 actionError = error.text
-                if popup?.items.contains(where: { $0.session == session }) == true { showPopupError(session, error.text) }
+                if let line, popup?.items.contains(where: { $0.key == line }) == true {
+                    showPopupError(line, "Could not open: \(error.text)")
+                }
                 return
             }
             popup?.items.removeAll { $0.session == session }
@@ -210,12 +221,17 @@ final class UsageModel {
         }
     }
 
-    private func showPopupError(_ session: String, _ text: String) {
-        popupError = (session, text)
+    /// Shows the error for `Popup.peek`, and keeps a done popup up that long too.
+    private func showPopupError(_ line: String, _ text: String) {
+        popupError = (line, text)
+        popup?.lastAt = Date()
         announce?(text)
-        Task {
+        popupErrorTimer?.cancel()
+        popupErrorTimer = Task {
             try? await Task.sleep(for: .seconds(Popup.peek))
-            if popupError?.session == session && popupError?.text == text { popupError = nil }
+            guard !Task.isCancelled else { return }
+            popupError = nil
+            closeExpiredPopup()
         }
     }
 
@@ -234,17 +250,18 @@ final class UsageModel {
         }
     }
 
-    /// Marks the chats the HUD shows seen, so the inbox list and the closed wing's count empty. A
-    /// row that came after this read stays.
+    /// Marks the chats of this read seen, also those under "+N more", so the inbox list and the
+    /// closed wing's count empty. Only rows up to the newest one read are marked, so a row that came
+    /// after this read stays.
     func clearInbox() {
         let sessions = inbox.rows.map(\.session)
-        guard !sessions.isEmpty else { return }
+        guard let through = inbox.rows.map(\.id).max() else { return }
         inbox.rows = []
         inbox.rowsTotal = 0
         popup = nil
         let swarm = swarm
         Task {
-            if case .failure(let error) = await offPool({ run(swarm, ["notices", "seen"] + sessions, timeout: 3) }) {
+            if case .failure(let error) = await offPool({ run(swarm, ["notices", "seen", "--through", String(through)] + sessions, timeout: 3) }) {
                 actionError = error.text
             }
             readInbox()

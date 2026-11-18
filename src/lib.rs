@@ -13,6 +13,7 @@ pub mod managed;
 pub mod paths;
 pub mod permission;
 pub mod plugin;
+pub mod process;
 pub mod profiles;
 pub mod providers;
 pub mod screen;

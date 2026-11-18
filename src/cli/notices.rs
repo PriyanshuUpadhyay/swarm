@@ -32,12 +32,17 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
         }
         [verb, rest @ ..] if verb == "seen" => {
             let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
+            // Clear names the chats it shows and its newest row, so a row that came after the HUD
+            // drew stays unseen.
+            let (through, rest) = match rest {
+                [flag, id, rest @ ..] if flag == "--through" => (Some(id.parse::<i64>()?), rest),
+                _ => (None, rest),
+            };
             let sessions: Vec<&str> = rest.iter().map(String::as_str).collect();
-            // Clear names the chats it shows, so a row that came after the HUD drew stays.
             if sessions.is_empty() || sessions.iter().any(|session| session.starts_with('-')) {
                 return Err(USAGE.into());
             }
-            swarm::store::mark_notices_seen(&connection, &sessions)?;
+            swarm::store::mark_notices_seen(&connection, &sessions, through)?;
             Ok(())
         }
         [verb, rest @ ..] if verb == "health" => {
@@ -50,7 +55,7 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
             if let Some(helper) = helper_executable() {
                 let mut command = std::process::Command::new(helper);
                 command.arg("--authorize");
-                if swarm::hud::bounded_output(command, std::time::Duration::from_secs(120))
+                if swarm::process::bounded_output(command, std::time::Duration::from_secs(120))
                     .is_none()
                 {
                     return print_json(&row(
@@ -162,7 +167,7 @@ pub(crate) fn health() -> serde_json::Value {
     };
     let mut command = std::process::Command::new(helper);
     command.arg("--status");
-    let status = swarm::hud::bounded_output(command, std::time::Duration::from_secs(5))
+    let status = swarm::process::bounded_output(command, std::time::Duration::from_secs(5))
         .and_then(|out| serde_json::from_str::<serde_json::Value>(&out).ok())
         .ok_or_else(|| "Could not read the notice permission from the notice helper".to_string());
     judge(status, || last_notice_held("1h"))
@@ -269,7 +274,7 @@ fn last_notice_held(window: &str) -> Result<Option<bool>, String> {
         "--predicate",
         &predicate,
     ]);
-    let out = swarm::hud::bounded_output(command, std::time::Duration::from_secs(15))
+    let out = swarm::process::bounded_output(command, std::time::Duration::from_secs(15))
         .ok_or_else(|| "log show failed or took over 15 s".to_string())?;
     held_in(&out)
 }

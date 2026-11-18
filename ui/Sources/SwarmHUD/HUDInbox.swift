@@ -62,8 +62,8 @@ struct PopupContent: View {
                 .frame(width: model.closedSize.width, height: model.notch.height)
             Spacer().frame(height: InboxLayout.popupGap)
             ForEach(model.popup?.items ?? [], id: \.key) { item in
-                PopupLine(item: item, error: model.popupError?.session == item.session ? model.popupError?.text : nil,
-                          open: { model.openChat(session: item.session, agent: item.agent) },
+                PopupLine(item: item, error: model.popupError?.key == item.key ? model.popupError?.text : nil,
+                          open: { model.openChat(session: item.session, agent: item.agent, line: item.key) },
                           dismiss: { model.popup = nil })
                     .frame(height: InboxLayout.popupItem)
             }

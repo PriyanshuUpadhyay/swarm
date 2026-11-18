@@ -19,6 +19,7 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
     let text = |name: &str| payload.get(name).and_then(serde_json::Value::as_str);
     let error = text("error").filter(|error| !error.is_empty());
     let tool = text("tool_name");
+    let mut stopped_by_owner = false;
     let (state, kind) = match (provider, event) {
         // An in-process Claude subagent's events are not the pane's state.
         ("claude", _) if text("agent_id").is_some_and(|id| !id.is_empty()) => return None,
@@ -40,7 +41,11 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
         }
         ("claude", "PermissionRequest") => ("blocked", Some("permission")),
         ("claude", "Elicitation") => ("blocked", Some("question")),
-        ("claude" | "codex", "Stop") | ("codex", "Interrupt") => ("done", None),
+        ("claude" | "codex", "Stop") => ("done", None),
+        ("codex", "Interrupt") => {
+            stopped_by_owner = true;
+            ("done", None)
+        }
         // A credential the owner must fix is a block of kind `auth` in the protocol; any other
         // API error, such as a lost connection, ends the turn as `error`.
         ("claude", "StopFailure")
@@ -66,6 +71,7 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
         },
         _ => return None,
     };
+
     Some(HookState {
         state,
         detail: if state == "error" || kind == Some("auth") {
@@ -81,7 +87,7 @@ pub fn hook_state(provider: &str, event: &str, payload: &serde_json::Value) -> O
         } else {
             None
         },
-        stopped_by_owner: (provider, event) == ("codex", "Interrupt"),
+        stopped_by_owner,
     })
 }
 
@@ -106,11 +112,14 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
     if pairs.get("id").is_some_and(|id| !id.is_empty()) {
         return None;
     }
+
     // The spec discards a whole report whose message is bad base64 or holds a control character.
     let message = match pairs.get("msg") {
         Some(msg) => Some(base64_text(msg).filter(|text| !text.chars().any(char::is_control))?),
         None => None,
     };
+
+    let mut stopped_by_owner = false;
     let (state, kind) = match *pairs.get("state")? {
         "working" => ("working", None),
         "blocked" => match pairs.get("kind").copied() {
@@ -122,7 +131,10 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
             _ => ("blocked", None),
         },
         "done" => ("done", None),
-        "idle" if seen_work => ("done", None),
+        "idle" if seen_work => {
+            stopped_by_owner = true;
+            ("done", None)
+        }
         "error" => ("error", None),
         _ => return None,
     };
@@ -131,7 +143,7 @@ pub fn program_status(body: &str, seen_work: bool) -> Option<HookState> {
         detail: if state == "error" { message } else { None },
         kind,
         reply: None,
-        stopped_by_owner: pairs.get("state") == Some(&"idle"),
+        stopped_by_owner,
     })
 }
 
@@ -150,12 +162,14 @@ pub fn host_record(body: &str, seen_work: bool) -> Option<(HookState, i64)> {
 
 /// The OSC 7501 report body for a hook state, the inverse of `program_status`, so a terminal that
 /// speaks the protocol shows a hooked agent's state. A report replaces its whole record, so each
-/// one names the provider as `app`. A failure's detail is left out: it needs base64.
+/// one names the provider as `app`. A failure's detail is left out, because it needs base64.
 pub fn program_status_report(provider: &str, state: &HookState) -> Option<String> {
     let body = match (state.state, state.kind) {
         ("working", _) => "state=working".to_string(),
         ("blocked", Some(kind)) => format!("state=blocked:kind={kind}"),
         ("blocked", None) => "state=blocked".to_string(),
+        // Idle after work is the protocol's cancelled turn, so a stop reads back as the owner's.
+        ("done", _) if state.stopped_by_owner => "state=idle".to_string(),
         ("done", _) => "state=done".to_string(),
         ("error", _) => "state=error".to_string(),
         _ => return None,

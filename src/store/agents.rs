@@ -125,8 +125,6 @@ pub fn require_pane(
     }
 }
 
-/// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
-/// `chair_provider`.
 /// How long a `working` report counts without a newer one. A turn reports at each tool call, and an
 /// agent that died keeps its last report, so the usage HUD stops showing it after this. A wait
 /// sends no reports while it lasts, so a `blocked` agent counts while its pane is open (ADR 0147).
@@ -190,6 +188,8 @@ pub fn running_agents(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// The CLI that runs in an agent's pane. A chair's row names none, so it is the session's
+/// `chair_provider`.
 pub fn provider_of(
     connection: &Connection,
     session_id: &str,

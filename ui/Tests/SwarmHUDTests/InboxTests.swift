@@ -19,9 +19,12 @@ import Testing
     let rows = InboxSnapshot(rows: inbox.rows + [stopped])
     #expect(wingText(WorkingSnapshot(working: ["claude": 2]), best: nil, inbox: rows) == WingText(left: "stopped", dot: .failed))
     // The store cuts its lists, so the wing counts from the full total.
-    #expect(wingText(WorkingSnapshot(), best: nil, inbox: InboxSnapshot(rows: inbox.rows, rowsTotal: inbox.rowsTotal))
+    let cut = String(decoding: data, as: UTF8.self)
+        .replacingOccurrences(of: "\"needs_total\":1,\"rows_total\":2", with: "\"needs_total\":4,\"rows_total\":7")
+    let more = try #require(InboxSnapshot.read(Data(cut.utf8)))
+    #expect(more.needsTotal == 4)
+    #expect(wingText(WorkingSnapshot(), best: nil, inbox: InboxSnapshot(rows: more.rows, rowsTotal: more.rowsTotal))
             == WingText(left: "7 done", dot: .done))
-    #expect(inbox.needsTotal == 4)
 }
 
 @Test func aPopupShowsOnlyNewItemsJoinsABurstAndADoneOneCloses() {

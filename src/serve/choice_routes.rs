@@ -90,7 +90,7 @@ fn looked_at<'a>(
 fn mark_chat_seen(app: &App, sessions: &[String]) {
     let sessions: Vec<&str> = sessions.iter().map(String::as_str).collect();
     let marked = swarm::store::open(&app.root.join("swarm.db")).and_then(|db| {
-        swarm::store::mark_notices_seen(&db, &sessions)
+        swarm::store::mark_notices_seen(&db, &sessions, None)
             .map(drop)
             .map_err(Into::into)
     });

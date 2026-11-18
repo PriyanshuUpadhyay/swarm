@@ -148,7 +148,7 @@ fn strays(job: Option<u32>) -> Vec<u32> {
     let mut command = std::process::Command::new("/usr/bin/pgrep");
     command.args(["-x", "-U", &uid, "SwarmHUD"]);
     // pgrep exits 1 when it finds none, which reads as no strays.
-    let pgrep = bounded_output(command, STATUS_WITHIN).unwrap_or_default();
+    let pgrep = crate::process::bounded_output(command, STATUS_WITHIN).unwrap_or_default();
     others(&pgrep, job)
 }
 
@@ -159,43 +159,10 @@ fn stop(pids: &[u32]) {
     }
 }
 
-/// The notice hook reads `status` at each turn end, so a hung launchctl or pgrep must not hold the
-/// turn; past this the HUD reads as not running, and the banner posts.
+/// `swarm notices --due`, which the notice helper runs, reads `status` before each banner, so a
+/// hung launchctl or pgrep must not hold the banners. Each of the two commands gets this long; past
+/// it the HUD reads as not running, and the banner posts.
 const STATUS_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
-
-/// The stdout of `command`, or None when it fails, or runs past `timeout` and is killed.
-pub fn bounded_output(
-    mut command: std::process::Command,
-    timeout: std::time::Duration,
-) -> Option<String> {
-    let mut child = command
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let mut stdout = child.stdout.take()?;
-    // The read runs on its own thread, so a full pipe cannot stall the deadline loop.
-    let reader = std::thread::spawn(move || {
-        let mut text = String::new();
-        std::io::Read::read_to_string(&mut stdout, &mut text).map(|_| text)
-    });
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => return reader.join().ok()?.ok(),
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(20));
-            }
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-            _ => return None,
-        }
-    }
-}
 
 /// The step of each wait on launchctl below.
 const POLL: std::time::Duration = std::time::Duration::from_millis(100);
@@ -225,13 +192,22 @@ pub fn kickstart() -> std::io::Result<std::process::Output> {
 pub fn status(home: &Path) -> Status {
     let mut command = std::process::Command::new("/bin/launchctl");
     command.args(["print", &service_target()]);
-    let print = bounded_output(command, STATUS_WITHIN).unwrap_or_default();
-    let running = running(&print);
+    // A print that timed out says nothing of the job, so no HUD reads as a stray, and `setup hud`
+    // plans no stop for the live one. A print that fails means no job is loaded.
+    let print = crate::process::bounded_run(command, STATUS_WITHIN);
+    let text = match &print {
+        Some((true, text)) => text.as_str(),
+        _ => "",
+    };
+    let running = running(text);
     Status {
         installed: plist_path(home).exists(),
         running,
         app: app().map(|path| stable_path(&path).to_string_lossy().into_owned()),
-        strays: strays(job_pid(&print).filter(|_| running)),
+        strays: match print {
+            Some(_) => strays(job_pid(text).filter(|_| running)),
+            None => Vec::new(),
+        },
     }
 }
 

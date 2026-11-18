@@ -160,11 +160,6 @@ pub fn take_notices(connection: &mut Connection) -> rusqlite::Result<Vec<Notice>
     Ok(notices)
 }
 
-/// The id of each chat's newest unseen done, asks, or failed row; `?2` to `?4` are those kinds.
-const INBOX_IDS: &str = "SELECT max(id) FROM notice
-     WHERE seen_at IS NULL AND session_id IS NOT NULL AND kind IN (?2, ?3, ?4)
-     GROUP BY session_id";
-
 /// ADR 0147: the newest unseen done, asks, or failed row of each chat, newest first, at most
 /// `limit`, and the number of such chats. A wait is not here: the HUD reads waiting agents live,
 /// so an answered wait never stays.
@@ -174,27 +169,38 @@ pub fn notice_inbox(
 ) -> rusqlite::Result<(Vec<Notice>, usize)> {
     use notice_kind::{ASKS, DONE, FAILED};
     let mut query = connection.prepare(&format!(
-        "SELECT {NOTICE_COLUMNS}, count(*) OVER () FROM notice WHERE id IN ({INBOX_IDS})
+        "SELECT {NOTICE_COLUMNS}, count(*) OVER () AS total FROM notice
+         WHERE id IN (SELECT max(id) FROM notice
+                      WHERE seen_at IS NULL AND session_id IS NOT NULL AND kind IN (?2, ?3, ?4)
+                      GROUP BY session_id)
          ORDER BY id DESC LIMIT ?1"
     ))?;
     let mut total = 0;
     let rows = query
         .query_map(rusqlite::params![limit as i64, DONE, ASKS, FAILED], |row| {
-            total = row.get::<_, i64>(6)? as usize;
+            total = row.get::<_, i64>("total")? as usize;
             Notice::from_row(row)
         })?
         .collect::<rusqlite::Result<_>>()?;
     Ok((rows, total))
 }
 
-/// Marks the rows of these sessions seen. Returns how many rows changed.
-pub fn mark_notices_seen(connection: &Connection, sessions: &[&str]) -> rusqlite::Result<usize> {
+/// Marks the rows of these sessions seen, only up to row `through` when it is given, so a row that
+/// came after the HUD's read stays unseen (ADR 0147). Returns how many rows changed.
+pub fn mark_notices_seen(
+    connection: &Connection,
+    sessions: &[&str],
+    through: Option<i64>,
+) -> rusqlite::Result<usize> {
     let marks = vec!["?"; sessions.len()].join(", ");
+    let mut values: Vec<rusqlite::types::Value> = vec![through.unwrap_or(i64::MAX).into()];
+    values.extend(sessions.iter().map(|session| session.to_string().into()));
     connection.execute(
         &format!(
-            "UPDATE notice SET seen_at = unixepoch() WHERE seen_at IS NULL AND session_id IN ({marks})"
+            "UPDATE notice SET seen_at = unixepoch()
+             WHERE seen_at IS NULL AND id <= ?1 AND session_id IN ({marks})"
         ),
-        rusqlite::params_from_iter(sessions),
+        rusqlite::params_from_iter(values),
     )
 }
 

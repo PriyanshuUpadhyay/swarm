@@ -10,9 +10,9 @@ public struct InboxSnapshot: Decodable, Equatable, Sendable {
     public var needsTotal: Int
     public var rowsTotal: Int
 
-    public init(needs: [NeedCard] = [], rows: [InboxRow] = [], needsTotal: Int? = nil, rowsTotal: Int? = nil) {
+    public init(needs: [NeedCard] = [], rows: [InboxRow] = [], rowsTotal: Int? = nil) {
         (self.needs, self.rows) = (needs, rows)
-        (self.needsTotal, self.rowsTotal) = (needsTotal ?? needs.count, rowsTotal ?? rows.count)
+        (self.needsTotal, self.rowsTotal) = (needs.count, rowsTotal ?? rows.count)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -30,8 +30,9 @@ public struct InboxSnapshot: Decodable, Equatable, Sendable {
         // A bad entry costs only that entry.
         needs = try container.decodeIfPresent([Lossy<NeedCard>].self, forKey: .needs)?.compactMap(\.value) ?? []
         rows = try container.decodeIfPresent([Lossy<InboxRow>].self, forKey: .rows)?.compactMap(\.value) ?? []
-        needsTotal = max(try container.decodeIfPresent(Int.self, forKey: .needsTotal) ?? 0, needs.count)
-        rowsTotal = max(try container.decodeIfPresent(Int.self, forKey: .rowsTotal) ?? 0, rows.count)
+        // An older swarm sends no totals, so its lists are whole.
+        needsTotal = try container.decodeIfPresent(Int.self, forKey: .needsTotal) ?? needs.count
+        rowsTotal = try container.decodeIfPresent(Int.self, forKey: .rowsTotal) ?? rows.count
     }
 
     /// Nil for another schema or a reply that does not decode, so the HUD keeps its last inbox

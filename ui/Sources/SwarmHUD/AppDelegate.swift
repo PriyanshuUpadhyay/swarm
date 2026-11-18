@@ -214,8 +214,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !model.isOpen, model.popup != nil {
             model.popupHovered = inside
             if !inside { model.closeExpiredPopup(); hoverHeld = false }
-            let hover = hoverRectInScreen()
-            let onNotch = inside && NSEvent.mouseLocation.y >= hover.maxY - model.notch.height - 1
+            // The notch row is as wide as the closed wings, not the wider popup under them.
+            let visible = visibleRectInScreen(), cursor = NSEvent.mouseLocation
+            let onNotch = inside && cursor.y >= visible.maxY - model.notch.height
+                && abs(cursor.x - visible.midX) <= model.closedSize.width / 2
             if onNotch && !hoverHeld { scheduleOpen() } else { pendingOpen?.cancel(); pendingOpen = nil }
             return
         }

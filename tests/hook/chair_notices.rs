@@ -116,6 +116,7 @@ fn a_chair_turn_end_names_the_chat_quotes_the_reply_and_stays_in_the_inbox_until
         "Added chat titles to notices (e.g. HUD rows)."
     );
     assert_eq!(rows[0]["kind"], "done");
+    let read = rows[0]["id"].to_string();
 
     // The chat keeps one row in the inbox, its newest: a turn that ends with a question. A
     // number ends a sentence.
@@ -128,8 +129,16 @@ fn a_chair_turn_end_names_the_chat_quotes_the_reply_and_stays_in_the_inbox_until
     assert_eq!(rows[0]["kind"], "asks");
     assert_eq!(rows[0]["body"], "Merged PR 142.");
 
-    let seen = swarm(&home, &[], &["notices", "seen", &session], "");
+    // A Clear of the HUD's older read keeps the question that came after it.
+    let seen = swarm(
+        &home,
+        &[],
+        &["notices", "seen", "--through", &read, &session],
+        "",
+    );
     assert!(seen.status.success(), "{seen:?}");
+    assert_eq!(inbox()["rows"][0]["kind"], "asks");
+    swarm(&home, &[], &["notices", "seen", &session], "");
     assert_eq!(inbox()["rows"], serde_json::json!([]));
 
     long_turn(serde_json::json!({

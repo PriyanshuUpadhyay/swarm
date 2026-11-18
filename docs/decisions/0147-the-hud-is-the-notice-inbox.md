@@ -35,8 +35,8 @@ row in the HUD, or clicks Clear. Open marks nothing seen when `swarm focus` fail
 `swarm notices --inbox --json` (`swarm.inbox.v1`) gives up to 3 blocked agents with the prompt on
 their screen, and the newest unseen row of up to 20 chats, with the full count of each. A
 blocked agent stays while its pane is open, because a block sends no new state reports.
-`swarm notices seen <session>...` marks rows seen. Clear names the chats it shows, so a row that
-came after the HUD drew stays.
+`swarm notices seen [--through <id>] <session>...` marks rows seen. Clear names the chats it read
+and the newest row id it shows, so a row that came after the HUD drew stays unseen.
 
 **The HUD shows it.** The closed wing says `needs you · <title>`, else `stopped`, else `N done`.
 A new item drops a popup out of the notch with the title, the kind, the reply's first sentence,
@@ -51,9 +51,10 @@ has no text field, so to reply the owner clicks Open.
 HUD's login item runs. A row with no chat, such as the Settings test notice or a `swarm notify`
 from a shell, has no place in the HUD, so it keeps its banner. With no HUD the macOS banner stays
 as ADR 0077 says: its text now holds the chat title and the quoted reply, and its style does not
-change. The Settings `done` switch mutes only `done` banners; an `asks` or `failed` row and the
-Settings test notice (kind `test`) still post. The hook reads the HUD's state with a 2 s limit,
-and past it the banner posts.
+change. With the Settings `done` switch off, only an `asks`, `failed`, or `test` row and a wait
+whose agent is still blocked post; a `done` row, an ended wait, and a `swarm notify` from a shell
+do not. `swarm notices --due` reads the HUD's state with a 2 s limit for each of its two
+commands, and past it the banner posts.
 
 ### Consequences
 
