@@ -21,8 +21,8 @@ New workspace dialog was a second way to make a worktree, with its own branch, P
 
 ## Decision Outcome
 
-⌘N opens one composer. With no chat open, it is the start page; with a chat open, it is an
-overlay over the chat. The owner types the first prompt, keeps or changes the project, the place
+⌘N opens one composer. On Home and on a workspace that takes new chats, it is the start page;
+over a chat, or a workspace that takes no new chat, it is an overlay. The owner types the first prompt, keeps or changes the project, the place
 and the run, and presses ⌘Enter. Enter adds a line. ⌘/ opens the run menu, ⌘⇧/ cycles the
 thinking level, ⌘P picks the project, and Esc closes the overlay. The sidebar "New chat", a row
 "+" and the tab "+" open the composer on their project.
