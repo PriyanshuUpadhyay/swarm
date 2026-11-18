@@ -136,6 +136,8 @@ test("the composer's project change resets a picked issue to the new project's d
   const projects = composer.getByTestId("project-menu").getByRole("option");
   await projects.filter({ hasNotText: "proj-gh" }).first().click();
   await expect(composer.getByTestId("chip-place")).not.toContainText("Issue");
+  // The closed menu gives the focus back to the prompt, so the keys still work.
+  await expect(composer.getByTestId("new-chat-prompt")).toBeFocused();
   await screenshot(page, "new-chat-composer");
 });
 

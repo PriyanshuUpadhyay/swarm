@@ -5,6 +5,7 @@ import { ArchiveIcon, ArchiveRestoreIcon, ChevronsDownUpIcon, ChevronsUpDownIcon
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { App } from "../core/app";
 import { archivedSession, type NavRow } from "../core/nav";
+import { canStartIn } from "../core/new-chat";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { copyText as copy } from "./copy";
 
@@ -33,7 +34,7 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
   if (!r && row.kind === "project") {
     const { path, title } = row.section;
     list = [
-      !archive && !!path && { label: "New Chat…", icon: PlusIcon, run: () => app.newChat.open(path) },
+      !archive && !!path && { label: "New Chat…", icon: PlusIcon, disabled: !canStartIn(app.view.tree, path), run: () => app.newChat.open(path) },
       { label: "Rename Project…", icon: PencilIcon, run: () => app.renameProject(path ?? "", title) },
       !archive && !!path && { label: "Setup script…", icon: TerminalIcon, run: () => app.life.editSetupScript(path, title) },
       !!path && { label: "Remove Project…", icon: FolderMinusIcon, run: () => app.life.removeProject(path, title) },

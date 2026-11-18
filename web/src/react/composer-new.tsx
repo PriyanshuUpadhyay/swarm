@@ -117,8 +117,12 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
   useEffect(() => {
     if (focus) box.current?.focus();
   }, [focus]);
+  const lastMenu = useRef<Menu>(null);
   useEffect(() => {
     if (menu === "project") projects.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
+    // The closed project menu took the focus with it; the prompt gets it, so the keys still work.
+    else if (lastMenu.current === "project" && document.activeElement === document.body) box.current?.focus();
+    lastMenu.current = menu;
   }, [menu]);
 
   const pickTarget = (next: Target) => {

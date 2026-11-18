@@ -18,7 +18,8 @@ export type Target = { cwd: string; project: string; title: string; git: boolean
 export type Preview = { branch: string | null; folder: string | null; base: string | null; fetchedUnixS: number | null; setup: string | null };
 
 /** The composer's run: a profile, and a run the owner picked instead of its default. */
-export type ComposerRun = { role: string; run: Run | null };
+/** A start's profile and run; with no role, the server starts its default profile. */
+export type ComposerRun = { role?: string; run: Run | null };
 
 /** One start step; `words` is the server's text for it. */
 export type StartStep = { step: string; words: string | null; state: "running" | "completed" | "failed"; error: string | null };
@@ -60,7 +61,8 @@ type NewChatState = {
 export const composerInPage = (view: { openId: string | null; workspace: string | null; tree: TreeView | null }) =>
   !view.openId && (!view.workspace || workspaceRow(view.tree, view.workspace)?.newChatEnabled === true);
 
-/** The profile a new chat starts on unless the owner picks another. */
+/** The profile pill the composer picks first, else the first profile. ⌘T sends no profile, so
+ *  the server's default holds there. */
 export const DEFAULT_ROLE = "chat";
 
 /** How long the start's POST may take. The server answers in under a second, after its checks. */
@@ -85,6 +87,9 @@ export function targets(tree: TreeView | null, workspace: string | null): Target
       return cwd ? [{ cwd, project: s.path ?? cwd, title: s.title, git: !s.folder }] : [];
     });
 }
+
+/** Whether the project at `path` has a folder a new chat can start in. */
+export const canStartIn = (tree: TreeView | null, path: string | null) => targets(tree, null).some((t) => t.project === path);
 
 /** The project the composer opens on: the one of `workspace`, else the first. */
 export function defaultTarget(list: Target[], tree: TreeView | null, workspace: string | null): Target | null {
@@ -185,6 +190,9 @@ export class NewChat {
    *  a project path), else on the open one. */
   open(at?: string, place?: Place, text = "", run: ComposerRun | null = null) {
     const list = targets(this.app.view.tree, at ?? this.app.view.workspace);
+    // A project of the tree with no folder to start in must not open the composer on another one.
+    const project = this.app.view.tree?.sections.some((s) => s.kind === "project" && s.path === at);
+    if (project && !canStartIn(this.app.view.tree, at ?? null)) return this.app.notice("This project has no folder that a new chat can start in.");
     const target = (at && list.find((t) => t.cwd === at || t.project === at)) || defaultTarget(list, this.app.view.tree, at ?? this.app.view.workspace);
     if (!target) return this.app.notice("Import or create a project first.");
     // ⌘N again on the same open composer keeps it, with its typed text.
@@ -254,7 +262,8 @@ export class NewChat {
     // strip and not over the view the owner moved to.
     const from = this.app.view.workspace ?? cwd;
     const nav = this.app.navSeq;
-    const sent = this.state.composer?.seq;
+    // The composer on screen; a send from the page's composer leaves a hidden one and its text.
+    const sent = this.composing()?.seq;
 
     let id: string;
     try {
@@ -270,10 +279,10 @@ export class NewChat {
 
     const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), run, steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: "" };
     // A composer the owner opened while this one posted stays open, with its text.
-    const closes = fromComposer && this.state.composer?.seq === sent;
+    const closes = fromComposer && sent !== undefined && this.state.composer?.seq === sent;
     const composer = closes ? null : this.state.composer;
     // The page composer has no `composer` state, and its text in `unsent` is the prompt it sent.
-    const unsent = fromComposer && !composer ? "" : this.state.unsent;
+    const unsent = closes || (fromComposer && sent === undefined) ? "" : this.state.unsent;
     this.set({ composer, unsent, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
     const early = this.early.filter((data) => data.start === id);
     this.early = this.early.filter((data) => data.start !== id);
@@ -385,12 +394,14 @@ export class NewChat {
    *  and the box's draft. Text that did not send goes in the chat's text box, so none is lost. */
   private async opened(start: Starting, session: string) {
     const shown = this.shown()?.id === start.id;
-    const texts = [...start.queued, start.draft.trim()].filter(Boolean);
     // The chat runs, but its first prompt or the issue's text did not go: nothing goes before it,
     // and the chat's text box keeps the rest.
     const failed = start.steps.find((s) => s.step === "send" && s.state === "failed");
-    this.dismiss(start.id);
+    // The start's view stays while the tree lists the chat, so the page behind does not show.
     await this.app.actions.openNew(session, shown).catch((err) => this.app.notice(message(err), true));
+    const now = this.state.starts[start.id] ?? start;
+    const texts = [...now.queued, now.draft.trim()].filter(Boolean);
+    this.dismiss(start.id);
 
     if (failed) {
       const kept = [start.prompt, ...texts].filter(Boolean).join("\n\n");

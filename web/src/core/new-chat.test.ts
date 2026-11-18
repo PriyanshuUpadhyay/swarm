@@ -182,4 +182,49 @@ describe("new chat composer", () => {
     chats.open();
     expect(chats.composing()?.text).toBe("Page text\n\nFix it\n\nDraft one");
   });
+
+  it("keeps a hidden composer and its text when the page's composer sends", async () => {
+    const app = stub({ api: { post: async () => ({ start: "s1" }) } });
+    const chats = new NewChat(app as unknown as App);
+    chats.open();
+    chats.typed("Draft one");
+    app.navSeq = 2;
+    chats.typed("Fix it");
+
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { run: null }, { composer: true });
+    expect(chats.state.unsent).toBe("");
+    chats.open();
+    expect(chats.composing()?.text).toBe("Draft one");
+  });
+
+  it("keeps the start on screen until its chat opens, and sends text typed meanwhile", async () => {
+    const calls: string[] = [];
+    const app = stub({
+      api: { post: async () => ({ start: "s1" }), action: async (_path: string, body: { text: string }) => void calls.push(body.text) },
+      actions: {
+        openNew: async () => {
+          calls.push(`start shown ${chats.shown()?.id}`);
+          chats.setDraft("s1", "Typed while it opens");
+        },
+      },
+    });
+    const chats = new NewChat(app as unknown as App);
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { run: null });
+
+    await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
+    expect(calls).toEqual(["start shown s1", "Typed while it opens"]);
+    expect(chats.state.starts).toEqual({});
+  });
+
+  it("does not open the composer on another project for a project with no folder to start in", () => {
+    const notices: string[] = [];
+    const gone = { kind: "project", path: "/gone", folder: true, title: "gone", rows: [{ ...row("/gone/ws", false), newChatEnabled: false }] };
+    const app = stub({ notice: (text: string) => notices.push(text) });
+    app.view = { ...app.view, tree: { sections: [...tree.sections, gone] } as unknown as TreeView };
+    const chats = new NewChat(app as unknown as App);
+
+    chats.open("/gone");
+    expect(chats.state.composer).toBeNull();
+    expect(notices).toEqual(["This project has no folder that a new chat can start in."]);
+  });
 });

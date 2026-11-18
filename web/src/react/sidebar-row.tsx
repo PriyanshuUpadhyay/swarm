@@ -4,7 +4,8 @@ import { type Field, type NavRow, type RecentChat, type SidebarRow } from "../co
 import { StatusGlyph } from "./status";
 
 /** One sidebar line. Memoized on its wire object, so a key move renders only two rows. */
-export const RowView = memo(function RowView({ row, selected, marked, current, archive }: { row: NavRow; selected: boolean; marked: boolean | null; current: boolean; archive: boolean }) {
+/** `canNewIn`: a project header whose project has a folder that a new chat can start in. */
+export const RowView = memo(function RowView({ row, selected, marked, current, archive, canNewIn }: { row: NavRow; selected: boolean; marked: boolean | null; current: boolean; archive: boolean; canNewIn: boolean }) {
   const r = row.row;
   const common = {
     role: "treeitem",
@@ -45,7 +46,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, a
           )}
           {chev()}
           <span className="flex-1" />
-          {s.kind === "project" && !archive && (
+          {s.kind === "project" && !archive && canNewIn && (
             <button tabIndex={-1} className="row-btn" data-action="new-chat-project" aria-label={`New chat in ${s.title}`} title="New chat (⌘N)">
               <PlusIcon />
             </button>

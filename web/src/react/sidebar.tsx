@@ -6,6 +6,7 @@ import { ArchiveRestoreIcon, TriangleAlertIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
 import { SIDEBAR_VIEWS, type App } from "../core/app";
 import { archivedSession, currentRow, type SidebarRow } from "../core/nav";
+import { canStartIn } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
@@ -141,7 +142,7 @@ function WorkspaceList({ app }: { app: App }) {
               </div>
             )}
             {rows.map((row) => (
-              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={row.id === current} archive={archive} />
+              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={row.id === current} archive={archive} canNewIn={!row.row && canStartIn(tree, row.section.path)} />
             ))}
             {!loaded && !error && <SidebarSkeleton />}
             {loaded && rows.length === 0 && <SidebarNote title={archive ? "No archived workspaces" : "No projects yet"} body={archive ? "" : "Import or create a project from the + menu above."} />}

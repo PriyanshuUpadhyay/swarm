@@ -32,6 +32,7 @@ export function useRunCatalog(app: App, provider: string): Catalog {
       ({ providers }) => {
         if (!live) return;
         setProviders(providers);
+        setError(null);
         for (const p of providers) void read(p.id);
       },
       (err) => {

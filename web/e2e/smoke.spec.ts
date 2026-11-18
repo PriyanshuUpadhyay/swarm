@@ -240,5 +240,5 @@ test("⌘T starts a chat in a hub's main with no prompt and no new worktree", as
   await tab.locator("body").press("Meta+t");
 
   await expect.poll(() => bodies.length).toBe(1);
-  expect(bodies[0]).toEqual({ cwd: process.env.SWARM_E2E_HUB_MAIN, role: "chat", place: { kind: "here" } });
+  expect(bodies[0]).toEqual({ cwd: process.env.SWARM_E2E_HUB_MAIN, place: { kind: "here" } });
 });

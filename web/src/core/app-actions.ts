@@ -5,7 +5,6 @@ import { isChair, paneStatus } from "./panes";
 import { chatRows, nextBlocked, paletteSources, recency, workspaceOf, workspaceRow, type PaletteItem } from "./nav";
 import { type Ask, SIDEBAR_VIEWS, PROMPT_JUMP, firstLine } from "./app-types";
 import type { App } from "./app";
-import { DEFAULT_ROLE } from "./new-chat";
 
 /** A new chat waits up to LIST_POLLS * LIST_POLL_MS (5 s) for the server's tree to list it. */
 const LIST_POLLS = 20;
@@ -19,7 +18,7 @@ export class AppActions {
   async startChat(workspace = this.app.workspace) {
     const reason = this.newChatReason(workspace);
     if (reason || !workspace) return this.app.notice(reason ?? "Pick a workspace to start a chat.");
-    await this.app.newChat.start(workspace, "", { kind: "here" }, { role: DEFAULT_ROLE, run: null });
+    await this.app.newChat.start(workspace, "", { kind: "here" }, { run: null });
   }
 
   private newChatReason(workspace = this.app.workspace): string | null {
