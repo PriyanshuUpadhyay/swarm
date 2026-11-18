@@ -56,6 +56,7 @@ function Failed({ app, start }: { app: App; start: Starting }) {
 /** The box for the next message. Its text goes when the chat opens, also if not queued with ⌘↵. */
 function NextMessage({ app, start }: { app: App; start: Starting }) {
   const waiting = start.queued.length;
+
   return (
     <div className="grid gap-1.5">
       <textarea

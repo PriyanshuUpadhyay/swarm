@@ -61,6 +61,7 @@ function Overlay({ app, target, place, text }: { app: App; target: Target; place
     else return;
     e.preventDefault();
   };
+
   const backdrop = (e: React.MouseEvent) => {
     const prompt = root.current?.querySelector<HTMLTextAreaElement>('[data-testid="new-chat-prompt"]');
     if (e.target !== e.currentTarget) return;

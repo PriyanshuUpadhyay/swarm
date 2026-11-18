@@ -88,7 +88,7 @@ export function TabStrip({ app }: { app: App }) {
     const action = (e.target as Element).closest("[data-action]")?.getAttribute("data-action");
     if (action === "close") return close(tab);
     show(tab);
-    if (!startOf(tab) && action === "children" && tab.children?.firstBlocked) app.focusPane(tab.children.firstBlocked);
+    if (action === "children" && tab.children?.firstBlocked) app.focusPane(tab.children.firstBlocked);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

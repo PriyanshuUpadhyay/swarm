@@ -287,7 +287,7 @@ export function chooseModel(current: Run, draft: Run, cli: { id: string; efforts
 /** A profile's run: its first runner, on the CLI's login. */
 export function profileRun(profile: Profile | undefined): Run | null {
   const r = profile?.runners[0];
-  return r ? { provider: r.provider, model: r.model ?? null, effort: r.effort ?? null, account: null } : null;
+  return r ? { provider: r.provider, model: r.model, effort: r.effort, account: null } : null;
 }
 
 export const sameRun = (a: Run | null, b: Run | null) => a?.provider === b?.provider && a?.model === b?.model && a?.effort === b?.effort && a?.account === b?.account;
