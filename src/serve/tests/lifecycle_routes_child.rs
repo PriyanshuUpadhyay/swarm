@@ -63,11 +63,9 @@ async fn lifecycle_routes_child() {
         "feature"
     );
     let initial_version = made["version"].as_u64().unwrap();
-    let launch = call_action(&fixture, "/api/chat/new", json!({"cwd":path}))
-        .await
-        .unwrap()
-        .0;
-    assert_eq!(launch["ok"], true); // No session existed in the new workspace before this call.
+    // No session existed in the new workspace before this start; it waits for the done frame.
+    let launch = start_chat(&fixture, json!({"cwd":path})).await.unwrap();
+    assert_eq!(launch["workspace"], json!(path));
     let impact = lifecycle_read(
         State(fixture.app.clone()),
         "/api/workspace/impact".parse().unwrap(),
