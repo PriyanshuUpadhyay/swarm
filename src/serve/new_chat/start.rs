@@ -183,6 +183,17 @@ impl Start {
         // The hub is found from the checkout; a hub project's own folder is no checkout.
         let checkout = cwd.to_owned();
 
+        // Held from the name pick to the new worktree; the setup script runs after it.
+        let lock = self
+            .app
+            .worktree_locks
+            .lock()
+            .unwrap()
+            .entry(project.clone())
+            .or_default()
+            .clone();
+        let held = lock.lock().await;
+
         let named = match (&place, prompt) {
             (Worktree::New, Some(prompt)) => {
                 let prompt = prompt.to_owned();
@@ -247,6 +258,7 @@ impl Start {
 
         let (made, setup) =
             apply_lifecycle_action(&self.app, LifecycleAction::New(request)).await?;
+        drop(held);
         if let Some(existing) = made["existing"].as_object() {
             return Err(error(
                 StatusCode::CONFLICT,

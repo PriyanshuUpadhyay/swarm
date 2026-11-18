@@ -119,6 +119,7 @@ impl Fixture {
             tree_cache: Mutex::new(TreeCache::default()),
             handoffs: Mutex::new(HashMap::new()),
             chat_create: tokio::sync::Mutex::new(()),
+            worktree_locks: Mutex::new(HashMap::new()),
             usage_refresh: Mutex::new(HashMap::new()),
             commands: Mutex::new(HashMap::new()),
         });

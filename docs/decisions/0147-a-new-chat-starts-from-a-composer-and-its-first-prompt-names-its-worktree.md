@@ -74,8 +74,11 @@ change; one of another place stays, as the dialog kept it.
 - A starting chat lives only in the app, and its start is one task in the server. A page reload
   loses its tab, and the chat appears in the sidebar when it starts. A server restart during a
   start cuts the start off; a worktree it made stays, and the page shows that the start is lost.
-- Two composers that send the same prompt at once can both read one name as free. The second
-  create then fails with "The branch … already exists", and nothing is made.
+- Starts in one project pick their worktree names one at a time, under a lock for each project,
+  so two composers that send the same prompt at once get `swarm/<name>` and `swarm/<name>-2`.
+  Their setup scripts still run at the same time, outside the shared action lane.
+- The preview card rebuilds the project tree and runs about 20 git commands on each pause in
+  typing. A local server with one owner takes that; a cache waits for a real need.
 - Outside a worktree hub, the rename and the cleanup of ADR 0146 do not run: a new worktree with
   no prompt keeps `swarm/chat-<8 hex>`, and one whose setup failed stays for the owner to remove.
 - The "+" menu item "Default profile, no new worktree" of ADR 0146 is gone; the place menu's

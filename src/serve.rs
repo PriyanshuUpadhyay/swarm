@@ -60,6 +60,9 @@ struct Server {
     tree_cache: Mutex<TreeCache>,
     handoffs: Mutex<HashMap<String, HandoffRun>>,
     chat_create: tokio::sync::Mutex<()>,
+    /// One lock for each project, held while a chat start picks its worktree name and makes it,
+    /// so two starts with one prompt get two names (ADR 0147).
+    worktree_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     // shortcut: the cooldown resets on server restart; seed from cache if restart bursts matter.
     usage_refresh: Mutex<HashMap<String, (tokio::time::Instant, Option<ApiError>)>>,
     commands: Mutex<HashMap<(String, String), Arc<CommandsSlot>>>,

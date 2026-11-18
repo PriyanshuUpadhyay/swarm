@@ -197,4 +197,17 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
         "swarm/add-retry"
     );
     assert!(action_calls(fixture).contains(&format!("{made}|launch orchestrator chat")));
+
+    // Two starts with one prompt at once wait for each other's worktree, so each gets a name.
+    let body = json!({"cwd":clone_path,"prompt":"Add a cache","place":{"kind":"new"}});
+    let (first, second) = tokio::join!(start_chat(fixture, body.clone()), start_chat(fixture, body));
+    let mut branches: Vec<_> = [first, second]
+        .iter()
+        .map(|started| {
+            let made = started.as_ref().unwrap_or_else(|e| panic!("{e:?}"))["workspace"].as_str().unwrap();
+            lifecycle::check_git(made, &["branch", "--show-current"]).unwrap()
+        })
+        .collect();
+    branches.sort();
+    assert_eq!(branches, ["swarm/add-cache", "swarm/add-cache-2"]);
 }

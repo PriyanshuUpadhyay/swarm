@@ -3,7 +3,8 @@
 use super::*;
 
 /// `GET /api/chat/new-preview?cwd=&prompt=`: what a new chat in `cwd` with place `new` and this
-/// prompt does, for the composer's card. It writes nothing. A plain folder is
+/// prompt does, for the composer's card. It makes and saves nothing; like each lifecycle read,
+/// it refreshes the server's tree cache, and the page reads it on each pause in typing. A plain folder is
 /// `{place: "folder"}`; a git project names the new worktree's branch, folder, base, the last
 /// origin fetch and the setup script's first line (ADR 0147).
 pub(in crate::serve) async fn new_chat_preview(
