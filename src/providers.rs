@@ -270,8 +270,12 @@ impl Provider {
                 "-a",
                 "--ask-for-approval",
             ],
-            // The session flags would move or drop the log the app finds by its fixed id.
+            // Preserve the fixed log id, the launch's extension set, and the configured skills.
             Provider::Pi => &[
+                "--extension",
+                "-e",
+                "--no-skills",
+                "-ns",
                 "--model",
                 "--provider",
                 "--thinking",
@@ -437,11 +441,23 @@ pub fn pi_default_model() -> Option<String> {
     Some(format!("{provider}/{model}"))
 }
 
+/// The Pi user configuration directory, including its installed packages.
+pub fn pi_agent_dir(home: &std::path::Path) -> std::path::PathBuf {
+    match std::env::var_os("PI_CODING_AGENT_DIR").filter(|dir| !dir.is_empty()) {
+        Some(dir) => {
+            let dir = std::path::PathBuf::from(dir);
+            match dir.strip_prefix("~") {
+                Ok(relative) => home.join(relative),
+                Err(_) => dir,
+            }
+        }
+        None => home.join(".pi/agent"),
+    }
+}
+
 fn pi_settings() -> Option<serde_json::Value> {
-    let dir = match std::env::var_os("PI_CODING_AGENT_DIR") {
-        Some(dir) => std::path::PathBuf::from(dir),
-        None => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".pi/agent"),
-    };
+    let home = std::env::home_dir()?;
+    let dir = pi_agent_dir(&home);
     serde_json::from_slice(&std::fs::read(dir.join("settings.json")).ok()?).ok()
 }
 

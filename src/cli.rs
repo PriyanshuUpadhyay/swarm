@@ -94,6 +94,9 @@ pub(crate) use permission::*;
 mod read_screen;
 pub(crate) use read_screen::*;
 
+mod pi_packages;
+mod pi_version;
+
 mod pty;
 pub(crate) use pty::*;
 mod pty_host;

@@ -190,6 +190,13 @@ mod tests {
         );
         assert!(extra_args(Provider::Pi, &strings(&["--thinking", "max"])).is_err());
         assert!(extra_args(Provider::Pi, &strings(&["--session-id", "x"])).is_err());
+        // Launch keeps the configured skills and controls which extensions Pi may load.
+        for flag in ["--extension", "-e", "--no-skills", "-ns"] {
+            assert!(
+                extra_args(Provider::Pi, &strings(&[flag])).is_err(),
+                "{flag}"
+            );
+        }
         // The app finds a pi log by its fixed id under pi's own session folder (ADR 0086).
         for flag in [
             "--no-session",

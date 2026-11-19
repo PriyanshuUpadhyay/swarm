@@ -32,6 +32,7 @@ metadata:
 - Each runtime adds its own lines; follow the one that the `[agent-runtime: ...]` line names:
   - claude: native background subagents are allowed unless the host contract or the workflow requires a visible pane. Each Workflow `agent()` call pins the model of its named seat role, or Sonnet when it names none. Workflow fan-out allows only Sonnet or Haiku, so refuse a seat role that routes to Opus or Fable, and name the role.
   - codex: load the host skill that the `[agent-host: ...]` contract names. Collaboration workers (`spawn_agent`) run in-process as background workers; use them unless the host contract or the workflow requires a visible pane.
+  - pi: use visible panes only. Native subagents and Claude Code's Workflow tool are not available in Pi.
   - agy: load the host skill that the `[agent-host: ...]` contract names. Native AGY subagents are allowed unless the host contract or the workflow requires a visible pane. Never pass a prompt as a launch argument; send the first task only after the host sees an input-ready AGY session.
 
 ## Example

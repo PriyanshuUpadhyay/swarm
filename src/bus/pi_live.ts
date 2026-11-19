@@ -20,11 +20,19 @@ export default function (pi: ExtensionAPI) {
     type: "string",
     description: "The swarm binary that checks each bash call",
   });
-  pi.on("tool_call", async (event) => {
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName !== "bash" && event.toolName !== "process") return;
     const bin = pi.getFlag("swarm-bin");
-    if (event.toolName !== "bash" || typeof bin !== "string" || bin === "") return;
+    if (typeof bin !== "string" || bin === "") {
+      return { block: true, reason: "Swarm guard has no binary path, so the call is blocked" };
+    }
     const run = spawnSync(bin, ["guard", "pi", "PreToolUse"], {
-      input: JSON.stringify({ tool_name: "bash", tool_input: event.input, cwd: process.cwd() }),
+      input: JSON.stringify({
+        tool_name: event.toolName,
+        tool_input: event.input,
+        cwd: ctx.cwd,
+        session_id: ctx.sessionManager.getSessionId(),
+      }),
       encoding: "utf8",
       timeout: 10_000,
     });
