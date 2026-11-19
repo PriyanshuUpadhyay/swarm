@@ -5,7 +5,7 @@ use super::*;
 use std::time::{Duration, Instant};
 
 const TASK_USAGE: &str =
-    "usage: swarm task land [<name>] [--pr] | drop [<name>] | list | sweep [--apply]";
+    "usage: swarm task land [<name>] [--merge] | drop [<name>] | list | sweep [--apply]";
 /// A Claude shell call stops at 2 minutes, so land waits less, and running it again keeps waiting.
 const LAND_WAIT: Duration = Duration::from_secs(100);
 
@@ -36,11 +36,19 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let wt = swarm::task::wt_program();
     let value = match args {
         [verb, rest @ ..] if verb == "land" => {
-            let pr = rest.iter().any(|arg| arg == "--pr");
-            let names: Vec<_> = rest.iter().filter(|arg| arg.as_str() != "--pr").collect();
+            let flag_count = |flag: &str| rest.iter().filter(|arg| arg.as_str() == flag).count();
+            let merge = flag_count("--merge") > 0;
+            // A pull request is the default, so `--pr` only names it.
+            let pr = !merge;
+            let names: Vec<_> = rest
+                .iter()
+                .filter(|arg| !matches!(arg.as_str(), "--pr" | "--merge"))
+                .collect();
             if names.len() > 1
                 || names.first().is_some_and(|name| name.starts_with('-'))
-                || rest.iter().filter(|arg| arg.as_str() == "--pr").count() > 1
+                || flag_count("--pr") > 1
+                || flag_count("--merge") > 1
+                || (merge && flag_count("--pr") > 0)
             {
                 return Err(TASK_USAGE.into());
             }
@@ -72,7 +80,7 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     return Err(format!(
                         "swarm: {why} `swarm task land {}{}` again",
                         branch,
-                        if pr { " --pr" } else { "" }
+                        if pr { "" } else { " --merge" }
                     )
                     .into());
                 }

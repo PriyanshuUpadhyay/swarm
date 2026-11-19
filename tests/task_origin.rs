@@ -168,7 +168,7 @@ fn direct_land_updates_origin_and_local_main_together() {
         &publisher,
         &["push", "-q", "origin", "HEAD:refs/heads/main"],
     );
-    let output = hub.cli(&["task", "land", "direct"], true);
+    let output = hub.cli(&["task", "land", "direct", "--merge"], true);
     assert!(output.status.success(), "{output:?}");
     let head = git(&hub.main, &["rev-parse", "HEAD"]);
     assert_eq!(
@@ -227,7 +227,7 @@ fn pr_land_pushes_the_task_and_opens_a_pr_into_the_default() {
     let path = hub.task("review");
     commit(&path, "reviewed");
     let head = git(&path, &["rev-parse", "HEAD"]);
-    let output = hub.cli(&["task", "land", "review", "--pr"], true);
+    let output = hub.cli(&["task", "land", "review"], true);
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         git(&hub.dir.join("origin.git"), &["rev-parse", "swarm/review"]),
@@ -263,7 +263,7 @@ fn a_refused_origin_push_keeps_main_and_the_task() {
     let hook = hub.dir.join("origin.git/hooks/pre-receive");
     std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
     std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let output = hub.cli(&["task", "land", "refused"], true);
+    let output = hub.cli(&["task", "land", "refused", "--merge"], true);
     assert!(!output.status.success(), "{output:?}");
     assert_eq!(git(&hub.main, &["rev-parse", "HEAD"]), initial);
     assert_eq!(

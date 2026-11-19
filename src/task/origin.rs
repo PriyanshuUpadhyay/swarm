@@ -85,7 +85,7 @@ pub(super) fn land(task: &Task, hub: &Hub, wt: &Path, base: &str) -> Result<Stri
         let landed = git(path, &["rev-parse", &target]).ok_or("cannot read landing commit")?;
         // Explicit refspec and no force: a concurrent remote update must refuse this push.
         remote_git(path, &["push", "origin", &format!("{landed}:refs/heads/{}", hub.default)])
-            .map_err(|error| format!("origin push was refused; the task stays and local {} was not advanced to the task; run `swarm task land` again: {error}", hub.default))?;
+            .map_err(|error| format!("origin push was refused; the task stays and local {} was not advanced to the task; run `swarm task land --merge` again: {error}", hub.default))?;
         sync_default(hub, &landed)
             .map_err(|error| format!("origin accepted {landed}, but local sync failed; the task stays; land again: {error}"))?;
         let removed = run(
@@ -165,7 +165,7 @@ pub(super) fn pull_request(task: &Task, hub: &Hub, base: &str) -> Result<String,
                 &title,
                 "--body",
                 &format!(
-                    "Task: {}\n\nCreated by `swarm task land --pr`. The task worktree stays until the PR is merged.",
+                    "Task: {}\n\nCreated by `swarm task land`. The task worktree stays until the PR is merged.",
                     task.branch
                 ),
             ])?

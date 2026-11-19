@@ -213,7 +213,9 @@ fn land(root: &Path, wt: &Path, request: &Path) -> Result<(Task, String, bool), 
         return Ok((task, output, asked.pr));
     }
     if asked.pr {
-        return Err("this hub has no origin; use `swarm task land` for a local landing".into());
+        return Err(
+            "this hub has no origin; use `swarm task land --merge` for a local landing".into(),
+        );
     }
     let output = run(
         wt,

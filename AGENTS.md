@@ -10,4 +10,4 @@ Inside this repo, Claude Code finds them through `.claude/skills` and AGY throug
 
 When you write or review a test, follow the test rule in `skills/kit/blocks/prove-it-works/SKILL.md` (ADR 0134): one main-path test per behavior, a failure test only for a real bug or a guard, and no edge-case lists.
 
-A new chat on a hub's main worktree runs in its own new worktree, and its first prompt names the branch (ADR 0146). Edit and commit there, then run `swarm task land` from that folder. The guard blocks edits to main.
+A new chat on a hub's main worktree runs in its own new worktree, and its first prompt names the branch (ADR 0146). Edit and commit there, then run `swarm task land` from that folder; it opens a PR, and `--merge` merges directly (ADR 0150). The guard blocks edits to main.
