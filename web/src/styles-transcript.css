@@ -300,9 +300,16 @@
   margin-right: 8px;
 }
 :root:not([data-diff-split="1"]) .md-head [data-diff-layout="0"],
-:root[data-diff-split="1"] .md-head [data-diff-layout="1"] {
+:root[data-diff-split="1"] .md-head [data-diff-layout="1"],
+:root[data-diff-wrap="1"] .md-head [data-wrap-toggle] {
   background: var(--selected);
   color: var(--foreground);
+}
+.md-head .md-wrap {
+  margin-left: 0;
+}
+:root:not([data-diff-split="1"]) .md-head .md-wrap {
+  display: none;
 }
 .md table {
   border-collapse: collapse;
@@ -483,7 +490,15 @@ pre.plain {
 .half.del {
   background: color-mix(in srgb, var(--status-failed) 14%, transparent);
 }
-.pl.split {
+/* Split rows scroll sideways: each half is at least as wide as the longest line on its side. */
+.pl.split .half:first-child {
+  --side-w: calc(var(--old-ch, 0) * 1ch + 48px);
+}
+.pl.split .half + .half {
+  --side-w: calc(var(--new-ch, 0) * 1ch + 48px);
+}
+.patch[data-wrap] .pl.split {
+  height: auto;
   min-width: 0;
 }
 /* Diff lines inside plain text: tool output and ```diff fences. */
@@ -502,8 +517,17 @@ pre.plain {
 .half {
   display: flex;
   flex: 1 1 50%;
-  min-width: 0;
+  min-width: var(--side-w);
   overflow: hidden;
+}
+.patch[data-wrap] .half {
+  min-width: 0;
+}
+.patch[data-wrap] .half .code {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .half + .half {
   border-left: 1px solid var(--border);

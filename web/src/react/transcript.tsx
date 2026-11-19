@@ -12,6 +12,7 @@ import { copyText } from "./copy";
 import { focusInputOf } from "../core/focus";
 import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
 import { setSplit } from "./transcript-output";
+import { setWrap } from "./patch-body";
 import { paintRanges, textRanges } from "./find-text";
 import { LineView } from "./transcript-row";
 
@@ -150,6 +151,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const onClick = (e: React.MouseEvent) => {
     const layout = (e.target as Element).closest<HTMLElement>("[data-diff-layout]");
     if (layout) return setSplit(layout.dataset.diffLayout === "1");
+    if ((e.target as Element).closest("[data-wrap-toggle]")) return setWrap(document.documentElement.dataset.diffWrap !== "1");
     const button = (e.target as Element).closest<HTMLElement>("[data-copy]");
     if (!button) return;
     const code = button.closest<HTMLElement>(".md-code");

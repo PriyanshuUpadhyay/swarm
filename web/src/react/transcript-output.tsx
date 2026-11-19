@@ -6,7 +6,7 @@ import type { DiffPreview, PatchInfo, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
 import { patchOf, textRows } from "../core/transcript";
 import { copyText } from "./copy";
-import { ColoredRow, PatchBody, setSplit, useSplit } from "./patch-body";
+import { ColoredRow, PatchBody, setSplit, setWrap, useSplit, useWrap } from "./patch-body";
 
 const plural = (n: number, word: string) => `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
 
@@ -85,9 +85,20 @@ function TextLines({ text, entry, previewId, testid }: { text: string; entry?: P
   );
 }
 
+function WrapToggle({ wrap }: { wrap: boolean }) {
+  return (
+    <div className="seg">
+      <button type="button" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+        Wrap
+      </button>
+    </div>
+  );
+}
+
 /** A patch: Unified or Split, the capped preview, Show full patch, Copy patch, and its counts. */
 function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: ReadonlyMap<string, FullText> }) {
   const split = useSplit();
+  const wrap = useWrap();
   const f = full.get(diff.id);
   const patch = f?.state === "ready" ? f.text : diff.patch;
   const capped = diff.omitted_lines > 0 || diff.shortened_lines > 0;
@@ -110,11 +121,12 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
             Split
           </button>
         </div>
+        {split && <WrapToggle wrap={wrap} />}
         <button type="button" className="t-link" onClick={(e) => copyText(capped ? app.fullText(diff.id) : diff.patch, "patch", e.currentTarget)}>
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>
-      <PatchBody patch={patch} info={f?.state === "ready" ? f.patch : patchOf(diff)} split={split} previewId={diff.id} />
+      <PatchBody patch={patch} info={f?.state === "ready" ? f.patch : patchOf(diff)} split={split} wrap={wrap} previewId={diff.id} />
       {capped && f?.state !== "ready" && (
         <div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-muted-foreground">
           <span>
@@ -134,6 +146,7 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
 /** A tool output that the server marks as a shown diff: Unified or Split, the whole patch, Copy patch. */
 function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; full: ReadonlyMap<string, FullText> }) {
   const split = useSplit();
+  const wrap = useWrap();
   const f = full.get(preview.id);
   // The owner reviews the whole chunk, so a cut preview loads the rest at once.
   useEffect(() => {
@@ -152,11 +165,12 @@ function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; 
             Split
           </button>
         </div>
+        {split && <WrapToggle wrap={wrap} />}
         <button type="button" className="t-link" onClick={(e) => copyText(preview.is_truncated ? app.fullText(preview.id) : preview.text, "patch", e.currentTarget)}>
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>
-      <PatchBody patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} previewId={preview.id} fileLabels />
+      <PatchBody patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} wrap={wrap} previewId={preview.id} fileLabels />
       {preview.is_truncated && !ready && <div className="px-2 pb-1.5 text-xs text-muted-foreground">{f?.state === "error" ? <span className="text-failed">{f.error}</span> : "Loading the full patch…"}</div>}
     </div>
   );

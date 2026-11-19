@@ -1,6 +1,6 @@
 import { Fragment, createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Block, Display, Inline } from "../core/api";
-import { ColoredRow, PatchBody, useSplit } from "./patch-body";
+import { ColoredRow, PatchBody, useSplit, useWrap } from "./patch-body";
 
 function Head({ label, what, diff = false }: { label: string; what: "code" | "table"; diff?: boolean }) {
   return (
@@ -12,6 +12,7 @@ function Head({ label, what, diff = false }: { label: string; what: "code" | "ta
           <button type="button" data-diff-layout="1">Split</button>
         </div>
       )}
+      {diff && <div className="seg md-wrap"><button type="button" data-wrap-toggle>Wrap</button></div>}
       <button type="button" data-copy={what} aria-label={`Copy ${what}`}>Copy</button>
     </div>
   );
@@ -67,10 +68,11 @@ function inlines(nodes: Inline[]): ReactNode[] {
 
 function HunkCode({ label, text, diff }: { label: string; text: string; diff: Extract<NonNullable<Extract<Block, { type: "code" }>["value"]["diff"]>, { lines: unknown }> }) {
   const split = useSplit();
+  const wrap = useWrap();
   return (
     <div className="md-code" data-raw={text}>
       <Head label={label} what="code" diff />
-      <PatchBody patch={text} info={diff} split={split} fileLabels />
+      <PatchBody patch={text} info={diff} split={split} wrap={wrap} fileLabels />
     </div>
   );
 }
