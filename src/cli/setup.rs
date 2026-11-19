@@ -333,7 +333,7 @@ pub(crate) fn apply_setup<'a>(
     }
     if let Some(prefix) = &setup.pi_packages {
         super::pi_packages::install(prefix)?;
-        println!("swarm: pi: the pinned Pi packages are installed");
+        println!("swarm: pi: the pinned Pi package is installed");
     }
     if setup.hud.is_some() {
         let status = swarm::hud::install(&std::path::PathBuf::from(env_var("HOME")?))?;

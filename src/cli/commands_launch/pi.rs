@@ -61,7 +61,9 @@ fn extension_args(
     if let Some(packages) = pi_packages::launch_args(&pi_packages::prefix(root)) {
         args.extend(packages);
     } else {
-        eprintln!("swarm: Pi packages are not installed; run `swarm setup pi` to enable them");
+        eprintln!(
+            "swarm: the pinned Pi package is not installed; run `swarm setup pi` to enable it"
+        );
     }
 
     let extension = swarm::bus::write_pi_extension(root)?;

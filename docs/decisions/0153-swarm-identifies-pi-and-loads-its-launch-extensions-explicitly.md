@@ -34,13 +34,13 @@ resources, so the flag is not a package-install or network block. This choice do
 owner's Pi settings, raw `swarm spawn` commands, or interactive Pi outside Swarm. The bridge entry
 point is a path dependency: check it when updating the bridge package.
 
-The owner later chose to add the tested subagent and background-process packages to the same
-explicit launch set. `swarm setup pi` previews and installs the two exact package versions in
+The owner later chose to add the tested background-process package to the same explicit
+launch set. `swarm setup pi` previews and installs its exact version in
 Swarm state. It does not edit Pi's settings. Launch checks the installed package files and
 continues with a warning if setup has not finished. Launch loads the process package and sends
-its shell starts through the Swarm guard and the owner's Bash rules. The third-party subagent
-pin remains installed but inactive: its SDK child sessions can run Bash without inheriting the
-Swarm launch guard.
+its shell starts through the Swarm guard and the owner's Bash rules. The third-party
+`@tintinweb/pi-subagents` package is not installed: its SDK child sessions can run Bash without
+inheriting the Swarm launch guard.
 
 The owner chose Swarm's own `subagent` tool for Pi. A Swarm Pi chair can delegate one task or
 a batch of up to four. The host and workflow still decide whether a worker must be visible.
