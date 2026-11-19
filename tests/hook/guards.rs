@@ -2,6 +2,35 @@
 // Fixture rules use an explicit timeout to check routing under load, within the runner's deadline.
 use super::*;
 
+#[test]
+fn a_pi_process_start_is_checked_by_the_owners_bash_rule() {
+    let home = scratch("guard-pi-process");
+    std::fs::create_dir_all(home.join(".swarm")).unwrap();
+    std::fs::write(
+        home.join(".swarm/guards.json"),
+        r#"{"rules":[{"name":"test","event":"PreToolUse","tools":["Bash"],"command":["/bin/sh","-c","case $(cat) in *deny-fixture*) echo 'owner denied this command' >&2; exit 2;; esac"]}]}"#,
+    ).unwrap();
+    let call = |input: serde_json::Value| {
+        let payload =
+            serde_json::json!({"tool_name": "process", "tool_input": input, "cwd": &home});
+        swarm(
+            &home,
+            &[],
+            &["guard", "pi", "PreToolUse"],
+            &payload.to_string(),
+        )
+    };
+    let denied = call(serde_json::json!({"action": "start", "command": "echo deny-fixture"}));
+    assert_eq!(denied.status.code(), Some(2), "{denied:?}");
+    let allowed = call(serde_json::json!({"action": "start", "command": "echo allowed"}));
+    assert!(allowed.status.success(), "{allowed:?}");
+    let stdin = call(serde_json::json!({"action": "write", "input": "model input"}));
+    assert_eq!(stdin.status.code(), Some(2), "{stdin:?}");
+    std::fs::remove_file(home.join(".swarm/guards.json")).unwrap();
+    let missing = call(serde_json::json!({"action": "start", "command": "echo allowed"}));
+    assert_eq!(missing.status.code(), Some(2), "{missing:?}");
+}
+
 /// With a rule list, setup registers `swarm guard` for Claude, Codex, and AGY next to the owner's
 /// own hooks, trusts the Codex group where it lands, and each registered command answers its CLI
 /// (ADR 0040). Without a list, setup adds no guard.

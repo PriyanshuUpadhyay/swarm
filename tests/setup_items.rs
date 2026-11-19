@@ -99,6 +99,77 @@ fn text(output: &[u8]) -> String {
 }
 
 #[test]
+fn setup_pi_installs_the_two_pins_and_launch_uses_the_installed_entries() {
+    let f = Fixture::new("pi");
+    let npm = f.home.join("bin/npm");
+    std::fs::write(&npm, include_str!("fixtures/pi-pinned-npm.sh")).unwrap();
+    std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let plan = f.run(&[], &["setup", "pi", "--plan", "--json"]);
+    assert!(plan.status.success(), "{}", text(&plan.stderr));
+    let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert!(!f.home.join(".swarm/pi/packages").exists());
+    assert!(f.calls().is_empty());
+    let digest = plan["digest"].as_str().unwrap();
+    let applied = f.run(&[], &["setup", "pi", "--digest", digest]);
+    assert!(applied.status.success(), "{}", text(&applied.stderr));
+    assert!(!f.home.join(".pi/agent/settings.json").exists());
+    let adapter = f.home.join(".swarm/adapters/tmux-swarm.conf");
+    std::fs::create_dir_all(adapter.parent().unwrap()).unwrap();
+    std::fs::write(
+        adapter,
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    ).unwrap();
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = f.run(&app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", text(&session.stderr));
+    let session = text(&session.stdout);
+    let output = f.run(
+        &[app[0], ("SWARM_SESSION_ID", session.trim())],
+        &[
+            "launch",
+            "orchestrator",
+            "chat",
+            "--provider",
+            "pi",
+            "--model",
+            "anthropic/claude-haiku-5-5",
+        ],
+    );
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert!(
+        !text(&output.stderr).contains("swarm setup pi"),
+        "{}",
+        text(&output.stderr)
+    );
+    let script = std::fs::read_to_string(
+        f.home
+            .join(".swarm/runs")
+            .join(session.trim())
+            .join("orchestrator.sh"),
+    )
+    .unwrap();
+    for entry in [
+        "@aliou/pi-processes/extensions/processes/index.ts",
+        "@aliou/pi-processes/extensions/processes-logs/index.ts",
+        "@aliou/pi-processes/extensions/processes-dock/index.ts",
+    ] {
+        assert!(
+            script
+                .lines()
+                .any(|line| line.split("'--extension' ").skip(1).any(|arg| arg
+                    .split_once("' ")
+                    .is_some_and(|(path, _)| path.ends_with(entry)))),
+            "{entry}: {script}"
+        );
+    }
+    assert!(
+        script.contains("@aliou/pi-processes/skills/pi-processes"),
+        "{script}"
+    );
+    assert!(!script.contains("@tintinweb/pi-subagents"), "{script}");
+}
+
+#[test]
 fn the_plugin_plan_names_each_command_and_its_digest_applies_only_that_plan() {
     let f = Fixture::new("plugin");
     let old = f.old_link("flow");

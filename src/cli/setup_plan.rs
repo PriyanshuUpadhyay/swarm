@@ -4,7 +4,7 @@ use super::*;
 
 /// The items of `swarm setup`, in apply order (ADR 0092). The list may grow, so the app shows an
 /// item it does not know by its name.
-pub(crate) const SETUP_ITEMS: [&str; 4] = ["hooks", "trust", "plugin", "hud"];
+pub(crate) const SETUP_ITEMS: [&str; 5] = ["hooks", "trust", "plugin", "pi", "hud"];
 
 /// One `swarm setup` plan: each file's plan in apply order, the item (`group`) of each, each item
 /// part that was left out with its reason, and the commands the plugin and HUD items run.
@@ -19,6 +19,7 @@ pub(crate) struct SetupPlan {
     pub(crate) removes: Vec<bool>,
     pub(crate) skipped: Vec<(&'static str, String)>,
     pub(crate) plugin: Option<PluginPlan>,
+    pub(crate) pi_packages: Option<std::path::PathBuf>,
     /// The LaunchAgent text the HUD item writes, or None when the HUD already runs from it.
     pub(crate) hud: Option<String>,
     /// The HUDs that the login item did not start, which the HUD install stops.
@@ -49,6 +50,7 @@ impl SetupPlan {
             removes: Vec::new(),
             skipped: Vec::new(),
             plugin: None,
+            pi_packages: None,
             hud: None,
             hud_strays: Vec::new(),
         };
@@ -166,6 +168,15 @@ impl SetupPlan {
             }
             setup.plugin = Some(plugin);
         }
+        if groups.contains(&"pi") {
+            let prefix = super::pi_packages::prefix(&swarm::paths::root_dir()?);
+            match super::pi_packages::setup_state(&prefix) {
+                ("setup", _) if installed("pi") => setup.pi_packages = Some(prefix),
+                ("ok", _) => {}
+                ("broken", reason) => setup.skipped.push(("pi", reason)),
+                _ => setup.skipped.push(("pi", "Pi is not on PATH".into())),
+            }
+        }
         if groups.contains(&"hud") {
             let text = swarm::hud::planned()?;
             let now = swarm::hud::status(&user_home);
@@ -246,6 +257,9 @@ impl SetupPlan {
             .flat_map(PluginPlan::lines)
             .map(|line| ("plugin", line))
             .collect();
+        if let Some(prefix) = &self.pi_packages {
+            lines.push(("pi", super::pi_packages::plan_line(prefix)));
+        }
         if self.hud.is_some() {
             if !self.hud_strays.is_empty() {
                 let pids: Vec<_> = self.hud_strays.iter().map(u32::to_string).collect();
@@ -281,6 +295,7 @@ impl SetupPlan {
             .iter()
             .all(|plan| !plan.changes() && plan.conflicts().is_empty())
             && self.plugin.is_none()
+            && self.pi_packages.is_none()
             && self.hud.is_none()
     }
 

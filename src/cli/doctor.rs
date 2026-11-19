@@ -97,6 +97,15 @@ pub(crate) fn setup_rows(
             Some("hud"),
         ),
     ];
+    if installed("pi") {
+        let prefix = super::pi_packages::prefix(&swarm::paths::root_dir()?);
+        rows.push(doctor_row(
+            "pi-packages",
+            "Pi packages",
+            super::pi_packages::setup_state(&prefix),
+            Some("pi"),
+        ));
+    }
     for (index, copy) in stale_plugin_copies(home).iter().enumerate() {
         rows.push(doctor_row(
             &format!("plugin-{index}"),

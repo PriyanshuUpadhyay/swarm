@@ -4,7 +4,7 @@
 //! child's log is: Claude writes `<session>/subagents/agent-<id>.jsonl` with a `.meta.json` that
 //! holds `toolUseId`; Codex writes the child as its own rollout file, named by the id in the
 //! `spawn_agent` output; AGY finds its child log from the `conversationId` in the result of the
-//! `invoke_subagent` call. pi has no subagent.
+//! `invoke_subagent` call. Pi extension subagent logs are not resolved here.
 
 use super::*;
 use std::io::{BufRead, BufReader};

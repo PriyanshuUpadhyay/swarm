@@ -26,3 +26,11 @@ loads skills from configured packages, including the kit. Pi can still resolve p
 so the flag is not a package-install or network block. This choice does not change the owner's Pi
 settings, raw `swarm spawn` commands, or interactive Pi outside Swarm. The bridge entry point is a
 path dependency: check it when updating the bridge package.
+
+The owner later chose to add the tested subagent and background-process packages to the same
+explicit launch set. `swarm setup pi` previews and installs the two exact package versions in
+Swarm state. It does not edit Pi's settings. Launch checks the installed package files and
+continues with a warning if setup has not finished. Launch loads the process package and sends
+its shell starts through the Swarm guard and the owner's Bash rules. It does not load the
+subagent package yet: its SDK child sessions can run Bash without inheriting the Swarm launch
+guard. The built-in extension set did not change.

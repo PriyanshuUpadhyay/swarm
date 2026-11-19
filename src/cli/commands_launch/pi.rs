@@ -1,6 +1,6 @@
 //! Pi's launch context and explicitly loaded extensions.
 
-use super::{adapter_name, pane_context};
+use super::{adapter_name, pane_context, pi_packages};
 use std::path::Path;
 
 pub(super) fn launch_args(
@@ -30,6 +30,12 @@ pub(super) fn launch_args(
         .filter(|path| path.is_file())
     {
         args.extend(["--extension".into(), path.display().to_string()]);
+    }
+
+    if let Some(packages) = pi_packages::launch_args(&pi_packages::prefix(root)) {
+        args.extend(packages);
+    } else {
+        eprintln!("swarm: Pi packages are not installed; run `swarm setup pi` to enable them");
     }
 
     // The chat's live row reads the turn's text from this file, not from pi's screen

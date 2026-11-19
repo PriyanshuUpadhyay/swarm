@@ -120,6 +120,11 @@ fn a_pi_seat_gets_its_seat_block_in_the_system_prompt() {
     let cwd = home.to_string_lossy().into_owned();
     let output = swarm(&home, &env, &["launch", "pi-1", "pi.seat", "--cwd", &cwd]);
     assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("swarm setup pi"),
+        "{}",
+        stderr(&output)
+    );
     let script =
         std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/pi-1.sh"))).unwrap();
     assert_eq!(script.matches("[agent-runtime: pi]").count(), 1, "{script}");
