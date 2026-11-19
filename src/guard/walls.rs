@@ -41,15 +41,15 @@ fn native_subagent_model(provider: Provider, event: &str, payload: &str) -> Opti
         return None;
     }
     let model = call["tool_input"]["model"].as_str()?.rsplit('/').next()?;
+    native_subagent_model_refusal(model).map(|reason| Verdict::Deny(reason.into()))
+}
+
+/// The native spawn policy shared by provider hooks and Swarm's own Pi launcher.
+pub fn native_subagent_model_refusal(model: &str) -> Option<&'static str> {
     model
         .split(|c: char| !c.is_ascii_alphabetic())
         .any(|part| part.eq_ignore_ascii_case("fable") || part.eq_ignore_ascii_case("astra"))
-        .then(|| {
-            Verdict::Deny(
-                "Fable and Astra cannot run as native subagents. Use a visible pane with `swarm launch` for these models."
-                    .into(),
-            )
-        })
+        .then_some("Fable and Astra cannot run as native subagents. Use a visible pane with `swarm launch` for these models.")
 }
 
 /// A swarm agent learns of a message when the ring starts its next turn, and a ring that comes

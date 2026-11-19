@@ -96,7 +96,8 @@ fn runtime_context(provider: &str, is_seat: bool) -> String {
 
 /// True in a pane an orchestrator spawned: `swarm spawn` names every child but the orchestrator.
 pub fn is_worker(env: impl Fn(&str) -> Option<String>) -> bool {
-    env("HERDR_AGENT_PANE").as_deref() == Some("1")
+    env("SWARM_PI_NATIVE_CHILD").is_some()
+        || env("HERDR_AGENT_PANE").as_deref() == Some("1")
         || env("SWARM_AGENT_ID").is_some_and(|agent| agent != "orchestrator")
 }
 

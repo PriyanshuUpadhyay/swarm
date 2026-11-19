@@ -16,11 +16,17 @@ fn call_row_id(event: &Value) -> String {
 const LABEL_CHARS: usize = 200;
 
 /// The calls that start a subagent: Claude `Agent` (older `Task`), Codex `spawn_agent`, AGY
-/// `invoke_subagent`. pi has no such tool (ADR 0140).
+/// `invoke_subagent`, and Swarm's Pi `subagent` tool (ADR 0140).
 fn is_subagent_call(name: &str) -> bool {
-    ["agent", "task", "spawn_agent", "invoke_subagent"]
-        .iter()
-        .any(|known| name.eq_ignore_ascii_case(known))
+    [
+        "agent",
+        "task",
+        "spawn_agent",
+        "invoke_subagent",
+        "subagent",
+    ]
+    .iter()
+    .any(|known| name.eq_ignore_ascii_case(known))
 }
 
 /// The agent's type and its task text, as each CLI names them. The Codex argument names changed
@@ -34,7 +40,7 @@ pub(in crate::view) fn subagent_labels(input: &Value, name: &str) -> (String, St
     let item = input["items"]
         .as_array()
         .and_then(|items| items.iter().find_map(|item| item["text"].as_str()));
-    let description = first(&["description", "message", "prompt"])
+    let description = first(&["description", "message", "prompt", "task"])
         .or(item)
         .unwrap_or("");
     let line = description.lines().next().unwrap_or("");
@@ -61,6 +67,7 @@ pub fn row(record: &Record) -> Option<Row> {
             );
             row.subagent = Some(super::SubagentRun {
                 call_id: string(event, "agent_thread_id").into(),
+                other_call_ids: Vec::new(),
                 agent_type: path.into(),
                 description: String::new(),
                 state: tool::subagent_state(

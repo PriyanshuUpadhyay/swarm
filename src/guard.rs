@@ -120,7 +120,7 @@ mod runner;
 use runner::{Outcome, run};
 
 mod walls;
-pub use walls::{INBOX_WAIT, board_wall, inbox_wait, wall};
+pub use walls::{INBOX_WAIT, board_wall, inbox_wait, native_subagent_model_refusal, wall};
 mod main_wall;
 use main_wall::main_wall;
 

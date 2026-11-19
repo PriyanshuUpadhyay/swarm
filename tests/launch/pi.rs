@@ -98,6 +98,37 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
 }
 
 #[test]
+fn a_pi_pane_stays_working_while_it_has_active_children() {
+    let home = scratch("pi-children");
+    let (session, _connection) = seat_session(&home, "pi", "true");
+    std::fs::write(
+        home.join("screen"),
+        include_str!("../fixtures/screens/pi-idle.txt"),
+    )
+    .unwrap();
+    let marker = home.join(format!(".swarm/runs/{session}/seat.children"));
+    let state = || {
+        let output = swarm(&home, &chair(&session), &["agents", "--json"]);
+        assert!(output.status.success(), "{}", stderr(&output));
+        let rows: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        rows["agents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "seat")
+            .unwrap()["state"]
+            .clone()
+    };
+
+    assert_eq!(state(), "done");
+    std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+    std::fs::write(&marker, std::process::id().to_string()).unwrap();
+    assert_eq!(state(), "working");
+    std::fs::remove_file(marker).unwrap();
+    assert_eq!(state(), "done");
+}
+
+#[test]
 fn a_pi_version_outside_the_supported_range_warns_in_doctor_and_launch() {
     let home = scratch("pi-version");
     tool(

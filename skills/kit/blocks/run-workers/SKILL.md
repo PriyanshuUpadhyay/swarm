@@ -19,7 +19,7 @@ metadata:
 - Load the host reference that the contract names. The host owns pane creation, sending, liveness, result collection, and close.
 - Resolve every seat role with `swarm roles get <role>` before launch. Keep `runnerId`, `provider`, `mode`, `model`, `effort`, and `fallbackRunnerIds`. Use only the declared fallbacks. Refuse a role that does not resolve or that the host cannot run. Never hardcode a model, an effort, a sandbox, or an approval value.
 - Give the host one entry per seat: a unique name, the routed runner, the working folder, the permission level, the input digest, the brief, the expected result file, and the deadline. The host picks the run folder under its message root, because every worker sandbox can write there. Never brief a worker to write into a home-state path.
-- Never use a headless CLI or a detached process. When the skill or the host contract asks for visible seats, every seat is a visible, interactive pane owned by this run. Otherwise a native subagent of the runtime is allowed; the runtime adapter names which.
+- Do not start headless CLIs or detached processes yourself. When the skill or the host contract asks for visible seats, every seat is a visible, interactive pane owned by this run. Otherwise a native subagent of the runtime is allowed; the runtime adapter names which.
 - Use a visible `swarm launch` pane for Fable or Astra. Where `swarm guard` cannot see the resolved
   native subagent model, verify it before you start the worker. Check inheritance, agent definitions,
   and runtime defaults. If you cannot verify the model, use a visible pane.
@@ -35,7 +35,7 @@ metadata:
 - Each runtime adds its own lines; follow the one that the `[agent-runtime: ...]` line names:
   - claude: native background subagents are allowed unless the host contract or the workflow requires a visible pane. Each Workflow `agent()` call pins the model of its named seat role, or Sonnet when it names none. Workflow fan-out allows only Sonnet or Haiku. Refuse any other model and name the role.
   - codex: load the host skill that the `[agent-host: ...]` contract names. Collaboration workers (`spawn_agent`) run in-process as background workers; use them unless the host contract or the workflow requires a visible pane.
-  - pi: use visible panes only. Native subagents and Claude Code's Workflow tool are not available in Pi.
+  - pi: use Swarm's `subagent` tool for native background workers unless the host contract or the workflow requires a visible pane. Use a visible `swarm launch` pane for Fable or Astra. Claude Code's Workflow tool is not available in Pi.
   - agy: load the host skill that the `[agent-host: ...]` contract names. Native AGY subagents are allowed unless the host contract or the workflow requires a visible pane. Never pass a prompt as a launch argument; send the first task only after the host sees an input-ready AGY session.
 
 ## Example

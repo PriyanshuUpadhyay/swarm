@@ -52,6 +52,11 @@ mod dispatch;
 mod transcript_worker;
 
 pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if env::var_os("SWARM_PI_NATIVE_CHILD").is_some()
+        && !matches!(args, [command, ..] if command == "guard")
+    {
+        return Err("swarm: a native Pi child cannot use Swarm commands".into());
+    }
     if let [command, rest @ ..] = args
         && command == "_transcript-worker"
     {
@@ -60,6 +65,11 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(status);
         }
         return Ok(());
+    }
+    if let [command, rest @ ..] = args
+        && command == "_pi-child-argv"
+    {
+        return commands_launch::pi::child_argv(rest);
     }
     dispatch::run(args)
 }
