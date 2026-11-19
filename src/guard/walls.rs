@@ -18,7 +18,38 @@ pub fn board_wall(provider: Provider, event: &str, payload: &str) -> Option<Verd
 
 /// The walls every caller meets, before the worker-only board wall and the owner's rules.
 pub fn wall(provider: Provider, event: &str, payload: &str) -> Option<Verdict> {
-    inbox_wait(provider, event, payload).or_else(|| super::main_wall(provider, event, payload))
+    native_subagent_model(provider, event, payload)
+        .or_else(|| inbox_wait(provider, event, payload))
+        .or_else(|| super::main_wall(provider, event, payload))
+}
+
+/// The spawn hook can check the model argument, not a runtime's later model selection.
+fn native_subagent_model(provider: Provider, event: &str, payload: &str) -> Option<Verdict> {
+    let spawn_tool = match provider {
+        Provider::Claude => "Agent",
+        Provider::Codex => "spawn_agent",
+        _ => return None,
+    };
+    if event != "PreToolUse" {
+        return None;
+    }
+    let call: serde_json::Value = serde_json::from_str(payload).ok()?;
+    let tool = call["tool_name"].as_str()?;
+    if !tool.eq_ignore_ascii_case(spawn_tool)
+        && !(provider == Provider::Claude && tool.eq_ignore_ascii_case("Task"))
+    {
+        return None;
+    }
+    let model = call["tool_input"]["model"].as_str()?.rsplit('/').next()?;
+    model
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .any(|part| part.eq_ignore_ascii_case("fable") || part.eq_ignore_ascii_case("astra"))
+        .then(|| {
+            Verdict::Deny(
+                "Fable and Astra cannot run as native subagents. Use a visible pane with `swarm launch` for these models."
+                    .into(),
+            )
+        })
 }
 
 /// A swarm agent learns of a message when the ring starts its next turn, and a ring that comes
