@@ -6,13 +6,155 @@
 // `--swarm-bin` names, for swarm's own walls. Like `swarm guard`, a call it cannot check is blocked.
 import { spawnSync } from "node:child_process";
 import { renameSync, rmSync, writeFileSync } from "node:fs";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
+import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { ProcessTerminal, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
 import { nativeChild, registerSubagents, reportChildReady } from "./swarm-subagents.ts";
 
 /** How often the file is written while text streams; serve reads it at the same rate. */
 const WRITE_MS = 250;
+const PLAN_CHOICES = ["Request changes", "Approve"];
+// The screen reader treats this footer as a pane-only plan, not a remotely answerable list.
+const PLAN_PANE_ONLY = "Pi plan (pane only)";
+
+async function selectPlan(ui: ExtensionUIContext, body: string, tuiMode: boolean, signal: AbortSignal | undefined) {
+  const title = `Approve this plan?\n\n${body}\n\nReview the plan above before you answer.\n`;
+  if (!tuiMode) return ui.select(title, PLAN_CHOICES, { signal });
+
+  const terminal = new ProcessTerminal();
+  const titleRows = new Text(title, 1, 0);
+  // Leave space for the native selector's borders, options and help, and Pi's own footer.
+  const fits = () => terminal.columns >= 52 && titleRows.render(terminal.columns).length + 12 <= terminal.rows;
+  if (fits()) {
+    const resize = new AbortController();
+    const check = () => { if (!fits()) resize.abort(); };
+    process.stdout.on("resize", check);
+    try {
+      const choice = await ui.select(title, PLAN_CHOICES, {
+        signal: signal ? AbortSignal.any([signal, resize.signal]) : resize.signal,
+      });
+      if (!resize.signal.aborted || signal?.aborted) return choice;
+    } finally {
+      process.stdout.off("resize", check);
+    }
+  }
+
+  return ui.custom<string | undefined>((tui, theme, keys, done) => {
+    const text = new Text(body, 0, 0);
+    let selected = 0;
+    let offset = 0;
+    const close = () => done(undefined);
+    if (signal?.aborted) close();
+    else signal?.addEventListener("abort", close, { once: true });
+
+    const enoughRoom = () => tui.terminal.rows >= 4 && tui.terminal.columns >= PLAN_PANE_ONLY.length;
+    const pageSize = () => Math.max(1, tui.terminal.rows - 4);
+    const clamp = (offset: number, width: number) =>
+      Math.max(0, Math.min(offset, text.render(width).length - pageSize()));
+    const hint = (key: Parameters<typeof keys.getKeys>[0]) => keys.getKeys(key).join("/");
+    return {
+      render(width) {
+        if (!enoughRoom()) {
+          return ["Enlarge the pane to read the plan.", PLAN_PANE_ONLY]
+            .slice(-tui.terminal.rows).map((line) => truncateToWidth(line, width));
+        }
+        offset = clamp(offset, width);
+        const lines = text.render(width);
+        const end = Math.min(offset + pageSize(), lines.length);
+        const heading = `Approve this plan? Rows ${offset + 1}–${end} of ${lines.length}`;
+        const help = `${PLAN_PANE_ONLY} | ${hint("tui.select.pageUp")}/${hint("tui.select.pageDown")} scroll · ${hint("tui.select.up")}/${hint("tui.select.down")} choose · ${hint("tui.select.confirm")} select`;
+        return [
+          ...(tui.terminal.rows >= 5 ? [theme.fg("accent", heading)] : []),
+          ...lines.slice(offset, end),
+          ...PLAN_CHOICES.map((choice, index) => index === selected ? theme.fg("accent", `→ ${choice}`) : `  ${choice}`),
+          theme.fg("dim", help),
+        ].map((line) => truncateToWidth(line, width, ""));
+      },
+      handleInput(data) {
+        if (keys.matches(data, "tui.select.cancel")) return close();
+        if (!enoughRoom()) return;
+        if (keys.matches(data, "tui.select.confirm")) return done(PLAN_CHOICES[selected]);
+        if (keys.matches(data, "tui.select.up")) selected = 0;
+        else if (keys.matches(data, "tui.select.down")) selected = 1;
+        else if (keys.matches(data, "tui.select.pageUp")) offset -= pageSize();
+        else if (keys.matches(data, "tui.select.pageDown")) offset += pageSize();
+        else return;
+        offset = clamp(offset, tui.terminal.columns);
+        tui.requestRender();
+      },
+      invalidate() { text.invalidate(); },
+      dispose() { signal?.removeEventListener("abort", close); },
+    };
+  }, {
+    overlay: true,
+    overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" },
+    blocked: { kind: "question", message: PLAN_PANE_ONLY },
+  });
+}
+
+// Pi's native dialogs report OSC 7501 blocked/question without an extension listener.
+function registerQuestions(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "ask_user_question",
+    label: "Ask the owner",
+    description: "Ask the owner one question and wait for their answer. Offer choices or omit them for free text.",
+    parameters: Type.Object({
+      question: Type.String({ minLength: 1 }),
+      choices: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 2, maxItems: 9 })),
+    }),
+    executionMode: "sequential",
+    async execute(_id, { question, choices }, signal, _onUpdate, ctx) {
+      if (!ctx.hasUI) throw new Error("Cannot ask the owner without an interactive UI.");
+      const title = dialogText(question);
+      const options = choices?.map((choice) => dialogText(choice).replace(/\s+/g, " "));
+      if (!title || options?.some((option) => !option) || (options && new Set(options).size !== options.length)) {
+        throw new Error("Give a nonempty question and distinct, nonempty choices.");
+      }
+      // Pi keeps the trailing newline as a blank separator before the choices.
+      const answer = options
+        ? await ctx.ui.select(`${title}\n`, options, { signal })
+        : await ctx.ui.input(title, "", { signal });
+      return {
+        content: [{ type: "text", text: answer === undefined ? "The owner did not answer." : `Owner answered:\n${answer}` }],
+        details: { answer: answer ?? null },
+      };
+    },
+  });
+  pi.registerTool({
+    name: "approve_plan",
+    label: "Request plan approval",
+    description: "Show the owner the full proposed plan and wait for a decision. Do not act on the plan unless the owner approves it explicitly.",
+    parameters: Type.Object({ plan: Type.String({ minLength: 1, description: "The full plan for the owner to review" }) }),
+    executionMode: "sequential",
+    async execute(_id, { plan }, signal, _onUpdate, ctx) {
+      if (!ctx.hasUI) throw new Error("Cannot request approval without an interactive UI.");
+      const body = dialogText(plan);
+      if (!body) throw new Error("Give a nonempty plan for the owner to review.");
+      const choice = await selectPlan(ctx.ui, body, ctx.mode === "tui", signal);
+      const approved = choice === "Approve" && !signal?.aborted;
+      const changes = choice === "Request changes" && !signal?.aborted
+        ? (await ctx.ui.input("What should change? Enter a note or press Esc to skip.", "", { signal }))?.trim()
+        : undefined;
+      let text = approved ? "The owner approved the plan." : choice === "Request changes"
+        ? "The owner requested changes. Do not act on this plan."
+        : "The owner did not approve the plan. Do not act on it.";
+      if (changes) text += `\n\nOwner feedback:\n${changes}`;
+      return { content: [{ type: "text", text }], details: { approved } };
+    },
+  });
+}
+
+function dialogText(text: string): string {
+  return stripVTControlCharacters(text).replace(/\r\n?/g, "\n").replace(/\t/g, "   ")
+    // Keep line breaks but not terminal controls or bidirectional overrides from the model.
+    .replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, (ch) => ch === "\n" ? ch : "")
+    .trim();
+}
 
 export default function (pi: ExtensionAPI) {
+  // A native child has no person at its pane, so only a pane gets the owner dialogs.
+  if (!nativeChild) registerQuestions(pi);
   pi.registerFlag("swarm-live", {
     type: "string",
     description: "File that swarm reads for the text of the streaming message",

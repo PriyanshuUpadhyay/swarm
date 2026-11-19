@@ -190,6 +190,33 @@ struct NeedCardView: View {
     private let shownChoices = 4
 
     var body: some View {
+        Group {
+            if let prompt = need.prompt, prompt.kind == "plan" {
+                let pointer = "Open to read the full plan and answer."
+                if prompt.choices.isEmpty {
+                    card(pointer, choices: [])
+                } else {
+                    let plan = prompt.question.split(separator: "\n", maxSplits: 1).last?
+                        .trimmingCharacters(in: .whitespacesAndNewlines) ?? prompt.question
+                    ViewThatFits(in: .vertical) {
+                        card(plan, choices: prompt.choices, fullPlan: true)
+                            .fixedSize(horizontal: false, vertical: true)
+                        card(pointer, choices: [])
+                    }
+                }
+            } else {
+                let choices = need.prompt?.choices ?? []
+                card(need.prompt?.question ?? "Waiting on a permission; its question could not be read.",
+                     choices: choices.count <= shownChoices ? choices : [])
+            }
+        }
+        .padding(.horizontal, Layout.rowPadding).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Palette.chipBlocked))
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func card(_ question: String, choices: [String], fullPlan: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Circle().fill(Palette.warn).frame(width: 7, height: 7)
@@ -198,25 +225,19 @@ struct NeedCardView: View {
                 Spacer(minLength: 0)
             }
             .font(.system(size: 12))
-            Text(need.prompt?.question ?? "Waiting on a permission; its question could not be read.")
+            Text(question)
                 .font(.system(size: 11)).foregroundStyle(Palette.secondary)
-                .lineLimit(2).truncationMode(.tail)
+                .lineLimit(fullPlan ? nil : 2).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 6) {
-                if let prompt = need.prompt, prompt.choices.count <= shownChoices {
-                    ForEach(Array(prompt.choices.enumerated()), id: \.offset) { index, choice in
-                        Button(choice) { answer(index) }.buttonStyle(InboxButton(prominent: index == 0))
-                            .disabled(answering)
-                    }
+                ForEach(Array(choices.enumerated()), id: \.offset) { index, choice in
+                    Button(choice) { answer(index) }.buttonStyle(InboxButton(prominent: index == 0))
+                        .disabled(answering)
                 }
                 Spacer(minLength: 0)
                 Button("Open", action: open).buttonStyle(InboxButton(prominent: false))
             }
         }
-        .padding(.horizontal, Layout.rowPadding).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Palette.chipBlocked))
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .contain)
     }
 }
 

@@ -98,6 +98,8 @@ public struct NeedPrompt: Decodable, Equatable, Sendable {
     public let id: String
     public let question: String
     public let choices: [String]
+    /// Optional presentation kind; an unknown or missing kind uses the ordinary question card.
+    public let kind: String?
 }
 
 /// One line of the popup under the notch.
