@@ -88,14 +88,8 @@ pub(super) fn land(task: &Task, hub: &Hub, wt: &Path, base: &str) -> Result<Stri
             .map_err(|error| format!("origin push was refused; the task stays and local {} was not advanced to the task; run `swarm task land --merge` again: {error}", hub.default))?;
         sync_default(hub, &landed)
             .map_err(|error| format!("origin accepted {landed}, but local sync failed; the task stays; land again: {error}"))?;
-        let removed = run(
-            wt,
-            &hub.main,
-            &["remove", &task.branch, "--foreground", "--format", "json"],
-            true,
-        ).map_err(|error| format!("origin and local {} accepted {landed}, but task cleanup failed; run `swarm task drop {}`: {error}", hub.default, task.branch))?;
         Ok(format!(
-            "{output}\n{removed}\norigin/{} and local {} are at {landed}",
+            "{output}\norigin/{} and local {} are at {landed}; the worktree stays",
             hub.default, hub.default
         ))
     })();
@@ -165,7 +159,7 @@ pub(super) fn pull_request(task: &Task, hub: &Hub, base: &str) -> Result<String,
                 &title,
                 "--body",
                 &format!(
-                    "Task: {}\n\nCreated by `swarm task land`. The task worktree stays until the PR is merged.",
+                    "Task: {}\n\nCreated by `swarm task land`. The task worktree stays after the PR merges, until the owner approves its cleanup.",
                     task.branch
                 ),
             ])?

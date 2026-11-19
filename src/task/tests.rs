@@ -86,7 +86,7 @@ fn chat(root: &Path, main: &Path, name: &str, session: Option<&str>) -> Task {
 }
 
 #[test]
-fn a_chat_worktree_lands_into_main_and_is_removed() {
+fn a_chat_worktree_lands_into_main_and_stays_until_dropped() {
     let Some(wt) = real_wt() else {
         eprintln!("skipped: Worktrunk is not installed");
         return;
@@ -105,14 +105,24 @@ fn a_chat_worktree_lands_into_main_and_is_removed() {
     // A server that stopped mid-landing left the request claimed; the next pass lands it.
     std::fs::rename(&request, request.with_extension("taking")).unwrap();
     serve_landings(&root, &wt);
-    // A land run again after its wait ran out finds the answer, though the record is gone.
+    // A land run again after its wait ran out finds the answer, though the branch has nothing new.
     assert_eq!(
         request_landing(&root, &main, Some("fix-x")),
         Ok((request.clone(), branch.clone()))
     );
     let answer = take_result(&request).unwrap();
     assert_eq!(answer["ok"], true, "{answer}");
+    assert!(
+        answer["next"]
+            .as_str()
+            .unwrap()
+            .contains("swarm task drop swarm/fix-x")
+    );
     assert!(main.join("b.txt").is_file(), "main did not get the commit");
+    assert!(path.is_dir());
+    assert_eq!(records(&root), vec![task.clone()]);
+    drop(&root, &wt, &main, Some("fix-x")).unwrap();
+    assert!(!path.exists());
     assert!(records(&root).is_empty());
 }
 
