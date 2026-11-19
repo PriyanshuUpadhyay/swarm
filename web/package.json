@@ -13,6 +13,7 @@
     "perf": "node perf/run.mjs"
   },
   "dependencies": {
+    "@pierre/diffs": "1.6.4",
     "@pierre/highlights": "0.5.1",
     "@radix-ui/react-context-menu": "2.3.7",
     "@radix-ui/react-dialog": "1.1.23",

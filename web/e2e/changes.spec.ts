@@ -29,6 +29,15 @@ async function openGitChat(tab: Page) {
   return errors;
 }
 
+/** The code rows of the Pierre diff; Playwright's CSS reaches into its shadow root. */
+const DIFF_ROWS = '[data-testid="diff-body"] [data-content] > [data-line]';
+
+/** The line-number cell of the last diff row with this text, where a click picks the line. */
+async function lineNumber(tab: Page, text: string) {
+  const index = await tab.locator(DIFF_ROWS).filter({ hasText: text }).last().getAttribute("data-line-index");
+  return tab.locator(`[data-testid="diff-body"] [data-gutter] > [data-line-index="${index}"]`);
+}
+
 const rows = (tab: Page) => tab.getByTestId("change-row");
 const row = (tab: Page, path: string) => tab.locator(`[data-testid="change-row"][data-path="${path}"]`);
 const diffPath = (tab: Page) => tab.getByTestId("diff-path");
@@ -100,7 +109,7 @@ test("a 20,000-line diff opens capped", async ({ page: tab }) => {
   await expect(diffPath(tab)).toHaveText("big.txt");
   await expect(tab.getByTestId("diff-pane")).toHaveAttribute("data-state", "ready");
   await expect(tab.getByTestId("diff-counts")).toHaveText(`+${GIANT_DIFF_LINES.toLocaleString()} −0`);
-  expect(await tab.getByTestId("diff-line").count()).toBeLessThanOrEqual(200);
+  expect(await tab.locator(DIFF_ROWS).count()).toBeLessThanOrEqual(200);
   await expect(tab.getByTestId("diff-capped")).toContainText("20,004 lines");
   expect(errors).toEqual([]);
 });
@@ -134,7 +143,7 @@ test("a 20,000-line diff opens inside the 150 ms budget @perf", async ({ page: t
   info.annotations.push({ type: "big diff open ms", description: `click to paint ${times.map((t) => t.toFixed(0)).join(", ")}; route ${route.map((t) => t.toFixed(0)).join(", ")}` });
   expect(Math.max(...times), info.annotations.at(-1)!.description).toBeLessThanOrEqual(150);
   await expect(tab.getByTestId("diff-counts")).toHaveText(`+${GIANT_DIFF_LINES.toLocaleString()} −0`);
-  expect(await tab.getByTestId("diff-line").count()).toBeLessThanOrEqual(200);
+  expect(await tab.locator(DIFF_ROWS).count()).toBeLessThanOrEqual(200);
   await expect(tab.getByTestId("diff-capped")).toContainText("20,004 lines");
   expect(errors).toEqual([]);
 });
@@ -149,12 +158,11 @@ test("a range comment and a line comment go to the chat's agent as one message",
   await tab.getByTestId("show-changes").click();
   await tab.getByTestId("mode-branch").click();
   await expect(diffPath(tab)).toHaveText("src/app.ts");
-  const line = (text: string) => tab.getByTestId("diff-line").filter({ hasText: text }).locator("[data-pick]").last();
 
   // A range: from the first removed line to the second added line, by click and Shift-click.
-  await line("value10 = 10;").click();
-  await line("value11 = 110;").click({ modifiers: ["Shift"] });
-  await expect(tab.locator('[data-testid="diff-line"][data-picked]')).toHaveCount(4);
+  await (await lineNumber(tab, "value10 = 10;")).click();
+  await (await lineNumber(tab, "value11 = 110;")).click({ modifiers: ["Shift"] });
+  await expect(tab.locator(`${DIFF_ROWS}[data-selected-line]`)).toHaveCount(4);
   await tab.getByTestId("comment-input").fill(`Range comment from ${who}`);
   await tab.keyboard.press("Enter");
   await expect(tab.getByTestId("comment-card")).toContainText(`Range comment from ${who}`);
@@ -163,7 +171,7 @@ test("a range comment and a line comment go to the chat's agent as one message",
   await tab.getByTestId("mode-local").click();
   await row(tab, "README.md").click();
   await expect(diffPath(tab)).toHaveText("README.md");
-  await line("A test repository, changed.").click();
+  await (await lineNumber(tab, "A test repository, changed.")).click();
   await tab.getByTestId("comment-input").fill(`Line comment from ${who}`);
   await tab.getByTestId("comment-add").click();
   await expect(tab.getByTestId("drafts")).toContainText("2 comments");
@@ -270,7 +278,7 @@ test("late Add keeps newer editor text and failed Send keeps the draft", async (
   await tab.getByTestId("show-changes").click();
   await row(tab, "README.md").click();
   await expect(diffPath(tab)).toHaveText("README.md");
-  await tab.getByTestId("diff-line").filter({ hasText: "A test repository, changed." }).locator("[data-pick]").last().click();
+  await (await lineNumber(tab, "A test repository, changed.")).click();
   const input = tab.getByTestId("comment-input");
   await input.fill("Old draft");
   await tab.getByTestId("comment-add").click();
@@ -310,7 +318,7 @@ test("diff paints supplied text and quote anchors, then plain text without displ
   await expect(body).toContainText("<img src=x> wire paint");
   await expect(body).not.toContainText("parser text");
   await expect(body.locator("img")).toHaveCount(0);
-  await tab.getByTestId("diff-line").locator("[data-pick]").last().click();
+  await (await lineNumber(tab, "wire paint")).click();
   await tab.getByTestId("comment-input").fill("<script>draft</script>");
   await tab.getByTestId("comment-add").click();
   await expect(tab.getByTestId("comment-card")).toContainText("<script>draft</script>");
@@ -318,6 +326,6 @@ test("diff paints supplied text and quote anchors, then plain text without displ
   supplied = false;
   await row(tab, "big.txt").click();
   await expect(tab.getByTestId("diff-pane")).toContainText("parser text");
-  await expect(tab.getByTestId("diff-pane").locator("[data-pick]")).toHaveCount(0);
+  await expect(tab.getByTestId("diff-pane").locator("diffs-container")).toHaveCount(0);
   expect(errors).toEqual([]);
 });

@@ -1,15 +1,17 @@
 // The workspace panel beside the chat: Changes (file list, diff, file preview, line comments) and the
 // branch's PR with its checks, in jean's look. The diff preview is capped at 200 lines by the server,
-// so its lines render plainly. One list per tab; rows are plain elements.
+// and the diff pane paints it with @pierre/diffs. One list per tab; rows are plain elements.
 
 import { FileDiffIcon, GitPullRequestIcon, RefreshCwIcon, SendIcon, XIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useSyncExternalStore, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useSyncExternalStore, useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { App } from "../core/app";
 import { checkState, fileKey, safeUrl, type ChangeFile, type Changes, type Check, type Load, type PrView } from "../core/changes";
 import { Button } from "../components/ui/button";
 import { StatusGlyph, type Status } from "./status";
-import { DiffPane } from "./changes-diff";
 import { plural } from "./changes-shared";
+
+// The diff pane carries the Pierre renderer, so it loads when the panel first opens.
+const DiffPane = lazy(() => import("./changes-diff").then((m) => ({ default: m.DiffPane })));
 
 const LAYER: Record<string, string> = { staged: "Staged", unstaged: "Unstaged", untracked: "Untracked", conflicted: "Conflict", branch: "" };
 
@@ -144,7 +146,9 @@ function ChangesPanel({ app, changes }: { app: App; changes: Changes }) {
           <ChangeRow key={fileKey(f)} f={f} selected={fileKey(f) === view.selected} />
         ))}
       </div>
-      <DiffPane app={app} changes={changes} />
+      <Suspense fallback={<div className="diff-pane" />}>
+        <DiffPane app={app} changes={changes} />
+      </Suspense>
       <Drafts app={app} changes={changes} files={files} />
     </div>
   );

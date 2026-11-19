@@ -1,12 +1,12 @@
 /** Text ranges can cross markdown spans without changing React's nodes. */
-export function textRanges(root: HTMLElement, query: string): Range[] {
+export function textRanges(root: Node, query: string): Range[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const nodes: Text[] = [];
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   while (walk.nextNode()) {
     const node = walk.currentNode as Text;
-    if (!node.parentElement?.closest('[aria-hidden="true"],.ln,script,style')) nodes.push(node);
+    if (!node.parentElement?.closest('[aria-hidden="true"],.ln,[data-gutter],script,style')) nodes.push(node);
   }
   const text = nodes.map((n) => n.data).join("").toLowerCase();
   const ranges: Range[] = [];

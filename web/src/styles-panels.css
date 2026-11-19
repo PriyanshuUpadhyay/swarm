@@ -300,20 +300,8 @@
   overflow: auto;
   outline: none;
   padding-bottom: 8px;
-}
-.cpatch .pl {
-  width: auto;
-}
-.cpatch .ln.pick {
-  cursor: pointer;
-}
-.cpatch .ln.pick:hover {
-  color: var(--foreground);
-  background: var(--hover);
-}
-.cpatch .pl[data-picked] {
-  box-shadow: inset 3px 0 0 var(--brand);
-  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  /* Custom properties cross into the Pierre diff's shadow root. */
+  --diffs-font-family: var(--code-font);
 }
 .comment-box,
 .comment-card {

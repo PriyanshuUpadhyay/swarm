@@ -27,7 +27,7 @@ test("Changes keeps an editor across views, filters files, saves added comments 
   await expect(tab.getByTestId("change-row")).toHaveCount(1);
   await expect(tab.getByTestId("change-row")).toHaveCount(1);
   await tab.getByTestId("change-row").click();
-  await tab.getByTestId("diff-body").locator('[data-pick]').last().click();
+  await tab.getByTestId("diff-body").locator("[data-gutter] > [data-column-number]").last().click();
   await tab.getByTestId("comment-input").fill("Keep this review text");
   await tab.getByTestId("show-file").click();
   await tab.getByRole("button", { name: "Diff", exact: true }).click();
@@ -92,7 +92,7 @@ test("a visible Changes panel refreshes on window focus and keeps the selected f
   await tab.getByRole("textbox", { name: "Filter changed files", exact: true }).fill("README");
   await expect(tab.getByTestId("change-row")).toHaveCount(1);
   await tab.getByTestId("change-row").click();
-  await tab.getByTestId("diff-body").locator('[data-pick]').last().click();
+  await tab.getByTestId("diff-body").locator("[data-gutter] > [data-column-number]").last().click();
   await tab.getByTestId("comment-input").fill("Keep while refreshing");
   await expect(tab.getByTestId("comment-input")).toHaveValue("Keep while refreshing");
   const previous = reads;
