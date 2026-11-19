@@ -255,3 +255,40 @@ fn herdrs_state_hooks_and_an_owner_hook_give_no_conflict_for_swarms_groups() {
     );
     std::fs::remove_dir_all(&home).unwrap();
 }
+
+/// In a turn of Pi's Claude bridge, Claude Code calls only Pi's tools, named `mcp__...`, and Pi
+/// guards each one, so the Claude guard lets them through. A native tool still meets the rules,
+/// also when Pi started that Claude Code.
+#[test]
+fn the_claude_guard_lets_through_the_tools_of_pis_bridge_only() {
+    let home = scratch("guard-pi-bridge");
+    let list = home.join("deny-all.json");
+    std::fs::write(
+        &list,
+        r#"{"rules": [{"name": "no", "event": "PreToolUse", "timeout": 30, "command": ["/bin/sh", "-c", "echo denied >&2; exit 2"]}]}"#,
+    )
+    .unwrap();
+    let list = list.to_string_lossy();
+    let bridged = r#"{"tool_name": "mcp__custom-tools__bash", "tool_input": {"command": "ls"}}"#;
+    let native = r#"{"tool_name": "Bash", "tool_input": {"command": "ls"}}"#;
+    let guard = |env: &[(&str, &str)], payload: &str| {
+        swarm(&home, env, &["guard", "claude", "PreToolUse"], payload)
+    };
+    let under_pi = [("SWARM_GUARDS", list.as_ref()), ("PI_CODING_AGENT", "true")];
+    let allowed = guard(&under_pi, bridged);
+    assert_eq!(allowed.status.code(), Some(0), "{allowed:?}");
+    assert_eq!(stdout(&allowed), "");
+    let plain = guard(&[("SWARM_GUARDS", list.as_ref())], bridged);
+    assert_ne!(
+        (plain.status.code(), stdout(&plain)),
+        (Some(0), String::new()),
+        "{plain:?}"
+    );
+    let native_under_pi = guard(&under_pi, native);
+    assert_eq!(
+        (native_under_pi.status.code(), stdout(&native_under_pi)),
+        (plain.status.code(), stdout(&plain)),
+        "{native_under_pi:?}"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}

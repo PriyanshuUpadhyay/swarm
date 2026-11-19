@@ -472,3 +472,49 @@ fn host_context_makes_no_database_for_a_seat_role() {
     assert!(!home.join(".swarm/swarm-home").exists());
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// Pi's Claude bridge runs Claude Code as Pi's child, and Pi's launch already gave the context,
+/// so the Claude start hook prints nothing there. Codex is not run by Pi and keeps its context.
+#[test]
+fn host_context_is_empty_for_a_claude_code_that_pi_runs() {
+    let home = scratch("host-context-under-pi");
+    let seat = [
+        ("SWARM_ADAPTER", "rex"),
+        ("REX_BLOCK", "block:seat"),
+        ("TERM_PROGRAM", "rex"),
+        ("SWARM_SESSION_ID", "01a15391-109c-75b2-b09c-5eac0d553e25"),
+        ("SWARM_AGENT_ID", "rev-1"),
+    ];
+    let under_pi = [seat.as_slice(), &[("PI_CODING_AGENT", "true")]].concat();
+    let claude = swarm(
+        &home,
+        &under_pi,
+        &["host-context", "--provider", "claude"],
+        "{}",
+    );
+    assert!(claude.status.success(), "{claude:?}");
+    assert_eq!(stdout(&claude), "");
+    let codex = swarm(
+        &home,
+        &under_pi,
+        &["host-context", "--provider", "codex"],
+        "{}",
+    );
+    assert!(
+        stdout(&codex).contains("You are seat `rev-1`"),
+        "{}",
+        stdout(&codex)
+    );
+    let plain = swarm(
+        &home,
+        &seat,
+        &["host-context", "--provider", "claude"],
+        "{}",
+    );
+    assert!(
+        stdout(&plain).contains("You are seat `rev-1`"),
+        "{}",
+        stdout(&plain)
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
