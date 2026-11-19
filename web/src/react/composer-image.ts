@@ -11,34 +11,37 @@ export function pickImage(files: ArrayLike<File>): { image: File } | { refusal: 
   return image ? { image } : { refusal: "Only PNG, JPEG, GIF and WebP images can be attached" };
 }
 
+/** The live draft of one composer: `read` gives it now, `change` replaces it. */
+export type Draft = { read: () => string; change: (next: string) => void };
+
 /** Keep the pending marker in the live draft while the server stores an image. */
-function attach(image: File, el: HTMLTextAreaElement, app: App, sessionId: string, change: (next: string) => void) {
+function attach(image: File, el: HTMLTextAreaElement, app: App, { read, change }: Draft) {
   const [start, end] = [el.selectionStart, el.selectionEnd];
   const marker = `[[Uploading image ${crypto.randomUUID()}]]`;
-  change(insertPendingImage(app.draft(sessionId), start, end, marker));
+  change(insertPendingImage(read(), start, end, marker));
   app.api.image(image).then(
-    (path) => change(finishPendingImage(app.draft(sessionId), marker, path)),
+    (path) => change(finishPendingImage(read(), marker, path)),
     (err: unknown) => {
-      change(finishPendingImage(app.draft(sessionId), marker, ""));
+      change(finishPendingImage(read(), marker, ""));
       app.notice(`Could not attach the image: ${err instanceof Error ? err.message : String(err)}`, true);
     },
   );
 }
 
-export function pasteImage(e: ClipboardEvent<HTMLTextAreaElement>, app: App, sessionId: string, change: (next: string) => void) {
+export function pasteImage(e: ClipboardEvent<HTMLTextAreaElement>, app: App, draft: Draft) {
   const image = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
   if (!image) return;
   e.preventDefault();
-  attach(image, e.currentTarget, app, sessionId, change);
+  attach(image, e.currentTarget, app, draft);
 }
 
 /** A dropped file is always handled here, because left alone the webview navigates to it. */
-export function dropImage(e: DragEvent<HTMLTextAreaElement>, app: App, sessionId: string, change: (next: string) => void) {
+export function dropImage(e: DragEvent<HTMLTextAreaElement>, app: App, draft: Draft) {
   if (!e.dataTransfer.types.includes("Files")) return;
   e.preventDefault();
   const picked = pickImage(e.dataTransfer.files);
   if ("refusal" in picked) app.notice(picked.refusal, true);
-  else attach(picked.image, e.currentTarget, app, sessionId, change);
+  else attach(picked.image, e.currentTarget, app, draft);
 }
 
 /** Without this the textarea is no drop target for a file, and the browser navigates to it. */

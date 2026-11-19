@@ -10,6 +10,9 @@ import { type Profile } from "../core/lifecycle";
 import { DEFAULT_ROLE, defaultPlace, type ComposerRun, placeLabel, placeReady, defaultTarget, targets, type Place, type Preview, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
+import { hasPendingImage, imagePaths } from "../core/images";
+import { dragOverFiles, dropImage, pasteImage, type Draft } from "./composer-image";
+import { ImageThumbs } from "./images";
 import { ErrorLine, message } from "./lifecycle-shared";
 import { PlacePanel } from "./place-lists";
 import { PRESSED_PILL, RunPicker, runModel, useRunCatalog } from "./run-picker";
@@ -85,6 +88,16 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
 
   const [place, setPlace] = useState<Place>(firstPlace);
   const [text, setText] = useState(firstText);
+  // The prompt now, for an image upload that ends after the owner typed more.
+  const textNow = useRef(firstText);
+  const prompt: Draft = {
+    read: () => textNow.current,
+    change: (next) => {
+      textNow.current = next;
+      setText(next);
+      app.newChat.typed(next);
+    },
+  };
   const [menu, setMenu] = useState<Menu>(firstPlace.kind === "branch" && !firstPlace.branch ? "place" : null);
   const [profiles, setProfiles] = useState<Profile[] | string | null>(null);
   // Edit and retry opens on the profile and run that the start posted.
@@ -132,17 +145,20 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     setMenu(null);
   };
 
-  const ready = placeReady(place) && !sending;
+  const ready = placeReady(place) && !sending && !hasPendingImage(text);
   const send = async () => {
     // A second ⌘Enter while the first one posts does nothing.
-    if (sending) return;
+    if (sending || hasPendingImage(text)) return;
     if (!ready) return setMenu("place");
     setSending(true);
     const changed = run && !sameRun(run, base) ? run : null;
     const ok = await app.newChat.start(target.cwd, text, place, { role: profile?.name ?? role, run: changed }, { composer: true });
     // A composer that stays on screen, as when the owner moved during the POST, sends again.
     setSending(false);
-    if (ok) setText("");
+    if (ok) {
+      textNow.current = "";
+      setText("");
+    }
   };
 
   // ⌘⇧/ steps to the next thinking level the picked model takes. Each list read runs a CLI, so
@@ -183,6 +199,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     <div className={`grid w-full gap-3 ${overlay ? "max-w-[min(960px,calc(100vw-32px))]" : "max-w-[960px] px-4"}`} data-testid="new-chat-composer" data-cwd={target.cwd} data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
       <div className="grid gap-3 min-[1000px]:grid-cols-[1fr_280px]">
         <div className="grid gap-2 rounded-xl border border-border-strong bg-popover p-3 shadow-panel has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring">
+          <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => prompt.change(text.split(path).join("").replace(/  +/g, " "))} />
           <textarea
             ref={box}
             rows={overlay ? 4 : 5}
@@ -191,10 +208,10 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
             placeholder={`What should this chat do in ${target.title}?`}
             className="min-h-[96px] w-full resize-none bg-transparent outline-none"
             value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              app.newChat.typed(e.target.value);
-            }}
+            onChange={(e) => prompt.change(e.target.value)}
+            onPaste={(e) => pasteImage(e, app, prompt)}
+            onDragOver={dragOverFiles}
+            onDrop={(e) => dropImage(e, app, prompt)}
           />
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
             <Chip testid="chip-project" on={menu === "project"} title="Project (⌘P)" onClick={() => setMenu((m) => (m === "project" ? null : "project"))}>

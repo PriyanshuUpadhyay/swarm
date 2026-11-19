@@ -3,6 +3,7 @@
 
 import type { App } from "./app";
 import { firstLine, message } from "./app-types";
+import { hasPendingImage } from "./images";
 import type { Run } from "./composer";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
 import { canStartIn, defaultPlace, defaultTarget, targets, type Place, type Preview } from "./new-chat-places";
@@ -316,6 +317,20 @@ export class NewChat {
     });
   }
 
+  /** Resolves when no image upload waits in the start's box. An upload always ends by putting its
+   *  path or nothing in place of its marker, so the send never carries the marker. */
+  private uploaded(id: string) {
+    const waits = () => hasPendingImage(this.state.starts[id]?.draft ?? "");
+    return new Promise<void>((done) => {
+      if (!waits()) return done();
+      const stop = this.subscribe(() => {
+        if (waits()) return;
+        stop();
+        done();
+      });
+    });
+  }
+
   /** The chat runs: open it where the owner still looks at its start, then send the queued text
    *  and the box's draft. Text that did not send goes in the chat's text box, so none is lost. */
   private async opened(start: Starting, session: string) {
@@ -325,6 +340,7 @@ export class NewChat {
     const failed = start.steps.find((s) => s.step === "send" && s.state === "failed");
     // The start's view stays while the tree lists the chat, so the page behind does not show.
     await this.app.actions.openNew(session, shown).catch((err) => this.app.notice(message(err), true));
+    await this.uploaded(start.id);
     const now = this.state.starts[start.id] ?? start;
     const texts = [...now.queued, now.draft.trim()].filter(Boolean);
     this.dismiss(start.id);

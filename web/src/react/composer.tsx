@@ -314,9 +314,9 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             onKeyDown={onKeyDown}
-            onPaste={(e) => pasteImage(e, app, sessionId, change)}
+            onPaste={(e) => pasteImage(e, app, { read: () => app.draft(sessionId), change })}
             onDragOver={dragOverFiles}
-            onDrop={(e) => dropImage(e, app, sessionId, change)}
+            onDrop={(e) => dropImage(e, app, { read: () => app.draft(sessionId), change })}
             onScroll={(e) => {
               if (!highlights.current) return;
               highlights.current.scrollTop = e.currentTarget.scrollTop;

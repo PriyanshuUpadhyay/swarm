@@ -209,6 +209,24 @@ describe("new chat composer", () => {
     expect(chats.state.starts).toEqual({});
   });
 
+  it("waits for an image upload in the start's box, so the send carries its path, not the marker", async () => {
+    const sent: string[] = [];
+    const app = stub({
+      api: { post: async () => ({ start: "s1" }), action: async (_path: string, body: { text: string }) => void sent.push(body.text) },
+      actions: { openNew: async () => {} },
+    });
+    const chats = new NewChat(app as unknown as App);
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { run: null });
+    chats.setDraft("s1", "See [[Uploading image a]] ");
+
+    const opened = chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sent).toEqual([]);
+    chats.setDraft("s1", "See /tmp/uploads/a.png ");
+    await opened;
+    expect(sent).toEqual(["See /tmp/uploads/a.png"]);
+  });
+
   it("opens a start's chat once when a reconnect reads its done frame again", async () => {
     const sent: string[] = [];
     let release = () => {};

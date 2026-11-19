@@ -241,4 +241,14 @@ test("⌘T starts a chat in a hub's main with no prompt and no new worktree", as
 
   await expect.poll(() => bodies.length).toBe(1);
   expect(bodies[0]).toEqual({ cwd: process.env.SWARM_E2E_HUB_MAIN, place: { kind: "here" } });
+
+  // The starting chat's box takes a pasted image, as the chat's own composer does.
+  await tab.route("**/api/chat/image", (route) => route.fulfill({ json: { path: "/tmp/uploads/12345678-1234-1234-1234-123456789abc.png" } }));
+  const next = tab.getByTestId("starting-prompt");
+  await next.evaluate((el: HTMLTextAreaElement) => {
+    const data = new DataTransfer();
+    data.items.add(new File(["image"], "screen.png", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+  await expect(next).toHaveValue(/123456789abc\.png/);
 });

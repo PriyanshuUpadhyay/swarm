@@ -3,10 +3,13 @@
 
 import { CircleCheckIcon, LoaderCircleIcon, TriangleAlertIcon } from "lucide-react";
 import type { App } from "../core/app";
+import { hasPendingImage, imagePaths } from "../core/images";
 import { setupFailure } from "../core/lifecycle";
 import type { Starting, StartStep } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
+import { dragOverFiles, dropImage, pasteImage, type Draft } from "./composer-image";
+import { ImageThumbs } from "./images";
 
 export function StartingView({ app, start }: { app: App; start: Starting }) {
   // The steps come in the order the server sent them; a step with no words shows its name.
@@ -54,9 +57,11 @@ function Failed({ app, start }: { app: App; start: Starting }) {
 /** The box for the next message. Its text goes when the chat opens, also if not queued with ⌘↵. */
 function NextMessage({ app, start }: { app: App; start: Starting }) {
   const waiting = start.queued.length;
+  const box: Draft = { read: () => app.newChat.state.starts[start.id]?.draft ?? "", change: (next) => app.newChat.setDraft(start.id, next) };
 
   return (
     <div className="grid gap-1.5">
+      <ImageThumbs paths={imagePaths(start.draft)} load={app.imageUrl} remove={(path) => box.change(start.draft.split(path).join("").replace(/  +/g, " "))} />
       <textarea
         rows={3}
         aria-label="Next message"
@@ -64,13 +69,17 @@ function NextMessage({ app, start }: { app: App; start: Starting }) {
         placeholder="Type the next message. It goes after the first prompt."
         className="w-full resize-none rounded-lg border border-border-strong bg-popover p-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         value={start.draft}
-        onChange={(e) => app.newChat.setDraft(start.id, e.target.value)}
+        onChange={(e) => box.change(e.target.value)}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
             e.preventDefault();
-            app.newChat.queue(start.id);
+            // A queued text with an upload marker would send the marker, not the image.
+            if (!hasPendingImage(start.draft)) app.newChat.queue(start.id);
           }
         }}
+        onPaste={(e) => pasteImage(e, app, box)}
+        onDragOver={dragOverFiles}
+        onDrop={(e) => dropImage(e, app, box)}
       />
       <p className="text-xs text-muted-foreground" role="status" data-testid="start-queued">
         <Kbd>⌘↵</Kbd> queues it; the box's text also goes when the chat opens.

@@ -62,3 +62,28 @@ test("S8d images paint served paths on pages, older rows, upserts and snapshot q
   expect([...new Set(requested)].sort()).toEqual([aName, bName]);
   await tab.screenshot({ path: info.outputPath("s8d-served-images.png") });
 });
+
+test("the ⌘N composer takes a pasted image and holds Start until it is stored", async ({ page: tab }) => {
+  let release!: () => void;
+  const wait = new Promise<void>((r) => { release = r; });
+  await tab.route("**/api/chat/image", async (route) => { await wait; await route.fulfill({ json: { path: "/tmp/uploads/12345678-1234-1234-1234-123456789abc.png" } }); });
+  await open(tab);
+  await tab.keyboard.press("Meta+n");
+  const overlay = tab.getByTestId("composer-overlay");
+  const prompt = overlay.getByTestId("new-chat-prompt");
+  await expect(prompt).toBeFocused();
+  await prompt.fill("Look at this");
+  await prompt.evaluate((el: HTMLTextAreaElement) => {
+    el.setSelectionRange(el.value.length, el.value.length);
+    const data = new DataTransfer();
+    data.items.add(new File(["image"], "screen.png", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  });
+  await expect(prompt).toHaveValue(/Uploading image/);
+  await expect(overlay.getByTestId("new-chat-start")).toBeDisabled();
+  await tab.keyboard.insertText(" please");
+  release();
+  await expect(prompt).toHaveValue(/^Look at this .*123456789abc\.png.* please$/);
+  await expect(overlay.getByRole("button", { name: "Remove image", exact: true })).toBeAttached();
+  await tab.keyboard.press("Escape");
+});
