@@ -19,6 +19,8 @@ function displayOf(item: Row): Display {
       rows: [[[{ type: "text", value: "Claude" }], [{ type: "code", value: "swarm:plan" }], [{ type: "text", value: "plain words that wrap ".repeat(40).trimEnd() }]]],
     } }] };
   }
+  const fence = item.text.match(/^```(\w+)\n([\s\S]*)```$/);
+  if (fence) return { blocks: [{ type: "code", value: { label: fence[1], text: fence[2] } }] };
   return { blocks: item.text.split(/\n[ \t]*\n/).filter(Boolean).map((text) => ({ type: "paragraph", value: [{ type: "text", value: text }] })) };
 }
 export function bodyMode(display: Display | null | undefined): "tree" | "plain" {

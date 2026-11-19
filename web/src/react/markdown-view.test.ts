@@ -1,7 +1,7 @@
 // Step 5(g) slice S4 (contract PAINTER-V3 R3, R4 T1, V2 items 1 and 5): MarkdownView paints the HTML that the old renderMarkdown gave
 // for the same text. Each case holds the Display that the Rust map gives (rust-display/display.json) and the old HTML (original/html-1.json,
 // markdown.ts at 67a78495); the comment names the input id. Both sides are normalized the same way and nothing else:
-// <br/> to <br>, <hr/> to <hr>, &#x27; to ', and every LF between > and < is dropped.
+// syntax colour spans are unwrapped, <br/> to <br>, <hr/> to <hr>, &#x27; to ', and every LF between > and < is dropped.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -134,7 +134,8 @@ const cases: Case[] = [
   },
 ];
 
-const normalize = (html: string) => html.replace(/<br\/>/g, "<br>").replace(/<hr\/>/g, "<hr>").replace(/&#x27;/g, "'").replace(/(?<=>)\n(?=<)/g, "");
+// Syntax colour runs (code-runs.tsx) are unwrapped first: the old renderer had none.
+const normalize = (html: string) => html.replace(/<span style="[^"]*">([^<]*)<\/span>/g, "$1").replace(/<br\/>/g, "<br>").replace(/<hr\/>/g, "<hr>").replace(/&#x27;/g, "'").replace(/(?<=>)\n(?=<)/g, "");
 
 describe("MarkdownView", () => {
   it("paints the same HTML as the old renderer for the same text", () => {

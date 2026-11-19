@@ -27,6 +27,19 @@ test("Find steps through occurrences inside a long answer and paints the selecte
   await tab.screenshot({ path: info.outputPath("find-occurrence.png") });
 });
 
+test("a code block shows syntax colours, and Find matches across colour runs", async ({ page: tab }, info) => {
+  await mockRows(tab, [row("a1", "```ts\nconst needle = 1;\n```")], 0, {}, { a1: [{ f: "text" }] });
+  await open(tab);
+  const code = tab.locator(".md-code code.language-ts");
+  await expect(code).toHaveText("const needle = 1;\n");
+  expect(await code.locator("span[style]").count()).toBeGreaterThan(1);
+  await tab.keyboard.press("Meta+f");
+  await tab.getByTestId("find-input").fill("const needle");
+  await expect(tab.getByTestId("find-count")).toHaveText("1 of 1");
+  await expect.poll(() => tab.evaluate(() => String(CSS.highlights.get("find-current")?.values().next().value))).toBe("const needle");
+  await code.screenshot({ path: info.outputPath("code-colours.png") });
+});
+
 test("Find searches loaded full output and reveals its virtual line", async ({ page: tab }, info) => {
   const r = row("r1", "result", "toolResult");
   r.output = { id: "full-output", text: "preview", full_lines: 1000, hidden_lines: 999, full_bytes: 20000, is_truncated: true };

@@ -1,5 +1,6 @@
 import { Fragment, createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Block, Display, Inline } from "../core/api";
+import { HighlightedCode } from "./code-tokens";
 import { ColoredRow, PatchBody, useSplit, useWrap } from "./patch-body";
 
 function Head({ label, what, diff = false }: { label: string; what: "code" | "table"; diff?: boolean }) {
@@ -86,7 +87,7 @@ function Code({ value: { label, text, diff } }: { value: Extract<Block, { type: 
   return (
     <div className="md-code">
       <Head label={label} what="code" />
-      <pre><code className={label === "code" ? undefined : `language-${label}`}>{text}</code></pre>{label === "diff" || label === "patch" ? null : "\n"}
+      <pre>{label === "code" ? <code>{text}</code> : <HighlightedCode text={text} lang={label} />}</pre>{label === "diff" || label === "patch" ? null : "\n"}
     </div>
   );
 }

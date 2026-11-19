@@ -30,7 +30,8 @@ const cases: Case[] = [
   },
 ];
 
-const normalize = (html: string) => html.replace(/<br\/>/g, "<br>").replace(/<hr\/>/g, "<hr>").replace(/&#x27;/g, "'").replace(/(?<=>)\n(?=<)/g, "");
+// Syntax colour runs (code-runs.tsx) are unwrapped first: the old renderer had none.
+const normalize = (html: string) => html.replace(/<span style="[^"]*">([^<]*)<\/span>/g, "$1").replace(/<br\/>/g, "<br>").replace(/<hr\/>/g, "<hr>").replace(/&#x27;/g, "'").replace(/(?<=>)\n(?=<)/g, "");
 
 describe("MarkdownView lists", () => {
   it("paints a list item followed by a fence, indented code or a table like the old renderer", () => {
