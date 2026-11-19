@@ -1,13 +1,22 @@
-/** Text ranges can cross markdown spans without changing React's nodes. */
+const SKIP = '[aria-hidden="true"],.ln,[data-gutter],script,style';
+
+/** The text nodes under `root` in reading order, inside open shadow roots too, such as a Pierre patch. */
+function textNodes(root: Node, nodes: Text[]) {
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let node: Node | null = walk.currentNode; node; node = walk.nextNode()) {
+    if (node instanceof Text) {
+      if (!node.parentElement?.closest(SKIP)) nodes.push(node);
+    } else if (node instanceof Element && node.shadowRoot) textNodes(node.shadowRoot, nodes);
+  }
+  return nodes;
+}
+
+/** Text ranges can cross markdown spans without changing React's nodes. A range stays inside one
+ *  shadow root, because a match is never longer than one line. */
 export function textRanges(root: Node, query: string): Range[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  const nodes: Text[] = [];
-  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  while (walk.nextNode()) {
-    const node = walk.currentNode as Text;
-    if (!node.parentElement?.closest('[aria-hidden="true"],.ln,[data-gutter],script,style')) nodes.push(node);
-  }
+  const nodes = textNodes(root, []);
   const text = nodes.map((n) => n.data).join("").toLowerCase();
   const ranges: Range[] = [];
   for (let at = text.indexOf(q); at >= 0; at = text.indexOf(q, at + q.length)) {

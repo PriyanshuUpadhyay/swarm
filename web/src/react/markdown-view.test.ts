@@ -146,7 +146,8 @@ describe("MarkdownView", () => {
 });
 
 // S6C-FENCES-V1 T2. HAND entries differ from raw text to catch reparsing.
-// SSR checks the box and prefix text; written browser coverage checks VList rows.
+// SSR checks the box and prefix text; browser coverage checks the Pierre rows. Until Pierre's
+// chunk loads, the box shows the patch as plain text.
 describe("S6c fence painter", () => {
   it("diff_fence_without_hunk paints literal prefix rows without layout controls", () => {
     const display = { blocks: [painter.display.blocks[1]] } as Display;
@@ -161,7 +162,7 @@ describe("S6c fence painter", () => {
     }));
     expect({
       missing: normalize(missing),
-      patch: /class="patch"/.test(html),
+      patch: /<pre class="out" style="height:/.test(html),
       raw: html.includes('data-raw="' + painter.raw + '"'),
       unified: html.includes('data-diff-layout="0"'),
       split: html.includes('data-diff-layout="1"'),

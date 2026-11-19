@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { pierreUnloadNoise } from "./console-noise";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -19,7 +20,7 @@ async function open(tab: Page) {
   // WebKit's ResizeObserver loop report at load is not an error (see smoke.spec.ts).
   tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
   // A refused choice logs its response as a console error; the stale case expects one.
-  tab.on("console", (m) => m.type() === "error" && !m.text().includes("409") && errors.push(m.text()));
+  tab.on("console", (m) => m.type() === "error" && !m.text().includes("409") && !pierreUnloadNoise(m) && errors.push(m.text()));
   await tab.goto(`${server().origin}/${server().hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
   return errors;

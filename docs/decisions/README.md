@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0152 | Pierre paints code colours and every diff in the web app | 2 | accepted | 2026-11-19 | →0075 →0134 |
 | 0151 | `swarm task land` keeps the worktree until the owner approves cleanup | 2 | accepted | 2026-11-19 | ↑0145 →0144 →0150 |
 | 0150 | `swarm task land` opens a PR by default | 2 | accepted | 2026-11-19 | ↑0145 →0146 →0149 |
 | 0149 | A new chat starts from a composer, and its first prompt names its worktree | 2 | accepted | 2026-11-18 | ↑0146 →0097 →0134 →0142 |

@@ -8,6 +8,12 @@ import fullLines1 from "./fixtures/s6a-full-lines-1.json" with { type: "json" };
 import fullLines2 from "./fixtures/s6a-full-lines-2.json" with { type: "json" };
 import fullSplit0 from "./fixtures/s6a-full-split-0.json" with { type: "json" };
 
+/** The patch line number of the row that holds the current Find match, inside Pierre's shadow root. */
+const currentLine = (tab: import("@playwright/test").Page) => tab.evaluate(() => {
+  const range = [...(CSS.highlights.get("find-current") ?? [])][0] as Range | undefined;
+  return range?.startContainer.parentElement?.closest("[data-line]")?.getAttribute("data-line") ?? null;
+});
+
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
   const r = row("d1", "", "diff");
   r.diff = { id: "patch-output", path: "app.ts", patch: "@@ -1 +1 @@\n-old\n+preview", added: 1, removed: 1, omitted_lines: 900, shortened_lines: 0, full_lines: 1001, full_bytes: 20000 };
@@ -21,12 +27,39 @@ test("Find reaches repeated matches in a loaded full patch in Unified and Split 
     await tab.keyboard.press("Meta+f");
     await tab.getByTestId("find-input").fill("repeated needle");
     await expect(tab.getByTestId("find-count")).toHaveText("1 of 2");
-    await expect(tab.locator('[data-output-line="901"]').first()).toBeVisible();
+    await expect(tab.getByTestId("diff").locator('[data-content] > [data-line="901"]').first()).toBeInViewport();
+    await expect.poll(() => currentLine(tab)).toBe("901");
     await tab.getByTestId("find-input").press("Enter");
     await expect(tab.getByTestId("find-count")).toHaveText("2 of 2");
-    await expect(tab.locator('[data-output-line="101"]').first()).toBeVisible();
+    await expect(tab.getByTestId("diff").locator('[data-content] > [data-line="101"]').first()).toBeInViewport();
+    await expect.poll(() => currentLine(tab)).toBe("101");
     await tab.getByTestId("find-input").press("Escape");
   }
+});
+
+// Found when a Copy message click missed: the loading box drew the whole patch and moved the rows below.
+test("a patch box keeps its height when Pierre loads", async ({ page: tab }) => {
+  let release = () => {};
+  const held = new Promise<void>((done) => (release = done));
+  await tab.route("**/assets/pierre-patch-*.js", async (route) => {
+    await held;
+    await route.continue();
+  });
+  const tool = row("tool1", "", "diff");
+  const lines = Array.from({ length: 40 }, (_, i) => ({ kind: "ctx" as const, text: `line ${i}`, old: i + 1, new: i + 1 }));
+  tool.diff = { id: "held", path: "x.ts", patch: ["@@ -1,40 +1,40 @@", ...lines.map((l) => ` ${l.text}`)].join("\n"), added: 0, removed: 0, omitted_lines: 0, shortened_lines: 0, full_lines: 41, full_bytes: 400 };
+  await tab.route("**/api/rows?*", route => route.fulfill({ json: rows([tool], 0, { held: {
+    lines: [{ kind: "hunk", text: "@@ -1,40 +1,40 @@" }, ...lines],
+    split: [{ h: 0 }, ...lines.map((_, i) => ({ l: i + 1, r: i + 1 }))],
+  } as PatchInfo }) }));
+  await open(tab);
+  const card = tab.getByTestId("diff");
+  const height = () => card.evaluate((el) => el.getBoundingClientRect().height);
+  await expect(card.locator("pre.out")).toBeVisible();
+  const loading = await height();
+  release();
+  await expect(card.locator('[data-content] > [data-line="1"]')).toBeVisible();
+  await expect.poll(height).toBe(loading);
 });
 
 test("Split diff scrolls a long line sideways, and Wrap wraps it", async ({ page: tab }, info) => {
@@ -44,23 +77,24 @@ test("Split diff scrolls a long line sideways, and Wrap wraps it", async ({ page
   await open(tab);
   const card = tab.getByTestId("diff");
   const patch = card.locator(".patch");
+  const added = card.locator('code[data-additions] [data-content] > [data-line="1"]');
   const wrapButton = card.getByRole("button", { name: "Wrap", exact: true });
-  const scrollsSideways = () => patch.evaluate((el) => el.scrollWidth > el.clientWidth);
-  await expect(card.locator(".half.add .code")).toHaveText(long);
-  await expect.poll(scrollsSideways).toBe(true);
-  await expect.poll(() => card.locator(".half.add").evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  const height = () => added.evaluate((el) => el.getBoundingClientRect().height);
+  await expect(added).toHaveText(long);
+  await expect(card.locator("pre[data-diff]")).toHaveAttribute("data-overflow", "scroll");
+  await expect.poll(height).toBeLessThan(30);
   await tab.screenshot({ path: info.outputPath("split-scroll.png") });
 
   await wrapButton.click();
   await expect(wrapButton).toHaveAttribute("aria-pressed", "true");
-  await expect.poll(scrollsSideways).toBe(false);
-  await expect.poll(() => card.locator(".pl.split").evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(17 * 2);
-  await expect.poll(() => patch.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true);
+  await expect(card.locator("pre[data-diff]")).toHaveAttribute("data-overflow", "wrap");
+  await expect.poll(height).toBeGreaterThan(40);
+  await expect.poll(() => patch.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
   await tab.screenshot({ path: info.outputPath("split-wrap.png") });
 
   await card.getByRole("button", { name: "Unified", exact: true }).click();
   await expect(wrapButton).toHaveCount(0);
-  await expect.poll(scrollsSideways).toBe(true);
+  await expect(card.locator("pre[data-diff]")).toHaveAttribute("data-overflow", "scroll");
 });
 
 // S6C-FENCES-V1 T2. Written only; no native clipboard and no browser run.
@@ -95,13 +129,15 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
   const hunk = tab.locator('[data-id="fence1"] .md-code').nth(0);
   const prefix = tab.locator('[data-id="fence1"] .md-code').nth(1);
   const card = tab.getByTestId("diff");
-  await expect(tab.locator('[data-id="fence1"] .md-code').nth(2).locator(".pl.file")).toHaveText(["a.ts", "b.ts"]);
+  await expect(tab.locator('[data-id="fence1"] .md-code').nth(2).locator("[data-diffs-header] [data-title]")).toHaveText(["a.ts", "b.ts"]);
+  const rowOf = (box: typeof card, type: string, side = "") => box.locator(`code${side} [data-content] > [data-line-type="${type}"]`);
+  const numberOf = (box: typeof card, type: string, side = "") => box.locator(`code${side} [data-gutter] > [data-line-type="${type}"]`);
   for (const box of [hunk, card]) {
     await expect(box.locator(".patch")).toBeVisible();
-    await expect(box.locator(".pl.del .code")).toHaveText("<script>x</script>");
-    await expect(box.locator(".pl.add .code")).toHaveText("<b>&new</b>");
-    await expect(box.locator(".pl.del .ln")).toHaveText(["1", ""]);
-    await expect(box.locator(".pl.add .ln")).toHaveText(["", "1"]);
+    await expect(rowOf(box, "change-deletion")).toHaveText("<script>x</script>");
+    await expect(rowOf(box, "change-addition")).toHaveText("<b>&new</b>");
+    await expect(numberOf(box, "change-deletion")).toHaveText("1");
+    await expect(numberOf(box, "change-addition")).toHaveText("1");
     await expect(box.locator("script, b")).toHaveCount(0);
   }
   await hunk.locator('[data-diff-layout="1"]').click();
@@ -109,16 +145,16 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
   await hunk.locator("[data-wrap-toggle]").click();
   await expect(card.getByRole("button", { name: "Wrap", exact: true })).toHaveAttribute("aria-pressed", "true");
   for (const box of [hunk, card]) {
-    await expect(box.locator(".pl.split")).toHaveCount(1);
-    await expect(box.locator(".half.del .ln")).toHaveText("1");
-    await expect(box.locator(".half.add .ln")).toHaveText("1");
-    await expect(box.locator(".half.del .code")).toHaveText("<script>x</script>");
-    await expect(box.locator(".half.add .code")).toHaveText("<b>&new</b>");
+    await expect(box.locator('pre[data-diff-type="split"]')).toHaveCount(1);
+    await expect(numberOf(box, "change-deletion", "[data-deletions]")).toHaveText("1");
+    await expect(numberOf(box, "change-addition", "[data-additions]")).toHaveText("1");
+    await expect(rowOf(box, "change-deletion", "[data-deletions]")).toHaveText("<script>x</script>");
+    await expect(rowOf(box, "change-addition", "[data-additions]")).toHaveText("<b>&new</b>");
   }
   await card.getByRole("button", { name: "Unified", exact: true }).click();
   for (const box of [hunk, card]) {
-    await expect(box.locator(".pl.split")).toHaveCount(0);
-    await expect(box.locator(".pl.del .code")).toHaveText("<script>x</script>");
+    await expect(box.locator('pre[data-diff-type="split"]')).toHaveCount(0);
+    await expect(rowOf(box, "change-deletion")).toHaveText("<script>x</script>");
   }
   await expect(prefix.locator("[data-diff-layout]")).toHaveCount(0);
   await expect(prefix.locator("pre")).toHaveText(fencePainter.prefixCopy);

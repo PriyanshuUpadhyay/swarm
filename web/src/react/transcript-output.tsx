@@ -126,7 +126,7 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>
-      <PatchBody patch={patch} info={f?.state === "ready" ? f.patch : patchOf(diff)} split={split} wrap={wrap} previewId={diff.id} />
+      <PatchBody patch={patch} info={f?.state === "ready" ? f.patch : patchOf(diff)} path={diff.path} split={split} wrap={wrap} previewId={diff.id} />
       {capped && f?.state !== "ready" && (
         <div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-muted-foreground">
           <span>

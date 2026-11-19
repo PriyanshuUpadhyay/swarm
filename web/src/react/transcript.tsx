@@ -13,6 +13,7 @@ import { focusInputOf } from "../core/focus";
 import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
 import { setSplit } from "./transcript-output";
 import { setWrap } from "./patch-body";
+import { findLine } from "./patch-find";
 import { paintRanges, textRanges } from "./find-text";
 import { LineView } from "./transcript-row";
 
@@ -83,7 +84,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
       if (match?.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
       frame = requestAnimationFrame(() => {
         if (!row || !match) return;
-        const target = match.preview ? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] [data-output-line="${match.line}"]`) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] .patch`) ?? row : row;
+        const target = match.preview ? (match.line == null ? null : findLine(match.preview, match.line)) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] [data-output-line="${match.line}"]`) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] .patch`) ?? row : row;
         const ranges = textRanges(target, find.query);
         const selected = ranges[match.preview ? match.lineOccurrence ?? 0 : match.occurrence];
         paintRanges("find-matches", textRanges(row, find.query));

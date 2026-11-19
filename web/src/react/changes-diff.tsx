@@ -3,10 +3,10 @@ import { File, PatchDiff, type DiffLineAnnotation, type FileDiffOptions, type Fi
 import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import type { App } from "../core/app";
 import { type Changes, type DiffComment, type FileDiff, type Load } from "../core/changes";
-import type { PatchLineWire } from "../core/api";
 import { Button } from "../components/ui/button";
 import { SurfaceFind } from "./surface-find";
 import { textRanges, paintRanges } from "./find-text";
+import { PIERRE, indexOf, patchText, spotOf } from "./pierre-patch";
 import { plural } from "./changes-shared";
 
 function DiffPane({ app, changes }: { app: App; changes: Changes }) {
@@ -55,45 +55,7 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
   );
 }
 
-// Pierre renders each diff in a shadow root. Find paints its ranges there, so the shadow root needs
-// the page's highlight colour too.
-const PIERRE = { theme: { dark: "pierre-dark", light: "pierre-light" }, unsafeCSS: "::highlight(surface-find) { background: #ff963b; color: #202020; }" } as const;
-
-type Side = SelectedLineRange["side"] & string;
 type Note = { at: number; comments: DiffComment[]; box: boolean };
-
-/** Where Pierre shows a display line: deleted lines on the old side, the rest on the new side. */
-function spotOf(l: PatchLineWire | undefined): { side: Side; lineNumber: number } | null {
-  if (l?.kind === "del" && l.old != null) return { side: "deletions", lineNumber: l.old };
-  if ((l?.kind === "add" || l?.kind === "ctx") && l.new != null) return { side: "additions", lineNumber: l.new };
-  return null;
-}
-
-function indexOf(lines: PatchLineWire[], side: Side | undefined, n: number): number {
-  return lines.findIndex((l) => side === "deletions" ? (l.kind === "del" || l.kind === "ctx") && l.old === n : (l.kind === "add" || l.kind === "ctx") && l.new === n);
-}
-
-/** A unified patch built from the server's display lines, so Pierre paints the same lines that
- *  comments anchor to. Each hunk header is rebuilt from the line numbers, because a capped patch can
- *  end inside a hunk. */
-function patchOf(path: string, lines: PatchLineWire[]): string {
-  const out = [`--- a/${path}`, `+++ b/${path}`];
-  let run: PatchLineWire[] = [];
-  const flush = () => {
-    if (!run.length) return;
-    const olds = run.flatMap((l) => l.kind !== "add" && l.old != null ? [l.old] : []);
-    const news = run.flatMap((l) => l.kind !== "del" && l.new != null ? [l.new] : []);
-    out.push(`@@ -${olds.length ? Math.min(...olds) : 0},${olds.length} +${news.length ? Math.min(...news) : 0},${news.length} @@`);
-    for (const l of run) out.push((l.kind === "add" ? "+" : l.kind === "del" ? "-" : " ") + l.text);
-    run = [];
-  };
-  for (const l of lines) {
-    if (l.kind === "hunk") flush();
-    else if (spotOf(l)) run.push(l);
-  }
-  flush();
-  return out.join("\n") + "\n";
-}
 
 /** The capped patch. A click on a line number picks a line, a Shift-click picks a range; a comment
  *  box opens under it. Keys in the body: j/k or arrows move, Shift extends, Enter or c comments. */
@@ -133,7 +95,7 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
       setComposing(true);
     },
   };
-  const patch = useMemo(() => patchOf(d.path, lines), [d.path, lines]);
+  const patch = useMemo(() => patchText(lines, d.path), [d.path, lines]);
   const selected = useMemo((): SelectedLineRange | null => {
     const a = sel && spotOf(lines[sel.anchor]);
     const c = sel && spotOf(lines[sel.cursor]);

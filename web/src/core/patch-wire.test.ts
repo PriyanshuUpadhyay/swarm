@@ -3,9 +3,9 @@ import type { App } from "./app";
 import type { Chat } from "./app-types";
 import type { PatchInfo, Row } from "./api";
 import { AppStream } from "./app-stream";
-import { patchOf, patchRows, textRows } from "./transcript";
+import { patchOf, textRows } from "./transcript";
 
-// Hand values include file headers, so painted indices differ from list indices.
+// Hand values include file headers, so source indices differ from drawn rows.
 const diff = {
   lines: [
     { kind: "meta", text: "diff --git a/x b/x" },
@@ -34,11 +34,6 @@ describe("patch wire", () => {
     };
     new AppStream(app as unknown as App).flush();
     expect(patchOf(chat.rows[0].diff!)).toEqual(diff);
-  });
-
-  it("keeps source indices when unified hides metadata and split pairs lines", () => {
-    expect(patchRows(diff, false)).toEqual([{ i: 3 }, { i: 4 }, { i: 5 }, { i: 6 }]);
-    expect(patchRows(diff, true)).toEqual([{ h: 3 }, { l: 4, r: 4 }, { l: 5, r: 6 }]);
   });
 
   it("uses server kinds for text lines and paints plain text without an entry", () => {

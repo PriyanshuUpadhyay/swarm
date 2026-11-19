@@ -10,8 +10,12 @@ import { Button } from "../components/ui/button";
 import { StatusGlyph, type Status } from "./status";
 import { plural } from "./changes-shared";
 
-// The diff pane carries the Pierre renderer, so it loads when the panel first opens.
-const DiffPane = lazy(() => import("./changes-diff").then((m) => ({ default: m.DiffPane })));
+// The diff pane carries the Pierre renderer, so it loads when the panel first opens. A failed load,
+// such as one cut off by a reload, says so in the pane instead of breaking the panel.
+const DiffPane = lazy(() => import("./changes-diff").then((m) => ({ default: m.DiffPane }), (error: unknown) => {
+  console.warn("The diff view did not load:", error);
+  return { default: () => <div className="diff-pane"><p className="px-3 py-2 text-xs text-failed">The diff view did not load. Reload the page to try again.</p></div> };
+}));
 
 const LAYER: Record<string, string> = { staged: "Staged", unstaged: "Unstaged", untracked: "Untracked", conflicted: "Conflict", branch: "" };
 

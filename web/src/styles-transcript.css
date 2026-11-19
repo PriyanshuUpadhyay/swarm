@@ -447,59 +447,9 @@ pre.plain {
   color: var(--foreground);
 }
 .patch {
-  font: 12px var(--font-mono);
-  overflow-x: auto;
-}
-.pl {
-  display: flex;
-  height: 17px;
-  line-height: 17px;
-  white-space: pre;
-  min-width: max-content;
-  width: 100%;
-}
-.pl .ln {
-  flex: none;
-  width: 40px;
-  padding-right: 6px;
-  text-align: right;
-  color: var(--faint-foreground);
-  user-select: none;
-}
-.pl .mark {
-  flex: none;
-  width: 14px;
-  color: var(--muted-foreground);
-  user-select: none;
-}
-.pl.file {
-  padding-left: 8px;
-  font-weight: 600;
-  background: var(--selected);
-}
-.pl.hunk {
-  color: var(--muted-foreground);
-  background: color-mix(in srgb, var(--status-working) 8%, transparent);
-  padding-left: 8px;
-}
-.pl.add,
-.half.add {
-  background: color-mix(in srgb, var(--status-done) 14%, transparent);
-}
-.pl.del,
-.half.del {
-  background: color-mix(in srgb, var(--status-failed) 14%, transparent);
-}
-/* Split rows scroll sideways: each half is at least as wide as the longest line on its side. */
-.pl.split .half:first-child {
-  --side-w: calc(var(--old-ch, 0) * 1ch + 48px);
-}
-.pl.split .half + .half {
-  --side-w: calc(var(--new-ch, 0) * 1ch + 48px);
-}
-.patch[data-wrap] .pl.split {
-  height: auto;
-  min-width: 0;
+  /* Pierre's CodeView scrolls this box but leaves its overflow to the page. */
+  overflow: auto;
+  --diffs-font-family: var(--font-mono);
 }
 /* Diff lines inside plain text: tool output and ```diff fences. */
 .dl.add {
@@ -514,28 +464,6 @@ pre.plain {
 .dl.meta {
   font-weight: 600;
 }
-.half {
-  display: flex;
-  flex: 1 1 50%;
-  min-width: var(--side-w);
-  overflow: hidden;
-}
-.patch[data-wrap] .half {
-  min-width: 0;
-}
-.patch[data-wrap] .half .code {
-  flex: 1;
-  min-width: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.half + .half {
-  border-left: 1px solid var(--border);
-}
-.half.empty {
-  background: color-mix(in srgb, var(--foreground) 3%, transparent);
-}
-
 ::highlight(find-matches) { background: #f5da62; color: #202020; }
 ::highlight(find-current) { background: #ff963b; color: #202020; }
 ::highlight(surface-find) { background: #ff963b; color: #202020; }

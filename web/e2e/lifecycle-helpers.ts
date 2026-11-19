@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { pierreUnloadNoise } from "./console-noise";
 import { join, resolve } from "node:path";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
@@ -22,7 +23,7 @@ async function open(tab: Page) {
   const errors: string[] = [];
   tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
   // A refused request logs its response as a console error; the cases that expect one check the UI.
-  tab.on("console", (m) => m.type() === "error" && !/\b(400|404|409)\b/.test(m.text()) && errors.push(m.text()));
+  tab.on("console", (m) => m.type() === "error" && !/\b(400|404|409)\b/.test(m.text()) && !pierreUnloadNoise(m) && errors.push(m.text()));
   await tab.goto(`${server().origin}/${server().hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
   return errors;

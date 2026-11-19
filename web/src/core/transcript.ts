@@ -3,7 +3,7 @@
 // the reader's open and closed choices.
 
 import { plural } from "./lifecycle-state";
-import type { BodyMode, Block, DiffPreview, Display, FindPart, Inline, PatchInfo, PatchLineWire, PatchSplitWire, Row, TextPreview, TodoItem } from "./api";
+import type { BodyMode, Block, DiffPreview, Display, FindPart, Inline, PatchInfo, PatchLineWire, Row, TextPreview, TodoItem } from "./api";
 
 const patches = new WeakMap<TextPreview | DiffPreview, PatchInfo>();
 /** Preview ids that the server sent with the Unified and Split layout, so their full text asks for it too. */
@@ -33,11 +33,6 @@ export const wantsLayout = (previewId: string) => layouts.has(previewId);
 /** A tool whose output the server sent as a diff layout: an agent ran `cat <file>.diff` to show a
  *  patch for review. The card shows open and outside its fold, so the owner reads it in place. */
 export const showsDiff = (row: Row) => !!row.tool?.output && "lines" in (patchOf(row.tool.output) ?? {});
-
-/** The list keeps source indices when unified hides metadata. */
-export function patchRows(info: Extract<PatchInfo, { lines: unknown }>, split: boolean): ({ i: number } | PatchSplitWire)[] {
-  return split ? info.split : info.lines.flatMap((line, i) => line.kind === "meta" ? [] : [{ i }]);
-}
 
 /** Text keeps each source line; an absent entry has no colour. */
 export function textRows(entry: PatchInfo | undefined, text: string): { kind: PatchLineWire["kind"] | null; text: string }[] {
