@@ -320,7 +320,11 @@ fn doctor_and_launch_report_stale_copies_without_running_a_cli() {
     for name in ["Claude", "Codex", "AGY", "swarm setup plugin"] {
         assert!(notices[0].contains(name), "{stderr}");
     }
-    assert!(f.calls().is_empty(), "a stale check must not run a CLI");
+    assert_eq!(
+        f.calls(),
+        "pi --version\n",
+        "doctor may probe the Pi version, but stale-copy detection must not run a CLI"
+    );
     let marketplace = claude.join("known_marketplaces.json");
     std::fs::write(
         &marketplace,

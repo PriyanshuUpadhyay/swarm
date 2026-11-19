@@ -86,6 +86,55 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
     assert_eq!(row["chair_id"], id.as_str());
 }
 
+#[test]
+fn a_pi_version_outside_the_supported_range_warns_in_doctor_and_launch() {
+    let home = scratch("pi-version");
+    tool(
+        &home,
+        "pi",
+        "if [ \"$1\" = '--version' ]; then echo '1.6.0'; fi",
+    );
+    std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
+    std::fs::write(
+        home.join(".swarm/adapters/tmux-swarm.conf"),
+        "self = printf chair\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    ).unwrap();
+    let doctor = swarm(&home, &[], &["doctor", "--json"]);
+    assert!(doctor.status.success(), "{}", stderr(&doctor));
+    let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    let items = report["items"].as_array().unwrap();
+    let pi = items
+        .iter()
+        .find(|item| item["id"] == "pi-version")
+        .unwrap();
+    assert_eq!(pi["state"], "broken", "{pi}");
+    assert!(pi["reason"].as_str().unwrap().contains("1.6.0"), "{pi}");
+    assert!(pi["reason"].as_str().unwrap().contains("1.5.x"), "{pi}");
+    let app = [("SWARM_ADAPTER", "tmux-swarm")];
+    let session = swarm(&home, &app, &["session", "new", "lane"]);
+    assert!(session.status.success(), "{}", stderr(&session));
+    let session = String::from_utf8(session.stdout).unwrap();
+    let launch = swarm(
+        &home,
+        &[app[0], ("SWARM_SESSION_ID", session.trim())],
+        &[
+            "launch",
+            "orchestrator",
+            "chat",
+            "--provider",
+            "pi",
+            "--model",
+            "anthropic/claude-haiku-5-5",
+        ],
+    );
+    assert!(launch.status.success(), "{}", stderr(&launch));
+    assert!(
+        stderr(&launch).contains(pi["reason"].as_str().unwrap()),
+        "{}",
+        stderr(&launch)
+    );
+}
+
 /// A pi seat has no SessionStart hook, so its system prompt carries the same seat block, with
 /// the role it was launched for.
 #[test]

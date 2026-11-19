@@ -153,6 +153,14 @@ pub(crate) fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     };
     let home = std::path::PathBuf::from(env_var("HOME")?);
     let mut items = setup_rows(&home, &HookFiles::of(&home)?)?;
+    if installed("pi") {
+        items.push(doctor_row(
+            "pi-version",
+            "Pi version",
+            super::pi_version::state(),
+            None,
+        ));
+    }
     items.push(doctor_row("notices", "Notices", notices_state(), None));
     #[cfg(feature = "serve")]
     items.push(doctor_row("ui", "UI server", serve::ui_state(), None));

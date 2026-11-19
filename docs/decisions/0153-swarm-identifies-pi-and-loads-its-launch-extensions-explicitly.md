@@ -34,3 +34,8 @@ continues with a warning if setup has not finished. Launch loads the process pac
 its shell starts through the Swarm guard and the owner's Bash rules. It does not load the
 subagent package yet: its SDK child sessions can run Bash without inheriting the Swarm launch
 guard. The built-in extension set did not change.
+
+Swarm supports Pi 1.5.x. Swarm uses explicit extension and system-prompt flags, OSC 7501
+pane state, and the extension API for live messages and pre-tool checks. These were checked
+together on Pi 1.5.2. Doctor and launch share the Pi version probe. An unknown or unsupported
+version is a warning, not a refusal; no version is currently listed as known to break.

@@ -1,6 +1,6 @@
 //! Pi's launch context and explicitly loaded extensions.
 
-use super::{adapter_name, pane_context, pi_packages};
+use super::{adapter_name, pane_context, pi_packages, pi_version};
 use std::path::Path;
 
 pub(super) fn launch_args(
@@ -12,6 +12,10 @@ pub(super) fn launch_args(
     role: &str,
     picked_codex_account: bool,
 ) -> std::io::Result<Vec<String>> {
+    let (state, reason) = pi_version::state();
+    if state != "ok" {
+        eprintln!("swarm: warning: {reason}");
+    }
     let mut args = vec!["--session-id".to_string(), id.to_owned()];
     if let Some(context) = pane_context("pi", session, agent_id, role) {
         args.extend(["--append-system-prompt".into(), context]);
