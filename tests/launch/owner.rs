@@ -233,30 +233,31 @@ fn a_pi_plan_can_be_answered_only_when_the_full_plan_is_visible() {
         serde_json::json!(["Request changes", "Approve"])
     );
 
-    // A shorter viewport leaves only the end of the selector visible.
-    std::fs::write(
-        home.join("screen"),
+    // A clipped native selector and the pageable overlay both keep decisions in the pane.
+    for pane in [
         &screen[screen.find(" 2. Report").unwrap()..],
-    )
-    .unwrap();
-    let clipped = notice();
-    assert_eq!(clipped["kind"], "plan");
-    assert!(
-        clipped["question"]
-            .as_str()
-            .unwrap()
-            .contains("Open the Pi pane")
-    );
-    assert_eq!(clipped["choices"], serde_json::json!([]));
-    for id in [
-        full["id"].as_str().unwrap(),
-        clipped["id"].as_str().unwrap(),
+        "Approve this plan? Rows 1–2 of 30\nStep 1\nStep 2\n→ Request changes\n  Approve\nPi plan (pane only) | pageUp/pageDown scroll\n",
     ] {
+        std::fs::write(home.join("screen"), pane).unwrap();
+        let clipped = notice();
+        assert_eq!(clipped["kind"], "plan");
         assert!(
-            !swarm(&home, &app, &["answer", "seat", id, "1"])
-                .status
-                .success()
+            clipped["question"]
+                .as_str()
+                .unwrap()
+                .contains("Open the Pi pane")
         );
+        assert_eq!(clipped["choices"], serde_json::json!([]));
+        for id in [
+            full["id"].as_str().unwrap(),
+            clipped["id"].as_str().unwrap(),
+        ] {
+            assert!(
+                !swarm(&home, &app, &["answer", "seat", id, "1"])
+                    .status
+                    .success()
+            );
+        }
     }
     assert!(!home.join("keys").exists());
 }

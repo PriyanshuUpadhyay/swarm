@@ -7,11 +7,90 @@
 import { spawnSync } from "node:child_process";
 import { renameSync, rmSync, writeFileSync } from "node:fs";
 import { stripVTControlCharacters } from "node:util";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { ProcessTerminal, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 /** How often the file is written while text streams; serve reads it at the same rate. */
 const WRITE_MS = 250;
+const PLAN_CHOICES = ["Request changes", "Approve"];
+// The screen reader treats this footer as a pane-only plan, not a remotely answerable list.
+const PLAN_PANE_ONLY = "Pi plan (pane only)";
+
+async function selectPlan(ui: ExtensionUIContext, body: string, tuiMode: boolean, signal: AbortSignal | undefined) {
+  const title = `Approve this plan?\n\n${body}\n\nReview the plan above before you answer.\n`;
+  if (!tuiMode) return ui.select(title, PLAN_CHOICES, { signal });
+
+  const terminal = new ProcessTerminal();
+  const titleRows = new Text(title, 1, 0);
+  // Leave space for the native selector's borders, options and help, and Pi's own footer.
+  const fits = () => terminal.columns >= 52 && titleRows.render(terminal.columns).length + 12 <= terminal.rows;
+  if (fits()) {
+    const resize = new AbortController();
+    const check = () => { if (!fits()) resize.abort(); };
+    process.stdout.on("resize", check);
+    try {
+      const choice = await ui.select(title, PLAN_CHOICES, {
+        signal: signal ? AbortSignal.any([signal, resize.signal]) : resize.signal,
+      });
+      if (!resize.signal.aborted || signal?.aborted) return choice;
+    } finally {
+      process.stdout.off("resize", check);
+    }
+  }
+
+  return ui.custom<string | undefined>((tui, theme, keys, done) => {
+    const text = new Text(body, 0, 0);
+    let selected = 0;
+    let offset = 0;
+    const close = () => done(undefined);
+    if (signal?.aborted) close();
+    else signal?.addEventListener("abort", close, { once: true });
+
+    const enoughRoom = () => tui.terminal.rows >= 4 && tui.terminal.columns >= PLAN_PANE_ONLY.length;
+    const pageSize = () => Math.max(1, tui.terminal.rows - 4);
+    const clamp = (offset: number, width: number) =>
+      Math.max(0, Math.min(offset, text.render(width).length - pageSize()));
+    const hint = (key: Parameters<typeof keys.getKeys>[0]) => keys.getKeys(key).join("/");
+    return {
+      render(width) {
+        if (!enoughRoom()) {
+          return ["Enlarge the pane to read the plan.", PLAN_PANE_ONLY]
+            .slice(-tui.terminal.rows).map((line) => truncateToWidth(line, width));
+        }
+        offset = clamp(offset, width);
+        const lines = text.render(width);
+        const end = Math.min(offset + pageSize(), lines.length);
+        const heading = `Approve this plan? Rows ${offset + 1}–${end} of ${lines.length}`;
+        const help = `${PLAN_PANE_ONLY} | ${hint("tui.select.pageUp")}/${hint("tui.select.pageDown")} scroll · ${hint("tui.select.up")}/${hint("tui.select.down")} choose · ${hint("tui.select.confirm")} select`;
+        return [
+          ...(tui.terminal.rows >= 5 ? [theme.fg("accent", heading)] : []),
+          ...lines.slice(offset, end),
+          ...PLAN_CHOICES.map((choice, index) => index === selected ? theme.fg("accent", `→ ${choice}`) : `  ${choice}`),
+          theme.fg("dim", help),
+        ].map((line) => truncateToWidth(line, width, ""));
+      },
+      handleInput(data) {
+        if (keys.matches(data, "tui.select.cancel")) return close();
+        if (!enoughRoom()) return;
+        if (keys.matches(data, "tui.select.confirm")) return done(PLAN_CHOICES[selected]);
+        if (keys.matches(data, "tui.select.up")) selected = 0;
+        else if (keys.matches(data, "tui.select.down")) selected = 1;
+        else if (keys.matches(data, "tui.select.pageUp")) offset -= pageSize();
+        else if (keys.matches(data, "tui.select.pageDown")) offset += pageSize();
+        else return;
+        offset = clamp(offset, tui.terminal.columns);
+        tui.requestRender();
+      },
+      invalidate() { text.invalidate(); },
+      dispose() { signal?.removeEventListener("abort", close); },
+    };
+  }, {
+    overlay: true,
+    overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" },
+    blocked: { kind: "question", message: PLAN_PANE_ONLY },
+  });
+}
 
 // Pi's native dialogs report OSC 7501 blocked/question without an extension listener.
 function registerQuestions(pi: ExtensionAPI) {
@@ -51,10 +130,7 @@ function registerQuestions(pi: ExtensionAPI) {
       if (!ctx.hasUI) throw new Error("Cannot request approval without an interactive UI.");
       const body = dialogText(plan);
       if (!body) throw new Error("Give a nonempty plan for the owner to review.");
-      // select() renders its title, not a description option. The closing line also marks the
-      // plan selector for Swarm when the top of the dialog is above the viewport.
-      const title = `Approve this plan?\n\n${body}\n\nReview the plan above before you answer.\n`;
-      const choice = await ctx.ui.select(title, ["Request changes", "Approve"], { signal });
+      const choice = await selectPlan(ctx.ui, body, ctx.mode === "tui", signal);
       const approved = choice === "Approve" && !signal?.aborted;
       const changes = choice === "Request changes" && !signal?.aborted
         ? (await ctx.ui.input("What should change? Enter a note or press Esc to skip.", "", { signal }))?.trim()

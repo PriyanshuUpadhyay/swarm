@@ -246,6 +246,31 @@ const PI_SELECT: &str = "↑↓ navigate  enter select  ";
 const PI_INPUT: &str = "enter submit  ";
 const PI_PLAN_TITLE: &str = "Approve this plan?";
 const PI_PLAN_END: &str = "Review the plan above before you answer.";
+const PI_PLAN_PANE_ONLY: &str = "Pi plan (pane only)";
+
+fn pi_plan_overlay(screen: &str) -> bool {
+    // The plan overlay owns the width and ends at the bottom of the viewport.
+    screen
+        .trim_end()
+        .lines()
+        .next_back()
+        .and_then(|line| line.strip_prefix(PI_PLAN_PANE_ONLY))
+        .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with(" |"))
+}
+
+fn pi_plan_pointer() -> Prompt {
+    let question = format!("{PI_PLAN_TITLE}\n\nOpen the Pi pane to read the full plan and answer.");
+    Prompt {
+        id: prompt_id(&question, &[]),
+        question,
+        choices: Vec::new(),
+        details: Vec::new(),
+        numbered: false,
+        cursor: 0,
+        cut: false,
+        reply: None,
+    }
+}
 
 /// The lower rule of Pi's native dialog can have its two normal footer rows below it.
 fn pi_dialog_footer(lines: &[&str]) -> Option<(usize, usize)> {
@@ -274,12 +299,15 @@ fn pi_border(line: &str) -> bool {
 }
 
 pub(super) fn pi_dialog(screen: &str) -> bool {
-    pi_dialog_footer(&screen.lines().collect::<Vec<_>>()).is_some()
+    pi_plan_overlay(screen) || pi_dialog_footer(&screen.lines().collect::<Vec<_>>()).is_some()
 }
 
 /// Swarm's Pi selector leaves a blank row between the question (or full plan) and the
 /// choices. Use the current screen, never scrollback, so a clipped plan stays pane-only.
 pub(super) fn pi_prompt(screen: &str) -> Option<Prompt> {
+    if pi_plan_overlay(screen) {
+        return Some(pi_plan_pointer());
+    }
     let lines: Vec<_> = screen.lines().collect();
     let (footer, bottom) = pi_dialog_footer(&lines)?;
     if !lines[footer].trim().starts_with(PI_SELECT) {
@@ -328,10 +356,7 @@ pub(super) fn pi_prompt(screen: &str) -> Option<Prompt> {
         .flatten();
     let question = match (top, plan) {
         (Some(_), Some(body)) => body.trim_end().to_string(),
-        (None, Some(_)) => {
-            choices.clear();
-            format!("{PI_PLAN_TITLE}\n\nOpen the Pi pane to read the full plan and answer.")
-        }
+        (None, Some(_)) => return Some(pi_plan_pointer()),
         (Some(_), None) if !question.is_empty() => question.to_string(),
         _ => return None,
     };
