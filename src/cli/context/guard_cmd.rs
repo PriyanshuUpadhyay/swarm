@@ -16,6 +16,15 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
         (Ok(path), Ok(home)) => {
             let path = path.to_string_lossy();
             let payload = read_within(std::io::stdin(), std::time::Duration::from_secs(2));
+            // In a turn of Pi's Claude bridge, Claude Code has only Pi's tools, as `mcp__` tools,
+            // and Pi runs each one through its own guards. A native tool of a Claude Code that Pi
+            // started, such as AskClaude's, still gets the rules below.
+            if provider == Provider::Claude
+                && swarm::host::run_by_pi(|name| env::var(name).ok())
+                && payload.as_deref().is_some_and(bridged_tool)
+            {
+                return swarm::guard::render(provider, &swarm::guard::Verdict::Allow);
+            }
             let wall = payload
                 .as_ref()
                 .and_then(|payload| swarm::guard::wall(provider, event, payload));
@@ -66,4 +75,12 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
         ),
     };
     swarm::guard::render(provider, &verdict)
+}
+
+fn bridged_tool(payload: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(payload).is_ok_and(|payload| {
+        payload["tool_name"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("mcp__"))
+    })
 }

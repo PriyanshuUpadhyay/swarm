@@ -94,6 +94,12 @@ pub fn is_worker(env: impl Fn(&str) -> Option<String>) -> bool {
         || env("SWARM_AGENT_ID").is_some_and(|agent| agent != "orchestrator")
 }
 
+/// True when Pi started this process. Pi's Claude bridge runs Claude Code as Pi's child, so its
+/// hooks fire in Pi turns, where Pi's launch already gave the context and Pi runs every tool.
+pub fn run_by_pi(env: impl Fn(&str) -> Option<String>) -> bool {
+    env("PI_CODING_AGENT").is_some_and(|value| !value.is_empty())
+}
+
 /// The hook output each provider reads. Codex takes only `additionalContext` into the
 /// conversation (`systemMessage` goes to the user), and prints `{}` outside a host.
 pub fn render(provider: &str, context: Option<&str>) -> String {

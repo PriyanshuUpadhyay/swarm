@@ -193,6 +193,10 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         // pi has no SessionStart hook to call this; `launch` passes it the context (ADR 0086).
         && Provider::parse(provider).is_some_and(|provider| provider != Provider::Pi)
     {
+        // A Claude Code session that Pi's bridge runs is a Pi turn; Pi's launch gave its context.
+        if provider == "claude" && swarm::host::run_by_pi(|name| env::var(name).ok()) {
+            return Ok(Some(()));
+        }
         let mut payload = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut payload)?;
         swarm::host::contain_worker_history(provider, &payload, &env_var("HOME")?);
