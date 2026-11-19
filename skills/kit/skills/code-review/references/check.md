@@ -14,7 +14,7 @@ helper that already does that math.
 ## Preset
 
 Stop: owner
-Offers: prove-it-works, call-tree, headless-shot, lean-review
+Offers: prove-it-works, call-tree, headless-shot, lean-review, model-check
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
@@ -93,6 +93,9 @@ seat also reads the repo's own convention docs and the `review` paths of each do
 When `~/.review-walk/taste.md` exists, `start` loads its `TASTE-` rules with the repo rules, so
 each matching unit's checklist holds them. They say what the owner flags. A copy that the change
 adds of a type, schema, or helper that already exists is a `fix`, because its author would fix it.
+
+When the plan offers `model-check`, a seat whose row depends on an order of steps across awaits,
+retries, or callbacks follows `blocks/model-check/SKILL.md` for that row's proof.
 
 `REF` means the change can break a place that names its symbol. Check each listed place against
 the new signature, return shape, and meaning. For a removed symbol, each listed place is a
