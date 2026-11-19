@@ -21,6 +21,9 @@ pub(super) fn launch_args(
         args.extend(["--append-system-prompt".into(), context]);
     }
     args.push("--no-extensions".into());
+    for name in ["builtin:mcp", "builtin:codemode"] {
+        args.extend(["--extension".into(), name.into()]);
+    }
     // Load the installed bridge entry point, not an npm spec that Pi may install again.
     let installed = [
         Some(pi_dir.join("npm/node_modules/pi-claude-bridge/src/index.ts")),

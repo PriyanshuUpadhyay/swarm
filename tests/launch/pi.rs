@@ -75,7 +75,18 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
         );
     }
     assert!(script.contains("'--swarm-live'"), "{script}");
-    assert_eq!(script.matches("'--extension'").count(), 3, "{script}");
+    for name in ["builtin:mcp", "builtin:codemode"] {
+        assert!(
+            script.contains(&format!("'--extension' '{name}'")),
+            "{script}"
+        );
+    }
+    assert_eq!(
+        script.matches("'--extension' 'builtin:").count(),
+        2,
+        "{script}"
+    );
+    assert_eq!(script.matches("'--extension'").count(), 5, "{script}");
     // This adapter's spawn line names no `$SWARM_FEED`, so pi runs bare.
     assert!(!script.contains("'pty'"), "{script}");
 

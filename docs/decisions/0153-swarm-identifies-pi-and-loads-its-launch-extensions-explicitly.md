@@ -21,11 +21,18 @@ extension. A picked Codex account also keeps the installed account shim. Herdr k
 Pi state reporter. Swarm uses the installed bridge entry point, not a temporary npm package source
 that Pi may download or update. Other Pi providers do not need a bridge installation.
 
-Pi 1.5.2 turns off automatic extension loading, including built-ins, with this flag. It still
-loads skills from configured packages, including the kit. Pi can still resolve package resources,
-so the flag is not a package-install or network block. This choice does not change the owner's Pi
-settings, raw `swarm spawn` commands, or interactive Pi outside Swarm. The bridge entry point is a
-path dependency: check it when updating the bridge package.
+Pi 1.5.2 turns off automatic extension loading, including built-ins, with this flag. Swarm
+explicitly loads `builtin:mcp` and `builtin:codemode`. It leaves `builtin:tool-search` and
+`builtin:llama.cpp` off. Pi activates codemode when its tool settings or MCP configuration call
+for it. Codemode sends nested `bash` and `process` calls through the same `tool_call` hook as
+direct calls, so the Swarm guard still checks them. Pi loads MCP servers from the user agent
+directory's `mcp.json` and from `.pi/mcp.json` in a trusted project. Swarm does not check calls to
+MCP tools with its shell guard.
+
+Pi still loads skills from configured packages, including the kit. Pi can still resolve package
+resources, so the flag is not a package-install or network block. This choice does not change the
+owner's Pi settings, raw `swarm spawn` commands, or interactive Pi outside Swarm. The bridge entry
+point is a path dependency: check it when updating the bridge package.
 
 The owner later chose to add the tested subagent and background-process packages to the same
 explicit launch set. `swarm setup pi` previews and installs the two exact package versions in
@@ -33,7 +40,7 @@ Swarm state. It does not edit Pi's settings. Launch checks the installed package
 continues with a warning if setup has not finished. Launch loads the process package and sends
 its shell starts through the Swarm guard and the owner's Bash rules. It does not load the
 subagent package yet: its SDK child sessions can run Bash without inheriting the Swarm launch
-guard. The built-in extension set did not change.
+guard.
 
 Swarm supports Pi 1.5.x. Swarm uses explicit extension and system-prompt flags, OSC 7501
 pane state, and the extension API for live messages and pre-tool checks. These were checked
