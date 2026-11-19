@@ -157,7 +157,7 @@ fn commit(path: &Path, name: &str) {
 }
 
 #[test]
-fn direct_land_updates_origin_and_local_main_together() {
+fn direct_land_updates_origin_and_local_main_and_keeps_the_worktree_until_drop() {
     let Some(hub) = Hub::new() else { return };
     let path = hub.task("direct");
     commit(&path, "landed");
@@ -178,7 +178,13 @@ fn direct_land_updates_origin_and_local_main_together() {
     assert_eq!(git(&hub.main, &["rev-parse", "HEAD"]), head);
     assert!(hub.main.join("landed").is_file());
     assert!(hub.main.join("published-first").is_file());
-    assert!(!path.exists());
+    assert!(path.is_dir());
+    let has_record = |hub: &Hub| {
+        swarm::task::records(&hub.root)
+            .iter()
+            .any(|task| task.branch == "swarm/direct")
+    };
+    assert!(has_record(&hub));
     assert!(
         git(
             &hub.main,
@@ -190,6 +196,10 @@ fn direct_land_updates_origin_and_local_main_together() {
         )
         .is_empty()
     );
+    let dropped = hub.cli(&["task", "drop", "direct"], false);
+    assert!(dropped.status.success(), "{dropped:?}");
+    assert!(!path.exists());
+    assert!(!has_record(&hub));
 }
 
 #[test]

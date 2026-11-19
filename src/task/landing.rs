@@ -37,23 +37,7 @@ fn request(
     pr: bool,
 ) -> Result<(PathBuf, String), String> {
     let dir = root.join("landings");
-    let (_, task) = match find_task(root, cwd, name) {
-        Ok(found) => found,
-        Err(error) => {
-            // A land run again after a landing ended finds no record, but the answer is there.
-            if let (Some(name), Some(hub)) = (name, hub(cwd)) {
-                let branch = branch_name(name);
-                let request = dir.join(format!(
-                    "{}.json",
-                    request_key(&hub.common.to_string_lossy(), &branch, pr)
-                ));
-                if request.with_extension("result.json").exists() {
-                    return Ok((request, branch));
-                }
-            }
-            return Err(error);
-        }
-    };
+    let (_, task) = find_task(root, cwd, name)?;
     let name = request_key(&task.repo, &task.branch, pr);
     let request = dir.join(format!("{name}.json"));
     // A land run again after its wait ran out keeps waiting on the first request, before the
@@ -74,6 +58,11 @@ fn request(
     )
     .ok_or("git rev-list failed")?;
     if ahead == "0" {
+        // The record stays after a landing, so a land run again after its wait ran out finds the
+        // landed branch and the answer; the answer is returned, not deleted.
+        if request.with_extension("result.json").exists() {
+            return Ok((request, task.branch));
+        }
         return Err(format!(
             "{} has no commit that {} lacks, so there is nothing to land; commit first, or run `swarm task drop`",
             task.branch, task.default
@@ -151,18 +140,8 @@ pub fn serve_landings(root: &Path, wt: &Path) {
             continue;
         }
         let answer = match land(root, wt, &taking) {
-            Ok((task, output, pr)) => {
-                // After the answer, so a land run again finds either the record or the answer.
-                if write_json(
-                    &request.with_extension("result.json"),
-                    &serde_json::json!({"ok": true, "output": output}),
-                )
-                .is_ok()
-                    && !pr
-                {
-                    let _ = std::fs::remove_file(record_path(root, &task.repo, &task.branch));
-                }
-                None
+            Ok((output, next)) => {
+                Some(serde_json::json!({"ok": true, "output": output, "next": next}))
             }
             Err(error) => Some(serde_json::json!({"ok": false, "error": error})),
         };
@@ -185,7 +164,9 @@ fn takings(dir: &Path) -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
-fn land(root: &Path, wt: &Path, request: &Path) -> Result<(Task, String, bool), String> {
+/// The landing's output, and what the agent does next. Code owns this rule (ADR 0151): no landing
+/// removes the worktree; the agent asks the owner first.
+fn land(root: &Path, wt: &Path, request: &Path) -> Result<(String, String), String> {
     let text = std::fs::read_to_string(request).map_err(|error| error.to_string())?;
     let asked: LandingRequest = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     // Only a chat worktree that swarm recorded lands, and only from its own folder.
@@ -210,7 +191,7 @@ fn land(root: &Path, wt: &Path, request: &Path) -> Result<(Task, String, bool), 
         } else {
             origin::land(&task, &hub, wt, &base)?
         };
-        return Ok((task, output, asked.pr));
+        return Ok((output, next(&task.branch, asked.pr)));
     }
     if asked.pr {
         return Err(
@@ -225,10 +206,21 @@ fn land(root: &Path, wt: &Path, request: &Path) -> Result<(Task, String, bool), 
             &hub.default,
             "--no-squash",
             "--no-commit",
+            "--no-remove",
             "--format",
             "json",
         ],
         true,
     )?;
-    Ok((task, output, false))
+    Ok((output, next(&task.branch, false)))
+}
+
+fn next(branch: &str, pr: bool) -> String {
+    if pr {
+        "the worktree stays; after the PR merges, ask the owner, and after approval run `swarm task sweep --apply` from another folder of the hub (`swarm task drop` refuses until the branch is in the default branch)".into()
+    } else {
+        format!(
+            "the worktree stays; ask the owner, and after approval run `swarm task drop {branch}`"
+        )
+    }
 }
