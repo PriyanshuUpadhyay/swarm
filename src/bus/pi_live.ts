@@ -6,12 +6,73 @@
 // `--swarm-bin` names, for swarm's own walls. Like `swarm guard`, a call it cannot check is blocked.
 import { spawnSync } from "node:child_process";
 import { renameSync, rmSync, writeFileSync } from "node:fs";
+import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 /** How often the file is written while text streams; serve reads it at the same rate. */
 const WRITE_MS = 250;
 
+// Pi's native dialogs report OSC 7501 blocked/question without an extension listener.
+function registerQuestions(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "ask_user_question",
+    label: "Ask the owner",
+    description: "Ask the owner one question and wait for their answer. Offer choices or omit them for free text.",
+    parameters: Type.Object({
+      question: Type.String({ minLength: 1 }),
+      choices: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 2, maxItems: 9 })),
+    }),
+    executionMode: "sequential",
+    async execute(_id, { question, choices }, signal, _onUpdate, ctx) {
+      if (!ctx.hasUI) throw new Error("Cannot ask the owner without an interactive UI.");
+      const title = dialogText(question);
+      const options = choices?.map((choice) => dialogText(choice).replace(/\s+/g, " "));
+      if (!title || options?.some((option) => !option) || (options && new Set(options).size !== options.length)) {
+        throw new Error("Give a nonempty question and distinct, nonempty choices.");
+      }
+      // Pi keeps the trailing newline as a blank separator before the choices.
+      const answer = options
+        ? await ctx.ui.select(`${title}\n`, options, { signal })
+        : await ctx.ui.input(title, "", { signal });
+      return {
+        content: [{ type: "text", text: answer === undefined ? "The owner did not answer." : `Owner answered:\n${answer}` }],
+        details: { answer: answer ?? null },
+      };
+    },
+  });
+  pi.registerTool({
+    name: "approve_plan",
+    label: "Request plan approval",
+    description: "Show the owner the full proposed plan and wait for a decision. Do not act on the plan unless the owner approves it explicitly.",
+    parameters: Type.Object({ plan: Type.String({ minLength: 1, description: "The full plan for the owner to review" }) }),
+    executionMode: "sequential",
+    async execute(_id, { plan }, signal, _onUpdate, ctx) {
+      if (!ctx.hasUI) throw new Error("Cannot request approval without an interactive UI.");
+      const description = dialogText(plan);
+      if (!description) throw new Error("Give a nonempty plan for the owner to review.");
+      const choice = await ctx.ui.select("Approve this plan?", ["Request changes", "Approve"], {
+        description: `${description}\n`,
+        signal,
+      });
+      const approved = choice === "Approve" && !signal?.aborted;
+      const text = approved ? "The owner approved the plan." : choice === "Request changes"
+        ? "The owner requested changes. Do not act on this plan."
+        : "The owner did not approve the plan. Do not act on it.";
+      return { content: [{ type: "text", text }], details: { approved } };
+    },
+  });
+}
+
+function dialogText(text: string): string {
+  return stripVTControlCharacters(text).replace(/\r\n?/g, "\n").replace(/\t/g, "   ")
+    // Keep line breaks but not terminal controls or bidirectional overrides from the model.
+    .replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, (ch) => ch === "\n" ? ch : "")
+    .trim();
+}
+
 export default function (pi: ExtensionAPI) {
+  registerQuestions(pi);
   pi.registerFlag("swarm-live", {
     type: "string",
     description: "File that swarm reads for the text of the streaming message",

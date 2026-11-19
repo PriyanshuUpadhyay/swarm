@@ -11,6 +11,7 @@ fn answer_session(home: &Path, key_then: &str) -> String {
         format!(
             "self = printf chair\nspawn = printf pane\nring = true\nlist = printf 'pane claude\\n'\n\
              close = true\ncapture = cat \"$HOME/screen\"\nscreen = cat \"$HOME/screen\"\n\
+             status = cat \"$HOME/status\" 2>/dev/null || true\n\
              key = printf '%s\\n' \"$SWARM_KEY\" >> \"$HOME/keys\"; {key_then}\n"
         ),
     )
@@ -149,6 +150,57 @@ fn an_arrow_answer_sends_enter_only_once_the_cursor_moved() {
         std::fs::read_to_string(home.join("keys")).unwrap(),
         "Down\n"
     );
+}
+
+#[test]
+fn the_owner_answers_a_pi_question_from_the_notice_inbox() {
+    let home = scratch("pi-question");
+    let session = answer_session(
+        &home,
+        "case \"$SWARM_KEY\" in Down) cp \"$HOME/moved\" \"$HOME/screen\";; Enter) \
+         cp \"$HOME/done\" \"$HOME/screen\"; printf 'state=done:at=%s\\n' \"$(date +%s)\" > \"$HOME/status\";; esac",
+    );
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_provider(&connection, &session, "seat", "pi").unwrap();
+    let screen = include_str!("../fixtures/screens/pi-question-select.txt");
+    std::fs::write(home.join("screen"), screen).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    std::fs::write(
+        home.join("status"),
+        format!("state=blocked:kind=question:at={now}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        home.join("moved"),
+        screen.replace(" → Amber\n   Blue", "   Amber\n → Blue"),
+    )
+    .unwrap();
+    std::fs::write(
+        home.join("done"),
+        include_str!("../fixtures/screens/pi-idle.txt"),
+    )
+    .unwrap();
+    let app = chair(&session);
+    let listed = listed_seat(&home, &session);
+    assert_eq!(listed["state"], "blocked", "{listed}");
+    assert_eq!(listed["state_kind"], "question", "{listed}");
+    let output = swarm(&home, &app, &["notices", "--inbox", "--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let inbox: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let need = &inbox["needs"][0];
+    assert_eq!(need["agent"], "seat", "{inbox}");
+    assert_eq!(need["kind"], "question", "{inbox}");
+    let prompt = &need["prompt"];
+    assert_eq!(prompt["question"], "Pick a color.", "{prompt}");
+    assert_eq!(prompt["choices"], serde_json::json!(["Amber", "Blue"]));
+    let id = prompt["id"].as_str().unwrap();
+    assert_eq!(listed["prompt"]["id"], id);
+    let output = swarm(&home, &app, &["answer", "seat", id, "1"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(listed_seat(&home, &session)["state"], "done");
 }
 
 #[test]

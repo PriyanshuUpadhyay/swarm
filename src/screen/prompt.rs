@@ -242,6 +242,98 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
     })
 }
 
+const PI_SELECT: &str = "↑↓ navigate  enter select  ";
+const PI_INPUT: &str = "enter submit  ";
+
+/// The lower rule of Pi's native dialog can have its two normal footer rows below it.
+fn pi_dialog_footer(lines: &[&str]) -> Option<(usize, usize)> {
+    let border = lines.iter().rposition(|line| pi_border(line))?;
+    if lines[border + 1..]
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .count()
+        > 2
+    {
+        return None;
+    }
+    let footer = lines[..border]
+        .iter()
+        .rposition(|line| !line.trim().is_empty())?;
+    let hint = lines[footer].trim();
+    let keys = hint
+        .strip_prefix(PI_SELECT)
+        .or_else(|| hint.strip_prefix(PI_INPUT))?;
+    keys.ends_with(" cancel").then_some((footer, border))
+}
+
+fn pi_border(line: &str) -> bool {
+    let line = line.trim_end();
+    line.starts_with('─') && line.chars().all(|c| c == '─')
+}
+
+pub(super) fn pi_dialog(screen: &str) -> bool {
+    pi_dialog_footer(&screen.lines().collect::<Vec<_>>()).is_some()
+}
+
+/// Swarm's Pi selector leaves a blank row between the question (or full plan) and the
+/// choices. Use the current screen, never scrollback, so a clipped plan stays pane-only.
+pub(super) fn pi_prompt(screen: &str) -> Option<Prompt> {
+    let lines: Vec<_> = screen.lines().collect();
+    let (footer, bottom) = pi_dialog_footer(&lines)?;
+    if !lines[footer].trim().starts_with(PI_SELECT) {
+        return None;
+    }
+    let top = lines[..footer]
+        .iter()
+        .rposition(|line| line.trim_end() == lines[bottom].trim_end())?;
+    let last = (top + 1..footer)
+        .rev()
+        .find(|&i| !lines[i].trim().is_empty())?;
+    let separator = (top + 1..last)
+        .rev()
+        .find(|&i| lines[i].trim().is_empty())?;
+    let mut cursor = None;
+    let mut choices: Vec<String> = Vec::new();
+    for line in &lines[separator + 1..=last] {
+        if let Some(label) = line.strip_prefix(" → ") {
+            if cursor.replace(choices.len()).is_some() {
+                return None;
+            }
+            choices.push(label.trim_end().to_string());
+        } else if let Some(label) = line.strip_prefix("   ") {
+            choices.push(label.trim_end().to_string());
+        } else if let Some(continuation) = line.strip_prefix(' ') {
+            // Pi's Text wraps to its own left padding, not to the label's column. Keep screen
+            // line breaks so a card's id changes if the visible text changes.
+            let label = choices.last_mut()?;
+            label.push('\n');
+            label.push_str(continuation.trim_end());
+        } else {
+            return None;
+        }
+    }
+    let question = lines[top + 1..separator]
+        .iter()
+        .map(|line| line.strip_prefix(' ').unwrap_or(line).trim_end())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    if question.is_empty() || choices.len() < 2 || choices.iter().any(String::is_empty) {
+        return None;
+    }
+    Some(Prompt {
+        id: prompt_id(&question, &choices),
+        question,
+        choices,
+        details: Vec::new(),
+        numbered: false,
+        cursor: cursor?,
+        cut: false,
+        reply: None,
+    })
+}
+
 pub(super) fn prompt_id(question: &str, choices: &[String]) -> String {
     // FNV-1a: stable across builds, so a listing and a later answer agree.
     let id = std::iter::once(question)
