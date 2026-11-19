@@ -140,11 +140,15 @@ pub(crate) fn inbox(
                 if waiting.provider == "claude" {
                     tag_permission_prompt(root, session, agent, &mut prompt)?;
                 }
-                Some(serde_json::json!({
+                let mut card = serde_json::json!({
                     "id": prompt.id,
                     "question": prompt.question,
                     "choices": prompt.choices,
-                }))
+                });
+                if waiting.provider == "pi" && prompt.is_pi_plan() {
+                    card["kind"] = "plan".into();
+                }
+                Some(card)
             }
             None => None,
         };

@@ -4,12 +4,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import type * as Pi from "@earendil-works/pi-coding-agent";
 
 // Run with PI_SDK=/path/to/pi-coding-agent/dist/index.js and Node 24 or later.
-const { DefaultResourceLoader, SettingsManager }: typeof Pi = await import(
-  pathToFileURL(resolve(process.env.PI_SDK ?? "")).href
-);
+const sdk = pathToFileURL(resolve(process.env.PI_SDK ?? ""));
+const { DefaultResourceLoader, SettingsManager, initTheme }: typeof Pi = await import(sdk.href);
 const dir = mkdtempSync(join(tmpdir(), "swarm-pi-questions-"));
 const loader = new DefaultResourceLoader({
   cwd: dir,
@@ -65,16 +65,31 @@ test("a Pi text question returns the response typed by the owner", async () => {
   assert.ok(reply?.type === "text" && reply.text.includes("Release notes"));
 });
 
-test("the full Pi plan goes to the owner, and approval needs an explicit choice", async () => {
+test("Pi renders the full plan and returns the owner's decision and optional changes", async () => {
+  const { InteractiveMode } = await import(new URL("modes/interactive/interactive-mode.js", sdk).href);
+  initTheme("dark");
   const plan = "1. Read the README.\n2. Report the title.";
-  for (const reply of ["Approve", "Request changes", undefined]) {
+  for (const [decision, feedback] of [["approve"], ["review", "Check LICENSE too"], ["review"], ["cancel"]]) {
     const result = await ask("approve_plan", { plan }, {
-      async select(_title, choices, options) {
-        assert.equal(options?.description?.trimEnd(), plan);
-        if (reply) assert.ok(choices.includes(reply));
-        return reply;
+      select: (...args) => InteractiveMode.prototype.showExtensionSelector.call({
+        pushExtensionDialog(dialog: { render(width: number): string[]; handleInput(key: string): void }) {
+          const rendered = dialog.render(80).map((row) => stripVTControlCharacters(row).trim()).join("\n");
+          assert.ok(rendered.includes(plan), rendered);
+          assert.ok(rendered.includes("Request changes") && rendered.includes("Approve"), rendered);
+          if (decision === "approve") dialog.handleInput("\x1b[B");
+          dialog.handleInput(decision === "cancel" ? "\x1b" : "\r");
+        },
+        removeExtensionDialog() {},
+      }, ...args),
+      async input() {
+        assert.equal(decision, "review");
+        return feedback;
       },
     });
-    assert.deepEqual(result.details, { approved: reply === "Approve" });
+    assert.equal(result.details.approved, decision === "approve");
+    if (feedback) {
+      const reply = result.content[0];
+      assert.ok(reply?.type === "text" && reply.text.includes(feedback));
+    }
   }
 });

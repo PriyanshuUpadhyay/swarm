@@ -49,16 +49,20 @@ function registerQuestions(pi: ExtensionAPI) {
     executionMode: "sequential",
     async execute(_id, { plan }, signal, _onUpdate, ctx) {
       if (!ctx.hasUI) throw new Error("Cannot request approval without an interactive UI.");
-      const description = dialogText(plan);
-      if (!description) throw new Error("Give a nonempty plan for the owner to review.");
-      const choice = await ctx.ui.select("Approve this plan?", ["Request changes", "Approve"], {
-        description: `${description}\n`,
-        signal,
-      });
+      const body = dialogText(plan);
+      if (!body) throw new Error("Give a nonempty plan for the owner to review.");
+      // select() renders its title, not a description option. The closing line also marks the
+      // plan selector for Swarm when the top of the dialog is above the viewport.
+      const title = `Approve this plan?\n\n${body}\n\nReview the plan above before you answer.\n`;
+      const choice = await ctx.ui.select(title, ["Request changes", "Approve"], { signal });
       const approved = choice === "Approve" && !signal?.aborted;
-      const text = approved ? "The owner approved the plan." : choice === "Request changes"
+      const changes = choice === "Request changes" && !signal?.aborted
+        ? (await ctx.ui.input("What should change? Enter a note or press Esc to skip.", "", { signal }))?.trim()
+        : undefined;
+      let text = approved ? "The owner approved the plan." : choice === "Request changes"
         ? "The owner requested changes. Do not act on this plan."
         : "The owner did not approve the plan. Do not act on it.";
+      if (changes) text += `\n\nOwner feedback:\n${changes}`;
       return { content: [{ type: "text", text }], details: { approved } };
     },
   });

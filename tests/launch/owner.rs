@@ -204,6 +204,64 @@ fn the_owner_answers_a_pi_question_from_the_notice_inbox() {
 }
 
 #[test]
+fn a_pi_plan_can_be_answered_only_when_the_full_plan_is_visible() {
+    let home = scratch("pi-plan");
+    let session = answer_session(&home, "true");
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_provider(&connection, &session, "seat", "pi").unwrap();
+    std::fs::write(home.join("status"), "state=blocked:kind=question:at=100\n").unwrap();
+    let screen = include_str!("../fixtures/screens/pi-question-plan.txt");
+    std::fs::write(home.join("screen"), screen).unwrap();
+    let app = chair(&session);
+    let notice = || {
+        assert_eq!(listed_seat(&home, &session)["state_kind"], "question");
+        let output = swarm(&home, &app, &["notices", "--inbox", "--json"]);
+        assert!(output.status.success(), "{}", stderr(&output));
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()["needs"][0]["prompt"]
+            .clone()
+    };
+    let full = notice();
+    assert_eq!(full["kind"], "plan");
+    assert!(
+        full["question"]
+            .as_str()
+            .unwrap()
+            .contains("1. Read the README.\n2. Report the title.")
+    );
+    assert_eq!(
+        full["choices"],
+        serde_json::json!(["Request changes", "Approve"])
+    );
+
+    // A shorter viewport leaves only the end of the selector visible.
+    std::fs::write(
+        home.join("screen"),
+        &screen[screen.find(" 2. Report").unwrap()..],
+    )
+    .unwrap();
+    let clipped = notice();
+    assert_eq!(clipped["kind"], "plan");
+    assert!(
+        clipped["question"]
+            .as_str()
+            .unwrap()
+            .contains("Open the Pi pane")
+    );
+    assert_eq!(clipped["choices"], serde_json::json!([]));
+    for id in [
+        full["id"].as_str().unwrap(),
+        clipped["id"].as_str().unwrap(),
+    ] {
+        assert!(
+            !swarm(&home, &app, &["answer", "seat", id, "1"])
+                .status
+                .success()
+        );
+    }
+    assert!(!home.join("keys").exists());
+}
+
+#[test]
 fn the_owner_presses_only_up_and_ctrl_u_in_an_agent_pane() {
     let home = scratch("key");
     let session = answer_session(&home, "true");

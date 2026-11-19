@@ -244,6 +244,8 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
 
 const PI_SELECT: &str = "↑↓ navigate  enter select  ";
 const PI_INPUT: &str = "enter submit  ";
+const PI_PLAN_TITLE: &str = "Approve this plan?";
+const PI_PLAN_END: &str = "Review the plan above before you answer.";
 
 /// The lower rule of Pi's native dialog can have its two normal footer rows below it.
 fn pi_dialog_footer(lines: &[&str]) -> Option<(usize, usize)> {
@@ -285,13 +287,12 @@ pub(super) fn pi_prompt(screen: &str) -> Option<Prompt> {
     }
     let top = lines[..footer]
         .iter()
-        .rposition(|line| line.trim_end() == lines[bottom].trim_end())?;
-    let last = (top + 1..footer)
+        .rposition(|line| line.trim_end() == lines[bottom].trim_end());
+    let start = top.map_or(0, |i| i + 1);
+    let last = (start..footer)
         .rev()
         .find(|&i| !lines[i].trim().is_empty())?;
-    let separator = (top + 1..last)
-        .rev()
-        .find(|&i| lines[i].trim().is_empty())?;
+    let separator = (start..last).rev().find(|&i| lines[i].trim().is_empty())?;
     let mut cursor = None;
     let mut choices: Vec<String> = Vec::new();
     for line in &lines[separator + 1..=last] {
@@ -312,23 +313,35 @@ pub(super) fn pi_prompt(screen: &str) -> Option<Prompt> {
             return None;
         }
     }
-    let question = lines[top + 1..separator]
+    if choices.len() < 2 || choices.iter().any(String::is_empty) {
+        return None;
+    }
+    let cursor = cursor?;
+    let question = lines[start..separator]
         .iter()
         .map(|line| line.strip_prefix(' ').unwrap_or(line).trim_end())
         .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string();
-    if question.is_empty() || choices.len() < 2 || choices.iter().any(String::is_empty) {
-        return None;
-    }
+        .join("\n");
+    let question = question.trim();
+    let plan = (choices == ["Request changes", "Approve"])
+        .then(|| question.strip_suffix(PI_PLAN_END))
+        .flatten();
+    let question = match (top, plan) {
+        (Some(_), Some(body)) => body.trim_end().to_string(),
+        (None, Some(_)) => {
+            choices.clear();
+            format!("{PI_PLAN_TITLE}\n\nOpen the Pi pane to read the full plan and answer.")
+        }
+        (Some(_), None) if !question.is_empty() => question.to_string(),
+        _ => return None,
+    };
     Some(Prompt {
         id: prompt_id(&question, &choices),
         question,
         choices,
         details: Vec::new(),
         numbered: false,
-        cursor: cursor?,
+        cursor,
         cut: false,
         reply: None,
     })
@@ -346,6 +359,12 @@ pub(super) fn prompt_id(question: &str, choices: &[String]) -> String {
 }
 
 impl Prompt {
+    /// This heading is supplied by Swarm's Pi plan tool, not by the HUD.
+    pub fn is_pi_plan(&self) -> bool {
+        self.question.starts_with(&format!("{PI_PLAN_TITLE}\n\n"))
+            && (self.choices.is_empty() || self.choices == ["Request changes", "Approve"])
+    }
+
     /// The tmux keys that pick choice `index`: its number, or arrows from the cursor then Enter.
     pub fn keys(&self, index: usize) -> Option<Vec<String>> {
         if index >= self.choices.len() {

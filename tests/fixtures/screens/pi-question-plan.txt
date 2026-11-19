@@ -1,0 +1,18 @@
+────────────────────────────────────────────────────────────
+
+ Approve this plan?
+
+ 1. Read the README.
+ 2. Report the title.
+
+ Review the plan above before you answer.
+
+
+ → Request changes
+   Approve
+
+ ↑↓ navigate  enter select  escape/ctrl+c cancel
+
+────────────────────────────────────────────────────────────
+~/project
+0.0%/200k (auto)                             test-model • low
