@@ -99,7 +99,7 @@ fn text(output: &[u8]) -> String {
 }
 
 #[test]
-fn setup_pi_installs_the_two_pins_and_launch_uses_the_installed_entries() {
+fn setup_pi_installs_the_pin_and_launch_uses_the_installed_entries() {
     let f = Fixture::new("pi");
     let npm = f.home.join("bin/npm");
     std::fs::write(&npm, include_str!("fixtures/pi-pinned-npm.sh")).unwrap();
@@ -166,7 +166,6 @@ fn setup_pi_installs_the_two_pins_and_launch_uses_the_installed_entries() {
         script.contains("@aliou/pi-processes/skills/pi-processes"),
         "{script}"
     );
-    assert!(!script.contains("@tintinweb/pi-subagents"), "{script}");
 }
 
 #[test]

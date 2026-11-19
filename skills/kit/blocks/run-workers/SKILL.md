@@ -19,7 +19,10 @@ metadata:
 - Load the host reference that the contract names. The host owns pane creation, sending, liveness, result collection, and close.
 - Resolve every seat role with `swarm roles get <role>` before launch. Keep `runnerId`, `provider`, `mode`, `model`, `effort`, and `fallbackRunnerIds`. Use only the declared fallbacks. Refuse a role that does not resolve or that the host cannot run. Never hardcode a model, an effort, a sandbox, or an approval value.
 - Give the host one entry per seat: a unique name, the routed runner, the working folder, the permission level, the input digest, the brief, the expected result file, and the deadline. The host picks the run folder under its message root, because every worker sandbox can write there. Never brief a worker to write into a home-state path.
-- Never use a headless CLI or a detached process. When the skill or the host contract asks for visible seats, every seat is a visible, interactive pane owned by this run. Otherwise a native subagent of the runtime is allowed; the runtime adapter names which.
+- Do not start headless CLIs or detached processes yourself. When the skill or the host contract asks for visible seats, every seat is a visible, interactive pane owned by this run. Otherwise a native subagent of the runtime is allowed; the runtime adapter names which.
+- Use a visible `swarm launch` pane for Fable or Astra. Where `swarm guard` cannot see the resolved
+  native subagent model, verify it before you start the worker. Check inheritance, agent definitions,
+  and runtime defaults. If you cannot verify the model, use a visible pane.
 - A search can run in the current agent without a worker pane. When a workflow requires workers, use the visibility and lifecycle rules of the active host and runtime contract.
 - Before a retry of a launch or a send that timed out, check whether the first one landed, with `swarm agents --json` for a launch and `swarm messages --json` for a send. Retry only when it did not, so a slow call never makes a second seat or a second message.
 - If a visible seat cannot launch or stay interactive, retry it once. Then start a visible seat on the role's next declared fallback runner, and tell the user the run is degraded. With no fallback left, go on without that seat only when the skill allows it.
@@ -30,9 +33,9 @@ metadata:
 - Write every brief by `blocks/worker-brief/SKILL.md`. A worker session follows the worker rules of that block, not this one.
 - Under the swarm host, the host reference is `references/host-swarm.md` in this block's folder.
 - Each runtime adds its own lines; follow the one that the `[agent-runtime: ...]` line names:
-  - claude: native background subagents are allowed unless the host contract or the workflow requires a visible pane. Each Workflow `agent()` call pins the model of its named seat role, or Sonnet when it names none. Workflow fan-out allows only Sonnet or Haiku, so refuse a seat role that routes to Opus or Fable, and name the role.
+  - claude: native background subagents are allowed unless the host contract or the workflow requires a visible pane. Each Workflow `agent()` call pins the model of its named seat role, or Sonnet when it names none. Workflow fan-out allows only Sonnet or Haiku. Refuse any other model and name the role.
   - codex: load the host skill that the `[agent-host: ...]` contract names. Collaboration workers (`spawn_agent`) run in-process as background workers; use them unless the host contract or the workflow requires a visible pane.
-  - pi: use visible panes only. Native subagents and Claude Code's Workflow tool are not available in Pi.
+  - pi: use Swarm's `subagent` tool for native background workers unless the host contract or the workflow requires a visible pane. Use a visible `swarm launch` pane for Fable or Astra. Claude Code's Workflow tool is not available in Pi.
   - agy: load the host skill that the `[agent-host: ...]` contract names. Native AGY subagents are allowed unless the host contract or the workflow requires a visible pane. Never pass a prompt as a launch argument; send the first task only after the host sees an input-ready AGY session.
 
 ## Example

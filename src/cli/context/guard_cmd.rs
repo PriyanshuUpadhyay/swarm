@@ -25,11 +25,14 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
             {
                 return swarm::guard::render(provider, &swarm::guard::Verdict::Allow);
             }
-            let (payload, process_start) = match payload {
+            let (payload, owner_bash_rules) = match payload {
                 Some(payload) if provider == Provider::Pi => match pi_process_payload(payload) {
                     Ok(call) => call,
                     Err(reason) => {
-                        return swarm::guard::render(provider, &swarm::guard::Verdict::Deny(reason));
+                        return swarm::guard::render(
+                            provider,
+                            &swarm::guard::Verdict::Deny(reason),
+                        );
                     }
                 },
                 other => (other, false),
@@ -43,7 +46,7 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
                 ),
                 (Err(error), _)
                     if error.kind() != std::io::ErrorKind::NotFound
-                        && (provider != Provider::Pi || process_start) =>
+                        && (provider != Provider::Pi || owner_bash_rules) =>
                 {
                     swarm::guard::Verdict::Deny(format!(
                         "swarm guard: cannot read {path}: {error}, so the call is blocked"
@@ -60,9 +63,9 @@ pub(crate) fn guard(args: &[String]) -> (String, String, i32) {
                 {
                     wall
                 }
-                // The owner's Pi extension already checks bash but does not receive process
-                // starts. Those start a shell, so Swarm dispatches them to the owner's Bash rules.
-                (_, Some(_)) if provider == Provider::Pi && !process_start => swarm::guard::Verdict::Allow,
+                // In panes the owner's extension checks Bash. A native child also goes
+                // through the registered rules, independent of the owner's Pi extension.
+                (_, Some(_)) if provider == Provider::Pi && !owner_bash_rules => swarm::guard::Verdict::Allow,
                 (list, Some(payload)) => swarm::guard::decide(
                     list.ok().as_deref(),
                     &path,
@@ -93,7 +96,9 @@ fn pi_process_payload(payload: String) -> Result<(Option<String>, bool), String>
         return Err("swarm guard: invalid Pi tool payload".into());
     };
     if call["tool_name"] != "process" {
-        return Ok((Some(payload), false));
+        let child_bash =
+            call["tool_name"] == "bash" && env::var_os("SWARM_PI_NATIVE_CHILD").is_some();
+        return Ok((Some(payload), child_bash));
     }
     match call["tool_input"]["action"].as_str() {
         Some("start") => {

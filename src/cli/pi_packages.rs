@@ -1,40 +1,28 @@
-//! The Pi packages installed by setup and loaded by launch.
+//! The Pi package installed by setup and loaded by launch.
 
 use std::path::{Path, PathBuf};
 
 use super::installed;
 
-const PINS: [(&str, &str, &[&str], &str, bool); 2] = [
-    (
-        "@tintinweb/pi-subagents",
-        "0.26.1",
-        &["src/index.ts"],
-        "skills",
-        // Its in-process SDK sessions do not inherit Swarm's launch guard.
-        false,
-    ),
-    (
-        "@aliou/pi-processes",
-        "0.13.6",
-        &[
-            "extensions/processes/index.ts",
-            "extensions/processes-logs/index.ts",
-            "extensions/processes-dock/index.ts",
-        ],
-        "skills/pi-processes",
-        true,
-    ),
-];
+const PINS: [(&str, &str, &[&str], &str); 1] = [(
+    "@aliou/pi-processes",
+    "0.13.6",
+    &[
+        "extensions/processes/index.ts",
+        "extensions/processes-logs/index.ts",
+        "extensions/processes-dock/index.ts",
+    ],
+    "skills/pi-processes",
+)];
 
 /// An upgrade leaves the old files available to panes that already loaded them.
 pub(crate) fn prefix(root: &Path) -> PathBuf {
-    root.join("pi/packages")
-        .join(format!("{}-{}", PINS[0].1, PINS[1].1))
+    root.join("pi/packages").join(PINS[0].1)
 }
 
 fn resources(prefix: &Path) -> Option<Vec<String>> {
     let mut args = Vec::new();
-    for (name, version, extensions, skills, enabled) in PINS {
+    for (name, version, extensions, skills) in PINS {
         let package = prefix.join("node_modules").join(name);
         let manifest: serde_json::Value =
             serde_json::from_slice(&std::fs::read(package.join("package.json")).ok()?).ok()?;
@@ -46,17 +34,13 @@ fn resources(prefix: &Path) -> Option<Vec<String>> {
             if !path.is_file() {
                 return None;
             }
-            if enabled {
-                args.extend(["--extension".into(), path.display().to_string()]);
-            }
+            args.extend(["--extension".into(), path.display().to_string()]);
         }
         let path = package.join(skills);
         if !path.is_dir() {
             return None;
         }
-        if enabled {
-            args.extend(["--skill".into(), path.display().to_string()]);
-        }
+        args.extend(["--skill".into(), path.display().to_string()]);
     }
     Some(args)
 }
@@ -68,14 +52,14 @@ pub(crate) fn launch_args(prefix: &Path) -> Option<Vec<String>> {
 
 pub(crate) fn setup_state(prefix: &Path) -> (&'static str, String) {
     if launch_args(prefix).is_some() {
-        ("ok", "The pinned Pi packages are installed".into())
+        ("ok", "The pinned Pi package is installed".into())
     } else if !installed("npm") {
         (
             "broken",
-            "Install npm to set up the pinned Pi packages".into(),
+            "Install npm to set up the pinned Pi package".into(),
         )
     } else {
-        ("setup", "The pinned Pi packages are not installed".into())
+        ("setup", "The pinned Pi package is not installed".into())
     }
 }
 
@@ -93,7 +77,7 @@ fn install_command(prefix: &Path) -> Vec<String> {
         "--no-audit".into(),
         "--no-fund".into(),
     ];
-    args.extend(PINS.map(|(name, version, _, _, _)| format!("{name}@{version}")));
+    args.extend(PINS.map(|(name, version, _, _)| format!("{name}@{version}")));
     args
 }
 
@@ -124,7 +108,7 @@ pub(crate) fn install(prefix: &Path) -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|error| format!("swarm: cannot run npm: {error}"))?;
         if !status.success() || resources(prefix).is_none() {
             return Err(format!(
-                "swarm: npm did not install both pinned Pi packages ({status})"
+                "swarm: npm did not install the pinned Pi package ({status})"
             ));
         }
         std::fs::File::create(ready)

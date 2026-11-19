@@ -7,6 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { renameSync, rmSync, writeFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { nativeChild, registerSubagents, reportChildReady } from "./swarm-subagents.ts";
 
 /** How often the file is written while text streams; serve reads it at the same rate. */
 const WRITE_MS = 250;
@@ -40,6 +41,9 @@ export default function (pi: ExtensionAPI) {
     const reason = run.stderr?.trim() || `swarm guard could not run (${run.error ?? `exit ${run.status}`}), so the call is blocked`;
     return { block: true, reason };
   });
+  if (nativeChild) reportChildReady(pi);
+  else registerSubagents(pi);
+
   let written = "";
   let next = "";
   let timer: ReturnType<typeof setTimeout> | undefined;

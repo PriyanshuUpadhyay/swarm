@@ -3,7 +3,7 @@
 use super::*;
 use rusqlite::OptionalExtension;
 
-mod pi;
+pub(super) mod pi;
 
 pub(crate) fn commands_launch(
     args: &[String],

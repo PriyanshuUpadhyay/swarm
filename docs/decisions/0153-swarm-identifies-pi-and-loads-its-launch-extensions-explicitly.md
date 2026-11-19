@@ -34,13 +34,29 @@ resources, so the flag is not a package-install or network block. This choice do
 owner's Pi settings, raw `swarm spawn` commands, or interactive Pi outside Swarm. The bridge entry
 point is a path dependency: check it when updating the bridge package.
 
-The owner later chose to add the tested subagent and background-process packages to the same
-explicit launch set. `swarm setup pi` previews and installs the two exact package versions in
+The owner later chose to add the tested background-process package to the same explicit
+launch set. `swarm setup pi` previews and installs its exact version in
 Swarm state. It does not edit Pi's settings. Launch checks the installed package files and
 continues with a warning if setup has not finished. Launch loads the process package and sends
-its shell starts through the Swarm guard and the owner's Bash rules. It does not load the
-subagent package yet: its SDK child sessions can run Bash without inheriting the Swarm launch
-guard.
+its shell starts through the Swarm guard and the owner's Bash rules. The third-party
+`@tintinweb/pi-subagents` package is not installed: its SDK child sessions can run Bash without
+inheriting the Swarm launch guard.
+
+The owner chose Swarm's own `subagent` tool for Pi. A Swarm Pi chair can delegate one task or
+a batch of up to four. The host and workflow still decide whether a worker must be visible.
+Swarm builds the child's flags with the pane's extension allowlist, except for the pane state
+reporter. The parent resolves the exact model; the binary applies the native model rule shared
+with the Claude and Codex hooks. Fable and Astra require a visible pane. A virtual model
+cannot be pinned to one physical model here. The child receives the task over Pi RPC only after
+the Swarm extension reports that its guard and the expected model are present. It has no
+Swarm messaging identity and does not register the subagent tool.
+
+The pane owns each child's process group and RPC pipes. An abort or session shutdown stops
+the children, with TERM followed by KILL as needed. A child has five minutes to complete;
+a background result queues a follow-up and wakes the parent if idle. The tool result and
+background notice carry versioned details. Each child saves a native Pi session in a numbered
+slot under the parent's log; Swarm reads it as a child chat. Active children keep a live idle
+pane working without changing the underlying OSC state or hiding a blocked pane.
 
 Swarm supports Pi 1.5.x. Swarm uses explicit extension and system-prompt flags, OSC 7501
 pane state, and the extension API for live messages and pre-tool checks. These were checked

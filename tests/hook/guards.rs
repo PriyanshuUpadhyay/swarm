@@ -31,6 +31,45 @@ fn a_pi_process_start_is_checked_by_the_owners_bash_rule() {
     assert_eq!(missing.status.code(), Some(2), "{missing:?}");
 }
 
+#[test]
+fn native_subagent_model_overrides_are_guarded() {
+    let home = scratch("guard-subagent-model");
+    std::fs::create_dir_all(home.join(".swarm")).unwrap();
+    std::fs::write(home.join(".swarm/guards.json"), r#"{"rules":[]}"#).unwrap();
+    for (provider, tool, model, allowed_model) in [
+        ("claude", "Agent", "fable", "sonnet"),
+        ("codex", "spawn_agent", "gpt-6.2-astra", "gpt-6.2"),
+    ] {
+        let call = |model| {
+            let payload = serde_json::json!({
+                "tool_name": tool,
+                "tool_input": {"model": model, "prompt": "Explain Fable and Astra"},
+                "cwd": &home,
+            });
+            swarm(
+                &home,
+                &[],
+                &["guard", provider, "PreToolUse"],
+                &payload.to_string(),
+            )
+        };
+        let denied = call(model);
+        let allowed = call(allowed_model);
+        assert!(
+            allowed.status.success() && allowed.stdout.is_empty(),
+            "{allowed:?}"
+        );
+        if provider == "claude" {
+            assert!(denied.status.success(), "{denied:?}");
+            let reply: serde_json::Value = serde_json::from_slice(&denied.stdout)
+                .unwrap_or_else(|_| panic!("Claude received no deny decision: {denied:?}"));
+            assert_eq!(reply["hookSpecificOutput"]["permissionDecision"], "deny");
+        } else {
+            assert_eq!(denied.status.code(), Some(2), "{denied:?}");
+        }
+    }
+}
+
 /// With a rule list, setup registers `swarm guard` for Claude, Codex, and AGY next to the owner's
 /// own hooks, trusts the Codex group where it lands, and each registered command answers its CLI
 /// (ADR 0040). Without a list, setup adds no guard.

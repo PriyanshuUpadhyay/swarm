@@ -34,6 +34,19 @@ export function SubagentRow({ run, title }: { run: SubagentRun; title: string })
         <span className="truncate">{title}</span>
         {result && <span className="truncate text-muted-foreground">{result}</span>}
       </button>
+      {run.other_call_ids?.map((callId, i) => (
+        <button
+          key={callId}
+          type="button"
+          className="card-head"
+          onClick={(e) => {
+            const chatId = e.currentTarget.closest<HTMLElement>("[data-chat]")?.dataset.chat;
+            if (chatId) openSubagent({ chatId, callId, title: `${title} · Child ${i + 2}` });
+          }}
+        >
+          Child {i + 2}
+        </button>
+      ))}
     </div>
   );
 }

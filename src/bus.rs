@@ -171,17 +171,50 @@ pub fn pi_live_file(root: &std::path::Path, session: &str, agent: &str) -> std::
         .join(format!("{agent}.live"))
 }
 
-/// Writes swarm's pi extension where pi loads it, and returns its path. The file changes only
-/// with the swarm build, and a rename keeps a pi that starts at the same time from reading half.
-pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
-    let path = root.join("pi").join("swarm-live.ts");
-    if std::fs::read_to_string(&path).ok().as_deref() != Some(PI_LIVE_EXTENSION) {
-        std::fs::create_dir_all(root.join("pi"))?;
-        let temp = path.with_extension(format!("{}.tmp", std::process::id()));
-        std::fs::write(&temp, PI_LIVE_EXTENSION)?;
-        std::fs::rename(&temp, &path)?;
+pub fn pi_children_file(live: &std::path::Path) -> std::path::PathBuf {
+    live.with_extension("children")
+}
+
+/// A slot holds exactly one Pi session. The call id is data, not a path from a tool result.
+pub fn pi_child_dir(
+    parent: &std::path::Path,
+    call: &str,
+    slot: &str,
+) -> Option<std::path::PathBuf> {
+    if call.is_empty()
+        || call.len() > 128
+        || !call
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-|".contains(&b))
+        || !matches!(slot, "1" | "2" | "3" | "4")
+    {
+        return None;
     }
-    Ok(path)
+    Some(
+        parent
+            .with_extension("")
+            .join("subagents")
+            .join(call)
+            .join(slot),
+    )
+}
+
+/// Atomic replacement keeps a Pi from reading half an extension during its startup.
+pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    let folder = root.join("pi");
+    std::fs::create_dir_all(&folder)?;
+    for (name, content) in [
+        ("swarm-subagents.ts", include_str!("bus/pi_subagents.ts")),
+        ("swarm-live.ts", PI_LIVE_EXTENSION),
+    ] {
+        let path = folder.join(name);
+        if std::fs::read_to_string(&path).ok().as_deref() != Some(content) {
+            let temp = path.with_extension(format!("{}.tmp", std::process::id()));
+            std::fs::write(&temp, content)?;
+            std::fs::rename(&temp, &path)?;
+        }
+    }
+    Ok(folder.join("swarm-live.ts"))
 }
 
 /// A Codex `config.toml` as text and as TOML.
