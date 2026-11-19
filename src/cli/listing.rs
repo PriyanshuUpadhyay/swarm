@@ -77,6 +77,16 @@ fn pane_activity(listing: &str, pane: &str) -> Option<i64> {
         .find_map(|token| token.strip_prefix("activity=")?.parse().ok())
 }
 
+fn pi_children_active(root: &std::path::Path, session: &str, agent: &str) -> bool {
+    std::fs::read_to_string(swarm::bus::pi_children_file(&swarm::bus::pi_live_file(
+        root, session, agent,
+    )))
+    .ok()
+    .and_then(|text| text.parse::<libc::pid_t>().ok())
+    // Ignore a stale marker if the pane's Pi process exited without cleanup.
+    .is_some_and(|pid| pid > 1 && unsafe { libc::kill(pid, 0) } == 0)
+}
+
 /// The adapter's `list` output, or None when it fails before the deadline.
 pub(crate) fn read_pane_list(
     adapter: &swarm::adapter::Adapter,
@@ -240,6 +250,18 @@ pub(crate) fn list_agents_from(
                 screen,
                 now,
             )
+        };
+        // Native child activity overlays an idle Pi pane, without persisting over OSC or
+        // overriding a prompt, blocked state, error, or dead pane.
+        let (state, write) = if provider.as_deref() == Some("pi")
+            && alive == Some(true)
+            && prompt.is_none()
+            && state.as_deref() == Some("done")
+            && pi_children_active(root, session_id, &row.id)
+        {
+            (Some("working".into()), None)
+        } else {
+            (state, write)
         };
         // The app runs no `swarm sweep`, and a ring typed while the CLI still starts is lost,
         // so the listing it polls rings a due message again once the pane shows it idle. A

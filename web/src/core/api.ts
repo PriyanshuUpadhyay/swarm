@@ -93,7 +93,7 @@ export type FoldSummary = {
 
 /** One step of a `todoList` row; `activeText` shows while the step runs. */
 export type TodoItem = { text: string; status: "pending" | "in_progress" | "completed"; active_text?: string };
-export type SubagentRun = { call_id: string; agent_type: string; description: string; state: ToolState; result?: TextPreview };
+export type SubagentRun = { call_id: string; other_call_ids?: string[]; agent_type: string; description: string; state: ToolState; result?: TextPreview };
 
 export type Row = {
   id: string;

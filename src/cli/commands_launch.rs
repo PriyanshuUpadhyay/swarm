@@ -2,6 +2,9 @@
 
 use super::*;
 use rusqlite::OptionalExtension;
+
+pub(super) mod pi;
+
 pub(crate) fn commands_launch(
     args: &[String],
     root: &std::path::Path,
@@ -284,26 +287,17 @@ pub(crate) fn commands_launch(
                     Some((_, id)) => id.clone(),
                     None => format!("{session}-{agent_id}"),
                 };
-                let mut args = vec!["--session-id".to_string(), id.clone()];
-                if let Some(context) = pane_context(kind.id(), &session, agent_id, role) {
-                    args.extend(["--append-system-prompt".into(), context]);
-                }
-                // The chat's live row reads the turn's text from this file, not from pi's screen
-                // (ADR 0131). A file of an earlier run must not show as this run's text.
-                let extension = swarm::bus::write_pi_extension(root)?;
-                let live = swarm::bus::pi_live_file(root, &session, agent_id);
-                if let Some(dir) = live.parent() {
-                    std::fs::create_dir_all(dir)?;
-                }
-                let _ = std::fs::remove_file(&live);
-                args.extend([
-                    "--extension".into(),
-                    extension.display().to_string(),
-                    "--swarm-live".into(),
-                    live.display().to_string(),
-                    "--swarm-bin".into(),
-                    std::env::current_exe()?.display().to_string(),
-                ]);
+                let args = pi::launch_args(
+                    root,
+                    &cwd.join(swarm::providers::pi_agent_dir(&user_home)),
+                    &session,
+                    agent_id,
+                    &id,
+                    role,
+                    picked
+                        .as_ref()
+                        .is_some_and(|account| account.env.contains_key("PI_CODEX_HOME")),
+                )?;
                 extra.splice(0..0, args);
                 if agent_id == "orchestrator" {
                     swarm::store::set_chair(connection, &session, Some((kind.id(), &id)))?;

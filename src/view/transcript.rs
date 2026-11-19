@@ -70,6 +70,8 @@ pub struct CommandChip {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SubagentRun {
     pub call_id: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub other_call_ids: Vec<String>,
     pub agent_type: String,
     pub description: String,
     pub state: super::ToolState,

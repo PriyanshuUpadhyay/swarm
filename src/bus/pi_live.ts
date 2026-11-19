@@ -10,6 +10,7 @@ import { stripVTControlCharacters } from "node:util";
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { nativeChild, registerSubagents, reportChildReady } from "./swarm-subagents.ts";
 
 /** How often the file is written while text streams; serve reads it at the same rate. */
 const WRITE_MS = 250;
@@ -152,7 +153,8 @@ function dialogText(text: string): string {
 }
 
 export default function (pi: ExtensionAPI) {
-  registerQuestions(pi);
+  // A native child has no person at its pane, so only a pane gets the owner dialogs.
+  if (!nativeChild) registerQuestions(pi);
   pi.registerFlag("swarm-live", {
     type: "string",
     description: "File that swarm reads for the text of the streaming message",
@@ -161,11 +163,19 @@ export default function (pi: ExtensionAPI) {
     type: "string",
     description: "The swarm binary that checks each bash call",
   });
-  pi.on("tool_call", async (event) => {
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName !== "bash" && event.toolName !== "process") return;
     const bin = pi.getFlag("swarm-bin");
-    if (event.toolName !== "bash" || typeof bin !== "string" || bin === "") return;
+    if (typeof bin !== "string" || bin === "") {
+      return { block: true, reason: "Swarm guard has no binary path, so the call is blocked" };
+    }
     const run = spawnSync(bin, ["guard", "pi", "PreToolUse"], {
-      input: JSON.stringify({ tool_name: "bash", tool_input: event.input, cwd: process.cwd() }),
+      input: JSON.stringify({
+        tool_name: event.toolName,
+        tool_input: event.input,
+        cwd: ctx.cwd,
+        session_id: ctx.sessionManager.getSessionId(),
+      }),
       encoding: "utf8",
       timeout: 10_000,
     });
@@ -173,6 +183,9 @@ export default function (pi: ExtensionAPI) {
     const reason = run.stderr?.trim() || `swarm guard could not run (${run.error ?? `exit ${run.status}`}), so the call is blocked`;
     return { block: true, reason };
   });
+  if (nativeChild) reportChildReady(pi);
+  else registerSubagents(pi);
+
   let written = "";
   let next = "";
   let timer: ReturnType<typeof setTimeout> | undefined;

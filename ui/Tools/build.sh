@@ -40,19 +40,25 @@ tar -c -C "$repo/skills" --exclude='.git*' --exclude='__pycache__' --exclude='no
 python3 -I "$repo/scripts/stamp-kit.py" "$skills/kit"
 python3 -I "$skills/kit/scripts/test_block_refs.py"
 python3 -I "$skills/kit/scripts/test_plugin_skills.py"
+# The swarm-local identity (make-sign-identity.sh) makes each app's designated requirement name
+# that certificate, not the cdhash, so macOS keeps privacy answers across updates. release.yml
+# imports it from secrets; a Mac without it signs ad hoc, and each update asks again.
+sign="$(security find-identity -p codesigning | awk '/"swarm-local"/ {print $2; exit}')"
+sign="${sign:--}"
+print "==> signing with ${sign}"
 notify="$stage/libexec/SwarmNotify.app"
 mkdir -p "$notify/Contents/MacOS"
 cp "$bin_dir/SwarmNotify" "$notify/Contents/MacOS/SwarmNotify"
 cp "$root/Resources/SwarmNotify-Info.plist" "$notify/Contents/Info.plist"
 plutil -insert CFBundleShortVersionString -string "$version" "$notify/Contents/Info.plist"
-# An ad hoc signature seals the plist to the binary, which the notification center needs.
-codesign --force -s - "$notify"
+# The signature seals the plist to the binary, which the notification center needs.
+codesign --force -s "$sign" "$notify"
 hud="$stage/libexec/SwarmHUD.app"
 mkdir -p "$hud/Contents/MacOS"
 cp "$bin_dir/SwarmHUD" "$hud/Contents/MacOS/SwarmHUD"
 cp "$root/Resources/SwarmHUD-Info.plist" "$hud/Contents/Info.plist"
 plutil -insert CFBundleShortVersionString -string "$version" "$hud/Contents/Info.plist"
-codesign --force -s - "$hud"
+codesign --force -s "$sign" "$hud"
 app="$stage/libexec/Swarm.app"
 mkdir -p "$app/Contents/MacOS"
 cp "$bin_dir/SwarmApp" "$app/Contents/MacOS/SwarmApp"
@@ -62,7 +68,7 @@ rm -rf "$out/Swarm.iconset"
 "$bin_dir/SwarmHUD" --app-icon "$out/Swarm.iconset"
 iconutil -c icns "$out/Swarm.iconset" -o "$app/Contents/Resources/Swarm.icns"
 plutil -insert CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
-codesign --force -s - "$app"
+codesign --force -s "$sign" "$app"
 
 tarball="$out/swarm-$version-macos-arm64.tar.gz"
 tar -czf "$tarball" -C "$out" "swarm-$version"

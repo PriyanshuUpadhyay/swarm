@@ -2,6 +2,74 @@
 // Fixture rules use an explicit timeout to check routing under load, within the runner's deadline.
 use super::*;
 
+#[test]
+fn a_pi_process_start_is_checked_by_the_owners_bash_rule() {
+    let home = scratch("guard-pi-process");
+    std::fs::create_dir_all(home.join(".swarm")).unwrap();
+    std::fs::write(
+        home.join(".swarm/guards.json"),
+        r#"{"rules":[{"name":"test","event":"PreToolUse","tools":["Bash"],"command":["/bin/sh","-c","case $(cat) in *deny-fixture*) echo 'owner denied this command' >&2; exit 2;; esac"]}]}"#,
+    ).unwrap();
+    let call = |input: serde_json::Value| {
+        let payload =
+            serde_json::json!({"tool_name": "process", "tool_input": input, "cwd": &home});
+        swarm(
+            &home,
+            &[],
+            &["guard", "pi", "PreToolUse"],
+            &payload.to_string(),
+        )
+    };
+    let denied = call(serde_json::json!({"action": "start", "command": "echo deny-fixture"}));
+    assert_eq!(denied.status.code(), Some(2), "{denied:?}");
+    let allowed = call(serde_json::json!({"action": "start", "command": "echo allowed"}));
+    assert!(allowed.status.success(), "{allowed:?}");
+    let stdin = call(serde_json::json!({"action": "write", "input": "model input"}));
+    assert_eq!(stdin.status.code(), Some(2), "{stdin:?}");
+    std::fs::remove_file(home.join(".swarm/guards.json")).unwrap();
+    let missing = call(serde_json::json!({"action": "start", "command": "echo allowed"}));
+    assert_eq!(missing.status.code(), Some(2), "{missing:?}");
+}
+
+#[test]
+fn native_subagent_model_overrides_are_guarded() {
+    let home = scratch("guard-subagent-model");
+    std::fs::create_dir_all(home.join(".swarm")).unwrap();
+    std::fs::write(home.join(".swarm/guards.json"), r#"{"rules":[]}"#).unwrap();
+    for (provider, tool, model, allowed_model) in [
+        ("claude", "Agent", "fable", "sonnet"),
+        ("codex", "spawn_agent", "gpt-6.2-astra", "gpt-6.2"),
+    ] {
+        let call = |model| {
+            let payload = serde_json::json!({
+                "tool_name": tool,
+                "tool_input": {"model": model, "prompt": "Explain Fable and Astra"},
+                "cwd": &home,
+            });
+            swarm(
+                &home,
+                &[],
+                &["guard", provider, "PreToolUse"],
+                &payload.to_string(),
+            )
+        };
+        let denied = call(model);
+        let allowed = call(allowed_model);
+        assert!(
+            allowed.status.success() && allowed.stdout.is_empty(),
+            "{allowed:?}"
+        );
+        if provider == "claude" {
+            assert!(denied.status.success(), "{denied:?}");
+            let reply: serde_json::Value = serde_json::from_slice(&denied.stdout)
+                .unwrap_or_else(|_| panic!("Claude received no deny decision: {denied:?}"));
+            assert_eq!(reply["hookSpecificOutput"]["permissionDecision"], "deny");
+        } else {
+            assert_eq!(denied.status.code(), Some(2), "{denied:?}");
+        }
+    }
+}
+
 /// With a rule list, setup registers `swarm guard` for Claude, Codex, and AGY next to the owner's
 /// own hooks, trusts the Codex group where it lands, and each registered command answers its CLI
 /// (ADR 0040). Without a list, setup adds no guard.
@@ -252,6 +320,43 @@ fn herdrs_state_hooks_and_an_owner_hook_give_no_conflict_for_swarms_groups() {
     assert_eq!(
         agy["herdr"]["Stop"][0]["command"],
         "~/.config/herdr/herdr-agent-state.sh"
+    );
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// In a turn of Pi's Claude bridge, Claude Code calls only Pi's tools, named `mcp__...`, and Pi
+/// guards each one, so the Claude guard lets them through. A native tool still meets the rules,
+/// also when Pi started that Claude Code.
+#[test]
+fn the_claude_guard_lets_through_the_tools_of_pis_bridge_only() {
+    let home = scratch("guard-pi-bridge");
+    let list = home.join("deny-all.json");
+    std::fs::write(
+        &list,
+        r#"{"rules": [{"name": "no", "event": "PreToolUse", "timeout": 30, "command": ["/bin/sh", "-c", "echo denied >&2; exit 2"]}]}"#,
+    )
+    .unwrap();
+    let list = list.to_string_lossy();
+    let bridged = r#"{"tool_name": "mcp__custom-tools__bash", "tool_input": {"command": "ls"}}"#;
+    let native = r#"{"tool_name": "Bash", "tool_input": {"command": "ls"}}"#;
+    let guard = |env: &[(&str, &str)], payload: &str| {
+        swarm(&home, env, &["guard", "claude", "PreToolUse"], payload)
+    };
+    let under_pi = [("SWARM_GUARDS", list.as_ref()), ("PI_CODING_AGENT", "true")];
+    let allowed = guard(&under_pi, bridged);
+    assert_eq!(allowed.status.code(), Some(0), "{allowed:?}");
+    assert_eq!(stdout(&allowed), "");
+    let plain = guard(&[("SWARM_GUARDS", list.as_ref())], bridged);
+    assert_ne!(
+        (plain.status.code(), stdout(&plain)),
+        (Some(0), String::new()),
+        "{plain:?}"
+    );
+    let native_under_pi = guard(&under_pi, native);
+    assert_eq!(
+        (native_under_pi.status.code(), stdout(&native_under_pi)),
+        (plain.status.code(), stdout(&plain)),
+        "{native_under_pi:?}"
     );
     std::fs::remove_dir_all(&home).unwrap();
 }

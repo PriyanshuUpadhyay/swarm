@@ -97,6 +97,15 @@ pub(crate) fn setup_rows(
             Some("hud"),
         ),
     ];
+    if installed("pi") {
+        let prefix = super::pi_packages::prefix(&swarm::paths::root_dir()?);
+        rows.push(doctor_row(
+            "pi-packages",
+            "Pi packages",
+            super::pi_packages::setup_state(&prefix),
+            Some("pi"),
+        ));
+    }
     for (index, copy) in stale_plugin_copies(home).iter().enumerate() {
         rows.push(doctor_row(
             &format!("plugin-{index}"),
@@ -144,6 +153,14 @@ pub(crate) fn doctor(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     };
     let home = std::path::PathBuf::from(env_var("HOME")?);
     let mut items = setup_rows(&home, &HookFiles::of(&home)?)?;
+    if installed("pi") {
+        items.push(doctor_row(
+            "pi-version",
+            "Pi version",
+            super::pi_version::state(),
+            None,
+        ));
+    }
     items.push(doctor_row("notices", "Notices", notices_state(), None));
     #[cfg(feature = "serve")]
     items.push(doctor_row("ui", "UI server", serve::ui_state(), None));

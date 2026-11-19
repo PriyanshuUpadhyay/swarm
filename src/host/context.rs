@@ -49,6 +49,7 @@ pub fn adapter(env: impl Fn(&str) -> Option<String>) -> String {
 /// Rex follows the same rule after Superset.
 pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<String> {
     let set = |name: &str| env(name).is_some_and(|value| !value.is_empty());
+    let is_seat = is_worker(&env);
     let (chair, worker) = if in_herdr(&env) {
         (HERDR_CONTEXT, HERDR_WORKER_CONTEXT)
     } else if in_superset(&env) && env("SWARM_ADAPTER").is_none_or(|name| name == "superset") {
@@ -61,9 +62,8 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
     {
         (APP_CONTEXT, APP_WORKER_CONTEXT)
     } else {
-        return None;
+        return (provider == "pi").then(|| runtime_context(provider, is_seat));
     };
-    let is_seat = is_worker(&env);
     let mut context = match is_seat {
         true => worker.to_string(),
         false => chair.to_string(),
@@ -79,19 +79,32 @@ pub fn context(provider: &str, env: impl Fn(&str) -> Option<String>) -> Option<S
             .unwrap_or_default();
         context.push_str(&format!("\n\n[swarm-seat]\nYou are seat `{agent}`{role} in swarm session `{session}`. Your chair is `orchestrator`.\nSend your final result to the chair with `swarm finish`, and a question with `swarm send orchestrator <kind>`, as the swarm-voice skill says."));
     }
-    // The runtime line tells a chair how to start workers. A worker is a leaf, and pi has no
-    // runtime line in run-workers, so both get only the host contract.
-    if is_seat || !matches!(provider, "claude" | "codex" | "agy") {
-        return Some(context);
+    if provider == "pi" || (!is_seat && matches!(provider, "claude" | "codex" | "agy")) {
+        context.push_str("\n\n");
+        context.push_str(&runtime_context(provider, is_seat));
     }
-    context.push_str(&format!("\n\n[agent-runtime: {provider}]\nBefore a plan step that requests workers, load `~/.swarm/kit/blocks/run-workers/SKILL.md` and follow its `{provider}` runtime line.\nThe active agent-host contract owns worker lifecycle and visibility."));
     Some(context)
+}
+
+fn runtime_context(provider: &str, is_seat: bool) -> String {
+    let mut context = format!("[agent-runtime: {provider}]");
+    if !is_seat {
+        context.push_str(&format!("\nBefore a plan step that requests workers, load `~/.swarm/kit/blocks/run-workers/SKILL.md` and follow its `{provider}` runtime line.\nThe active agent-host contract owns worker lifecycle and visibility."));
+    }
+    context
 }
 
 /// True in a pane an orchestrator spawned: `swarm spawn` names every child but the orchestrator.
 pub fn is_worker(env: impl Fn(&str) -> Option<String>) -> bool {
-    env("HERDR_AGENT_PANE").as_deref() == Some("1")
+    env("SWARM_PI_NATIVE_CHILD").is_some()
+        || env("HERDR_AGENT_PANE").as_deref() == Some("1")
         || env("SWARM_AGENT_ID").is_some_and(|agent| agent != "orchestrator")
+}
+
+/// True when Pi started this process. Pi's Claude bridge runs Claude Code as Pi's child, so its
+/// hooks fire in Pi turns, where Pi's launch already gave the context and Pi runs every tool.
+pub fn run_by_pi(env: impl Fn(&str) -> Option<String>) -> bool {
+    env("PI_CODING_AGENT").is_some_and(|value| !value.is_empty())
 }
 
 /// The hook output each provider reads. Codex takes only `additionalContext` into the

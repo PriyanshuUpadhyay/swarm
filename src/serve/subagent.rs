@@ -4,7 +4,7 @@
 //! child's log is: Claude writes `<session>/subagents/agent-<id>.jsonl` with a `.meta.json` that
 //! holds `toolUseId`; Codex writes the child as its own rollout file, named by the id in the
 //! `spawn_agent` output; AGY finds its child log from the `conversationId` in the result of the
-//! `invoke_subagent` call. pi has no subagent.
+//! `invoke_subagent` call. Pi children each save a session in a numbered slot under the parent.
 
 use super::*;
 use std::io::{BufRead, BufReader};
@@ -64,7 +64,8 @@ pub(super) fn split(agent: &str) -> Option<(&str, &str)> {
 }
 
 pub(super) fn child_log(parent: &Log, call_id: &str) -> Result<Log, ApiError> {
-    if !plain_id(call_id) {
+    // Pi's call IDs can contain a pipe; slots after the first add a dot and slot number.
+    if parent.format != "pi" && !plain_id(call_id) {
         return Err(error(StatusCode::BAD_REQUEST, "bad subagent call id"));
     }
 
@@ -72,6 +73,7 @@ pub(super) fn child_log(parent: &Log, call_id: &str) -> Result<Log, ApiError> {
         "claude" => claude_child(&parent.path, call_id),
         "codex" => codex_child(&parent.path, call_id),
         "agy" => agy_child(&parent.path, call_id),
+        "pi" => pi_child(&parent.path, call_id),
         _ => None,
     };
 
@@ -79,6 +81,26 @@ pub(super) fn child_log(parent: &Log, call_id: &str) -> Result<Log, ApiError> {
         path: path.ok_or_else(|| error(StatusCode::NOT_FOUND, "no subagent log"))?,
         format: parent.format.clone(),
     })
+}
+
+fn pi_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
+    let parent = parent.canonicalize().ok()?;
+    let (call, slot) = call_id.rsplit_once('.').unwrap_or((call_id, "1"));
+    let dir = swarm::bus::pi_child_dir(&parent, call, slot)?;
+    // A slot must be the real directory constructed beside the canonical parent.
+    // Never take a log path from model content or follow a link out of that slot.
+    if dir.canonicalize().ok()? != dir {
+        return None;
+    }
+    let mut logs = std::fs::read_dir(&dir).ok()?.flatten().filter_map(|entry| {
+        let path = entry.path();
+        if path.extension()? != "jsonl" {
+            return None;
+        }
+        file_inside(&dir, &path)
+    });
+    let log = logs.next()?;
+    logs.next().is_none().then_some(log)
 }
 
 fn claude_child(parent: &Path, call_id: &str) -> Option<PathBuf> {
@@ -235,6 +257,29 @@ mod tests {
 
         assert!(child_log(&parent, "toolu_none").is_err());
         assert!(child_log(&parent, "../x").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_pi_child_chat_uses_its_slot_and_refuses_a_log_outside_it() {
+        let dir = scratch("pi");
+        let parent = dir.join("parent.jsonl");
+        std::fs::write(&parent, "{}\n").unwrap();
+        let slot = swarm::bus::pi_child_dir(&parent, "call|id", "2").unwrap();
+        std::fs::create_dir_all(&slot).unwrap();
+        let path = slot.join("child.jsonl");
+        std::fs::write(&path, "{}\n").unwrap();
+        let log = Log {
+            path: parent.clone(),
+            format: "pi".into(),
+        };
+        let child = child_log(&log, "call|id.2").unwrap();
+        assert_eq!(child.path, path.canonicalize().unwrap());
+        assert_eq!(child.format, "pi");
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&parent, &path).unwrap();
+        assert!(child_log(&log, "call|id.2").is_err());
+        assert!(child_log(&log, "../parent").is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -16,6 +16,8 @@ mod listing;
 mod model_check;
 #[path = "launch/owner.rs"]
 mod owner;
+#[path = "launch/pi.rs"]
+mod pi;
 #[path = "launch/providers.rs"]
 mod providers;
 #[path = "launch/pty_host.rs"]

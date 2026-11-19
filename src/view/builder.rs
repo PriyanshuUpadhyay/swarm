@@ -334,8 +334,18 @@ pub(super) fn rows_with_context(
                         tool::subagent_state(string(&records[*index].event, "kind"), state)
                     });
 
+                let call_id = string(event, "tool_call_id");
+                let other_call_ids = if name == "subagent" {
+                    let count = input["tasks"].as_array().map_or(1, Vec::len).min(4);
+                    (2..=count)
+                        .map(|slot| format!("{call_id}.{slot}"))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 row.subagent = Some(SubagentRun {
-                    call_id: string(event, "tool_call_id").into(),
+                    call_id: call_id.into(),
+                    other_call_ids,
                     agent_type,
                     description,
                     state,

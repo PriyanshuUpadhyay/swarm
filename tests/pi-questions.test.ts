@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,11 +13,15 @@ const { DefaultResourceLoader, SettingsManager, InteractiveMode, initTheme }: ty
 const nativeSelect = Reflect.get(InteractiveMode.prototype, "showExtensionSelector");
 const nativeCustom = Reflect.get(InteractiveMode.prototype, "showExtensionCustom");
 const dir = mkdtempSync(join(tmpdir(), "swarm-pi-questions-"));
+// Launch installs the extension beside its subagent module under these names (src/bus.rs).
+const source = (name: string) => fileURLToPath(new URL(`../src/bus/${name}`, import.meta.url));
+copyFileSync(source("pi_live.ts"), join(dir, "swarm-live.ts"));
+copyFileSync(source("pi_subagents.ts"), join(dir, "swarm-subagents.ts"));
 const loader = new DefaultResourceLoader({
   cwd: dir,
   agentDir: dir,
   settingsManager: SettingsManager.inMemory(),
-  additionalExtensionPaths: [fileURLToPath(new URL("../src/bus/pi_live.ts", import.meta.url))],
+  additionalExtensionPaths: [join(dir, "swarm-live.ts")],
   noExtensions: true,
   noSkills: true,
   noPromptTemplates: true,

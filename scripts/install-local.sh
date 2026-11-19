@@ -132,7 +132,7 @@ fi
 git -C "$tap_root" checkout -- Formula/swarm.rb
 [ -z "$(git -C "$tap_root" status --porcelain -- Formula/swarm.rb)" ] || die 'tap formula restore left changes'
 restore=false
-# Reload the HUD login item, so the new ad hoc build starts at once (ADR 0127).
+# Reload the HUD login item, so the new build starts at once (ADR 0127).
 swarm hud restart
 installed=$(swarm --version)
 printf '%s\n' "$installed"
