@@ -49,6 +49,26 @@ jobs:
         with:
           node-version: 22
       - run: npm install -g pnpm@11.15.1
+      # build.sh signs with swarm-local when the keychain has it, so released apps keep their
+      # privacy answers across updates. A release without it would quietly sign ad hoc, so fail.
+      - name: Import the swarm-local signing identity
+        env:
+          SWARM_SIGNING_P12: ${{ secrets.SWARM_SIGNING_P12 }}
+          SWARM_SIGNING_PASSWORD: ${{ secrets.SWARM_SIGNING_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password=$(openssl rand -hex 16)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$SWARM_SIGNING_P12" | base64 -D > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$SWARM_SIGNING_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          # shellcheck disable=SC2046 # one keychain path per word
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          security find-identity -p codesigning | grep -q '"swarm-local"' \
+            || { echo 'no swarm-local identity after the import' >&2; exit 1; }
       # Only this build uses ~/.swarm; any other build keeps a branch home (ADR 0027).
       - run: make -C ui package
         env:

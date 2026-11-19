@@ -41,8 +41,8 @@ python3 -I "$repo/scripts/stamp-kit.py" "$skills/kit"
 python3 -I "$skills/kit/scripts/test_block_refs.py"
 python3 -I "$skills/kit/scripts/test_plugin_skills.py"
 # The swarm-local identity (make-sign-identity.sh) makes each app's designated requirement name
-# that certificate, not the cdhash, so macOS keeps privacy answers across updates. A Mac without
-# it, such as CI, signs ad hoc, and each update asks again.
+# that certificate, not the cdhash, so macOS keeps privacy answers across updates. release.yml
+# imports it from secrets; a Mac without it signs ad hoc, and each update asks again.
 sign="$(security find-identity -p codesigning | awk '/"swarm-local"/ {print $2; exit}')"
 sign="${sign:--}"
 print "==> signing with ${sign}"
