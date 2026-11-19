@@ -26,7 +26,7 @@ pub use fold::{
 pub use preview::{Diff, DiffHunk, DiffPreview, TextPreview, diff_patch, text_chunks};
 pub use tool::{
     ToolActivity, ToolState, command, duration, duration_label, exec_commands, exit_code, path,
-    reports_failure, title,
+    reports_failure, shows_diff, title,
 };
 
 fn is_false(value: &bool) -> bool {

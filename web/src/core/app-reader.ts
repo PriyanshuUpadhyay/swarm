@@ -1,7 +1,7 @@
 
 
 import type { Usage } from "./composer";
-import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, wantsLayout, type Line } from "./transcript";
 import { ApiError, type Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -198,7 +198,7 @@ export class AppReader {
     this.changed(chat);
     let next: FullText;
     try {
-      const { text, patch } = await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId);
+      const { text, patch } = await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId, wantsLayout(previewId));
       next = { state: "ready", text, lines: text.split("\n"), patch };
     } catch (err) {
       next = { state: "error", error: String(err) };

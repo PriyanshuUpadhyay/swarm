@@ -148,6 +148,7 @@ async fn row_http_paths_on_large_synthetic_chat() {
                     session: fixture.session.clone(),
                     agent: "chair".into(),
                     row: id.clone(),
+                    diff: false,
                 }),
             )
             .await

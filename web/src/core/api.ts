@@ -256,8 +256,8 @@ export class Api {
   }
 
   /** The full text behind a capped preview: a tool or shell output, or a diff's whole patch. */
-  async toolOutput(session: string, agent: string, row: string): Promise<{ text: string; patch?: PatchInfo }> {
-    const q = new URLSearchParams({ session, agent, row });
+  async toolOutput(session: string, agent: string, row: string, diff = false): Promise<{ text: string; patch?: PatchInfo }> {
+    const q = new URLSearchParams({ session, agent, row, ...(diff && { diff: "true" }) });
     return this.json(`/api/tool-output?${q}`);
   }
 

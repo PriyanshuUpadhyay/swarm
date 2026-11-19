@@ -239,6 +239,7 @@ async fn boundary_tool() {
             session: fixture.session.clone(),
             agent: "chair".into(),
             row: all["rows"][0]["id"].as_str().unwrap().into(),
+            diff: false,
         }),
     )
     .await
@@ -267,6 +268,7 @@ async fn giant_output_stays_small_and_full_output_is_exact() {
                 .as_str()
                 .unwrap()
                 .into(),
+            diff: false,
         }),
     )
     .await
@@ -278,7 +280,8 @@ async fn giant_output_stays_small_and_full_output_is_exact() {
             Query(ToolOutputQuery {
                 session: fixture.session.clone(),
                 agent: "chair".into(),
-                row: "raw-1-0:output".into()
+                row: "raw-1-0:output".into(),
+                diff: false,
             })
         )
         .await

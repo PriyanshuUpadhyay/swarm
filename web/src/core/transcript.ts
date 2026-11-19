@@ -6,6 +6,8 @@ import { plural } from "./lifecycle-state";
 import type { BodyMode, Block, DiffPreview, Display, FindPart, Inline, PatchInfo, PatchLineWire, PatchSplitWire, Row, TextPreview, TodoItem } from "./api";
 
 const patches = new WeakMap<TextPreview | DiffPreview, PatchInfo>();
+/** Preview ids that the server sent with the Unified and Split layout, so their full text asks for it too. */
+const layouts = new Set<string>();
 
 /** Keep wire data on the preview object that the painter receives. */
 export function notePatch(rows: Row[], patch: Record<string, PatchInfo> | undefined): void {
@@ -20,11 +22,17 @@ export function notePatch(rows: Row[], patch: Record<string, PatchInfo> | undefi
       const entry = patch[preview.id];
       if (entry) patches.set(preview, entry);
       else patches.delete(preview);
+      if (entry && "lines" in entry) layouts.add(preview.id);
     }
   }
 }
 
 export const patchOf = (preview: TextPreview | DiffPreview): PatchInfo | undefined => patches.get(preview);
+export const wantsLayout = (previewId: string) => layouts.has(previewId);
+
+/** A tool whose output the server sent as a diff layout: an agent ran `cat <file>.diff` to show a
+ *  patch for review. The card shows open and outside its fold, so the owner reads it in place. */
+export const showsDiff = (row: Row) => !!row.tool?.output && "lines" in (patchOf(row.tool.output) ?? {});
 
 /** The list keeps source indices when unified hides metadata. */
 export function patchRows(info: Extract<PatchInfo, { lines: unknown }>, split: boolean): ({ i: number } | PatchSplitWire)[] {
@@ -260,7 +268,7 @@ export type LineState = { folds: FoldChoices; opened: ReadonlyMap<string, boolea
 export const LIVE_THOUGHT = "live-thought";
 
 /** A failed tool card and the streaming thinking start open; the reader's choice wins. */
-export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>) => opened.get(row.id) ?? (row.id === LIVE_THOUGHT || row.tool?.state === "failed");
+export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>) => opened.get(row.id) ?? (row.id === LIVE_THOUGHT || row.tool?.state === "failed" || showsDiff(row));
 
 /** The `system_kind` of a record that no parser maps (ADR 0139). */
 export const UNMAPPED = "unmapped";
@@ -284,7 +292,7 @@ export function lines(rows: readonly Row[], s: LineState): Line[] {
     unmapped.push(...(row.steps ?? []).filter((step) => step.collapsed && step.system_kind === UNMAPPED));
     const open = s.folds.isOpen(row);
     out.push({ id: row.id, row, fold: null, open });
-    if (open) for (const step of row.steps ?? []) if (!step.collapsed) out.push({ id: step.id, row: step, fold: row, open: cardOpen(step, s.opened) });
+    for (const step of row.steps ?? []) if (!step.collapsed && (open || showsDiff(step))) out.push({ id: step.id, row: step, fold: row, open: cardOpen(step, s.opened) });
   }
 
   if (unmapped.length) {

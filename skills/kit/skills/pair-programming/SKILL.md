@@ -149,14 +149,18 @@ lines is two behaviors, so split the list, not the chunk. Show three things and 
 1. one line of intent that names each input case the chunk handles, for example "reject an empty
    name (`""`)";
 2. the exact target `file:line`;
-3. the change as a unified diff in a `diff` fence, made by a CLI tool, never a prose
-   description of the change.
+3. the change as a unified diff that a CLI tool made and `cat` shows, never a prose
+   description of the change and never a retyped copy.
 
 To make the diff, `cp` the target file into the scratchpad, make the one edit on that copy, and
-run `diff -u <target> <copy>`. Never write the whole proposed file out by hand; the copy plus one
-edit types only the changed lines. For a new file, write it in the scratchpad and diff against
-`/dev/null`. Paste the output as is; the `-` lines show what goes away and the `+` lines show
-what comes in. Keep the diff to the hunks of the chunk.
+run `diff -u <target> <copy> > <scratchpad>/chunk-<N>.diff`. Never write the whole proposed file
+out by hand; the copy plus one edit types only the changed lines. For a new file, write it in the
+scratchpad and diff against `/dev/null`. Keep the diff to the hunks of the chunk.
+
+Then show it with one command whose only argument is the file: `cat <scratchpad>/chunk-<N>.diff`.
+The Swarm app shows that output as an open diff card in place, so the reply does not repeat it.
+A retyped copy costs output and can differ from the file that `patch` applies. In a host that folds
+tool output, such as a terminal CLI, also paste the `cat` output as is in a `diff` fence.
 
 A chunk touches only what its behavior sentence names. No new helper, field, export, flag, case, or
 todo goes in unless the sentence names it. In two real runs the user removed handling the behavior
@@ -188,7 +192,7 @@ Then wait for one of three replies:
 The check line is the check's own output, such as `1 passed`, and `1 passed, a1b2c3d` after a
 behavior commit.
 
-Save the `diff -u` output to `<scratchpad>/chunk-<N>.diff`. On `approve`, apply it yourself with
+On `approve`, apply the shown file yourself with
 `patch <target> <scratchpad>/chunk-<N>.diff`. Never spawn a chunk writer or any other worker; the
 diff already is the change, and a worker would only re-type it. Pair mode is an explicit exception
 to a host contract that sends edits to a coding seat.

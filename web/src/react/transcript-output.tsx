@@ -131,4 +131,35 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
   );
 }
 
-export { DiffView, OutputBox, plural, setSplit };
+/** A tool output that the server marks as a shown diff: Unified or Split, the whole patch, Copy patch. */
+function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; full: ReadonlyMap<string, FullText> }) {
+  const split = useSplit();
+  const f = full.get(preview.id);
+  // The owner reviews the whole chunk, so a cut preview loads the rest at once.
+  useEffect(() => {
+    if (preview.is_truncated) void app.loadFull(preview.id);
+  }, [app, preview.id, preview.is_truncated]);
+  const ready = f?.state === "ready";
+  return (
+    <div className="diff" data-testid="shown-diff" data-preview={preview.id} data-split={split}>
+      <div className="diff-head">
+        <span className="flex-1" />
+        <div className="seg" role="group" aria-label="Diff layout">
+          <button type="button" aria-pressed={!split} onClick={() => setSplit(false)}>
+            Unified
+          </button>
+          <button type="button" aria-pressed={split} onClick={() => setSplit(true)}>
+            Split
+          </button>
+        </div>
+        <button type="button" className="t-link" onClick={(e) => copyText(preview.is_truncated ? app.fullText(preview.id) : preview.text, "patch", e.currentTarget)}>
+          <CopyIcon className="size-3" /> Copy patch
+        </button>
+      </div>
+      <PatchBody patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} previewId={preview.id} fileLabels />
+      {preview.is_truncated && !ready && <div className="px-2 pb-1.5 text-xs text-muted-foreground">{f?.state === "error" ? <span className="text-failed">{f.error}</span> : "Loading the full patch…"}</div>}
+    </div>
+  );
+}
+
+export { DiffView, OutputBox, ShownDiff, plural, setSplit };

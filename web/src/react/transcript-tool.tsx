@@ -1,8 +1,8 @@
 // Tool cards, shell runs, and their status glyphs.
 import { CheckIcon, CircleHelpIcon, CircleIcon, CircleStopIcon, XIcon } from "lucide-react";
 import type { ToolState } from "../core/api";
-import { duration } from "../core/transcript";
-import { DiffView, OutputBox, plural } from "./transcript-output";
+import { duration, showsDiff } from "../core/transcript";
+import { DiffView, OutputBox, ShownDiff, plural } from "./transcript-output";
 import type { Ctx } from "./transcript-row";
 
 export function StatusGlyph({ state }: { state: ToolState }) {
@@ -53,7 +53,11 @@ function ToolCard({ app, line, full }: Ctx) {
           <pre className="plain">{t.skill_body.text}</pre>
         </details>
       )}
-      {line.open && (
+      {line.open && t.output && showsDiff(line.row) ? (
+        <div className="card-body card-indent">
+          <ShownDiff app={app} preview={t.output} full={full} />
+        </div>
+      ) : line.open && (
         <div className="card-body card-indent">
           {t.command && <pre className="plain">{t.command}</pre>}
           {t.path && <div className="font-mono text-xs break-all">{t.path}</div>}

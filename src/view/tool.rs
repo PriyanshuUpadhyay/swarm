@@ -57,6 +57,16 @@ pub fn command(input: &Value, name: &str) -> Option<String> {
         None
     }
 }
+/// `cat <file>.diff`, the one command an agent runs to show a saved patch for review
+/// (pair-programming's chunk loop). The app shows its output as an open diff card.
+pub fn shows_diff(command: &str) -> bool {
+    let mut words = command.split_whitespace();
+    words.next() == Some("cat")
+        && words
+            .next()
+            .is_some_and(|file| file.trim_matches(['\'', '"']).ends_with(".diff"))
+        && words.next().is_none()
+}
 pub fn path(input: &Value) -> Option<String> {
     ["file_path", "TargetFile", "AbsolutePath", "path"]
         .into_iter()

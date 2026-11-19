@@ -24,6 +24,7 @@ async fn full_diff_uses_source_ordinal_and_retains_all_lines() {
             session: fixture.session.clone(),
             agent: "chair".into(),
             row: locator.into(),
+            diff: false,
         }),
     )
     .await

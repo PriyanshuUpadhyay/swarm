@@ -7,6 +7,9 @@ pub(super) struct ToolOutputQuery {
     pub(super) session: String,
     pub(super) agent: String,
     pub(super) row: String,
+    /// Asks for the Unified and Split layout of an output that `shows_diff` marks.
+    #[serde(default)]
+    pub(super) diff: bool,
 }
 pub(super) fn output_locator(rows: &[Row], id: &str) -> Option<String> {
     for row in rows {
@@ -201,7 +204,7 @@ pub(super) async fn tool_output(
             (_, "output") => view::record_text(event),
             _ => return Err(error(StatusCode::NOT_FOUND, "unknown tool output")),
         };
-        let patch = view::patch_wire::text_patch(&text, component == "diff");
+        let patch = view::patch_wire::text_patch(&text, component == "diff" || query.diff);
         let mut body = json!({"text": text});
         if let Some(patch) = patch {
             body["patch"] = patch;

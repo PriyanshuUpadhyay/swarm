@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { open, row, rows } from "./ux-helpers";
+import { mockRows, open, row, rows } from "./ux-helpers";
+import type { PatchInfo, Row, TextPreview } from "../src/core/api";
 
 // HAND paths differ from text, so a browser reparse cannot pass this case.
 test("S8d images paint served paths on pages, older rows, upserts and snapshot queues", async ({ page: tab }, info) => {
@@ -86,4 +87,40 @@ test("the ⌘N composer takes a pasted image and holds Start until it is stored"
   await expect(prompt).toHaveValue(/^Look at this .*123456789abc\.png.* please$/);
   await expect(overlay.getByRole("button", { name: "Remove image", exact: true })).toBeAttached();
   await tab.keyboard.press("Escape");
+});
+
+test("a shown chunk diff opens outside its closed fold with the whole patch in Unified and Split", async ({ page: tab }) => {
+  const tool = (id: string, command: string, output: TextPreview): Row => ({
+    ...row(id, command, "toolUse"),
+    tool: { name: "Bash", input: { command }, command, output, state: "finished", header_title: command },
+  });
+  const chunk: TextPreview = { id: "chunk-out", text: "--- a.ts\n+++ a.ts.new\n@@ -1 +1 @@", is_truncated: true, full_lines: 5, full_bytes: 40, hidden_lines: 2 };
+  const fold: Row = {
+    ...row("f1", "2 commands", "fold"),
+    default_open: false,
+    fold: { commands: 2, waits: 0, rings: 0, failed: 0, interrupted: 0, unreported: 0, latest_title: "cat", state: "finished", text: "Ran 2 commands" },
+    steps: [tool("s1", "ls", { id: "ls-out", text: "a.ts", full_lines: 1, full_bytes: 4, hidden_lines: 0 }), tool("s2", "cat /tmp/pair/chunk-9.diff", chunk)],
+  };
+  const layout = (text: string): PatchInfo => {
+    const kinds = { "-": "del", "+": "add", "@": "hunk" } as const;
+    const lines = text.split("\n").map((t) => ({ kind: t.startsWith("---") || t.startsWith("+++") ? "meta" : (kinds[t[0] as keyof typeof kinds] ?? "ctx"), text: t, ...(t.startsWith("-") && !t.startsWith("---") && { old: 1 }), ...(t.startsWith("+") && !t.startsWith("+++") && { new: 1 }) })) as Extract<PatchInfo, { lines: unknown }>["lines"];
+    const split = lines.length > 3 ? [{ h: 2 }, { l: 3, r: 4 }] : [{ h: 2 }];
+    return { lines, split };
+  };
+  await mockRows(tab, [fold], 0, { "chunk-out": layout(chunk.text) });
+  const asked: string[] = [];
+  const full = "--- a.ts\n+++ a.ts.new\n@@ -1 +1 @@\n-old line\n+new line";
+  await tab.route("**/api/tool-output?*", (route) => {
+    asked.push(new URL(route.request().url()).searchParams.get("diff") ?? "");
+    return route.fulfill({ json: { text: full, patch: layout(full) } });
+  });
+  await open(tab);
+
+  const shown = tab.getByTestId("shown-diff");
+  await expect(shown).toContainText("new line");
+  expect(asked).toEqual(["true"]);
+  await expect(tab.getByText("a.ts", { exact: true })).toBeHidden();
+  await shown.getByRole("button", { name: "Split", exact: true }).click();
+  await expect(shown).toHaveAttribute("data-split", "true");
+  await expect(shown).toContainText("old line");
 });

@@ -90,10 +90,11 @@ fn patch_value(utf16: &[u16], diff: bool) -> Value {
     json!({"lines": lines, "split": split})
 }
 
-fn note_text(patches: &mut BTreeMap<String, Value>, preview: &TextPreview) {
+/// `diff` asks for the Unified and Split layout, not only line colours.
+fn note_text(patches: &mut BTreeMap<String, Value>, preview: &TextPreview, diff: bool) {
     let utf16: Vec<_> = preview.text.encode_utf16().collect();
     if display_patch::is_patch(&utf16) {
-        patches.insert(preview.id.clone(), patch_value(&utf16, false));
+        patches.insert(preview.id.clone(), patch_value(&utf16, diff));
     }
 }
 
@@ -112,10 +113,15 @@ pub fn row_patches(rows: &[Row]) -> BTreeMap<String, Value> {
                 patches.insert(diff.id.clone(), entry);
             }
         }
+        if let Some(tool) = &row.tool
+            && let Some(output) = &tool.output
+        {
+            let diff = tool.command.as_deref().is_some_and(crate::view::shows_diff);
+            note_text(&mut patches, output, diff);
+        }
         for preview in row
             .output
             .iter()
-            .chain(row.tool.iter().filter_map(|tool| tool.output.as_ref()))
             .chain(row.shell.iter().map(|shell| &shell.output))
             .chain(
                 row.command
@@ -123,8 +129,40 @@ pub fn row_patches(rows: &[Row]) -> BTreeMap<String, Value> {
                     .filter_map(|command| command.output.as_ref()),
             )
         {
-            note_text(&mut patches, preview);
+            note_text(&mut patches, preview, false);
         }
     }
     patches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::builder;
+    use super::super::records::Record;
+    use serde_json::json;
+
+    #[test]
+    fn a_shown_chunk_diff_gets_the_split_layout_and_other_patch_output_only_colours() {
+        let patch = "--- a.txt\n+++ a.txt.new\n@@ -1 +1 @@\n-old\n+new\n";
+        let call = |id: &str, command: &str| {
+            [
+                json!({"type": "tool_call", "tool_call_id": id, "name": "Bash", "input": {"command": command}, "status": "pending"}),
+                json!({"type": "tool_call_update", "tool_call_id": id, "status": "completed", "content": patch}),
+            ]
+        };
+        let records: Vec<_> = call("c1", "cat /tmp/pair/chunk-9.diff")
+            .into_iter()
+            .chain(call("c2", "git diff"))
+            .enumerate()
+            .map(|(index, event)| Record::new(event, format!("raw-{index}"), false))
+            .collect();
+        let rows = builder::rows(&records, false, false);
+        let steps: Vec<_> = rows.iter().filter(|row| row.tool.is_some()).collect();
+        let patches = super::row_patches(&rows);
+        let entry =
+            |i: usize| &patches[&steps[i].tool.as_ref().unwrap().output.as_ref().unwrap().id];
+
+        assert!(entry(0).get("split").is_some(), "{}", entry(0));
+        assert!(entry(1).get("kinds").is_some(), "{}", entry(1));
+    }
 }

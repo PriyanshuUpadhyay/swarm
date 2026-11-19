@@ -463,3 +463,30 @@ fn patch_entries_cover_tool_diffs_fold_steps_and_full_output() {
 
 #[path = "fence_wire.rs"]
 mod fence_wire;
+
+/// An agent shows a saved chunk with `cat <file>.diff` (pair-programming). The row page and the
+/// full output carry the Unified and Split layout for it, so the web shows it as a diff card.
+#[test]
+fn a_shown_chunk_diff_carries_the_diff_layout_on_the_page_and_the_full_output() {
+    let server = Server::new();
+    let patch = "--- a.ts\n+++ a.ts.new\n@@ -1 +1 @@\n-old\n+new\n";
+    let call = json!({"type":"assistant","uuid":"chunk-call","message":{"content":[{"type":"tool_use","id":"chunk-tool","name":"Bash","input":{"command":"cat /tmp/pair/chunk-1.diff"}}]}}).to_string()+"\n";
+    let result = json!({"type":"user","uuid":"chunk-result","message":{"content":[{"type":"tool_result","tool_use_id":"chunk-tool","content":patch}]}}).to_string()+"\n";
+    fs::write(&server.log, format!("{call}{result}")).unwrap();
+    let page_path = format!("/api/rows?session={}&agent=chair&tail=200", server.session);
+    let (status, _, body) = server.request("GET", &page_path, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    let page: Value = serde_json::from_str(&body).unwrap();
+    let output = page["rows"][0]["tool"]["output"]["id"].as_str().unwrap();
+    assert!(page["patch"][output]["split"].is_array(), "{body}");
+
+    let full = format!(
+        "/api/tool-output?session={}&agent=chair&row={output}&diff=true",
+        server.session
+    );
+    let (status, _, body) = server.request("GET", &full, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["text"], patch);
+    assert!(body["patch"]["split"].is_array(), "{body}");
+}
