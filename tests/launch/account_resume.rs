@@ -77,6 +77,9 @@ fn a_pi_default_launch_records_the_model_pi_settings_name() {
 fn a_pi_launch_on_openai_codex_gets_the_codex_account() {
     let home = scratch("pi-codex-account");
     tool(&home, "pi", "true");
+    let profile = home.join(".pi/agent/extensions/codex-profile.ts");
+    std::fs::create_dir_all(profile.parent().unwrap()).unwrap();
+    std::fs::write(&profile, "").unwrap();
     tool(
         &home,
         "codex",
@@ -135,6 +138,7 @@ fn a_pi_launch_on_openai_codex_gets_the_codex_account() {
         "'-u' 'PI_CODEX_HOME'".to_string(),
         format!("'PI_CODEX_HOME={}'", codex_home.display()),
         "'PI_CODEX_PROFILE=work'".into(),
+        format!("'--extension' '{}'", profile.display()),
     ] {
         assert!(command.contains(&part), "{part} not in {command}");
     }
