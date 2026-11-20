@@ -35,9 +35,9 @@ fn native_subagent_model(provider: Provider, event: &str, payload: &str) -> Opti
     }
     let call: serde_json::Value = serde_json::from_str(payload).ok()?;
     let tool = call["tool_name"].as_str()?;
-    if !tool.eq_ignore_ascii_case(spawn_tool)
-        && !(provider == Provider::Claude && tool.eq_ignore_ascii_case("Task"))
-    {
+    let is_spawn = tool.eq_ignore_ascii_case(spawn_tool)
+        || (provider == Provider::Claude && tool.eq_ignore_ascii_case("Task"));
+    if !is_spawn {
         return None;
     }
     let model = call["tool_input"]["model"].as_str()?.rsplit('/').next()?;

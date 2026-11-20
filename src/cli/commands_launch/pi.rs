@@ -109,7 +109,7 @@ pub(crate) fn child_argv(args: &[String]) -> Result<(), Box<dyn std::error::Erro
         false,
     )?;
     let parent = fs::canonicalize(parent)?;
-    if !parent.is_file() || !parent.extension().is_some_and(|ext| ext == "jsonl") {
+    if !parent.is_file() || parent.extension().is_none_or(|ext| ext != "jsonl") {
         return Err("swarm: the Pi parent has no saved session".into());
     }
     let dir =
