@@ -55,6 +55,15 @@ pub(crate) fn owner_prompt(
 ) -> Option<swarm::screen::Prompt> {
     swarm::screen::agent_prompt(provider, screen, &capture, log.map(std::path::Path::new)).or_else(
         || {
+            if let Some(status) = swarm::screen::herdr_state(screen) {
+                if status != swarm::screen::ScreenState::Blocked {
+                    return None;
+                }
+                let rows = capture()?;
+                return swarm::screen::waits_on_owner(provider, Some("blocked"), &rows)
+                    .then(|| swarm::screen::screen_prompt(&rows))
+                    .flatten();
+            }
             // The screen can show a wait before any hook reports it, such as a folder trust
             // question at launch.
             let state = match swarm::screen::read_pane(provider, screen, &capture) {
@@ -67,4 +76,19 @@ pub(crate) fn owner_prompt(
                 .and_then(|rows| swarm::screen::screen_prompt(&rows))
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audit_regression_herdr_blocked_status_shows_a_live_card() {
+        let blocked = r#"{"result":{"agent":{"agent_status":"blocked"}}}"#;
+        let idle = r#"{"result":{"agent":{"agent_status":"idle"}}}"#;
+        let dialog = || Some("Allow access to this folder?".to_string());
+        let card = owner_prompt(Some("claude"), None, blocked, dialog, None).unwrap();
+        assert!(card.screen);
+        assert!(owner_prompt(Some("claude"), Some("done"), idle, dialog, None).is_none());
+    }
 }
