@@ -277,8 +277,11 @@ mod tests {
     #[test]
     fn screen_returns_by_the_deadline_when_a_child_keeps_stdout_open() {
         let adapter = parse("probe", &format!("{FULL}screen = sleep 30 & printf rows\n")).unwrap();
+        let started = std::time::Instant::now();
         // The shell must print and exit within the timeout, which a loaded machine can delay.
         let text = adapter.screen(&[], std::time::Duration::from_secs(1));
+        // The child holds stdout for 30 s, so the deadline must end the read.
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert_eq!(text.as_deref(), Some("rows"));
     }
 

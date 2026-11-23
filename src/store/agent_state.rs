@@ -169,11 +169,13 @@ mod tests {
         )
         .unwrap();
         let rows = agents(&connection, SESSION).unwrap();
+
         let coder = rows.iter().find(|row| row.id == CODER).unwrap();
         let orchestrator = rows.iter().find(|row| row.id == ORCHESTRATOR).unwrap();
         assert_eq!(coder.state.as_deref(), Some("error"));
         assert_eq!(coder.state_detail.as_deref(), Some("rate_limit"));
         assert_eq!(orchestrator.state, None);
+
         assert_eq!(
             set_state(
                 &connection,
@@ -215,9 +217,12 @@ mod tests {
             )
             .is_err()
         );
+
         assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, None, 42).is_err());
+
         {
             let connection = seed();
+
             for (state, kind) in [("done", "permission"), ("blocked", "unknown")] {
                 let refused = set_state(
                     &connection,
@@ -230,6 +235,7 @@ mod tests {
                     100,
                 )
                 .is_err();
+
                 assert!(refused);
                 assert_eq!(agents(&connection, SESSION).unwrap()[0].state, None);
             }
@@ -314,12 +320,14 @@ mod tests {
             101,
         )
         .unwrap();
+
         assert_eq!(
             agents(&connection, SESSION).unwrap()[0]
                 .state_kind
                 .as_deref(),
             Some("permission")
         );
+
         set_state(
             &connection,
             SESSION,
@@ -331,6 +339,7 @@ mod tests {
             102,
         )
         .unwrap();
+
         assert_eq!(agents(&connection, SESSION).unwrap()[0].state_kind, None);
         set_state(
             &connection,
@@ -343,9 +352,11 @@ mod tests {
             103,
         )
         .unwrap();
+
         assert_eq!(agents(&connection, SESSION).unwrap()[0].state_kind, None);
         {
             let connection = seed();
+
             set_state(
                 &connection,
                 SESSION,
@@ -357,8 +368,11 @@ mod tests {
                 100,
             )
             .unwrap();
+
             set_state(&connection, SESSION, CODER, "done", "hook", None, None, 110).unwrap();
+
             let coder = &agents(&connection, SESSION).unwrap()[0];
+
             assert_eq!(coder.state.as_deref(), Some("done"));
             assert_eq!(coder.state_kind, None);
         }
@@ -378,6 +392,7 @@ mod tests {
             100,
         )
         .unwrap();
+
         // The listing read state_at 100; a hook reports waiting before the screen write lands.
         set_state(
             &connection,
@@ -390,6 +405,7 @@ mod tests {
             105,
         )
         .unwrap();
+
         let read = (Some("working"), Some("hook"), Some(100), None);
         let written =
             set_screen_state(&connection, SESSION, CODER, "done", None, 110, read).unwrap();
@@ -399,16 +415,19 @@ mod tests {
             .into_iter()
             .find(|row| row.id == CODER)
             .unwrap();
+
         assert_eq!(coder.state.as_deref(), Some("blocked"));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
         let latest = (Some("blocked"), Some("hook"), Some(105), None);
         assert!(set_screen_state(&connection, SESSION, CODER, "done", None, 111, latest).unwrap());
         let unset = (None, None, None, None);
+
         assert!(
             set_screen_state(&connection, SESSION, ORCHESTRATOR, "done", None, 112, unset).unwrap()
         );
         {
             let connection = seed();
+
             set_state(
                 &connection,
                 SESSION,
@@ -420,7 +439,9 @@ mod tests {
                 100,
             )
             .unwrap();
+
             let read = (Some("blocked"), Some("hook"), Some(100), Some("permission"));
+
             set_state(
                 &connection,
                 SESSION,
@@ -432,15 +453,18 @@ mod tests {
                 100,
             )
             .unwrap();
+
             assert!(
                 !set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap()
             );
+
             let coder = &agents(&connection, SESSION).unwrap()[0];
             assert_eq!(coder.state.as_deref(), Some("blocked"));
             assert_eq!(coder.state_kind.as_deref(), Some("question"));
         }
         {
             let connection = seed();
+
             set_screen_state(
                 &connection,
                 SESSION,
@@ -451,6 +475,7 @@ mod tests {
                 (None, None, None, None),
             )
             .unwrap();
+
             // The listing read (working, screen, 100); a hook reports waiting in that same second.
             set_state(
                 &connection,
@@ -463,6 +488,7 @@ mod tests {
                 100,
             )
             .unwrap();
+
             let read = (Some("working"), Some("screen"), Some(100), None);
             assert!(
                 !set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap()
@@ -472,6 +498,7 @@ mod tests {
                 .into_iter()
                 .find(|row| row.id == CODER)
                 .unwrap();
+
             assert_eq!(coder.state.as_deref(), Some("blocked"));
         }
     }

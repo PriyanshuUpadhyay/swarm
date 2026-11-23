@@ -101,8 +101,8 @@ import Testing
 }
 
 @Test func codexPetManifestRefusesBadFrames() {
-    // A path outside the folder is refused by the loader (RenewalTests, codexPetsLoadFromTheirFolders...).
-    for json in [#"{"frame":{"width":0,"height":208,"columns":8,"rows":9}}"#,
+    for json in [#"{"spritesheetPath":"/etc/x.webp"}"#, #"{"spritesheetPath":"~/x.webp"}"#,
+                 #"{"frame":{"width":0,"height":208,"columns":8,"rows":9}}"#,
                  #"{"animations":{"idle":{"frames":[72]}}}"#, #"{"animations":{"idle":{"frames":[]}}}"#] {
         #expect(throws: (any Error).self) { try CodexPetManifest.parse(Data(json.utf8), folder: "p") }
     }

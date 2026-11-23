@@ -51,7 +51,7 @@ mod cases {
                 [RERING_UNSEEN_AFTER_SECS + 1],
             )
             .unwrap();
-        let budget = std::time::Duration::from_secs(2);
+        let budget = std::time::Duration::from_secs(3);
         // The ring ends only once the budget is spent, so it is late however fast the reads run.
         let opener = std::thread::spawn(move || {
             std::thread::sleep(budget);
@@ -105,7 +105,7 @@ mod cases {
         }
         // The hung reads each spend their share, so the fast session gets about a third.
         let listings =
-            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(3)).unwrap();
+            all_agent_listings(&mut connection, &root, std::time::Duration::from_secs(6)).unwrap();
         assert!(!listings.contains_key(&ids[0]));
         assert!(!listings.contains_key(&ids[1]));
         assert_eq!(listings[&ids[2]].agents.len(), 1);

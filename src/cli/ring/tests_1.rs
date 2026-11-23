@@ -55,7 +55,10 @@ mod cases {
         short_rings();
         let (root, mut connection, session) =
             ring_session("hung-ring", Some("codex"), "ring = sleep 60", "› \n");
+        let started = std::time::Instant::now();
         let seq = send_task(&root, &mut connection, &session);
+        // A loose bound, so a ring with no deadline fails instead of hanging the run.
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
         assert_eq!(
             delivery_of(&connection, &session, seq).as_deref(),
             Some("unconfirmed")
@@ -65,7 +68,7 @@ mod cases {
 
     #[test]
     fn claude_rering_presses_enter_after_the_session_deadline() {
-        short_rings();
+        patient_rings();
         let root = std::env::temp_dir().join(format!("swarm-claude-ring-{}", uuid::Uuid::now_v7()));
         let mut connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
         let session = swarm::store::create_session(&connection, "lane", &root, None, None).unwrap();
@@ -88,14 +91,14 @@ mod cases {
         let screen = root.join("screen");
         let log = root.join("log");
         std::fs::write(&screen, "────\n❯ \n────\n").unwrap();
-        // The ring stays typed in the composer until a key clears it.
+        // The ring stays typed in the composer until Enter starts a turn, which proves the ring.
         let mut adapter = swarm::adapter::parse(
             "fake",
             &format!(
                 "self = true\nspawn = true\nlist = true\nclose = true\n\
                  capture = cat \"$SWARM_PANE\"\n\
                  ring = echo ring >> '{log}'; printf '────\\n❯ %s\\n────\\n' \"$SWARM_TEXT\" > \"$SWARM_PANE\"\n\
-                 key = echo \"$SWARM_KEY\" >> '{log}'; printf '────\\n❯ \\n────\\n' > \"$SWARM_PANE\"\n",
+                 key = echo \"$SWARM_KEY\" >> '{log}'; printf '✻ Thinking…\\n────\\n❯ \\n────\\n' > \"$SWARM_PANE\"\n",
                 log = log.display()
             ),
         )

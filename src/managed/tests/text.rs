@@ -6,11 +6,13 @@
     #[test]
     fn a_held_trust_lock_fails_after_the_wait_and_names_the_lock() {
         let dir = std::env::temp_dir().join(format!("swarm-lock-held-{}", std::process::id()));
+
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let lock = dir.join("trust.lock");
         let holder = std::fs::File::create(&lock).unwrap();
         holder.lock().unwrap();
+
         let wait = std::time::Duration::from_millis(200);
         let mut ran = false;
         let error = with_lock_within(&lock, wait, || {
@@ -18,6 +20,7 @@
             Ok(())
         })
         .unwrap_err();
+
         assert!(!ran, "the protected write ran without the lock");
         assert!(error.contains(&lock.display().to_string()), "{error}");
         drop(holder);

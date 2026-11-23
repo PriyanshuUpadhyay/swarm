@@ -225,12 +225,16 @@ capture = true
         holder.unlock().unwrap();
     });
     // A short adapter deadline in place of 18 s, so the ring that sleeps 25 s is cut off.
+    let started = std::time::Instant::now();
     let output = command(&home, &login("codex", "spare", &initial))
         .env("SWARM_TEST_LOGIN_ADAPTER_MS", "1000")
         .output()
         .unwrap();
     release.join().unwrap();
     assert!(!output.status.success());
+    // Loose bounds: the login waits for the lock, and the deadline ends the 25 s ring.
+    assert!(started.elapsed() >= lock_wait);
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot start native login"));
     assert_eq!(
         std::fs::read_to_string(home.join("closed-pane")).unwrap(),

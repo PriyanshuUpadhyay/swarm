@@ -253,6 +253,7 @@ fn hung_captures_share_one_limit() {
         ids.push(id.to_string());
     }
     CAPTURES_WAIT_FOR_TEST.with(|wait| wait.set(Some(std::time::Duration::from_millis(500))));
+    let started = std::time::Instant::now();
 
     close_agents(
         &mut connection,
@@ -264,7 +265,9 @@ fn hung_captures_share_one_limit() {
     )
     .unwrap();
 
-    // Four reads of CAPTURE_WAIT each would take 60 s; the shared limit ends them.
+    // Four reads of CAPTURE_WAIT each would take 60 s; the shared limit ends them. The bound is
+    // loose, so a lost limit fails here instead of passing slowly.
+    assert!(started.elapsed() < CAPTURE_WAIT, "{:?}", started.elapsed());
     for id in &ids {
         assert!(
             swarm::store::answered(&connection, &session, id).unwrap(),
@@ -324,9 +327,13 @@ fn a_death_note_is_not_saved_as_the_wrap_up() {
         })
     };
 
+    let started = std::time::Instant::now();
+
     close(&mut connection, &root, &session, Some(30));
 
     child.join().unwrap();
+    // The wait for the wrap-up is 30 s; the death ends it early.
+    assert!(started.elapsed() < std::time::Duration::from_secs(25));
     assert!(
         !root
             .join(format!("runs/{session}/{CODER}.summary.md"))
