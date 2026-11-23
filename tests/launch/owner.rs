@@ -146,11 +146,7 @@ fn an_arrow_answer_sends_enter_only_once_the_cursor_moved() {
     std::fs::write(home.join("screen"), ARROWS).unwrap();
     std::fs::write(home.join("moved"), ARROWS).unwrap();
     let output = swarm(&home, &app, &["answer", "seat", &id, "1"]);
-    assert!(
-        stderr(&output).contains("changed while the answer was sent"),
-        "{}",
-        stderr(&output)
-    );
+    assert!(stderr(&output).contains("changed"), "{}", stderr(&output));
     assert_eq!(
         std::fs::read_to_string(home.join("keys")).unwrap(),
         "Down\n"

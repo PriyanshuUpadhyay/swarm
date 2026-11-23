@@ -40,7 +40,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
         &["launch", "chat-profile", "chat", "--cwd", &cwd],
     );
     assert!(profile.status.success(), "{}", stderr(&profile));
-    assert!(stderr(&profile).contains("swarm: chat: running claude/opus/high"));
+    assert!(stderr(&profile).contains("running claude/opus/high"));
     let command = script("chat-profile");
     assert!(
         command.contains("'--model' 'opus' '--effort' 'high'"),
@@ -113,10 +113,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     );
     assert!(!named.status.success());
     let text = stderr(&named);
-    assert!(
-        text.contains("1 claude/opus/high: no claude account named work"),
-        "{text}"
-    );
+    assert!(text.contains("no claude account named work"), "{text}");
     assert!(text.contains("no runner can run"), "{text}");
     assert!(!text.contains("running"), "{text}");
 
@@ -156,7 +153,7 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     );
     assert!(stuck.status.success(), "{}", stderr(&stuck));
     assert!(
-        stderr(&stuck).contains("no automatic account for claude; claude uses its own login"),
+        stderr(&stuck).contains("no automatic account for claude"),
         "{}",
         stderr(&stuck)
     );

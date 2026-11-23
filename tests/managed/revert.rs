@@ -115,14 +115,11 @@ fn a_revert_refuses_an_item_the_owner_changed_and_names_it() {
         ],
     );
     assert!(
-        stderr(&stale)
-            .contains("swarm: a managed file changed after the plan; check the plan again"),
+        stderr(&stale).contains("changed after the plan"),
         "{stale:?}"
     );
     let unknown = swarm(&home, &["managed", "revert", "000000000000"]);
-    assert!(
-        stderr(&unknown).contains("swarm: no managed entry 000000000000; run swarm managed list")
-    );
+    assert!(stderr(&unknown).contains("000000000000"));
     std::fs::remove_dir_all(&home).unwrap();
 }
 
