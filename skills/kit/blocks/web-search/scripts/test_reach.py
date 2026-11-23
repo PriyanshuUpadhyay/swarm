@@ -48,6 +48,18 @@ def test_search_hn_gives_stories():
     assert json.loads(r.stdout)["url"] == "https://news.ycombinator.com/item?id=42"
 
 
+def test_search_survives_a_story_without_a_date():
+    hits = {"hits": [{"objectID": "42", "title": "AGENTS.md study", "created_at": None}]}
+    r = reach("search", "hn", "AGENTS.md", curl={"hn.algolia.com": [json.dumps(hits), 200]})
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["date"] == ""
+
+
+def test_a_bad_days_value_is_a_usage_error():
+    for days in ([], ["x"]):
+        assert reach("search", "hn", "AGENTS.md", "--days", *days).returncode == 2
+
+
 def test_read_falls_back_to_the_browser_when_the_reader_is_blocked():
     r = reach("read", "https://example.com/post", page="The post text")
     assert r.returncode == 0, r.stderr
