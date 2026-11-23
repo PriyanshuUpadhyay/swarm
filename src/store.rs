@@ -292,78 +292,9 @@ fn migrate_locked(connection: &mut Connection) -> Result<(), Box<dyn std::error:
         })
     };
     let broken_before = broken(&tx)?;
-    if version < 2 {
-        tx.execute_batch(MIGRATIONS[1])?;
-    }
-    if version < 3 {
-        tx.execute_batch(MIGRATIONS[2])?;
-    }
-    if version < 4 {
-        tx.execute_batch(MIGRATIONS[3])?;
-        tx.pragma_update(None, "user_version", 4)?;
-    }
-    if version < 5 {
-        tx.execute_batch(MIGRATIONS[4])?;
-        tx.pragma_update(None, "user_version", 5)?;
-    }
-    if version < 6 {
-        tx.execute_batch(MIGRATIONS[5])?;
-        tx.pragma_update(None, "user_version", 6)?;
-    }
-
-    if version < 7 {
-        tx.execute_batch(MIGRATIONS[6])?;
-        tx.pragma_update(None, "user_version", 7)?;
-    }
-
-    if version < 8 {
-        tx.execute_batch(MIGRATIONS[7])?;
-        tx.pragma_update(None, "user_version", 8)?;
-    }
-
-    if version < 9 {
-        tx.execute_batch(MIGRATIONS[8])?;
-        tx.pragma_update(None, "user_version", 9)?;
-    }
-
-    if version < 10 {
-        tx.execute_batch(MIGRATIONS[9])?;
-        tx.pragma_update(None, "user_version", 10)?;
-    }
-
-    if version < 11 {
-        tx.execute_batch(MIGRATIONS[10])?;
-        tx.pragma_update(None, "user_version", 11)?;
-    }
-
-    if version < 12 {
-        tx.execute_batch(MIGRATIONS[11])?;
-        tx.pragma_update(None, "user_version", 12)?;
-    }
-
-    if version < 13 {
-        tx.execute_batch(MIGRATIONS[12])?;
-        tx.pragma_update(None, "user_version", 13)?;
-    }
-
-    if version < 14 {
-        tx.execute_batch(MIGRATIONS[13])?;
-        tx.pragma_update(None, "user_version", 14)?;
-    }
-
-    if version < 15 {
-        tx.execute_batch(MIGRATIONS[14])?;
-        tx.pragma_update(None, "user_version", 15)?;
-    }
-
-    if version < 16 {
-        tx.execute_batch(MIGRATIONS[15])?;
-        tx.pragma_update(None, "user_version", 16)?;
-    }
-
-    if version < 17 {
-        tx.execute_batch(MIGRATIONS[16])?;
-        tx.pragma_update(None, "user_version", 17)?;
+    for (index, sql) in MIGRATIONS.iter().enumerate().skip(version.max(1) as usize) {
+        tx.execute_batch(sql)?;
+        tx.pragma_update(None, "user_version", index as i64 + 1)?;
     }
 
     let added = broken(&tx)? - broken_before;
