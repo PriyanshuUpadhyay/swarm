@@ -4,7 +4,7 @@
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -76,12 +76,14 @@ const GH = [
 export const GIANT_DIFF_LINES = 20_000;
 
 /** Provider stand-ins for the usage and account reads (S5): a signed-in Claude account, a keychain
- *  token that is not a secret, and a usage API answer. Codex has no CLI here, so its account reads
- *  as unavailable. No case reaches a provider, the network or the real keychain. */
+ *  token that is not a secret, and a usage API answer. Codex reports a sign-in only in cases
+ *  that set the fixture flag. No case reaches a provider, the network or the real keychain. */
 export const CLAUDE_EMAIL = "owner@example.invalid";
+export const CODEX_SIGN_IN_FLAG = "codex-signed-in";
 const STAND_INS: Record<string, string> = {
   // The `/` menu probe (`swarm commands`) sends one initialize request on stdin.
   claude: `case "$*" in *--input-format*) read -r _; printf '%s\\n' '{"type":"control_response","response":{"subtype":"success","request_id":"swarm-commands","response":{"commands":[{"name":"clear","description":"Clear the chat","argumentHint":"[name]","builtin":true},{"name":"swarm:plan","description":"(swarm) Plan one change","argumentHint":""}]}}}'; sleep 1 ;; *) printf '%s\\n' '{"loggedIn":true,"email":"${CLAUDE_EMAIL}"}' ;; esac`,
+  codex: `test -f "$HOME/${CODEX_SIGN_IN_FLAG}" || exit 1\n${readFileSync(join(repo, "tests/fixtures/accounts/work-app-server.sh"), "utf8")}`,
   security: `printf '%s\\n' '{"claudeAiOauth":{"accessToken":"e2e-not-a-token"}}'`,
   curl: `cat >/dev/null; printf '%s\\n200' '{"five_hour":{"utilization":13,"resets_at":"2099-01-01T00:00:00Z"},"seven_day":{"utilization":42}}'`,
 };
@@ -134,7 +136,7 @@ export default async function setup() {
     CODEX_HOME: join(home, ".codex"),
     USER: "e2e",
     SWARM_CLAUDE_CMD: join(dir, "stand-ins/claude"),
-    SWARM_CODEX_CMD: "/usr/bin/false",
+    SWARM_CODEX_CMD: join(dir, "stand-ins/codex"),
     SWARM_SECURITY_CMD: join(dir, "stand-ins/security"),
     SWARM_CURL_CMD: join(dir, "stand-ins/curl"),
     SWARM_CLAUDE_USAGE_URL: "http://usage.invalid/",

@@ -1,14 +1,26 @@
 import { expect, test } from "@playwright/test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CLAUDE_EMAIL, LOGIN_PANE } from "./serve";
+import { CLAUDE_EMAIL, CODEX_SIGN_IN_FLAG, LOGIN_PANE } from "./serve";
 
 // Usage meters and Settings (S5). Both browsers share one server home and one usage refresh limit,
 // so each case puts back what it changes, and the refresh case holds in either order.
 
 import { server, home, api, open, settings, shoot, swarm, due, choices, type Roles } from "./settings-helpers";
 
-test("usage meters show the cached reading, and a refresh waits for the server's 300 s limit", async ({ page: tab }, info) => {
+const usageTest = test.extend<{ codexSignIn: void }>({
+  codexSignIn: [async ({}, use) => {
+    const flag = join(home(), CODEX_SIGN_IN_FLAG);
+    writeFileSync(flag, "");
+    try {
+      await use();
+    } finally {
+      rmSync(flag, { force: true });
+    }
+  }, { auto: true }],
+});
+
+usageTest("usage meters show the cached reading, and a refresh waits for the server's 300 s limit", async ({ page: tab }, info) => {
   const errors = await open(tab);
   await expect(tab.getByTestId("usage-meters")).toHaveCount(0);
   let dialog = await settings(tab, "accounts");
