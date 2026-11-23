@@ -43,7 +43,8 @@ export type RowKind =
 
 export type ToolState = "waiting" | "finished" | "failed" | "interrupted" | "unreported";
 
-export type TextPreview = { id: string; text: string; is_truncated?: boolean; full_lines: number; full_bytes: number; hidden_lines: number };
+/** `tail` holds the last lines of a cut tool output; absent when `text` already ends with them. */
+export type TextPreview = { id: string; text: string; is_truncated?: boolean; full_lines: number; full_bytes: number; hidden_lines: number; tail?: string };
 
 export type DiffPreview = {
   old_path?: string;

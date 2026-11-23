@@ -10,6 +10,9 @@ pub struct TextPreview {
     pub full_lines: usize,
     pub full_bytes: usize,
     pub hidden_lines: usize,
+    /// The last lines of a cut tool output, for the closed card preview; empty when `text` has them.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub tail: String,
 }
 
 // The web size guard counts Unicode scalars and always cuts on a UTF-8 boundary.
@@ -41,8 +44,24 @@ impl TextPreview {
             full_lines,
             full_bytes: source.len(),
             hidden_lines: full_lines.saturating_sub(kept),
+            tail: String::new(),
         }
     }
+}
+
+/// pi shows the last 5 output lines of a closed bash call; the web client uses the same count.
+pub const PREVIEW_TAIL_LINES: usize = 5;
+
+/// The last `count` non-blank lines, oldest first.
+pub fn last_lines(text: &str, count: usize) -> String {
+    let mut lines: Vec<_> = text
+        .lines()
+        .rev()
+        .filter(|line| !line.trim().is_empty())
+        .take(count)
+        .collect();
+    lines.reverse();
+    lines.join("\n")
 }
 
 pub fn text_chunks(source: &str, limit: usize) -> Vec<String> {

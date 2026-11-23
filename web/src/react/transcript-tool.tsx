@@ -49,7 +49,7 @@ function ToolCard({ app, line, full }: Ctx) {
       </button>
       {line.preview && (
         <div className="card-preview card-indent" data-testid="tool-preview">
-          {line.preview}
+          {line.preview.split("\n").map((text, i) => <div key={i}>{text}</div>)}
         </div>
       )}
       {t.skill_body && (

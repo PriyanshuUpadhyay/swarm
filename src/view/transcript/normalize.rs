@@ -13,6 +13,7 @@ mod codex_facts;
 mod codex_items;
 mod codex_questions;
 mod codex_tools;
+mod groups;
 pub(super) mod pi;
 mod pi_text;
 

@@ -186,7 +186,7 @@ pub(super) async fn tool_output(
             .get(index)
             .ok_or_else(|| error(StatusCode::NOT_FOUND, "unknown tool output"))?;
         let text = match (view::string(event, "type"), component.as_str()) {
-            ("tool_call_update", "output") => view::string(event, "content").to_owned(),
+            ("tool_call_update", "output") => view::strip_terminal(view::string(event, "content")),
             ("tool_diff", "diff") => {
                 swarm::view::diff_patch(
                     &serde_json::from_value::<swarm::view::Diff>(event.clone())

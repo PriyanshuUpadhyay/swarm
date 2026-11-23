@@ -26,6 +26,7 @@ pub struct FoldSummary {
     pub state: ToolState,
     pub text: String,
 }
+/// A row that a live reader chunk keeps with its neighbours, so a chunk always holds a whole group.
 pub fn is_step(row: &Row) -> bool {
     row.tool.is_some()
         || (row.system_kind.as_deref() == Some("swarm_ring") && !row.starts_turn)
@@ -54,31 +55,38 @@ pub fn fold_expanded(
 // shortcut: folds hold at most 100 steps; raise this only after checking live frame cost.
 pub const FOLD_STEP_LIMIT: usize = 100;
 
+/// Groups the tool calls that the agent's own CLI draws as one group (ADR 0157): consecutive calls
+/// with the same `group` mark. Thinking and hidden records that arrive while a group is open go
+/// into it, as Claude Code and Codex do. Every other row ends the group, and an unmarked call is
+/// never grouped, so a pi chat has no groups.
 pub fn fold_rows(rows: Vec<Row>, shown: &HashSet<String>) -> Vec<Row> {
     fn flush(run: &mut Vec<Row>, items: &mut Vec<Row>, shown: &HashSet<String>) {
-        if run.iter().filter(|row| !row.collapsed).count() >= 2
-            && run.iter().any(|row| row.tool.is_some())
-        {
-            let id = format!("fold:{}", run.iter().find(|row| !row.collapsed).unwrap().id);
-            let summary = summary(run);
-            let mut fold = Row::new(RowKind::Fold, summary.text.clone(), id);
-            fold.order = run[0].order;
-            fold.default_open = fold_expanded(run, &HashMap::new(), shown);
-            fold.source_ids = run.iter().flat_map(|row| row.source_ids.clone()).collect();
-            fold.fold = Some(summary);
-            fold.steps = std::mem::take(run);
-            items.push(fold);
-        } else {
-            items.append(run);
-        }
+        let Some(first) = run.first() else {
+            return;
+        };
+        let id = format!("fold:{}", first.id);
+        let summary = summary(run);
+        let mut fold = Row::new(RowKind::Fold, summary.text.clone(), id);
+        fold.order = first.order;
+        fold.default_open = fold_expanded(run, &HashMap::new(), shown);
+        fold.source_ids = run.iter().flat_map(|row| row.source_ids.clone()).collect();
+        fold.fold = Some(summary);
+        fold.steps = std::mem::take(run);
+        items.push(fold);
     }
     let mut items = Vec::new();
-    let mut run = Vec::new();
+    let mut run: Vec<Row> = Vec::new();
     for row in rows {
-        if is_step(&row) {
-            if run.len() == FOLD_STEP_LIMIT {
+        let open = run.first().map(|first| first.group.as_str());
+        if row.tool.is_some() && !row.group.is_empty() {
+            if open != Some(row.group.as_str()) || run.len() == FOLD_STEP_LIMIT {
                 flush(&mut run, &mut items, shown);
             }
+            run.push(row);
+        } else if open.is_some()
+            && (row.kind == RowKind::Thought || row.collapsed)
+            && run.len() < FOLD_STEP_LIMIT
+        {
             run.push(row);
         } else {
             flush(&mut run, &mut items, shown);
@@ -156,29 +164,12 @@ pub fn summary(rows: &[Row]) -> FoldSummary {
     } else {
         ToolState::Finished
     };
-    let mut parts = Vec::new();
-    for (count, word) in [(result.commands, "command"), (result.waits, "wait")] {
-        if count > 0 {
-            parts.push(format!(
-                "{count} {word}{}",
-                if count == 1 { "" } else { "s" }
-            ));
-        }
-    }
-    parts.extend(result.other_tools.iter().map(|count| {
-        if count.count > 1 {
-            format!("{} ×{}", count.name, count.count)
-        } else {
-            count.name.clone()
-        }
-    }));
-    if result.rings > 0 {
-        parts.push(format!(
-            "{} ring{}",
-            result.rings,
-            if result.rings == 1 { "" } else { "s" }
-        ));
-    }
+    // Each group reads as the agent's own CLI labels it.
+    let mut parts = vec![match rows.first().map_or("", |row| row.group.as_str()) {
+        "explore" if result.is_running => "Exploring".to_owned(),
+        "explore" => "Explored".to_owned(),
+        _ => read_search_label(rows, result.is_running),
+    }];
     for (count, suffix) in [
         (result.interrupted, "interrupted"),
         (result.unreported, "no result"),
@@ -190,4 +181,57 @@ pub fn summary(rows: &[Row]) -> FoldSummary {
     }
     result.text = parts.join(" · ");
     result
+}
+
+/// Claude Code's label: "Searched for 2 patterns, read 3 files, listed 1 directory"; while the
+/// group runs, "Searching for", "reading", and "listing". A file read twice counts once.
+fn read_search_label(rows: &[Row], running: bool) -> String {
+    let tools: Vec<_> = rows
+        .iter()
+        .filter(|row| !row.collapsed && row.tool.is_some())
+        .collect();
+    let count = |part: &str| tools.iter().filter(|row| row.group_part == part).count();
+    let mut files = HashSet::new();
+    let reads = tools
+        .iter()
+        .filter(|row| row.group_part == "read")
+        .filter(
+            |row| match row.tool.as_ref().and_then(|tool| tool.path.as_deref()) {
+                Some(path) => files.insert(path),
+                None => true,
+            },
+        )
+        .count();
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let mut parts = Vec::new();
+    let searches = count("search");
+    if searches > 0 {
+        let verb = if running {
+            "searching for"
+        } else {
+            "searched for"
+        };
+        parts.push(format!(
+            "{verb} {}",
+            plural(searches, "pattern", "patterns")
+        ));
+    }
+    if reads > 0 {
+        let verb = if running { "reading" } else { "read" };
+        parts.push(format!("{verb} {}", plural(reads, "file", "files")));
+    }
+    let lists = count("list");
+    if lists > 0 {
+        let verb = if running { "listing" } else { "listed" };
+        parts.push(format!(
+            "{verb} {}",
+            plural(lists, "directory", "directories")
+        ));
+    }
+    let text = parts.join(", ");
+    let mut characters = text.chars();
+    characters.next().map_or(text.clone(), |first| {
+        first.to_uppercase().collect::<String>() + characters.as_str()
+    })
 }

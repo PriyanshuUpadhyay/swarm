@@ -23,7 +23,10 @@ pub mod workspace_panel;
 pub use fold::{
     FOLD_STEP_LIMIT, FoldSummary, fold_expanded, fold_rows, is_step, summary as fold_summary,
 };
-pub use preview::{Diff, DiffHunk, DiffPreview, TextPreview, diff_patch, text_chunks};
+pub use preview::{
+    Diff, DiffHunk, DiffPreview, PREVIEW_TAIL_LINES, TextPreview, diff_patch, last_lines,
+    text_chunks,
+};
 pub use tool::{
     ToolActivity, ToolState, command, duration, duration_label, exec_commands, exit_code, path,
     reports_failure, shows_diff, title,

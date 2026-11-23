@@ -369,14 +369,14 @@
 .card-indent {
   margin-left: 24px;
 }
-/* Full chat detail: the first output line under a closed card's header. */
-.card-preview {
+/* Full chat detail: a few output lines under a closed card's header; each line is cut at the edge. */
+.card-preview > div {
   overflow: hidden;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--muted-foreground);
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre;
 }
 /* Thinking reads as gray text in the flow, not as a code box. */
 .thought {

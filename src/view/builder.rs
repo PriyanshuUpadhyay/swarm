@@ -5,42 +5,15 @@ use super::transcript::{
     string, subagent_labels,
 };
 use super::{TextPreview, ToolActivity, ToolState};
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 #[path = "builder_codex.rs"]
 pub(super) mod codex;
 
-#[derive(Clone)]
-struct Anchor {
-    index: usize,
-    session: String,
-    scope: usize,
-}
-fn anchor_match(
-    id: &str,
-    event: &Value,
-    scope: usize,
-    anchors: &HashMap<String, Vec<Anchor>>,
-) -> Option<usize> {
-    if id.is_empty() {
-        return None;
-    }
-    let session = meta(event, "session_id");
-    let mut matches = anchors.get(id)?.iter().filter(|anchor| {
-        anchor.scope == scope
-            && (session.is_empty() || anchor.session.is_empty() || session == anchor.session)
-    });
-    let first = matches.next()?;
-    matches.next().is_none().then_some(first.index)
-}
-pub(super) fn starts_scope(kind: &str, saw_tool: bool) -> bool {
-    matches!(kind, "page" | "turn_started") || kind == "user_message_chunk" && saw_tool
-}
-
-pub(super) fn is_tool_event(kind: &str) -> bool {
-    matches!(kind, "tool_call" | "tool_call_update" | "tool_diff")
-}
+#[path = "builder_scope.rs"]
+mod scope;
+use scope::{Anchor, anchor_match};
+pub(super) use scope::{is_tool_event, starts_scope};
 
 pub fn rows(records: &[Record], has_older: bool, is_codex: bool) -> Vec<Row> {
     rows_with_context(records, has_older, is_codex, None)
@@ -136,6 +109,7 @@ pub(super) fn rows_with_context(
     }
 
     let mut updates = HashMap::<usize, Vec<usize>>::new();
+    let mut groups = HashMap::<usize, usize>::new();
     let mut diffs = HashMap::<usize, Vec<usize>>::new();
     let mut attached = HashMap::<usize, Vec<usize>>::new();
     let mut activity = HashMap::<usize, Vec<usize>>::new();
@@ -185,6 +159,10 @@ pub(super) fn rows_with_context(
             "tool_diff" => anchor_match(string(event, "tool_call_id"), event, scope, &calls)
                 .inspect(|&call| {
                     diffs.entry(call).or_default().push(index);
+                }),
+            "tool_group" => anchor_match(string(event, "tool_call_id"), event, scope, &calls)
+                .inspect(|&call| {
+                    groups.insert(call, index);
                 }),
             "system_message" => {
                 let target = match kind {
@@ -376,6 +354,11 @@ pub(super) fn rows_with_context(
                     }),
                     skill_body: None,
                 });
+                let mark = groups
+                    .get(&index)
+                    .map_or(event, |index| &records[*index].event);
+                row.group = string(mark, "group").into();
+                row.group_part = string(mark, "group_part").into();
             }
         }
         for source in attached.get(&index).into_iter().flatten() {
@@ -431,6 +414,7 @@ pub(super) fn rows_with_context(
         row.anchor_source_id = record.source_id.clone();
         let mut sources = vec![index];
         sources.extend(updates.get(&index).into_iter().flatten());
+        sources.extend(groups.get(&index));
         sources.extend(diffs.get(&index).into_iter().flatten());
         sources.extend(attached.get(&index).into_iter().flatten());
         sources.extend(activity.get(&index).into_iter().flatten());

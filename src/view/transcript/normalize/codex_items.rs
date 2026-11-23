@@ -78,6 +78,7 @@ pub(super) fn append(
                 "pending",
                 Input::Scalar(json!({"cmd":command, "cwd":item.text("cwd")})),
             );
+            super::codex_facts::explore_mark(fact, &item, &id);
             output(fact, &item, &id, item.text("aggregated_output"));
         }
 

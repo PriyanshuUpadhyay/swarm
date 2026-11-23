@@ -29,7 +29,7 @@ pub use events::row;
 pub(super) use events::subagent_labels;
 pub use records::Record;
 pub(super) use shell::shell_row;
-pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run};
+pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run, strip_terminal};
 pub use state::{
     ChatUsage, UsageState, clear_boundary, queued, usage, view_rows, view_rows_with_context,
 };
@@ -121,6 +121,12 @@ pub struct Row {
     pub source_ids: Vec<String>,
     #[serde(skip)]
     pub anchor_source_id: String,
+    /// The group that the agent's CLI draws this tool call in (`fold_rows`); empty when none.
+    #[serde(skip)]
+    pub group: String,
+    /// What the call counts as in its group's label, such as "read" or "search".
+    #[serde(skip)]
+    pub group_part: String,
     #[serde(skip_serializing_if = "super::is_false")]
     pub ends_turn: bool,
     #[serde(skip_serializing_if = "super::is_false")]
@@ -164,6 +170,8 @@ impl Row {
             subagent: None,
             source_ids: Vec::new(),
             anchor_source_id: String::new(),
+            group: String::new(),
+            group_part: String::new(),
             ends_turn: false,
             starts_turn: false,
             arrives_mid_turn: false,

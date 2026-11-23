@@ -55,7 +55,13 @@ pub(super) fn call(
             input: Input,
             status: &'static str,
             meta: &'a Value,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            group: Option<&'static str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            group_part: Option<&'static str>,
         }
+        let group_part =
+            super::groups::claude_part(&name, block.get("input").and_then(Object::parse).as_ref());
         events.push(NormalizedEvent::new(&Call {
             kind: "tool_call",
             tool_call_id: id,
@@ -63,6 +69,8 @@ pub(super) fn call(
             input,
             status: "pending",
             meta,
+            group: group_part.map(|_| super::groups::READ_SEARCH),
+            group_part,
         }));
     }
     Ok(())

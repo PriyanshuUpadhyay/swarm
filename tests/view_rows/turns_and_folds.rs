@@ -151,15 +151,6 @@ fn window_starts_mid_turn() {
                 .collect::<Vec<_>>(),
             [false, true]
         );
-        let folded = view::fold_rows(rows, &HashSet::new());
-        assert_eq!(
-            folded[0]
-                .steps
-                .iter()
-                .map(|row| row.id.as_str())
-                .collect::<Vec<_>>(),
-            ["c1:call", "ring-1:ring", "c2:call"]
-        );
     }
     let idle = transcript::rows(
         &records(
@@ -250,37 +241,60 @@ fn ring_keeps_tool_scope() {
     );
     assert_eq!(tool(&rows[1]).output.as_ref().unwrap().text, "ok");
 }
+/// Rows of real log lines, with `fold_rows` applied as the reader does.
+fn folded(format: &str, lines: &[&str]) -> Vec<Row> {
+    let codex = format == "codex";
+    let rows = transcript::rows(&records(inline_fixture(format, lines), codex), false, codex);
+    view::fold_rows(rows, &HashSet::new())
+}
 #[test]
-fn folds_keep_hidden_steps_and_open_failed_runs() {
-    let rows = build(vec![
-        user("Fix the build", "prompt"),
-        system("injected", "reminder", "hidden", ""),
-        call("read", "Read", json!({})),
-        call("make", "Bash", json!({"command":"make"})),
-        update("make", "failed", "Exit code 1"),
-        assistant("I found the cause.", "answer"),
-    ]);
-    let folded = view::fold_rows(rows.clone(), &HashSet::new());
-    assert_eq!(folded[1].id, "fold:read:call");
-    assert!(folded[1].default_open);
-    assert_eq!(folded[1].steps.len(), 3);
-    assert_eq!(folded[1].fold.as_ref().unwrap().failed, 1);
-    let flattened = folded
-        .iter()
-        .flat_map(|row| {
-            if row.kind == RowKind::Fold {
-                row.steps.clone()
-            } else {
-                vec![row.clone()]
-            }
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(flattened, rows);
-    assert!(!view::fold_expanded(
-        &folded[1].steps,
-        &HashMap::from([("fold:read:call".into(), false)]),
-        &HashSet::new()
-    ));
+fn claude_groups_reads_and_searches_with_their_thinking() {
+    // Claude Code 2.1.329 draws Read, Grep, and read-only Bash in one `collapsed_read_search` row.
+    const LINES: [&str; 4] = [
+        r#"{"type":"assistant","uuid":"a1","sessionId":"s","message":{"content":[{"type":"tool_use","id":"read","name":"Read","input":{"file_path":"/w/a.rs"}}]}}"#,
+        r#"{"type":"assistant","uuid":"a2","sessionId":"s","message":{"content":[{"type":"thinking","thinking":"Check the callers."},{"type":"tool_use","id":"grep","name":"Bash","input":{"command":"rg -n fold src | head"}}]}}"#,
+        r#"{"type":"assistant","uuid":"a3","sessionId":"s","message":{"content":[{"type":"tool_use","id":"make","name":"Bash","input":{"command":"make"}}]}}"#,
+        r#"{"type":"assistant","uuid":"a4","sessionId":"s","message":{"content":[{"type":"text","text":"Done."}]}}"#,
+    ];
+    let rows = folded("claude", &LINES);
+    assert_eq!(
+        kinds(&rows),
+        [RowKind::Fold, RowKind::ToolUse, RowKind::Assistant]
+    );
+    assert_eq!(
+        kinds(&rows[0].steps),
+        [RowKind::ToolUse, RowKind::Thought, RowKind::ToolUse]
+    );
+    assert_eq!(rows[0].text, "Searching for 1 pattern, reading 1 file");
+}
+#[test]
+fn codex_groups_only_its_exploring_commands() {
+    // Codex 0.169.0 puts a command in its "Explored" cell when every `parsed_cmd` part reads, lists, or searches.
+    const LINES: [&str; 2] = [
+        r#"{"type":"event_msg","payload":{"type":"item_completed","item":{"id":"exec-1","type":"CommandExecution","command":["/bin/zsh","-lc","cat a.rs"],"cwd":"/w","status":"completed","aggregated_output":"fn a() {}","parsed_cmd":[{"type":"read","cmd":"cat a.rs","name":"a.rs","path":"a.rs"}]}}}"#,
+        r#"{"type":"event_msg","payload":{"type":"item_completed","item":{"id":"exec-2","type":"CommandExecution","command":["/bin/zsh","-lc","make"],"cwd":"/w","status":"completed","aggregated_output":"ok","parsed_cmd":[{"type":"unknown","cmd":"make"}]}}}"#,
+    ];
+    let rows: Vec<_> = folded("codex", &LINES)
+        .into_iter()
+        .filter(|row| !row.collapsed)
+        .collect();
+    assert_eq!(kinds(&rows), [RowKind::Fold, RowKind::ToolUse]);
+    assert_eq!(rows[0].text, "Explored");
+    assert_eq!(rows[0].steps.len(), 1);
+}
+#[test]
+fn pi_never_groups_tool_calls() {
+    // pi draws each tool call and each thought as its own block.
+    const LINES: [&str; 2] = [
+        r#"{"type":"message","id":"a1","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"command":"cat a.rs"}},{"type":"thinking","thinking":"Now the release."}]}}"#,
+        r#"{"type":"message","id":"a2","parentId":"a1","timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t2","name":"read","arguments":{"path":"b.rs"}}]}}"#,
+    ];
+    let rows = folded("pi", &LINES);
+    assert!(rows.iter().all(|row| row.kind != RowKind::Fold));
+    assert_eq!(
+        kinds(&rows),
+        [RowKind::ToolUse, RowKind::Thought, RowKind::ToolUse]
+    );
 }
 #[test]
 fn fold_choice_survives_prepend_and_live_append() {
@@ -314,57 +328,6 @@ fn seen_rows_keep_a_fold_open() {
         &HashMap::new(),
         &HashSet::from(["read:call".into()])
     ));
-}
-#[test]
-fn fold_summary_counts_states_and_names() {
-    let mut rows = build(vec![
-        user("prompt", "prompt"),
-        call("c1", "exec", json!({"command":"swarm inbox"})),
-        call("c2", "Bash", json!({"command":"false"})),
-        update("c1", "completed", "done"),
-        update("c2", "failed", "Exit code 1"),
-        call("w1", "sleep", json!({})),
-        call("read", "Read", json!({})),
-        call("read-2", "Read", json!({})),
-        call("grep", "Grep", json!({})),
-        system("swarm_ring", RING, "r1", ""),
-        system("swarm_ring", RING, "r2", ""),
-    ]);
-    for row in &mut rows {
-        if let Some(tool) = &mut row.tool {
-            if tool.state == ToolState::Waiting {
-                tool.state = ToolState::Finished;
-            }
-            tool.duration_seconds = Some(match tool.name.as_str() {
-                "exec" => 3.0,
-                "Bash" => 2.0,
-                "sleep" => 15.0,
-                "Read" => 0.5,
-                _ => 1.0,
-            });
-        }
-    }
-    let summary = view::fold_summary(&rows);
-    assert_eq!(
-        summary.text,
-        "2 commands · 1 wait · Read ×2 · Grep · 2 rings · 1 failed"
-    );
-    assert_eq!(summary.duration_seconds, Some(22.0));
-    assert_eq!(summary.state, ToolState::Failed);
-}
-#[test]
-fn running_summary_names_waiting_tool() {
-    let rows = build(vec![
-        user("prompt", "prompt"),
-        call("inbox", "exec", json!({"command":"swarm inbox"})),
-        system("swarm_ring", RING, "ring", ""),
-        call("read", "Read", json!({})),
-        update("read", "completed", "done"),
-    ]);
-    let summary = view::fold_summary(&rows);
-    assert!(summary.is_running);
-    assert_eq!(summary.latest_title, "swarm inbox");
-    assert_eq!(summary.text, "1 command · Read · 1 ring");
 }
 #[test]
 fn fold_is_lossless() {

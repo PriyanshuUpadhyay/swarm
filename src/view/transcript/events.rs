@@ -314,6 +314,8 @@ pub fn row(record: &Record) -> Option<Row> {
         ),
         // A page marker is the tool's own window bound, not a log record.
         "page" => return None,
+        // A group mark joins its tool call in the builder.
+        "tool_group" => return None,
         // A new event type shows as its JSON until the view learns it.
         _ => {
             let mut row = Row::new(

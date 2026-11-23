@@ -256,7 +256,7 @@ export class FoldChoices {
 }
 
 /** One list line: a row, a fold, or a step of an open fold. `open` is the fold's or the card's state.
- *  `preview` is the first output line that a closed tool card shows in Full chat detail. */
+ *  `preview` is the output that a closed tool card shows in Full chat detail. */
 export type Line = { id: string; row: Row; fold: Row | null; open: boolean; preview?: string };
 
 /** `full` is the owner's Full chat detail: folds and thinking start open, closed tool cards show a preview. */
@@ -270,10 +270,23 @@ export const LIVE_THOUGHT = "live-thought";
 export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>, full = false) =>
   opened.get(row.id) ?? (row.id === LIVE_THOUGHT || (full && row.kind === "thought") || row.tool?.state === "failed" || showsDiff(row));
 
-/** A line of the list, with the first non-blank output line of a closed tool card in Full chat detail. */
+/** pi shows this many output lines of a closed tool call; the server cuts `tail` to the same count. */
+const PREVIEW_LINES = 5;
+
+/** The output a closed tool card shows in Full chat detail, as pi shows it: the last lines of a
+ *  command, the first lines of any other tool. */
+export function toolPreview(row: Row): string | undefined {
+  const t = row.tool;
+  if (!t?.output) return undefined;
+  const lines = t.output.text.split("\n").filter((l) => l.trim());
+  const text = t.command ? t.output.tail || lines.slice(-PREVIEW_LINES).join("\n") : lines.slice(0, PREVIEW_LINES).join("\n");
+  return text || undefined;
+}
+
+/** A line of the list, with the output preview of a closed tool card in Full chat detail. */
 function lineOf(row: Row, fold: Row | null, s: LineState): Line {
   const open = cardOpen(row, s.opened, s.full);
-  const preview = s.full && !open ? row.tool?.output?.text.split("\n").find((l) => l.trim())?.trim() : undefined;
+  const preview = s.full && !open ? toolPreview(row) : undefined;
   return preview ? { id: row.id, row, fold, open, preview } : { id: row.id, row, fold, open };
 }
 

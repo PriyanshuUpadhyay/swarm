@@ -4,5 +4,12 @@
  "native_lines": "tests/fixtures/transcript-worker/expected/claude-chair-run.0-whole.json lines; a real OLD `transcript --follow --from F` capture at origins 0, 245 and 485 gave equal events per line (tmp/flow/transcript-source-u02/red/data/native-origins-run*.json)",
  "offsets": "line ends 245,485,792,1050,1353 of that file; offsets on Advance/Replay/Bind come from the frozen unit02 CONTRACT, not from a candidate",
  "rows": "real OLD server GET /api/rows bodies, captured twice byte-equal (red/data/old-rows-run*/red-origin*.json); origin0_at1050 also equals the OLD rows after a replay of the older page",
- "source_bytes": "tests/fixtures/transcript-worker/inputs/claude-chair-run.jsonl (git c8 sha256 e7928bdc97959ab32b7c5985fe16a688b1f3a9a6feace87d30d20fbf997f493d)"
+ "source_bytes": "tests/fixtures/transcript-worker/inputs/claude-chair-run.jsonl (git c8 sha256 e7928bdc97959ab32b7c5985fe16a688b1f3a9a6feace87d30d20fbf997f493d)",
+ "HAND_ADR_0157": {
+  "note": "HAND: ADR 0157 (docs/decisions/0157-tool-groups-follow-each-agent-cli.md), owner approval 2026-11-23. Only group structure changed: a fold now holds only calls that the provider's CLI groups (Claude read/search, Codex explore), so other steps are top-level rows with the same bytes; Claude Read tool_call events gain group and group_part; a cut tool output gains tail. Existing hashes describe the ORIGINAL source captures; all other expected bytes stay unchanged.",
+  "files": [
+   "native-lines.json",
+   "rows.json"
+  ]
+ }
 }

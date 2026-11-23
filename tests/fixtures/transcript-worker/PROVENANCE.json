@@ -131,5 +131,18 @@
   "origin": "snapshot 4 of group claude-chair-run, byte-faithful split of the round-8 expected.json (sha256 a4ac2eedee91d6cfdff626080dfec9688abced11c0e0696ffd2058c836b4c0cc)",
   "sha256": "e1eb13a690404a2e9a75e2c981a5b9f9e00fa7a37dfd4c73bdaac65474e89921",
   "bytes": 8451
+ },
+ "HAND_ADR_0157": {
+  "note": "HAND: ADR 0157 (docs/decisions/0157-tool-groups-follow-each-agent-cli.md), owner approval 2026-11-23. Only group structure changed: a fold now holds only calls that the provider's CLI groups (Claude read/search, Codex explore), so other steps are top-level rows with the same bytes; Claude Read tool_call events gain group and group_part; a cut tool output gains tail. Existing hashes describe the ORIGINAL source captures; all other expected bytes stay unchanged.",
+  "files": [
+   "expected.json",
+   "expected/claude-chair-run.0-whole.json",
+   "expected/claude-chair-run.1-prefix.json",
+   "expected/claude-chair-run.2-continuation.json",
+   "expected/claude-chair-run.4-whole-again-on-the-same-binding.json",
+   "numbers/native-1e400.stdout",
+   "numbers/native-u64-plus-1.stdout",
+   "numbers/old-http-rows-u64-plus-1.body"
+  ]
  }
 }

@@ -90,5 +90,13 @@
     "values_per_file": {
       "fixtures/rows-main-at-4179.json": 6
     }
-  }
+  },
+ "HAND_ADR_0157": {
+  "note": "HAND: ADR 0157 (docs/decisions/0157-tool-groups-follow-each-agent-cli.md), owner approval 2026-11-23. Only group structure changed: a fold now holds only calls that the provider's CLI groups (Claude read/search, Codex explore), so other steps are top-level rows with the same bytes; Claude Read tool_call events gain group and group_part; a cut tool output gains tail. Existing hashes describe the ORIGINAL source captures; all other expected bytes stay unchanged.",
+  "files": [
+   "fixtures/rows-main-at-1265.json",
+   "fixtures/rows-main-at-1687.json",
+   "fixtures/rows-main-at-4179.json"
+  ]
+ }
 }

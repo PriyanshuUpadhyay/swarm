@@ -1,8 +1,9 @@
 //! Log records and their bounded previews.
 
-use super::super::{Diff, DiffPreview, tool};
+use super::super::{Diff, DiffPreview, PREVIEW_TAIL_LINES, last_lines, tool};
 use super::{
     ShellRun, TextPreview, command_output_text, is_record, record_text, shell_run, string,
+    strip_terminal,
 };
 use serde_json::Value;
 
@@ -50,7 +51,9 @@ impl Record {
             _ => None,
         };
         if let Some(field) = field {
-            let text = string(&event, field);
+            // Every agent CLI drops terminal colour codes from tool output before it shows it.
+            let clean = (field == "content").then(|| strip_terminal(string(&event, field)));
+            let text = clean.as_deref().unwrap_or_else(|| string(&event, field));
             if field == "content" {
                 output_exit_code = event["exit_code"]
                     .as_i64()
@@ -60,6 +63,9 @@ impl Record {
             }
             let mut preview = TextPreview::new(text, 120);
             preview.id = format!("{source_id}:output");
+            if field == "content" && preview.is_truncated {
+                preview.tail = last_lines(text, PREVIEW_TAIL_LINES);
+            }
             if let Some(object) = event.as_object_mut() {
                 object.insert(field.into(), Value::String(preview.text.clone()));
             }

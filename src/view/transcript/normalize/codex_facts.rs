@@ -374,9 +374,15 @@ fn event_message(
                 fact.push_unknown();
             }
         }
+        // Older logs keep Codex's own command parse only on the end event.
+        "exec_command_end" => {
+            explore_mark(fact, payload, &payload.text("call_id"));
+            if fact.actions.is_empty() {
+                fact.push_ignored("event_msg/exec_command_end");
+            }
+        }
         "user_message"
         | "agent_message"
-        | "exec_command_end"
         | "mcp_tool_call_end"
         | "web_search_end"
         | "thread_settings_applied"
@@ -385,6 +391,22 @@ fn event_message(
     }
 
     Ok(())
+}
+
+/// Marks a call that Codex draws in an "Explored" group, from Codex's own `parsed_cmd`.
+pub(super) fn explore_mark(fact: &mut Fact<'_>, item: &Object<'_>, call_id: &str) {
+    let parsed: Vec<_> = item
+        .array("parsed_cmd")
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(Object::parse)
+        .collect();
+    if super::groups::codex_explores(&parsed) {
+        fact.push(
+            "tool_group",
+            json!({"tool_call_id":call_id,"group":super::groups::EXPLORE}),
+        );
+    }
 }
 
 pub(super) fn subagent_activity(fact: &mut Fact<'_>, payload: &Object<'_>) {

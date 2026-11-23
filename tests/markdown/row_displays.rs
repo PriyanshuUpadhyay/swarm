@@ -45,6 +45,7 @@ fn preview() -> TextPreview {
         full_lines: 0,
         full_bytes: 0,
         hidden_lines: 0,
+        tail: String::new(),
     }
 }
 

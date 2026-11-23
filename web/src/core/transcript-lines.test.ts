@@ -60,15 +60,16 @@ describe("folds and lines", () => {
     expect(lines([failed], { folds: new FoldChoices(), opened: new Map([["cargo-test", false]]) })[0].open).toBe(false);
   });
 
-  it("opens folds and thinking in Full chat detail, previews a closed card's output, and the reader's choice wins", () => {
-    const ran = { ...tool("run-tests", 102), tool: { ...tool("run-tests", 102).tool!, output: { id: "o", text: "\nok 12 tests\nmore", full_lines: 3, full_bytes: 18, hidden_lines: 0 } } };
+  it("opens folds and thinking in Full chat detail, previews the last lines of a closed command, and the reader's choice wins", () => {
+    const text = ["building", "", ...Array.from({ length: 5 }, (_, i) => `step ${i + 1}`)].join("\n");
+    const ran = { ...tool("run-tests", 102), tool: { ...tool("run-tests", 102).tool!, command: "make test", output: { id: "o", text, full_lines: 7, full_bytes: text.length, hidden_lines: 0 } } };
     const rows = [row("thinking", 1, { kind: "thought" }), fold("run", [tool("read-config", 100), ran])];
     const full = lines(rows, { folds: new FoldChoices(), opened: new Map(), full: true });
     expect(full.map((l) => [l.id, l.open, l.preview])).toEqual([
       ["thinking", true, undefined],
       ["run", true, undefined],
       ["read-config", false, undefined],
-      ["run-tests", false, "ok 12 tests"],
+      ["run-tests", false, "step 1\nstep 2\nstep 3\nstep 4\nstep 5"],
     ]);
     const folds = new FoldChoices();
     folds.set(rows[1], false);

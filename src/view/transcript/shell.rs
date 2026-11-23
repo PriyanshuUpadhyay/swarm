@@ -21,8 +21,11 @@ pub fn clean_shell(text: &str) -> String {
         rest = &body[end..];
     }
     decoded += &decode(rest);
-    let normalized = decoded.replace("\r\n", "\n");
-    let mut characters = normalized.chars().peekable();
+    strip_terminal(&decoded.replace("\r\n", "\n"))
+}
+/// Drops terminal colour and title sequences and other control characters; keeps new lines and tabs.
+pub fn strip_terminal(text: &str) -> String {
+    let mut characters = text.chars().peekable();
     let mut output = String::new();
     while let Some(character) = characters.next() {
         if character == '\u{1b}' {
