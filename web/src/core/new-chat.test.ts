@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ClipboardEvent } from "react";
+import { pasteImage, type Draft } from "../react/composer-image";
 import { AppActions } from "./app-actions";
 import type { App } from "./app";
 import { NewChat } from "./new-chat";
@@ -127,7 +129,7 @@ describe("new chat composer", () => {
 
   it.each([false, true])("preserves text typed during the start POST (overlay: %s)", async (overlay) => {
     let resolvePost = (_value: { start: string }) => {};
-    const post = new Promise<{ start: string }>((resolve) => (resolvePost = resolve));
+    const post = new Promise<{ start: string }>((resolve) => { resolvePost = resolve; });
     const app = stub({ api: { post: () => post } });
     const chats = new NewChat(app as unknown as App);
     if (overlay) chats.open();
@@ -139,10 +141,54 @@ describe("new chat composer", () => {
     expect(chats.shown()).toMatchObject({ prompt: "Fix it", draft: "Then the docs" });
   });
 
+  it("sends an image pasted during Start without repeating the first prompt", async () => {
+    let accept = (_value: { start: string }) => {};
+    let store = (_path: string) => {};
+    const post = new Promise<{ start: string }>((resolve) => { accept = resolve; });
+    const upload = new Promise<string>((resolve) => { store = resolve; });
+    const sent: string[] = [];
+    const app = stub({
+      api: { post: () => post, image: () => upload, action: async (_path: string, body: { text: string }) => void sent.push(body.text) },
+      actions: { openNew: async () => {} },
+    }) as unknown as App;
+    const chats = new NewChat(app);
+    chats.open();
+
+    let text = "Fix it";
+    chats.typed(text);
+    let bound: Draft | undefined;
+    const draft: Draft = {
+      read: () => bound?.read() ?? text,
+      change: (next) => {
+        if (bound) return bound.change(next);
+        text = next;
+        chats.typed(next);
+      },
+    };
+    const bindUpload = (next: Draft) => { bound = next; };
+
+    const started = chats.start("/hub/wt/main", text, { kind: "new" }, { run: null }, { composer: true, bindUpload });
+    pasteImage({
+      clipboardData: { files: [new File(["image"], "screen.png", { type: "image/png" })] },
+      currentTarget: { selectionStart: text.length, selectionEnd: text.length },
+      preventDefault: () => {},
+    } as unknown as ClipboardEvent<HTMLTextAreaElement>, app, draft);
+    accept({ start: "s1" });
+    await started;
+
+    const done = chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
+    const path = "/tmp/uploads/12345678-1234-1234-1234-123456789abc.png";
+    store(path);
+    await done;
+    expect({ sent, unsent: chats.state.unsent }).toEqual({ sent: [path], unsent: "" });
+  });
+
   it("does not leave the selected chat when a pending start gets listed", async () => {
     let resolveTree = () => {};
-    const treeRead = new Promise<void>((resolve) => (resolveTree = resolve));
+    const treeRead = new Promise<void>((resolve) => { resolveTree = resolve; });
     const opened: string[] = [];
+
+
     const app = stub({
       api: { post: async () => ({ start: "s1" }) },
       navigation: {

@@ -105,6 +105,12 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
       app.newChat.typed(next);
     },
   };
+  const uploadTarget = useRef<Draft | null>(null);
+  const imageDraft: Draft = {
+    read: () => (uploadTarget.current ?? prompt).read(),
+    change: (next) => (uploadTarget.current ?? prompt).change(next),
+  };
+
   const [menu, setMenu] = useState<Menu>(firstPlace.kind === "branch" && !firstPlace.branch ? "place" : null);
   const [profiles, setProfiles] = useState<Profile[] | string | null>(null);
   // Edit and retry opens on the profile and run that the start posted.
@@ -186,7 +192,11 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     const changed = run && !sameRun(run, base) ? run : null;
     // pi runs a skill only at the message's start, so the first prompt goes as the chat box sends it.
     const first = provider ? (await toSend(text, provider, slash.list, () => app.newChat.commands(target.cwd, provider))).text : text;
-    const ok = await app.newChat.start(target.cwd, first, place, { role: profile?.name ?? role, run: changed }, { composer: true, submittedText: text });
+    const ok = await app.newChat.start(target.cwd, first, place, { role: profile?.name ?? role, run: changed }, {
+      composer: true,
+      submittedText: text,
+      bindUpload: (draft) => { uploadTarget.current = draft; },
+    });
     setSending(false);
     if (ok && textNow.current === text) {
       textNow.current = "";
@@ -286,9 +296,9 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
               onFocus={() => slash.setFocused(true)}
               onBlur={() => slash.setFocused(false)}
               onKeyDown={onPromptKey}
-              onPaste={(e) => pasteImage(e, app, prompt)}
+              onPaste={(e) => pasteImage(e, app, imageDraft)}
               onDragOver={dragOverFiles}
-              onDrop={(e) => dropImage(e, app, prompt)}
+              onDrop={(e) => dropImage(e, app, imageDraft)}
             />
             {/* Under the box, because the overlay sits near the window's top. */}
             {slash.open && slash.menu && <SlashMenu id={slash.listId} menu={slash.menu} rows={slash.rows} current={slash.current} list={slash.shownList} below select={slash.setSelected} choose={insert} />}

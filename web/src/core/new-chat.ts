@@ -3,7 +3,7 @@
 
 import type { App } from "./app";
 import { firstLine, message } from "./app-types";
-import { hasPendingImage } from "./images";
+import { hasPendingImage, type Draft } from "./images";
 import type { Run } from "./composer";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
 import { fileRows, type CommandList } from "./slash";
@@ -57,8 +57,13 @@ export const DEFAULT_ROLE = "chat";
 /** How long the start's POST may take. The server answers in under a second, after its checks. */
 const START_TIMEOUT_MS = 10_000;
 
-/** Options of a start: whether the composer sent it, and the text that goes after its prompt. */
-type StartOptions = { composer?: boolean; submittedText?: string; queued?: string[] };
+type StartOptions = {
+  composer?: boolean;
+  submittedText?: string;
+  queued?: string[];
+  /** Lets an upload finish in the start's draft after the composer closes. */
+  bindUpload?: (draft: Draft) => void;
+};
 
 /** How many frames of unknown starts wait for their POST reply. */
 const EARLY_KEPT = 50;
@@ -191,7 +196,7 @@ export class NewChat {
 
   /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. Only a
    *  start that the composer sent closes it and takes its text. */
-  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, submittedText, queued = [] }: StartOptions = {}): Promise<boolean> {
+  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, submittedText, queued = [], bindUpload }: StartOptions = {}): Promise<boolean> {
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
     this.posting = true;
@@ -220,11 +225,17 @@ export class NewChat {
     const fromPage = fromComposer && sent === null;
     const latest = closes ? sent.text : fromPage ? this.state.unsent : submitted;
     const added = latest.startsWith(submitted) ? latest.slice(submitted.length).trimStart() : latest;
-    // The compose box still owns any upload in flight and writes its result to unsent.
-    const uploading = hasPendingImage(added);
-    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), run, steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: uploading ? "" : added };
+    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), run, steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: added };
     const composer = closes ? null : this.state.composer;
-    const unsent = uploading ? added : fromPage ? "" : this.state.unsent;
+    const unsent = fromPage ? "" : this.state.unsent;
+
+    if (hasPendingImage(added)) {
+      bindUpload?.({
+        read: () => this.state.starts[id]?.draft ?? "",
+        change: (next) => this.setDraft(id, next),
+      });
+    }
+
     this.set({ composer, unsent, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
     const early = this.early.filter((data) => data.start === id);
     this.early = this.early.filter((data) => data.start !== id);
@@ -312,6 +323,7 @@ export class NewChat {
     const step = String(data.step);
     const state = data.state === "completed" || data.state === "failed" ? data.state : "running";
     const error = typeof data.error === "string" ? data.error : null;
+
     if (step === "done") {
       if (state === "failed") {
         // A failed start always has an error text, as the page tells a failed start by it.

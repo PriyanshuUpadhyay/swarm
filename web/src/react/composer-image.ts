@@ -1,6 +1,8 @@
 import type { ClipboardEvent, DragEvent } from "react";
 import type { App } from "../core/app";
-import { insertPendingImage, finishPendingImage } from "../core/images";
+import { insertPendingImage, finishPendingImage, type Draft } from "../core/images";
+
+export type { Draft } from "../core/images";
 
 /** The types the server stores (`IMAGE_TYPES` in src/serve/images.rs). */
 const STORED = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -10,9 +12,6 @@ export function pickImage(files: ArrayLike<File>): { image: File } | { refusal: 
   const image = Array.from(files).find((f) => STORED.includes(f.type));
   return image ? { image } : { refusal: "Only PNG, JPEG, GIF and WebP images can be attached" };
 }
-
-/** The live draft of one composer: `read` gives it now, `change` replaces it. */
-export type Draft = { read: () => string; change: (next: string) => void };
 
 /** Keep the pending marker in the live draft while the server stores an image. */
 function attach(image: File, el: HTMLTextAreaElement, app: App, { read, change }: Draft) {
