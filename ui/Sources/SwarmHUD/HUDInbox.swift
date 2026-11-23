@@ -238,7 +238,10 @@ struct NeedCardView: View {
 
     var body: some View {
         Group {
-            if let prompt = need.prompt, prompt.kind == "plan" {
+            if need.prompt?.kind == "screen" {
+                // A screen card holds the agent's pane rows, which only the chat can show.
+                card("Click to answer in the chat.", choices: [])
+            } else if let prompt = need.prompt, prompt.kind == "plan" {
                 let pointer = "Click to read the full plan and answer."
                 if prompt.choices.isEmpty {
                     card(pointer, choices: [])

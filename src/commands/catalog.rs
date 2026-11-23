@@ -1,4 +1,4 @@
-//! Built-in command lists and commands that open CLI dialogs.
+//! Built-in command lists.
 
 use crate::providers::Provider;
 
@@ -97,71 +97,6 @@ pub(super) fn builtins(provider: Provider) -> &'static [(&'static str, &'static 
             ("thinking", "Choose the thinking level"),
             ("tree", "Move within the session tree"),
             ("trust", "Save a project trust decision"),
-        ],
-    }
-}
-
-/// Commands that open a picker or a panel in the CLI's TUI when typed with no argument.
-pub(super) fn dialogs(provider: Provider) -> &'static [&'static str] {
-    match provider {
-        Provider::Claude => &[
-            "add-dir",
-            "agents",
-            "config",
-            "effort",
-            "export",
-            "help",
-            "hooks",
-            "ide",
-            "login",
-            "logout",
-            "mcp",
-            "memory",
-            "model",
-            "output-style",
-            "permissions",
-            "plugin",
-            "resume",
-            "rewind",
-            "skills",
-            "status",
-            "theme",
-            "usage",
-        ],
-        Provider::Codex => &[
-            "agents",
-            "mention",
-            "model",
-            "permissions",
-            "rename",
-            "resume",
-            "review",
-            "skills",
-        ],
-        Provider::Agy => &[
-            "agents",
-            "config",
-            "effort",
-            "help",
-            "hooks",
-            "mcp",
-            "model",
-            "permissions",
-            "plugin",
-            "resume",
-            "rewind",
-            "skills",
-            "tasks",
-        ],
-        Provider::Pi => &[
-            "login",
-            "logout",
-            "model",
-            "scoped-models",
-            "settings",
-            "thinking",
-            "tree",
-            "trust",
         ],
     }
 }

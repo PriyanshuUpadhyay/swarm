@@ -8,12 +8,11 @@ const row = (insert: string, extra: Partial<MenuRow> = {}): MenuRow => ({
   description: "",
   hint: "",
   source: "",
-  dialog: false,
   ...extra,
 });
 const rows = [
   row("/clear", { kind: "builtin", hint: "[name]" }),
-  row("/model", { kind: "builtin", dialog: true }),
+  row("/model", { kind: "builtin" }),
   row("/swarm:plan", { kind: "command" }),
   row("/plan", { kind: "builtin" }),
   row("$research", { kind: "skill" }),
@@ -56,7 +55,7 @@ describe("menuAt", () => {
     expect(matches(offered([...rows, ...files.commands], menu, "pi"), menu.query).map((r) => r.insert)).toEqual(["@src/main.rs"]);
     // A pick inserts the path with a space, and the send key only inserts it.
     expect(pick("read @ma", menu, files.commands[0])).toEqual({ text: "read @src/main.rs ", caret: 18 });
-    expect(picksAndSends("@ma", menuAt("@ma", 3, "claude")!, files.commands[0])).toBe(false);
+    expect(picksAndSends("@ma", menuAt("@ma", 3, "claude")!)).toBe(false);
   });
 
   it("opens no menu with the caret before an opener at the draft's start", () => {
@@ -119,12 +118,12 @@ describe("pick", () => {
     expect(pick("/clxar", inside, rows[0]).text).toBe("/clear ");
   });
 
-  it("sends a whole-draft command on the send key, hint or not, but never a dialog", () => {
-    expect(picksAndSends("/cle", menuAt("/cle", 4, "claude")!, rows[0])).toBe(true);
-    expect(picksAndSends("/mo", menuAt("/mo", 3, "claude")!, rows[1])).toBe(false);
-    expect(picksAndSends("/cle more", menuAt("/cle more", 4, "claude")!, rows[0])).toBe(false);
-    expect(picksAndSends("a /sw", menuAt("a /sw", 5, "claude")!, rows[2])).toBe(false);
-    expect(picksAndSends("$res", menuAt("$res", 4, "codex")!, rows[4])).toBe(false);
+  it("sends a whole-draft command on the send key, hint or not, also one that opens a picker", () => {
+    expect(picksAndSends("/cle", menuAt("/cle", 4, "claude")!)).toBe(true);
+    expect(picksAndSends("/mo", menuAt("/mo", 3, "claude")!)).toBe(true);
+    expect(picksAndSends("/cle more", menuAt("/cle more", 4, "claude")!)).toBe(false);
+    expect(picksAndSends("a /sw", menuAt("a /sw", 5, "claude")!)).toBe(false);
+    expect(picksAndSends("$res", menuAt("$res", 4, "codex")!)).toBe(false);
   });
 
   it("wraps Up and Down", () => {

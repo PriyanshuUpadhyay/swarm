@@ -11,8 +11,6 @@ export type MenuRow = {
   description: string;
   hint: string;
   source: string;
-  /** Opens a picker in the CLI's pane, so the menu inserts it and never sends it. */
-  dialog: boolean;
 };
 
 export type CommandList = { commands: MenuRow[]; note: string | null };
@@ -124,7 +122,7 @@ export const showsEmpty = (menu: Menu, list: CommandList | null) => atStart(menu
 
 /** `/api/chat/files` as menu rows. */
 export function fileRows(files: readonly string[], note: string | null): CommandList {
-  return { commands: files.map((f) => ({ name: f, insert: `@${f}`, kind: "file", description: "", hint: "", source: "", dialog: false })), note };
+  return { commands: files.map((f) => ({ name: f, insert: `@${f}`, kind: "file", description: "", hint: "", source: "" })), note };
 }
 
 /** The probe labels every row of the plugin `swarm` with this source, prefixed or not. */
@@ -150,10 +148,10 @@ export function pick(draft: string, menu: Menu, row: MenuRow): { text: string; c
   return { text: draft.slice(0, menu.start) + value + after, caret: menu.start + value.length };
 }
 
-/** The send key on a command that is the whole draft runs it, as the CLI does on Enter. A dialog
- *  row would leave a picker open in a pane the owner cannot see, so it is only inserted. */
-export function picksAndSends(draft: string, menu: Menu, row: MenuRow): boolean {
-  return atStart(menu) && menu.end === draft.length && !row.dialog;
+/** The send key on a command that is the whole draft runs it, as the CLI does on Enter. A picker
+ *  that the command opens shows in the chat as a screen card (ADR 0159). */
+export function picksAndSends(draft: string, menu: Menu): boolean {
+  return atStart(menu) && menu.end === draft.length;
 }
 
 /** Up and Down wrap around the rows. */

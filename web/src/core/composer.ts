@@ -6,8 +6,9 @@ import type { Meter } from "./settings";
 import type { Profile } from "./settings-types";
 
 /** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
-/** `input` marks a question that takes typed text, not a choice (Pi's text dialog). */
-export type Prompt = { id: string; question: string; choices: string[]; details?: string[]; input?: boolean };
+/** `input` marks a question that takes typed text, not a choice (Pi's text dialog). `screen` marks
+ *  a screen card: `question` holds the pane's rows, and each choice presses one key (ADR 0159). */
+export type Prompt = { id: string; question: string; choices: string[]; details?: string[]; input?: boolean; screen?: boolean };
 
 /** A choice's index, or the typed text for a question that takes text. */
 export type Answer = number | { text: string };
@@ -82,12 +83,9 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
   else if (!child && agent?.alive === false) disabled = "This chat's pane has closed. Start a new chat or switch model.";
   const unreachable = disabled !== null;
   // A blocked agent has a dialog open, where Enter means yes, so typed text could approve a tool.
-  if (!disabled && agent?.state === "blocked")
-    disabled = prompt
-      ? "The agent is asking a question. Answer it first."
-      : child
-        ? `${child} waits on a question the app cannot read. Run \`swarm attach ${child}\` in a terminal to answer it.`
-        : "The agent is asking a question. Answer it first in its pane.";
+  // A picker that waits on the owner shows as a card too. The card is above the box, or comes with
+  // the next listing.
+  if (!disabled && (agent?.state === "blocked" || prompt)) disabled = "The agent is asking a question. Answer it above first.";
   return {
     who: child,
     provider,

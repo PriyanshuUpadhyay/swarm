@@ -21,7 +21,7 @@ test("pi keeps menu picks as chips and runs the first after a reload without a l
   await tab.route("**/api/chat/commands?*", (route) => {
     lists++;
     return listFails ? route.fulfill({ status: 503, body: "probe failed" }) : route.fulfill({ json: {
-      commands: ["plan", "research"].map((name) => ({ name: `skill:${name}`, insert: `/skill:${name}`, kind: "skill", description: `Run ${name}`, hint: "", source: "", dialog: false })),
+      commands: ["plan", "research"].map((name) => ({ name: `skill:${name}`, insert: `/skill:${name}`, kind: "skill", description: `Run ${name}`, hint: "", source: "" })),
       note: null,
     } });
   });

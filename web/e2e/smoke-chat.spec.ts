@@ -221,14 +221,6 @@ test("the / menu lists the CLI's commands; the send key runs a whole command, a 
   await tab.keyboard.press("Escape");
   await expect(composer).toHaveValue("");
 
-  // A dialog command is inserted and never sent, and says why.
-  await tab.keyboard.type("/mode");
-  await expect(menu.getByTestId("slash-row").first()).toContainText("opens in pane");
-  await tab.keyboard.press("Enter");
-  await expect(composer).toHaveValue("/model ");
-  expect(typed()).not.toContain("/model");
-  await tab.keyboard.press("Escape");
-
   // The send key on a whole-draft command picks it and sends the picked text once, hint or not.
   const before = typed().split("/clear ").length;
   await tab.keyboard.type("/cle");

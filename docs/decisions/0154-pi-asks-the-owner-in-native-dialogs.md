@@ -19,4 +19,4 @@ Pi has no built-in model tool for a question or plan approval. The Claude bridge
 - If the log has no open plan call, the card says that Swarm could not read the plan and shows no decision buttons, so nothing is approved blind. Pi writes the call to its log before it opens the dialog, so this state does not last.
 - The HUD offers plan decision buttons only when the whole plan fits in its small card. Otherwise a click opens the chat, which shows the plan and its buttons. This keeps the existing choice-index API.
 
-This reuses the native UI and the existing owner gate. The pane is for debugging. If a Pi upgrade changes the dialog layout, Swarm may not show the card until its screen reader is updated.
+This reuses the native UI and the existing owner gate. The pane is for debugging. If a Pi upgrade changes the dialog layout, the dialog shows as a screen card (ADR 0159) until its screen reader is updated.

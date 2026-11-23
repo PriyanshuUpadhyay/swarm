@@ -39,8 +39,10 @@ describe("chair input", () => {
     const closed = agentInput(session(), [chair({ alive: false })]);
     const asking = agentInput(session(), [chair({ state: "blocked", prompt: waitingPrompt })]);
     const askingInPane = agentInput(session(), [chair({ state: "blocked" })]).disabled;
-    const reasons = [noAdapter, noPane, closed.disabled, asking.disabled, askingInPane];
+    const reasons = [noAdapter, noPane, closed.disabled, asking.disabled];
     expect(noAdapter).toBe(MISSING_ADAPTER);
+    // A blocked agent's card is above the box, or comes with the next listing, so both say the same.
+    expect(askingInPane).toBe(asking.disabled);
     for (const reason of reasons) expect(reason).toBeTruthy();
     expect(new Set(reasons).size).toBe(reasons.length);
     expect(closed.unreachable).toBe(true);

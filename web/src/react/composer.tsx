@@ -144,7 +144,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
     const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
     if (menu && slash.row && e.key === "Enter" && (plain || sends(e))) {
       e.preventDefault();
-      choose(slash.row, !plain && picksAndSends(text, menu, slash.row));
+      choose(slash.row, !plain && picksAndSends(text, menu));
       return;
     }
     // ⇧⌘↩ zooms the pane.
@@ -229,7 +229,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         className="relative rounded-lg border border-border-strong bg-surface shadow-sm focus-within:border-ring has-[textarea:disabled]:opacity-70"
       >
         {open && menu && (
-          <SlashMenu id={listId} menu={menu} rows={rows} current={current} list={slash.shownList} who={chair.who} select={slash.setSelected} choose={choose} />
+          <SlashMenu id={listId} menu={menu} rows={rows} current={current} list={slash.shownList} select={slash.setSelected} choose={choose} />
         )}
         <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />
         <div className="relative">

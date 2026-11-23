@@ -44,7 +44,7 @@ pub(crate) fn read_screen(
 }
 
 /// The question an agent shows the owner: read as choices, or else a screen card when the agent
-/// waits on the owner (ADR 0156). The listing, the HUD inbox, and `swarm answer` all use this, so
+/// waits on the owner (ADR 0159). The listing, the HUD inbox, and `swarm answer` all use this, so
 /// an answer proves it saw the same card.
 pub(crate) fn owner_prompt(
     provider: Option<&str>,

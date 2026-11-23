@@ -292,7 +292,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
               onDrop={(e) => dropImage(e, app, prompt)}
             />
             {/* Under the box, because the overlay sits near the window's top. */}
-            {slash.open && slash.menu && <SlashMenu id={slash.listId} menu={slash.menu} rows={slash.rows} current={slash.current} list={slash.shownList} who={null} below select={slash.setSelected} choose={insert} />}
+            {slash.open && slash.menu && <SlashMenu id={slash.listId} menu={slash.menu} rows={slash.rows} current={slash.current} list={slash.shownList} below select={slash.setSelected} choose={insert} />}
           </div>
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
             <Chip testid="chip-project" on={menu === "project"} title="Project (⌘↑ ⌘↓ change it, ⌘P lists)" onClick={() => setMenu((m) => (m === "project" ? null : "project"))}>

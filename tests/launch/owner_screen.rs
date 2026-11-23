@@ -1,5 +1,5 @@
 // Screen cards: a question Swarm cannot read as choices is answered with keys from the chat
-// (ADR 0156).
+// (ADR 0159).
 
 use super::owner::{answer_session, listed_prompt};
 use super::*;
@@ -45,6 +45,7 @@ fn a_question_cut_at_the_top_of_the_pane_gets_a_screen_card_that_presses_keys() 
     assert!(output.status.success(), "{}", stderr(&output));
     let inbox: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(inbox["needs"][0]["prompt"]["id"], prompt["id"], "{inbox}");
+    assert_eq!(inbox["needs"][0]["prompt"]["kind"], "screen", "{inbox}");
 
     let id = prompt["id"].as_str().unwrap();
     for (index, key) in [(1, "Down"), (2, "Enter"), (3, "Escape")] {

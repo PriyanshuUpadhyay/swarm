@@ -213,7 +213,7 @@ describe("child columns", () => {
     app.openChat("chat");
     await settle();
     const reviewer = app.view.strip.panes.get("reviewer")!.composer!;
-    expect(reviewer.agent).toMatchObject({ who: "reviewer", prompt: question, disabled: "The agent is asking a question. Answer it first." });
+    expect(reviewer.agent).toMatchObject({ who: "reviewer", prompt: question, disabled: "The agent is asking a question. Answer it above first." });
     await app.answer(reviewer.id, question, 1);
     await app.send(paneId("chat", "tester"), "check the parser");
     await app.stopPane("tester");
@@ -229,12 +229,12 @@ describe("child columns", () => {
     expect(app.view.composer!.state.answering).toBeNull();
   });
 
-  it("says why a blocked child cannot take input", async () => {
+  it("says why a blocked child cannot take input, also before its card is read", async () => {
     const { app } = harness([chair, agent("asking", { state: "blocked" })]);
     app.openChat("chat");
     await settle();
     const input = (id: string) => app.view.strip.panes.get(id)!.composer!.agent;
-    expect(input("asking").disabled).toBe("asking waits on a question the app cannot read. Run `swarm attach asking` in a terminal to answer it.");
+    expect(input("asking").disabled).toBe("The agent is asking a question. Answer it above first.");
   });
 });
 

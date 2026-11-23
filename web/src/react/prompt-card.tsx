@@ -2,11 +2,14 @@ import { CircleHelpIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { App, Input } from "../core/app";
 import type { Prompt } from "../core/composer";
+import { cn } from "../lib/utils";
 
 /** An agent's question, one button per choice in the CLI's words (ADR 0029). Nothing is picked
  *  for the owner. While the card has focus, 1 to 9 pick a choice, as in the CLI. A question that
- *  takes typed text gets one text line and a Send button instead. `sessionId` is the chat id, and
- *  `who` the child agent's id (null for the chair). */
+ *  takes typed text gets one text line and a Send button instead. A screen card (ADR 0159) shows
+ *  the agent's pane rows with one button per key and a text line; it takes no digit keys, because
+ *  its buttons are keys, not choices. `sessionId` is the chat id, and `who` the child agent's id
+ *  (null for the chair). */
 export function PromptCard({
   app,
   sessionId,
@@ -24,6 +27,7 @@ export function PromptCard({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
+  const rows = useRef<HTMLPreElement>(null);
   const [typed, setTyped] = useState({ prompt: prompt.id, text: "" });
   const text = typed.prompt === prompt.id ? typed.text : "";
   const busy = state.answering?.prompt === prompt.id ? state.answering.choice : null;
@@ -34,6 +38,10 @@ export function PromptCard({
     const own = a?.matches('[data-testid="composer"]') && ref.current?.closest(".chat-input")?.contains(a);
     if (!app.draft(sessionId).trim() && (own || (!who && (!a || a === document.body)))) (field.current ?? ref.current)?.focus();
   }, [sessionId, prompt.id, who]);
+  // The question of a screen card is at the pane's bottom, so its rows open scrolled to the end.
+  useEffect(() => {
+    if (rows.current) rows.current.scrollTop = rows.current.scrollHeight;
+  }, [prompt.id]);
   // App state shows the answer's result, so this handler does not await the promise.
   const pick = (i: number) => void app.answer(sessionId, prompt, i);
   // The CLI's input row is one line, so the text goes as one line.
@@ -43,7 +51,7 @@ export function PromptCard({
     if (line && busy === null) void app.answer(sessionId, prompt, { text: line });
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !/^[1-9]$/.test(e.key)) return;
+    if (prompt.screen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !/^[1-9]$/.test(e.key)) return;
     const i = Number(e.key) - 1;
     if (i >= prompt.choices.length) return;
     e.preventDefault();
@@ -55,7 +63,7 @@ export function PromptCard({
       tabIndex={0}
       role="group"
       data-testid="prompt-card"
-      aria-label={`${who ?? "The chair"} is blocked: ${prompt.question}`}
+      aria-label={`${who ?? "The chair"} is blocked: ${prompt.screen ? "its screen is shown below" : prompt.question}`}
       className="grid gap-2 rounded-lg border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       onKeyDown={onKeyDown}
     >
@@ -69,16 +77,26 @@ export function PromptCard({
         )}
       </div>
       {/* A long question, such as a plan to approve, scrolls so the choices stay in view. */}
-      <div data-testid="prompt-question" className="max-h-[40vh] min-w-0 overflow-y-auto overscroll-contain text-sm break-words whitespace-pre-wrap select-text">
-        {prompt.question}
-      </div>
+      {prompt.screen ? (
+        <pre
+          ref={rows}
+          data-testid="prompt-question"
+          className="max-h-[40vh] min-w-0 overflow-auto overscroll-contain rounded-md bg-background p-2 font-mono text-xs leading-snug whitespace-pre select-text"
+        >
+          {prompt.question}
+        </pre>
+      ) : (
+        <div data-testid="prompt-question" className="max-h-[40vh] min-w-0 overflow-y-auto overscroll-contain text-sm break-words whitespace-pre-wrap select-text">
+          {prompt.question}
+        </div>
+      )}
       {prompt.input && (
         <form className="flex min-w-0 items-center gap-2" onSubmit={submit}>
           <input
             ref={field}
             data-testid="prompt-text"
             aria-label="Your answer"
-            placeholder="Type your answer"
+            placeholder={prompt.screen ? "Type text; Send types it and presses Enter" : "Type your answer"}
             value={text}
             disabled={busy !== null}
             onChange={(e) => setTyped({ prompt: prompt.id, text: e.target.value })}
@@ -95,7 +113,7 @@ export function PromptCard({
           </button>
         </form>
       )}
-      <div className="grid gap-1">
+      <div className={cn("grid gap-1", prompt.screen && "grid-cols-4")}>
         {prompt.choices.map((choice, i) => {
           const detail = prompt.details?.[i];
           return (
@@ -108,7 +126,7 @@ export function PromptCard({
               onClick={() => pick(i)}
               className="flex min-w-0 items-start gap-2 rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-left text-sm hover:bg-hover disabled:opacity-60"
             >
-              <span className="font-mono text-muted-foreground tabular-nums">{i + 1}</span>
+              {!prompt.screen && <span className="font-mono text-muted-foreground tabular-nums">{i + 1}</span>}
               <span className="min-w-0 flex-1 break-words">
                 <span className="block whitespace-pre-wrap">{choice}</span>
                 {detail && <span className="line-clamp-2 text-xs whitespace-pre-wrap text-muted-foreground">{detail}</span>}

@@ -24,10 +24,6 @@ pub struct Row {
     pub hint: String,
     /// The plugin, `user`, `project` or `built-in` that the row comes from, when known.
     pub source: String,
-    /// The command opens a picker or a panel in the CLI. The web pane shows only the transcript,
-    /// so the next Enter would choose in a picker the owner cannot see. The menu inserts such a
-    /// row and never sends it.
-    pub dialog: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -74,7 +70,7 @@ pub fn list(
     }
 }
 
-/// Adds the built-ins the CLI did not list, marks dialog rows, and drops internal names.
+/// Adds the built-ins the CLI did not list and drops internal names.
 fn finish(provider: Provider, mut rows: Vec<Row>) -> Vec<Row> {
     let listed: BTreeSet<String> = rows.iter().map(|row| row.insert.clone()).collect();
     rows.extend(
@@ -88,14 +84,9 @@ fn finish(provider: Provider, mut rows: Vec<Row>) -> Vec<Row> {
                 description: (*description).into(),
                 hint: String::new(),
                 source: "built-in".into(),
-                dialog: false,
             }),
     );
-    let dialogs = dialogs(provider);
     rows.retain(|row| !row.name.starts_with("__"));
-    for row in &mut rows {
-        row.dialog = row.insert.starts_with('/') && dialogs.contains(&row.name.as_str());
-    }
     rows.sort_by(|a, b| a.name.cmp(&b.name));
     rows.dedup_by(|a, b| a.insert == b.insert);
     rows
@@ -104,7 +95,7 @@ fn finish(provider: Provider, mut rows: Vec<Row>) -> Vec<Row> {
 mod catalog;
 mod probes;
 
-use catalog::{builtins, dialogs};
+use catalog::builtins;
 use probes::{agy, claude, codex, pi};
 
 #[cfg(test)]
@@ -258,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn finish_adds_missing_builtins_marks_dialogs_and_drops_internal_names() {
+    fn finish_adds_missing_builtins_and_drops_internal_names() {
         let listed = claude_rows(&json!([
             {"name":"model","description":"Set the model","argumentHint":"<model>","builtin":true},
             {"name":"__remote-workflow","description":"internal","builtin":true},
@@ -267,9 +258,6 @@ mod tests {
         let model: Vec<_> = rows.iter().filter(|row| row.name == "model").collect();
         assert_eq!(model.len(), 1, "a listed built-in is not added twice");
         assert_eq!(model[0].description, "Set the model");
-        assert!(model[0].dialog);
-        assert!(rows.iter().any(|row| row.name == "resume" && row.dialog));
-        assert!(rows.iter().any(|row| row.name == "clear" && !row.dialog));
         assert!(!rows.iter().any(|row| row.name.starts_with("__")));
         let codex = finish(Provider::Codex, Vec::new());
         assert!(
@@ -277,22 +265,10 @@ mod tests {
             "Codex /new opens a worktree picker"
         );
         let pi = finish(Provider::Pi, Vec::new());
-        assert!(pi.iter().any(|row| row.name == "compact" && !row.dialog));
-        assert!(pi.iter().any(|row| row.name == "model" && row.dialog));
+        assert!(pi.iter().any(|row| row.name == "compact"));
         for name in ["quit", "new", "resume"] {
             assert!(!pi.iter().any(|row| row.name == name), "{name} is left out");
         }
-    }
-
-    #[test]
-    fn a_codex_skill_named_like_a_dialog_is_not_a_dialog() {
-        let rows = finish(
-            Provider::Codex,
-            codex_rows(&json!({"data":[{"skills":[
-            {"name":"model","description":"a skill","enabled":true}]}]})),
-        );
-        assert!(rows.iter().any(|row| row.insert == "$model" && !row.dialog));
-        assert!(rows.iter().any(|row| row.insert == "/model" && row.dialog));
     }
 
     #[test]

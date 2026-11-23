@@ -153,7 +153,10 @@ pub(crate) fn inbox(
                     "question": prompt.question,
                     "choices": prompt.choices,
                 });
-                if waiting.provider == "pi" && prompt.is_pi_plan() {
+                if prompt.screen {
+                    // The pane rows do not fit the HUD, so the card points to the chat (ADR 0159).
+                    card["kind"] = "screen".into();
+                } else if waiting.provider == "pi" && prompt.is_pi_plan() {
                     card["kind"] = "plan".into();
                 }
                 Some(card)

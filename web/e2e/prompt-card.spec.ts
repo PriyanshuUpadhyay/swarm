@@ -117,6 +117,27 @@ test("a question that takes text sends the typed answer", async ({ page: tab }, 
   await tab.screenshot({ path: info.outputPath("typed-question.png") });
 });
 
+test("a screen card shows the pane rows and sends one key per button", async ({ page: tab }, info) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  const rows = [...Array.from({ length: 60 }, (_, i) => `row ${i + 1}`), " Select model", " ❯ 1. Opus", "   2. Sonnet"].join("\n");
+  await showPrompt(tab, [session], { id: "screen", question: rows, choices: ["↑", "↓", "Enter", "Esc"], input: true, screen: true });
+  const sent: unknown[] = [];
+  await tab.route("**/api/chat/answer", async (route) => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill({ json: { ok: true } });
+  });
+  await openChat(tab, session);
+  const card = tab.getByTestId("prompt-card");
+  const question = card.getByTestId("prompt-question");
+  // The question is at the bottom of the pane, so the rows open scrolled to the end.
+  await expect(question).toContainText("2. Sonnet");
+  expect(await question.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1)).toBe(true);
+  expect(await question.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/mono/i);
+  await card.getByTestId("prompt-choice").nth(1).click();
+  await expect.poll(() => sent).toEqual([expect.objectContaining({ prompt_id: "screen", choice: 1 })]);
+  await tab.screenshot({ path: info.outputPath("screen-card.png") });
+});
+
 test("a long error token wraps and keeps Retry and Dismiss inside the banner", async ({ page: tab }, info) => {
   const home = process.env.SWARM_E2E_HOME!;
   const error = `failed-${"unbroken".repeat(100)}`;
@@ -183,7 +204,7 @@ test("a child question updates one mounted polite status without taking focus", 
   await openChat(tab, process.env[`SWARM_E2E_PANES_${info.project.name}`]!);
   const reviewer = tab.locator('[data-testid="pane"][data-pane="reviewer"]');
   const status = reviewer.locator(".chat-input").getByRole("status");
-  const caption = "The agent is asking a question. Answer it first.";
+  const caption = "The agent is asking a question. Answer it above first.";
   await expect(status).toHaveCount(1);
   await expect(status).toBeEmpty();
   const mounted = (await status.elementHandle())!;

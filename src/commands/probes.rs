@@ -163,7 +163,6 @@ pub(super) fn claude_rows(commands: &Value) -> Vec<Row> {
                 description,
                 hint: command["argumentHint"].as_str().unwrap_or("").into(),
                 source,
-                dialog: false,
             })
         })
         .collect()
@@ -203,7 +202,6 @@ pub(super) fn codex_rows(result: &Value) -> Vec<Row> {
                 description: skill["description"].as_str().unwrap_or("").into(),
                 hint: String::new(),
                 source,
-                dialog: false,
             })
         })
         .collect()
@@ -253,7 +251,6 @@ pub(super) fn pi_rows(commands: &Value) -> Vec<Row> {
                 description: command["description"].as_str().unwrap_or("").into(),
                 hint: String::new(),
                 source: label,
-                dialog: false,
             })
         })
         .collect()
@@ -325,7 +322,6 @@ pub(super) fn skills(dir: &Path, plugin: Option<&str>) -> Vec<Row> {
                 description: fields.get("description").cloned().unwrap_or_default(),
                 hint: String::new(),
                 source: skill_menu_source(path.to_str(), plugin.unwrap_or("skill"))?,
-                dialog: false,
             })
         })
         .collect()

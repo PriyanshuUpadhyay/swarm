@@ -115,7 +115,7 @@ pub fn prompt(rows: &str) -> Option<Prompt> {
 /// The prompt a screen shows, read again from the pane's history when nothing closes its question
 /// above. None when that read fails or nothing closes the question there either: a pane can keep
 /// no row above its screen, so no read proves the question starts at its top row. Such a prompt,
-/// as Codex's folder trust screen, is answered in the pane.
+/// as Codex's folder trust screen, gets a screen card (ADR 0159).
 pub fn whole_prompt(screen: &str, history: impl FnOnce() -> Option<String>) -> Option<Prompt> {
     let found = prompt(screen)?;
     if !found.cut {
