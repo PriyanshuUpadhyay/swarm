@@ -62,6 +62,17 @@ Read the request, the code, and the available task records first. Then ask only 
 that change behavior. Keep each round short. Group independent questions whose prerequisites are
 settled, and give each a recommended answer. A plain `yes` accepts the recommendations in that round.
 
+Start the first round with a playback: one or two sentences, in your own words, that say the
+problem, the goal, and the result the user will see. Name a boundary only when the request states
+it, with its source. The user corrects the playback in the same reply as the answers; it needs no
+turn of its own. It never stands in for the user's example or exclusion below.
+
+Before the round, check each kind of direction-changing choice: accepted behavior, a public
+surface, data or state ownership, a dependency or substrate, failure policy (timeouts, retries,
+partial success), blast radius (which other callers get the change), rollout order, downstream
+callers, and an irreversible action. Ask each open one with its default. When an open choice
+depends on a project or code to copy and the repository has no precedent, ask for one.
+
 - Never ask what the code or the task already answers; look it up. A question that restates the
   task text, or a choice already recorded as an A-line, is never asked. When the task text states a
   value, record it as an A-line marked `typed` with the words `from the request` and go on. In a
