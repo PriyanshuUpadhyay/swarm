@@ -158,6 +158,12 @@ test("↑ ↓ in the composer's empty prompt and ⌘↑ ⌘↓ with text change 
   await expect(chip).not.toHaveText("proj-gh");
   await expect(prompt).toHaveValue("Fix the sidebar");
   await expect(prompt).toBeFocused();
+  // An open / menu does not take the ⌘ arrows.
+  await prompt.fill("");
+  await prompt.pressSequentially("/");
+  await expect(composer.getByTestId("slash-menu")).toBeVisible();
+  await prompt.press("Meta+ArrowUp");
+  await expect(chip).toHaveText("proj-gh");
 });
 
 test("/ in the composer's prompt lists the CLI's skills with their descriptions, and Enter inserts one", async ({ page }) => {

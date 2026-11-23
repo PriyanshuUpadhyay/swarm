@@ -23,11 +23,11 @@ With the focus in the prompt, ⌘↑ and ⌘↓ change the project to the previo
 the ⌘P list, around its ends. Plain ↑ and ↓ do the same only while the prompt is empty; with
 text they move the caret, so an edit of a long prompt cannot change the project. A change sets
 the place to the new project's default, as a pick in the ⌘P list does. The hint line and the
-project chip name the keys. ⌘P stays.
+project chip name ⌘↑ and ⌘↓. ⌘P stays.
 
 The prompt has the chat box's `/`, `$` and `@` menu, from one shared hook
 (`web/src/react/slash-menu-state.ts`) and the same list part. The rows are those of the CLI in
-the run chip. ↑ ↓ move in the open menu, Tab or Enter inserts the row, Esc closes the menu, and
+the run chip. Plain ↑ ↓ move in the open menu, while ⌘↑ ⌘↓ still change the project; Tab or Enter inserts the row, Esc closes the menu, and
 ⌘Enter still starts the chat. The menu opens under the prompt, because the overlay sits near the
 window's top. For pi, the first prompt goes out as the chat box sends a message: a skill typed
 mid-prompt moves to the start.

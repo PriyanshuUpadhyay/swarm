@@ -226,7 +226,8 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
     const arrow = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
     const command = e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
-    let done = slash.onKeyDown(e, insert);
+    // ⌘ with an arrow changes the project also while the menu is open; the menu gets the plain arrows.
+    let done = !(arrow && command) && slash.onKeyDown(e, insert);
     if (done) {
       // The menu took the key.
     } else if (slash.row && e.key === "Enter" && plain) {
