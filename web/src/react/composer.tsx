@@ -1,15 +1,16 @@
 import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SENT, type App, type Composer } from "../core/app";
 import { hasPendingImage, imagePaths } from "../core/images";
 import { historyStep, type Browse } from "../core/history";
 import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
-import { editPicks, matches, menuAt, moved, offered, pick, picksAndSends, showsEmpty, skillFirst, skillNames, toSend, type CommandList, type MenuRow, type SkillPick } from "../core/slash";
+import { editPicks, menuAt, pick, picksAndSends, skillFirst, skillNames, toSend, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { dragOverFiles, dropImage, pasteImage } from "./composer-image";
 import { ImageThumbs } from "./images";
 import { RunChip } from "./run-chip";
 import { SlashMenu } from "./slash-menu";
+import { useSlashMenu } from "./slash-menu-state";
 import { cn } from "../lib/utils";
 
 /** Two Escapes within this many ms count as Esc Esc. */
@@ -24,15 +25,16 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   const box = useRef<HTMLTextAreaElement>(null);
   const highlights = useRef<HTMLDivElement>(null);
   const nativeEdit = useRef<{ start: number; end: number; inputType: string } | null>(null);
-  const [caret, setCaret] = useState(0);
-  const [focused, setFocused] = useState(false);
-  const [list, setList] = useState<CommandList | null>(null);
-  const [files, setFiles] = useState<CommandList | null>(null);
-  const [selected, setSelected] = useState(0);
-  // The start of the token whose menu Escape closed; the menu stays shut until the token changes.
-  const [dismissed, setDismissed] = useState<number | null>(null);
+  const slash = useSlashMenu({
+    text,
+    provider: chair.provider,
+    disabled: !!chair.disabled,
+    source: sessionId,
+    commands: () => app.menuCommands(sessionId),
+    files: () => app.menuFiles(sessionId),
+  });
+  const { menu, rows, open, current, listId, list, setList, setCaret, setFocused, setDismissed } = slash;
   const pickedCaret = useRef<number | null>(null);
-  const listId = useId();
   const browse = useRef<Browse | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -86,37 +88,6 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
     }
   }, [text, picks, expanded]);
 
-  const menu = focused && !chair.disabled ? menuAt(text, caret, chair.provider) : null;
-  const shownList = menu?.opener === "@" ? files : list;
-  const rows = menu && shownList ? matches(offered(shownList.commands, menu, chair.provider), menu.query) : [];
-  const open = menu !== null && dismissed !== menu.start && (rows.length > 0 || showsEmpty(menu, shownList));
-  const current = Math.min(selected, Math.max(rows.length - 1, 0));
-  const menuKey = menu ? `${menu.opener}${menu.start}` : null;
-
-  // Each opening asks again; the server answers from its cache and refreshes a stale list.
-  useEffect(() => {
-    if (!menuKey) {
-      setDismissed(null);
-      return;
-    }
-    let live = true;
-    // The file list stays apart, so pi's skill list keeps its rows for the send.
-    const set = menuKey.startsWith("@") ? setFiles : setList;
-    (menuKey.startsWith("@") ? app.menuFiles(sessionId) : app.menuCommands(sessionId)).then(
-      (next) => live && set(next),
-      (err: unknown) => live && set((old) => ({ commands: old?.commands ?? [], note: err instanceof Error ? err.message : String(err) })),
-    );
-    return () => {
-      live = false;
-    };
-  }, [app, sessionId, menuKey]);
-  useEffect(() => {
-    setSelected(0);
-  }, [menuKey, menu?.query]);
-  useEffect(() => {
-    document.getElementById(`${listId}-${current}`)?.scrollIntoView({ block: "nearest" });
-  }, [listId, current]);
-
   const change = (next: string, recorded?: readonly SkillPick[]) => {
     setText(next);
     app.setDraft(sessionId, next, recorded);
@@ -168,28 +139,11 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
-    if (open) {
-      const row = rows[current];
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelected(moved(current, rows.length, e.key === "ArrowDown" ? 1 : -1));
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setDismissed(menu.start);
-        return;
-      }
-      if (row && e.key === "Tab" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        choose(row, false);
-        return;
-      }
-      if (row && e.key === "Enter" && sends(e, sendKey)) {
-        e.preventDefault();
-        choose(row, picksAndSends(text, menu, row));
-        return;
-      }
+    if (slash.onKeyDown(e, (row) => choose(row, false))) return;
+    if (menu && slash.row && e.key === "Enter" && sends(e, sendKey)) {
+      e.preventDefault();
+      choose(slash.row, picksAndSends(text, menu, slash.row));
+      return;
     }
     // ⇧⌘↩ zooms the pane.
     if (e.key === "Enter" && e.shiftKey && e.metaKey) return;
@@ -272,8 +226,8 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         data-testid="composer-box"
         className="relative rounded-lg border border-border-strong bg-surface shadow-sm focus-within:border-ring has-[textarea:disabled]:opacity-70"
       >
-        {open && (
-          <SlashMenu id={listId} menu={menu} rows={rows} current={current} list={shownList} who={chair.who} select={setSelected} choose={choose} />
+        {open && menu && (
+          <SlashMenu id={listId} menu={menu} rows={rows} current={current} list={slash.shownList} who={chair.who} select={slash.setSelected} choose={choose} />
         )}
         <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => change(text.split(path).join("").replace(/  +/g, " "))} />
         <div className="relative">

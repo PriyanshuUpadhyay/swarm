@@ -2,14 +2,16 @@ import { Fragment } from "react";
 import { isSwarmRow, type CommandList, type Menu, type MenuRow } from "../core/slash";
 import { cn } from "../lib/utils";
 
-/** The composer's `/`, `$` and `@` list. The rows arrive with the swarm plugin's rows first. */
-export function SlashMenu({ id, menu, rows, current, list, who, select, choose }: {
+/** The composer's `/`, `$` and `@` list. The rows arrive with the swarm plugin's rows first. It
+ *  opens above its box, or under it with `below`, for a box near the window's top. */
+export function SlashMenu({ id, menu, rows, current, list, who, below = false, select, choose }: {
   id: string;
   menu: Menu;
   rows: MenuRow[];
   current: number;
   list: CommandList | null;
   who: string | null;
+  below?: boolean;
   select: (i: number) => void;
   choose: (row: MenuRow, send: boolean) => void;
 }) {
@@ -22,7 +24,7 @@ export function SlashMenu({ id, menu, rows, current, list, who, select, choose }
       role="listbox"
       aria-label={menu.opener === "@" ? "Files" : "Commands and skills"}
       data-testid="slash-menu"
-      className="absolute right-0 bottom-full left-0 z-20 mb-1 max-h-72 overflow-y-auto rounded-lg border border-border-strong bg-surface p-1 text-sm shadow-lg"
+      className={cn("absolute right-0 left-0 z-20 max-h-72 overflow-y-auto rounded-lg border border-border-strong bg-surface p-1 text-sm shadow-lg", below ? "top-full mt-1" : "bottom-full mb-1")}
     >
       {rows.map((r, i) => (
         <Fragment key={r.insert}>

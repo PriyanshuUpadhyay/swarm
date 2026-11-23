@@ -1,21 +1,28 @@
 // The new chat composer (ADR 0149): one part, as the start page when no chat is open and as an
 // overlay over the open chat. The owner types the first prompt, keeps or changes the project, the
 // place and the run, and presses ⌘Enter. A starting chat shows its steps in `StartingView`.
+// ↑ ↓ in an empty prompt, and ⌘↑ ⌘↓ always, change the project, and the prompt has the chat
+// box's `/`, `$` and `@` menu (ADR 0155).
 
 import { LoaderCircleIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import type { App } from "../core/app";
 import { cliName, levelWord, profileRun, sameRun, type Run } from "../core/composer";
 import { type Profile } from "../core/lifecycle";
-import { DEFAULT_ROLE, defaultPlace, type ComposerRun, placeLabel, placeReady, defaultTarget, targets, type Place, type Preview, type Target } from "../core/new-chat";
+import { DEFAULT_ROLE, defaultPlace, type ComposerRun, placeLabel, placeReady, defaultTarget, targets, type Place, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 import { hasPendingImage, imagePaths } from "../core/images";
+import { pick, toSend, type MenuRow } from "../core/slash";
 import { dragOverFiles, dropImage, pasteImage, type Draft } from "./composer-image";
+import { Chip, RunMenu, moveOption } from "./composer-new-parts";
+import { PreviewCard, usePreview } from "./composer-new-preview";
 import { ImageThumbs } from "./images";
-import { ErrorLine, message } from "./lifecycle-shared";
+import { message } from "./lifecycle-shared";
 import { PlacePanel } from "./place-lists";
-import { PRESSED_PILL, RunPicker, runModel, useRunCatalog } from "./run-picker";
+import { PRESSED_PILL, runModel } from "./run-picker";
+import { SlashMenu } from "./slash-menu";
+import { useSlashMenu } from "./slash-menu-state";
 
 /** A read of NewChat that also renders again when navSeq moves, because shown() and composing() read it. */
 export function useNewChat<T>(app: App, read: () => T): T {
@@ -118,6 +125,31 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     shownNow.current = shown;
   });
 
+  // The run chip's CLI lists the `/` rows; before the profiles arrive, no CLI is known.
+  const provider = shown?.provider ?? null;
+  const slash = useSlashMenu({
+    text,
+    provider,
+    disabled: false,
+    source: `${target.cwd}\n${provider}`,
+    commands: async () => (provider ? app.newChat.commands(target.cwd, provider) : { commands: [], note: null }),
+    files: () => app.newChat.files(target.cwd),
+  });
+  // After a pick the caret goes after the inserted text.
+  const pickedCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (pickedCaret.current === null) return;
+    box.current?.setSelectionRange(pickedCaret.current, pickedCaret.current);
+    pickedCaret.current = null;
+  }, [text]);
+  const insert = (row: MenuRow) => {
+    if (!slash.menu) return;
+    const next = pick(text, slash.menu, row);
+    pickedCaret.current = next.caret;
+    prompt.change(next.text);
+    slash.setCaret(next.caret);
+  };
+
   useEffect(() => {
     app.life.profiles().then(
       (list) => {
@@ -152,7 +184,9 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     if (!ready) return setMenu("place");
     setSending(true);
     const changed = run && !sameRun(run, base) ? run : null;
-    const ok = await app.newChat.start(target.cwd, text, place, { role: profile?.name ?? role, run: changed }, { composer: true });
+    // pi runs a skill only at the message's start, so the first prompt goes as the chat box sends it.
+    const first = provider ? (await toSend(text, provider, slash.list, () => app.newChat.commands(target.cwd, provider))).text : text;
+    const ok = await app.newChat.start(target.cwd, first, place, { role: profile?.name ?? role, run: changed }, { composer: true });
     // A composer that stays on screen, as when the owner moved during the POST, sends again.
     setSending(false);
     if (ok) {
@@ -174,6 +208,38 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
       setRun({ ...shown, effort: levels[(at + 1) % levels.length] });
     } catch (err) {
       app.notice(message(err), true);
+    }
+  };
+
+  /** The next or the previous project of the ⌘P list, around its ends; the place goes back to
+   *  that project's default, and an open menu stays open. */
+  const stepProject = (by: 1 | -1) => {
+    const next = list[(list.findIndex((t) => t.cwd === target.cwd) + by + list.length) % list.length];
+    if (!next || next.cwd === target.cwd) return;
+    setCwd(next.cwd);
+    setPlace(defaultPlace(next));
+  };
+
+  // The prompt's own keys, before the composer's: the open `/` menu, then the project arrows.
+  const onPromptKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return;
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+    const arrow = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    const command = e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+    let done = slash.onKeyDown(e, insert);
+    if (done) {
+      // The menu took the key.
+    } else if (slash.row && e.key === "Enter" && plain) {
+      insert(slash.row);
+      done = true;
+    } else if (arrow && (command || (plain && text === ""))) {
+      // With text in the prompt a plain arrow moves the caret, so only ⌘ changes the project there.
+      stepProject(arrow);
+      done = true;
+    }
+    if (done) {
+      e.preventDefault();
+      e.stopPropagation();
     }
   };
 
@@ -200,21 +266,35 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
       <div className="grid gap-3 min-[1000px]:grid-cols-[1fr_280px]">
         <div className="grid gap-2 rounded-xl border border-border-strong bg-popover p-3 shadow-panel has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring">
           <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => prompt.change(text.split(path).join("").replace(/  +/g, " "))} />
-          <textarea
-            ref={box}
-            rows={overlay ? 4 : 5}
-            data-testid="new-chat-prompt"
-            aria-label="First prompt"
-            placeholder={`What should this chat do in ${target.title}?`}
-            className="min-h-[96px] w-full resize-none bg-transparent outline-none"
-            value={text}
-            onChange={(e) => prompt.change(e.target.value)}
-            onPaste={(e) => pasteImage(e, app, prompt)}
-            onDragOver={dragOverFiles}
-            onDrop={(e) => dropImage(e, app, prompt)}
-          />
+          <div className="relative grid">
+            <textarea
+              ref={box}
+              rows={overlay ? 4 : 5}
+              data-testid="new-chat-prompt"
+              aria-label="First prompt"
+              placeholder={`What should this chat do in ${target.title}?`}
+              className="min-h-[96px] w-full resize-none bg-transparent outline-none"
+              aria-expanded={slash.open}
+              aria-controls={slash.open ? slash.listId : undefined}
+              aria-activedescendant={slash.open && slash.rows.length ? `${slash.listId}-${slash.current}` : undefined}
+              value={text}
+              onChange={(e) => {
+                prompt.change(e.target.value);
+                slash.setCaret(e.target.selectionStart);
+              }}
+              onSelect={(e) => slash.setCaret(e.currentTarget.selectionStart)}
+              onFocus={() => slash.setFocused(true)}
+              onBlur={() => slash.setFocused(false)}
+              onKeyDown={onPromptKey}
+              onPaste={(e) => pasteImage(e, app, prompt)}
+              onDragOver={dragOverFiles}
+              onDrop={(e) => dropImage(e, app, prompt)}
+            />
+            {/* Under the box, because the overlay sits near the window's top. */}
+            {slash.open && slash.menu && <SlashMenu id={slash.listId} menu={slash.menu} rows={slash.rows} current={slash.current} list={slash.shownList} who={null} below select={slash.setSelected} choose={insert} />}
+          </div>
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
-            <Chip testid="chip-project" on={menu === "project"} title="Project (⌘P)" onClick={() => setMenu((m) => (m === "project" ? null : "project"))}>
+            <Chip testid="chip-project" on={menu === "project"} title="Project (⌘↑ ⌘↓ change it, ⌘P lists)" onClick={() => setMenu((m) => (m === "project" ? null : "project"))}>
               {target.title}
             </Chip>
             <Chip testid="chip-place" on={menu === "place"} title={target.git ? "Where the chat runs" : "A plain folder runs the chat in itself"} disabled={!target.git} onClick={() => setMenu((m) => (m === "place" ? null : "place"))}>
@@ -226,7 +306,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
             </Chip>
             <span className="flex-1" />
             <span className="text-xs text-muted-foreground">
-              <Kbd>⌘↵</Kbd> start · <Kbd>↵</Kbd> new line{overlay ? <> · <Kbd>Esc</Kbd> close</> : null}
+              <Kbd>⌘↵</Kbd> start · <Kbd>↵</Kbd> new line · <Kbd>⌘↑↓</Kbd> project{overlay ? <> · <Kbd>Esc</Kbd> close</> : null}
             </span>
             <Button type="button" size="sm" data-testid="new-chat-start" disabled={!ready} onClick={() => void send()}>
               {sending && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
@@ -272,83 +352,5 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
         <PreviewCard target={target} place={place} worktree={worktree} preview={preview} />
       </div>
     </div>
-  );
-}
-
-/** ↑ ↓ Home End move the focus between a listbox's options. */
-function moveOption(e: KeyboardEvent<HTMLElement>) {
-  const options = [...e.currentTarget.querySelectorAll<HTMLElement>('[role="option"]')];
-  const at = options.indexOf(document.activeElement as HTMLElement);
-  const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: options.length - 1 }[e.key];
-  if (next === undefined) return;
-  e.preventDefault();
-  options[Math.max(0, Math.min(options.length - 1, next))]?.focus();
-}
-
-function RunMenu({ app, current, draft, setDraft }: { app: App; current: Run; draft: Run; setDraft: (run: Run) => void }) {
-  const catalog = useRunCatalog(app, current.provider);
-  return (
-    <>
-      <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={setDraft} />
-      <ErrorLine text={catalog.error} />
-    </>
-  );
-}
-
-function Chip({ testid, on, title, disabled, onClick, children }: { testid: string; on: boolean; title: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button type="button" data-testid={testid} aria-expanded={on} title={title} disabled={disabled} className="max-w-[320px] truncate rounded-md border border-border px-2 py-1 hover:bg-hover aria-expanded:bg-selected disabled:pointer-events-none" onClick={onClick}>
-      {children}
-    </button>
-  );
-}
-
-/** `/api/chat/new-preview`, read 250 ms after the typing stops, for a new worktree only. */
-function usePreview(app: App, target: Target, wanted: boolean, text: string): Preview | "failed" | null {
-  const [preview, setPreview] = useState<Preview | "failed" | null>(null);
-
-  useEffect(() => {
-    if (!wanted) return setPreview(null);
-    let live = true;
-    const timer = setTimeout(() => {
-      app.newChat.preview(target.cwd, text).then(
-        (p) => live && setPreview(p),
-        () => live && setPreview("failed"), // The card is a hint; the send checks the name again.
-      );
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [app, target.cwd, text, wanted]);
-
-  return wanted ? preview : null;
-}
-
-function PreviewCard({ target, place, worktree, preview }: { target: Target; place: Place; worktree: boolean; preview: Preview | "failed" | null }) {
-  const read = (p: Preview): [string, string][] => [
-    ["Branch", p.branch ?? "named from the first prompt"],
-    ["Folder", p.folder ?? "named from the branch"],
-    ["Base", p.base ?? "none"],
-    ["Fetched", p.fetchedUnixS ? new Date(p.fetchedUnixS * 1000).toLocaleString() : "never"],
-    ...(p.setup ? ([["Setup", p.setup]] as [string, string][]) : []),
-  ];
-
-  const elsewhere: [string, string][] = place.kind === "here" || !target.git ? [["Folder", target.cwd]] : [["Starts on", placeLabel(place, target)]];
-  const waiting: [string, string][] = [["Branch", preview === "failed" ? "Not known yet; the send names it" : "Reading…"]];
-  const rows = !worktree ? elsewhere : preview && preview !== "failed" ? read(preview) : waiting;
-
-  return (
-    <aside className="grid content-start gap-1.5 rounded-xl border border-border p-3 text-sm" aria-label="What starts" data-testid="new-chat-preview">
-      <h3 className="text-xs font-medium text-muted-foreground">{worktree ? "A new worktree" : "Where the chat runs"}</h3>
-      {rows.map(([k, v]) => (
-        <div key={k} className="grid grid-cols-[72px_1fr] gap-2">
-          <span className="text-muted-foreground">{k}</span>
-          <span className="truncate font-mono text-xs leading-5" data-testid={`preview-${k.toLowerCase().replace(" ", "-")}`} title={v}>
-            {v}
-          </span>
-        </div>
-      ))}
-    </aside>
   );
 }

@@ -20,16 +20,19 @@ pub(super) async fn chat_commands(
     Query(query): Query<CommandsQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let (call, agent) = action_target(&app, &query.session, &query.agent)?;
-    let slot = app
-        .commands
-        .lock()
-        .unwrap()
-        .entry((query.session, agent.clone()))
-        .or_default()
-        .clone();
+    let call = call.args(&["commands", &agent, "--json"]);
+    Ok(Json(
+        cached_commands(&app, (query.session, agent), call).await,
+    ))
+}
+
+/// The list under `key`, read by `call` when the cache has none or a stale one.
+pub(super) async fn cached_commands(app: &App, key: (String, String), call: CliCall) -> Value {
+    let slot = app.commands.lock().unwrap().entry(key).or_default().clone();
     let cached = slot.last.lock().unwrap().clone();
     if let Some((stale_at, value)) = cached {
         if tokio::time::Instant::now() >= stale_at {
+            let app = app.clone();
             tokio::spawn(async move {
                 let Ok(_probe) = slot.probe.try_lock() else {
                     return;
@@ -43,16 +46,16 @@ pub(super) async fn chat_commands(
                 {
                     return;
                 }
-                probe_commands(&app, &slot, call, &agent).await;
+                probe_commands(&app, &slot, call).await;
             });
         }
-        return Ok(Json(value));
+        return value;
     }
     let _probe = slot.probe.lock().await;
     if let Some((_, value)) = slot.last.lock().unwrap().clone() {
-        return Ok(Json(value));
+        return value;
     }
-    Ok(Json(probe_commands(&app, &slot, call, &agent).await))
+    probe_commands(app, &slot, call).await
 }
 
 /// Most paths the `@` menu gets, so a large checkout stays a small reply.
@@ -65,59 +68,54 @@ pub(super) async fn chat_files(
     Query(query): Query<CommandsQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let (call, _) = action_target(&app, &query.session, &query.agent)?;
-    tokio::task::spawn_blocking(move || {
-        let cwd = call.cwd.to_string_lossy().into_owned();
-        let listed = lifecycle::git(
-            &cwd,
-            &[
-                "ls-files",
-                "--cached",
-                "--others",
-                "--exclude-standard",
-                "-z",
-            ],
-        );
-        let (files, note) = match listed {
-            Ok(out) if out.status.success() => {
-                let mut files: Vec<String> = out
-                    .stdout
-                    .split(|b| *b == 0)
-                    .filter(|path| !path.is_empty())
-                    .map(|path| String::from_utf8_lossy(path).into_owned())
-                    .collect();
-                files.sort();
-                files.dedup();
-                let note = (files.len() > FILES_CAP)
-                    .then(|| format!("Showing the first {FILES_CAP} files of {}.", files.len()));
-                files.truncate(FILES_CAP);
-                (files, note)
-            }
-            _ => (
-                Vec::new(),
-                Some("Git cannot list the files of this chat's folder.".to_owned()),
-            ),
-        };
-        Json(json!({ "files": files, "note": note }))
-    })
-    .await
-    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "file list task failed"))
+    tokio::task::spawn_blocking(move || Json(folder_files(&call.cwd.to_string_lossy())))
+        .await
+        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "file list task failed"))
 }
 
-/// Runs `swarm commands` and stores its answer. A failure is stored as a note, so the menu says
+/// The files git tracks or would add under `cwd`, at most `FILES_CAP`, as the `@` menu's reply.
+pub(super) fn folder_files(cwd: &str) -> Value {
+    let listed = lifecycle::git(
+        cwd,
+        &[
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+        ],
+    );
+    let (files, note) = match listed {
+        Ok(out) if out.status.success() => {
+            let mut files: Vec<String> = out
+                .stdout
+                .split(|b| *b == 0)
+                .filter(|path| !path.is_empty())
+                .map(|path| String::from_utf8_lossy(path).into_owned())
+                .collect();
+            files.sort();
+            files.dedup();
+            let note = (files.len() > FILES_CAP)
+                .then(|| format!("Showing the first {FILES_CAP} files of {}.", files.len()));
+            files.truncate(FILES_CAP);
+            (files, note)
+        }
+        _ => (
+            Vec::new(),
+            Some("Git cannot list the files of this chat's folder.".to_owned()),
+        ),
+    };
+    json!({ "files": files, "note": note })
+}
+
+/// Runs `call`, a `swarm commands` read, and stores its answer. A failure is stored as a note, so the menu says
 /// why, and a burst of `/` keys starts no second probe before `COMMANDS_RETRY`. A failed or partial
 /// read keeps the rows of the last fuller list, so a slow CLI start does not empty the menu.
-pub(super) async fn probe_commands(
-    app: &Server,
-    slot: &CommandsSlot,
-    call: CliCall,
-    agent: &str,
-) -> Value {
-    let read = run_cli(app, call.args(&["commands", agent, "--json"]), None)
-        .await
-        .and_then(|text| {
-            serde_json::from_str::<Value>(&text)
-                .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid commands JSON from swarm"))
-        });
+pub(super) async fn probe_commands(app: &Server, slot: &CommandsSlot, call: CliCall) -> Value {
+    let read = run_cli(app, call, None).await.and_then(|text| {
+        serde_json::from_str::<Value>(&text)
+            .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid commands JSON from swarm"))
+    });
     let (stale_at, mut value) = menu_entry(read, tokio::time::Instant::now());
     let mut last = slot.last.lock().unwrap();
     value = keep_fuller_rows(last.as_ref().map(|(_, value)| value), value);

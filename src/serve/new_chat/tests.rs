@@ -60,6 +60,39 @@ async fn new_chat_route() {
 }
 
 #[tokio::test]
+async fn new_chat_commands_lists_a_provider_in_the_folder_before_a_chat_exists() {
+    let fixture = action_fixture();
+    std::fs::write(
+        &fixture.app.cli,
+        r#"#!/bin/sh
+printf '%s\n' "$PWD|$*" >> "$SWARM_HOME/actions"
+printf '{"commands":[{"insert":"/swarm:plan"}],"note":null}\n'
+"#,
+    )
+    .unwrap();
+    let read = |cwd: &str| {
+        new_chat_commands(
+            State(fixture.app.clone()),
+            Query(serde_json::from_value(json!({"cwd": cwd, "provider": "claude"})).unwrap()),
+        )
+    };
+    let list = read(env!("CARGO_MANIFEST_DIR")).await.unwrap().0;
+    assert_eq!(list["commands"][0]["insert"], "/swarm:plan");
+    assert_eq!(
+        action_calls(&fixture),
+        format!(
+            "{}|commands --provider claude --json\n",
+            env!("CARGO_MANIFEST_DIR")
+        )
+    );
+    // A folder outside the workspace tree is not read.
+    assert_eq!(
+        read("/not-in-snapshot").await.unwrap_err().0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
 async fn resume_chat_route_launches_the_chair_with_resume_in_its_chat() {
     let fixture = action_fixture();
     let body = json!({"session": fixture.session});

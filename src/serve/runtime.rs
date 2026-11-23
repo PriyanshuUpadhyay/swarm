@@ -197,6 +197,8 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/chat/branch", post(branch_chat))
         .route("/api/chat/continue/cancel", post(cancel_continue))
         .route("/api/chat/new-preview", get(new_chat_preview))
+        .route("/api/chat/new-commands", get(new_chat_commands))
+        .route("/api/chat/new-files", get(new_chat_files))
         .route("/api/chat/start", get(new_chat::start::chat_start_done))
         .route("/api/workspace/new-options", get(lifecycle_read))
         .route("/api/workspace/fetch", post(workspace_fetch))

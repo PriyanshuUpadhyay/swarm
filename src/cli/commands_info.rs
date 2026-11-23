@@ -299,6 +299,23 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         return print_json(&swarm::providers::info_list()).map(Some);
     }
     if let [cmd, provider_flag, provider, json] = args
+        && cmd == "commands"
+        && provider_flag == "--provider"
+        && json == "--json"
+    {
+        // The new chat composer's menu: no chat exists yet, so the folder is the working
+        // directory and the CLI lists with its default account.
+        let provider =
+            swarm::providers::Provider::parse(provider).ok_or("swarm: unknown provider")?;
+        return print_json(&swarm::commands::list(
+            provider,
+            &Default::default(),
+            &std::env::current_dir()?,
+            swarm::profiles::native::deadline(15),
+        ))
+        .map(Some);
+    }
+    if let [cmd, provider_flag, provider, json] = args
         && cmd == "models"
         && provider_flag == "--provider"
         && json == "--json"

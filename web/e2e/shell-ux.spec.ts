@@ -141,6 +141,38 @@ test("the composer's project change resets a picked issue to the new project's d
   await screenshot(page, "new-chat-composer");
 });
 
+test("↑ ↓ in the composer's empty prompt and ⌘↑ ⌘↓ with text change the project", async ({ page }) => {
+  await open(page);
+  const composer = await compose(page, "proj-gh");
+  const prompt = composer.getByTestId("new-chat-prompt");
+  const chip = composer.getByTestId("chip-project");
+  await prompt.press("ArrowDown");
+  await expect(chip).not.toHaveText("proj-gh");
+  await prompt.press("ArrowUp");
+  await expect(chip).toHaveText("proj-gh");
+  // With text, a plain arrow moves the caret and ⌘ changes the project.
+  await prompt.fill("Fix the sidebar");
+  await prompt.press("ArrowDown");
+  await expect(chip).toHaveText("proj-gh");
+  await prompt.press("Meta+ArrowDown");
+  await expect(chip).not.toHaveText("proj-gh");
+  await expect(prompt).toHaveValue("Fix the sidebar");
+  await expect(prompt).toBeFocused();
+});
+
+test("/ in the composer's prompt lists the CLI's skills with their descriptions, and Enter inserts one", async ({ page }) => {
+  await open(page);
+  const composer = await compose(page, "proj-gh");
+  const prompt = composer.getByTestId("new-chat-prompt");
+  await prompt.pressSequentially("/swarm");
+  // The stand-in claude lists /swarm:plan.
+  await expect(composer.getByTestId("slash-row").filter({ hasText: "/swarm:plan" })).toContainText("Plan one change");
+  await screenshot(page, "new-chat-slash-menu");
+  await prompt.press("Enter");
+  await expect(prompt).toHaveValue("/swarm:plan ");
+  await expect(composer.getByTestId("slash-menu")).toHaveCount(0);
+});
+
 test("New Chat… in the Add project menu leaves the focus in the composer's prompt", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "Add project" }).click();

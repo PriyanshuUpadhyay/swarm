@@ -6,6 +6,7 @@ import { firstLine, message } from "./app-types";
 import { hasPendingImage } from "./images";
 import type { Run } from "./composer";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
+import { fileRows, type CommandList } from "./slash";
 import { canStartIn, defaultPlace, defaultTarget, targets, type Place, type Preview } from "./new-chat-places";
 
 export * from "./new-chat-places";
@@ -166,6 +167,17 @@ export class NewChat {
   /** The card's read of what place `new` in `cwd` makes from `prompt`. */
   preview(cwd: string, prompt: string) {
     return this.app.api.get<Preview>("/api/chat/new-preview", { cwd, prompt });
+  }
+
+  /** The `/` menu rows that `provider` offers in `cwd`, before a chat exists (ADR 0155). */
+  commands(cwd: string, provider: string) {
+    return this.app.api.get<CommandList>("/api/chat/new-commands", { cwd, provider });
+  }
+
+  /** The `@` menu rows: the files of `cwd`. */
+  async files(cwd: string) {
+    const { files, note } = await this.app.api.get<{ files: string[]; note: string | null }>("/api/chat/new-files", { cwd });
+    return fileRows(files, note);
   }
 
   /** Closes the composer; its `text` waits for the next one. A page composer's Escape also ends
