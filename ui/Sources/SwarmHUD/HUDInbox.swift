@@ -225,7 +225,8 @@ extension InboxSection {
     }
 }
 
-/// A waiting agent: its chat, the question on its screen, and a button per choice.
+/// A waiting agent: its chat, the question on its screen, and a button per choice. A click
+/// anywhere else on the card opens the chat, as on the rows below it.
 struct NeedCardView: View {
     let need: NeedCard
     let answering: Bool
@@ -238,7 +239,7 @@ struct NeedCardView: View {
     var body: some View {
         Group {
             if let prompt = need.prompt, prompt.kind == "plan" {
-                let pointer = "Open to read the full plan and answer."
+                let pointer = "Click to read the full plan and answer."
                 if prompt.choices.isEmpty {
                     card(pointer, choices: [])
                 } else {
@@ -258,8 +259,12 @@ struct NeedCardView: View {
         }
         .padding(.horizontal, Layout.rowPadding).padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 10).fill(Palette.chipBlocked))
+        // A tap gesture, not a Button, so the choice buttons inside keep their own clicks.
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .onTapGesture(perform: open)
         .padding(.vertical, 2)
         .accessibilityElement(children: .contain)
+        .accessibilityAction(named: "Open the chat", open)
     }
 
     private func card(_ question: String, choices: [String], fullPlan: Bool = false) -> some View {
@@ -269,6 +274,7 @@ struct NeedCardView: View {
                 Text(need.title).fontWeight(.semibold).foregroundStyle(Palette.primary).lineLimit(1)
                 Text(need.agent).foregroundStyle(Palette.tertiary).lineLimit(1)
                 Spacer(minLength: 0)
+                Text("Click to open").foregroundStyle(Palette.tertiary).fixedSize()
             }
             .font(.system(size: 12))
             Text(question)
@@ -281,7 +287,6 @@ struct NeedCardView: View {
                         .disabled(answering)
                 }
                 Spacer(minLength: 0)
-                Button("Open", action: open).buttonStyle(InboxButton(prominent: false))
             }
         }
     }

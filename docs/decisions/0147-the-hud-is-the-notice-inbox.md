@@ -31,8 +31,8 @@ A turn that the owner stopped, such as a Codex `Interrupt`, posts nothing, becau
 there.
 
 **The store keeps an inbox.** `notice.seen_at` marks a row the owner has seen. A row is seen when
-the owner opens the chat in the app (the `selected_chat` or `seen` choice), clicks Open on the
-row in the HUD, or clicks Clear. Open marks nothing seen when `swarm focus` fails.
+the owner opens the chat in the app (the `selected_chat` or `seen` choice), clicks the
+row in the HUD, or clicks Clear. A click marks nothing seen when `swarm focus` fails.
 `swarm notices --inbox --json` (`swarm.inbox.v1`) gives up to 3 blocked agents with the prompt on
 their screen, and the newest unseen row of up to 20 chats, with the full count of each. A session that a newer one
 continues is part of that chat, so its rows do not show. A
@@ -47,8 +47,9 @@ and "Click to open". A click on the line closes the HUD at once, then runs `swar
 the chat seen; when the focus fails, a red "did not open" popup line says why, and a click on it tries again. A click on an empty spot closes the HUD. A done popup closes after 4 s; a question, a stop, or a wait stays. A hover
 on the notch row opens the card, which takes the popup's place. Items within 10 s join one popup. The open card's Inbox
 section lists up to 2 blocked agents, with a button per choice that runs `swarm answer` when the
-prompt has at most 4 choices and Open alone otherwise, and the unseen chats with Clear. The HUD
-has no text field, so to reply the owner clicks Open.
+prompt has at most 4 choices and no buttons otherwise, and the unseen chats with Clear. A click on
+a blocked agent's card outside its buttons opens the chat, as a click on a row does; the card has
+no Open button. The HUD has no text field, so to reply the owner clicks the card.
 
 **No banner while the HUD runs.** `swarm notices --due` gives no banner for a chat's row while the
 HUD's login item runs. A row with no chat, such as the Settings test notice or a `swarm notify`
