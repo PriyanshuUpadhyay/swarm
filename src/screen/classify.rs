@@ -34,18 +34,11 @@ fn approval_block(
     (footer || list).then_some(question)
 }
 
-/// Waiting when an approval block shows and no idle input prompt follows its question row, so a
-/// question that is only text in a finished answer, with the idle prompt below it, does not
-/// count.
-fn approval(
-    lines: &[&str],
-    questions: &[&str],
-    footers: &[&str],
-    choices: Option<char>,
-    idle: impl Fn(usize) -> bool,
-) -> bool {
-    approval_block(lines, questions, footers, choices)
-        .is_some_and(|question| !(question + 1..lines.len()).any(idle))
+/// Waiting when an approval block (the question row it returns) shows and no idle input prompt
+/// follows that row, so a question that is only text in a finished answer, with the idle prompt
+/// below it, does not count.
+fn approval(block: Option<usize>, lines: &[&str], idle: impl Fn(usize) -> bool) -> bool {
+    block.is_some_and(|question| !(question + 1..lines.len()).any(idle))
 }
 
 /// The state the bottom rows of a pane show, or None when they show no prompt that needs the
@@ -69,7 +62,8 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                     && lines[index].trim_start().starts_with('❯')
             };
             let questions = ["do you want to", "waiting for permission"];
-            if approval(lines, &questions, &["esc to cancel"], Some('❯'), idle_at) {
+            let block = approval_block(lines, &questions, &["esc to cancel"], Some('❯'));
+            if approval(block, lines, idle_at) {
                 return Some(ScreenState::Blocked);
             }
             let spinner = lines.iter().any(|line| {
@@ -101,7 +95,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
                     && !(block.is_some_and(|question| index > question)
                         && is_option(lines[index], '›'))
             };
-            if approval(lines, &questions, &footers, None, idle_at) {
+            if approval(block, lines, idle_at) {
                 return Some(ScreenState::Blocked);
             }
             if has(&["esc to interr", "• working ("]) {

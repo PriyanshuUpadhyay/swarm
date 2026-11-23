@@ -9,8 +9,16 @@ pub fn turn_text(provider: &str, rows: &str) -> Option<String> {
     let lines: Vec<&str> = rows.lines().collect();
     // The input box and the echo of a sent message start with the same mark.
     let (bottom, echo, mark) = match provider {
-        "claude" => (rposition(&lines, |line| line.starts_with('❯'))?, '❯', "⏺"),
-        "codex" => (rposition(&lines, |line| line.starts_with('›'))?, '›', "•"),
+        "claude" => (
+            lines.iter().rposition(|line| line.starts_with('❯'))?,
+            '❯',
+            "⏺",
+        ),
+        "codex" => (
+            lines.iter().rposition(|line| line.starts_with('›'))?,
+            '›',
+            "•",
+        ),
         "agy" => {
             let line = lines.iter().rev().find(|line| {
                 line.chars()
@@ -24,7 +32,9 @@ pub fn turn_text(provider: &str, rows: &str) -> Option<String> {
     };
     // A sent message shows in the box before the CLI echoes it, so the screen still holds the
     // ended turn and the row that closed it.
-    let echoed = rposition(&lines[..bottom], |line| line.starts_with(echo));
+    let echoed = lines[..bottom]
+        .iter()
+        .rposition(|line| line.starts_with(echo));
     if lines[..bottom]
         .iter()
         .enumerate()
@@ -39,9 +49,9 @@ pub fn turn_text(provider: &str, rows: &str) -> Option<String> {
         // ponytail: a row indented 20 columns or more reads as a right-aligned hint, not text.
         !rest.is_empty() && line.len() - line.trim_start().len() < 20
     };
-    let last = rposition(&lines[..bottom], |line| {
-        body(line) || is_block_start(line, mark)
-    })?;
+    let last = lines[..bottom]
+        .iter()
+        .rposition(|line| body(line) || is_block_start(line, mark))?;
     // A block above the latest echo, such as a message queued while the turn runs, is already in
     // the log, and the turn has drawn nothing since.
     if echoed.is_some_and(|echoed| last < echoed) {
@@ -89,10 +99,6 @@ pub(super) fn ended(provider: &str, line: &str) -> bool {
 
 fn is_block_start(line: &str, mark: &str) -> bool {
     line.starts_with(mark) && !line.contains("esc to interrupt")
-}
-
-fn rposition(lines: &[&str], test: impl Fn(&str) -> bool) -> Option<usize> {
-    lines.iter().rposition(|line| test(line))
 }
 
 /// The rows joined, blank rows kept as paragraph breaks; None when no text is left.
