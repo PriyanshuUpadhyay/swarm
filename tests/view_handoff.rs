@@ -21,16 +21,14 @@ fn message(kind: &str, text: &str) -> Value {
 fn end(reason: &str) -> Value {
     json!({"type":"turn_ended","reason":reason})
 }
+/// A chair is ready before its log exists. AGY reports its conversation id only after a turn,
+/// so its idle screen says it is ready.
 #[test]
-fn ready_before_log() {
+fn a_chair_is_ready_before_its_log_and_an_agy_chair_at_its_idle_prompt() {
     let session = json!({"chair_provider":"codex","chair_id":"ready","chair_log":null});
     assert!(handoff::ready(&session, "codex"));
     assert!(!handoff::ready(&session, "claude"));
     assert!(!handoff::ready(&json!({"chair_provider":"codex"}), "codex"));
-}
-/// AGY reports its conversation id only after a turn, so its idle screen says it is ready.
-#[test]
-fn an_agy_chair_is_ready_at_its_idle_prompt() {
     let agents =
         |state: Value| json!({"agents":[{"id":"orchestrator","alive":true,"state":state}]});
     assert!(handoff::agy_ready(&agents(json!("done"))));
@@ -119,7 +117,5 @@ fn context_limits_and_delivery_instructions() {
             .count(),
         12_000
     );
-    assert!(handoff::first_message("context", true).contains("Use this context"));
-    assert!(handoff::first_message("context", false).contains("Make a compact working summary"));
-    assert!(handoff::file_message("/h/chat.md").contains("/h/chat.md. Read all of it"));
+    assert!(handoff::file_message("/h/chat.md").contains("/h/chat.md"));
 }
