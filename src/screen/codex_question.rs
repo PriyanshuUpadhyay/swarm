@@ -74,7 +74,7 @@ pub(super) fn open_question(path: &Path) -> Option<Prompt> {
     });
     let newest = open.last()?.0.clone();
     let (_, reply, question, choices) = open.into_iter().find(|(call, ..)| *call == newest)?;
-    let id = prompt_id(&question, &choices);
+    let id = prompt_id(&format!("{reply}\0{question}"), &choices);
     Some(Prompt {
         question,
         choices,
@@ -121,11 +121,12 @@ fn turn_start(file: &mut std::fs::File, len: u64) -> Option<u64> {
         file.seek(SeekFrom::Start(from)).ok()?;
         chunk.clear();
         // Read past the chunk's end, so a line that starts in it shows its whole head.
-        file.take(end - from + HEAD as u64)
+        file.take((end - from + HEAD as u64).min(len - from))
             .read_to_end(&mut chunk)
             .ok()?;
         let span = (end - from) as usize;
-        let starts = chunk[..span]
+        let starts = chunk
+            .get(..span)?
             .iter()
             .enumerate()
             .rev()
@@ -151,7 +152,7 @@ fn turn_lines(path: &Path) -> Option<Vec<Vec<u8>>> {
     let len = file.metadata().ok()?.len();
     let start = turn_start(&mut file, len)?;
     file.seek(SeekFrom::Start(start)).ok()?;
-    let mut reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::new(file.take(len - start));
     let mut lines = Vec::new();
     let mut line = Vec::new();
     // At the cap's floor the first line can be cut, and a cut record must not count.
@@ -201,4 +202,50 @@ pub fn codex_reply(prompt: &Prompt, answer: &str) -> Option<String> {
         "questionItemId": prompt.reply.as_ref()?,
     }]);
     Some(format!("{OPEN}{item}{CLOSE}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audit_regression_identical_codex_questions_have_distinct_cards() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-codex-question-id-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("rollout.jsonl");
+        let record = |id: &str| {
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "request_user_input_async",
+                    "call_id": id,
+                    "arguments": r#"{"questions":[{"title":"Which one?","options":["First","Second"]}]}"#
+                }
+            })
+        };
+        std::fs::write(&path, format!("{}\n", record("first"))).unwrap();
+        let first = open_question(&path).unwrap();
+        std::fs::write(
+            &path,
+            format!("{}\n{}\n", record("first"), record("second")),
+        )
+        .unwrap();
+        let second = open_question(&path).unwrap();
+        assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn audit_regression_a_truncated_codex_log_is_not_a_snapshot() {
+        let root =
+            std::env::temp_dir().join(format!("swarm-codex-truncated-log-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("rollout.jsonl");
+        std::fs::write(&path, b"previous file contents\n").unwrap();
+        let mut file = std::fs::File::open(&path).unwrap();
+        let len = file.metadata().unwrap().len();
+        std::fs::write(&path, b"").unwrap();
+        assert_eq!(turn_start(&mut file, len), None);
+    }
 }
