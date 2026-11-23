@@ -2,8 +2,6 @@
 //! split a UTF-8 character or a CRLF pair). The fixture has literal emoji and CJK text, two complete
 //! CRLF lines and an unterminated final line. The expected events and positions are the OLD native
 //! values; see `tests/fixtures/transcript-worker/chunks/PROVENANCE.json`.
-//!
-//! Run with `--features serde_json/raw_value,serde_json/unbounded_depth`, like the worker test.
 
 use std::path::PathBuf;
 
