@@ -232,6 +232,30 @@ fn meters_from_cache(
             ));
             continue;
         }
+        if provider == "codex"
+            && account.auth_state == AuthState::Unavailable
+            && cache.as_ref().is_some_and(|cache| {
+                cache.accounts.iter().any(|entry| {
+                    entry.home == account.home
+                        && entry.identity.is_none()
+                        && matches!(
+                            entry.meters.as_slice(),
+                            [meter] if meter.state == "no_source"
+                                && meter.reason_code == Some(ReasonCode::NoSource)
+                                && meter.used_pct.is_none()
+                        )
+                })
+            })
+        {
+            meters.push(status_meter(
+                provider,
+                Some(account),
+                "no_source",
+                ReasonCode::NoSource,
+                Some("API-key mode has no plan-quota source"),
+            ));
+            continue;
+        }
         let entry = login_digest(account).and_then(|identity| {
             cache.as_ref()?.accounts.iter().find(|entry| {
                 entry.home == account.home
