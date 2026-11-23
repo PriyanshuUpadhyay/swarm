@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install -g pnpm@11.15.1
+      - run: npm install -g pnpm@12.16.1
       # build.sh signs with swarm-local when the keychain has it, so released apps keep their
       # privacy answers across updates. A release without it would quietly sign ad hoc, so fail.
       - name: Import the swarm-local signing identity

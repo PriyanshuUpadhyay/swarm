@@ -96,7 +96,7 @@ elif name == 'cargo':
     if scenario == 'cargo-error': fail()
 elif name == 'uname': print('Darwin' if a == ['-s'] else 'arm64')
 elif name == 'node': print('v22.0.0')
-elif name == 'pnpm': print('11.15.1')
+elif name == 'pnpm': print('12.16.1')
 elif name == 'make':
     tree = p(a[a.index('-C') + 1]).parent
     out = tree / 'ui/.build/release/swarm-0.0.19-macos-arm64.tar.gz'

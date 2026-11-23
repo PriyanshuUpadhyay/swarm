@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install -g pnpm@11.15.1
+      - run: npm install -g pnpm@12.16.1
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
