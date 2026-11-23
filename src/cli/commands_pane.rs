@@ -77,9 +77,7 @@ pub(crate) fn commands_pane(
             );
         }
         // Marked before typing, which takes a second or more, so the row turns at once.
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs() as i64;
+        let now = unix_now()?;
         swarm::store::mark_sent(connection, &session_id, agent_id, Some(now))?;
         let typed = type_text(
             connection,
