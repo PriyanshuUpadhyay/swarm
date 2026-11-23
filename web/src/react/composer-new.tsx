@@ -114,7 +114,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
   const box = useRef<HTMLTextAreaElement>(null);
   const projects = useRef<HTMLDivElement>(null);
   const worktree = place.kind === "new" && target.git;
-  const preview = usePreview(app, target, worktree, text);
+  const preview = usePreview(app, target, worktree);
 
   const profile = Array.isArray(profiles) ? (profiles.find((p) => p.name === role) ?? profiles[0]) : undefined;
   const base = profileRun(profile);

@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0158 | Apple's on-device model names a chat's branch from its first prompt | 2 | accepted | 2026-11-23 | ↑0146 ↑0149 →0134 |
 | 0157 | Tool groups follow each agent CLI | 2 | accepted | 2026-11-23 | ↑0047 →0134 →0139 |
 | 0156 | The HUD lists active chats, chimes when a chat converges, and reads on a change signal | 2 | accepted | 2026-11-23 | ↑0147 ↑0087 →0138 |
 | 0155 | The new chat composer changes the project with arrows and shows the `/` menu | 2 | accepted | 2026-11-23 | ↑0149 →0038 →0111 |

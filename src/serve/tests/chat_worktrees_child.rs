@@ -70,13 +70,19 @@ esac
     let send = json!({"session":id,"agent":"orchestrator","text":"Fix the login redirect bug now please"});
     let _ = call_action(fixture, "/api/chat/send", send).await.unwrap();
 
+    // The send does not wait for the name (ADR 0158), so the test waits for the row's name, the
+    // last thing the naming writes.
+    let row_name = || choices_store::load(&fixture.app.root, true).unwrap().owner.names.get(&chat).cloned();
+    for _ in 0..100 {
+        if row_name().as_deref() == Some("fix-login-redirect-bug-now") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(row_name().as_deref(), Some("fix-login-redirect-bug-now"));
     assert_eq!(
         lifecycle::check_git(&chat, &["branch", "--show-current"]).unwrap(),
         "swarm/fix-login-redirect-bug-now"
-    );
-    assert_eq!(
-        choices_store::load(&fixture.app.root, true).unwrap().owner.names[&chat],
-        "fix-login-redirect-bug-now"
     );
 
     // An archived chat that got no prompt takes its empty worktree with it; one with a commit stays.
@@ -142,14 +148,15 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
     std::fs::write(&fixture.app.cli, &cli).unwrap();
 
     let prompt = "Fix the flaky smoke test";
-    let query = HashMap::from([("cwd".into(), main.clone()), ("prompt".into(), prompt.into())]);
+    let query = HashMap::from([("cwd".into(), main.clone())]);
     let preview = new_chat_preview(State(fixture.app.clone()), Query(query))
         .await
         .unwrap()
         .0;
+    // The card names no branch, because only the start asks the model (ADR 0158).
     assert_eq!(
-        (&preview["branch"], &preview["folder"], &preview["setup"]),
-        (&json!("swarm/fix-flaky-smoke-test"), &json!(named), &json!("touch setup-ran"))
+        (&preview["branch"], &preview["setup"]),
+        (&Value::Null, &json!("touch setup-ran"))
     );
 
     let started = start_chat(fixture, json!({"cwd":main,"prompt":prompt}))
@@ -177,19 +184,11 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
     .unwrap();
     std::fs::write(&fixture.app.cli, cli.replace(&format!("printf '%s\\n' '{id}'"), "/usr/bin/uuidgen | /usr/bin/tr A-Z a-z")).unwrap();
 
-    let query = HashMap::from([("cwd".into(), clone_path.clone()), ("prompt".into(), "Add a retry".into())]);
-    let preview = new_chat_preview(State(fixture.app.clone()), Query(query))
-        .await
-        .unwrap()
-        .0;
-
     let body = json!({"cwd":clone_path,"prompt":"Add a retry","place":{"kind":"new"}});
     let started = start_chat(fixture, body)
         .await
         .unwrap_or_else(|e| panic!("{e:?} {}", action_calls(fixture)));
     let made = started["workspace"].as_str().unwrap();
-    // The default folder setting `../clone-worktrees` has a `..`, so this checks the card's folder.
-    assert_eq!(preview["folder"], json!(made));
     assert_eq!(
         lifecycle::check_git(made, &["branch", "--show-current"]).unwrap(),
         "swarm/add-retry"

@@ -4,32 +4,30 @@ import { useEffect, useState } from "react";
 import type { App } from "../core/app";
 import { placeLabel, type Place, type Preview, type Target } from "../core/new-chat";
 
-/** `/api/chat/new-preview`, read 250 ms after the typing stops, for a new worktree only. */
-export function usePreview(app: App, target: Target, wanted: boolean, text: string): Preview | "failed" | null {
+/** `/api/chat/new-preview`, read for a new worktree only. The branch is not in it: the start
+ *  names it from the prompt with the on-device model, which takes seconds (ADR 0158). */
+export function usePreview(app: App, target: Target, wanted: boolean): Preview | "failed" | null {
   const [preview, setPreview] = useState<Preview | "failed" | null>(null);
 
   useEffect(() => {
     if (!wanted) return setPreview(null);
     let live = true;
-    const timer = setTimeout(() => {
-      app.newChat.preview(target.cwd, text).then(
-        (p) => live && setPreview(p),
-        () => live && setPreview("failed"), // The card is a hint; the send checks the name again.
-      );
-    }, 250);
+    app.newChat.preview(target.cwd).then(
+      (p) => live && setPreview(p),
+      () => live && setPreview("failed"), // The card is a hint; the start reads each of these again.
+    );
     return () => {
       live = false;
-      clearTimeout(timer);
     };
-  }, [app, target.cwd, text, wanted]);
+  }, [app, target.cwd, wanted]);
 
   return wanted ? preview : null;
 }
 
 export function PreviewCard({ target, place, worktree, preview }: { target: Target; place: Place; worktree: boolean; preview: Preview | "failed" | null }) {
   const read = (p: Preview): [string, string][] => [
-    ["Branch", p.branch ?? "named from the first prompt"],
-    ["Folder", p.folder ?? "named from the branch"],
+    ["Branch", "named from the first prompt"],
+    ["Folder", "named from the branch"],
     ["Base", p.base ?? "none"],
     ["Fetched", p.fetchedUnixS ? new Date(p.fetchedUnixS * 1000).toLocaleString() : "never"],
     ...(p.setup ? ([["Setup", p.setup]] as [string, string][]) : []),

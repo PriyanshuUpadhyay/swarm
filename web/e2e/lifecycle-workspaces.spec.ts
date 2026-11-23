@@ -32,8 +32,8 @@ test("⌘Enter makes a worktree named from the prompt and shows each start step 
   let path: string | null = null;
   try {
     const composer = await compose(tab, "proj-gh", `Fix the flaky smoke ${b}`);
-    // The card names the branch before the send.
-    await expect(composer.getByTestId("preview-branch")).toHaveText(branch);
+    // The start names the branch, so the card only says where its name comes from (ADR 0158).
+    await expect(composer.getByTestId("preview-branch")).toHaveText("named from the first prompt");
     await expect(composer.getByTestId("preview-setup")).toContainText("echo setup-started");
     await shoot(tab, "new-chat-composer", info.project.name);
     await composer.getByTestId("new-chat-prompt").press("Meta+Enter");

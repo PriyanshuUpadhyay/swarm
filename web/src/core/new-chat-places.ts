@@ -10,8 +10,8 @@ export type Place = { kind: "new" } | { kind: "here" } | { kind: "branch"; branc
  *  project, which can make a new worktree; a plain folder starts the chat in itself. */
 export type Target = { cwd: string; project: string; title: string; git: boolean };
 
-/** What a new worktree from this prompt gets, for the composer's card. */
-export type Preview = { branch: string | null; folder: string | null; base: string | null; fetchedUnixS: number | null; setup: string | null };
+/** What a new worktree gets, for the composer's card. */
+export type Preview = { base: string | null; fetchedUnixS: number | null; setup: string | null };
 
 /** Whether the view shows the composer in its page: Home, and a workspace's landing that takes
  *  new chats. Elsewhere ⌘N opens it over the view. */

@@ -231,3 +231,17 @@ fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
     let named = name_chat(&root, Path::new(&forged.path), "rename main please").unwrap();
     assert_eq!(named, None);
 }
+
+#[test]
+fn a_model_name_becomes_a_safe_branch_and_none_falls_back_to_the_words() {
+    let prompt = "Can you fix the flaky smoke test please";
+    assert_eq!(
+        chat::named_branch(Some(" Fix Login Timeout!\n".into()), prompt).as_deref(),
+        Some("swarm/fix-login-timeout")
+    );
+    // No helper, a model that is off, or a passed deadline give the word rules (ADR 0158).
+    assert_eq!(
+        chat::named_branch(None, prompt).as_deref(),
+        Some("swarm/fix-flaky-smoke-test")
+    );
+}

@@ -31,6 +31,36 @@ pub fn unnamed_chat(branch: &str) -> bool {
         .is_some_and(|id| id.len() == CHAT_ID_LEN && id.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
+/// The branch name a first prompt gives: the on-device model's name for it (ADR 0158), else
+/// the word rules of `chat_branch`. The model can take up to `MODEL_DEADLINE`.
+pub fn prompt_branch(prompt: &str) -> Option<String> {
+    named_branch(model_name(prompt), prompt)
+}
+
+/// The branch of the model's `name` for `prompt`, made safe as each branch name is, else the
+/// word rules' branch. The name is model text, so it passes `slug` and the length cap.
+pub(super) fn named_branch(name: Option<String>, prompt: &str) -> Option<String> {
+    name.map(|name| capped_branch(&name))
+        // `slug` gives `task` for text with no ASCII word.
+        .filter(|branch| branch != &branch_name("task") && !unnamed_chat(branch))
+        .or_else(|| chat_branch(prompt))
+}
+
+/// The most time the naming helper gets; its first run after a boot loads the model.
+const MODEL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(3);
+
+const MODEL_PROMPT_CHARS: usize = 2_000;
+
+/// The name that `SwarmName`, shipped beside this swarm, prints for `prompt`, or None when the
+/// helper is missing, the model is off or refuses, or the deadline passes.
+fn model_name(prompt: &str) -> Option<String> {
+    let mut command = std::process::Command::new(crate::paths::bundled("SwarmName")?);
+    // The model reads about 4,096 tokens, instructions and reply included, so a long prompt
+    // sends only its start; this also keeps the argument far under the system's limit.
+    command.arg(prompt.chars().take(MODEL_PROMPT_CHARS).collect::<String>());
+    crate::process::bounded_output(command, MODEL_DEADLINE)
+}
+
 /// The branch name a first prompt gives: its first five ASCII words that are not filler,
 /// lowercase and joined by `-`, at most 38 characters, under `swarm/`. A prompt of filler only
 /// keeps its words. None when the prompt has no ASCII word.
@@ -50,13 +80,18 @@ fn chat_branch(prompt: &str) -> Option<String> {
         return None;
     }
 
+    Some(capped_branch(&words.join(" ")))
+}
+
+/// The `swarm/` branch of `text`'s workspace slug, two characters shorter than the slug keeps.
+fn capped_branch(text: &str) -> String {
     // The workspace slug lowercases and joins with `-`; two characters fewer than it keeps leave
     // room for the `-2` to `-9` of a taken name, which the new worktree's name passes through it.
-    let slug: String = crate::view::lifecycle::slug(&words.join(" "))
+    let slug: String = crate::view::lifecycle::slug(text)
         .chars()
         .take(crate::view::lifecycle::SLUG_MAX_CHARS - 2)
         .collect();
-    Some(branch_name(slug.trim_end_matches('-')))
+    branch_name(slug.trim_end_matches('-'))
 }
 
 /// The record of a chat's own worktree at `path`, which the app made when the chat opened, so
@@ -116,7 +151,7 @@ pub fn name_chat(root: &Path, cwd: &Path, prompt: &str) -> Result<Option<String>
     let id = &task.branch[PREFIX.len() + CHAT_NAME.len()..];
     let untitled = branch_name(&format!("untitled-{id}"));
 
-    let base = chat_branch(prompt)
+    let base = prompt_branch(prompt)
         .filter(|name| !unnamed_chat(name))
         .unwrap_or_else(|| untitled.clone());
     let names = prompt_names(&base).chain([untitled]);
@@ -155,7 +190,7 @@ fn free_branch(common: &Path, name: &str) -> bool {
 
 /// The branch a new chat worktree of the git checkout `project` gets from `prompt`: the first
 /// name of `name_chat`'s list that no branch has and whose folder `free_folder` accepts. It
-/// writes nothing, so the composer can call it on each pause in typing. None when the prompt has
+/// writes nothing, and it waits for the model as `prompt_branch` does. None when the prompt has
 /// no ASCII word, when its nine names are taken, or when `project` is in no git checkout; the
 /// chat then starts on a placeholder name.
 pub fn chat_preview(
@@ -164,7 +199,7 @@ pub fn chat_preview(
     free_folder: impl Fn(&str) -> bool,
 ) -> Option<String> {
     let common = crate::task::common_dir(project)?;
-    let base = chat_branch(prompt).filter(|name| !unnamed_chat(name))?;
+    let base = prompt_branch(prompt).filter(|name| !unnamed_chat(name))?;
     prompt_names(&base).find(|name| free_branch(&common, name) && free_folder(name))
 }
 

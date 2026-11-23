@@ -4,6 +4,7 @@
 #   swarm-<version>/libexec/SwarmNotify.app      the notice helper (ADR 0077)
 #   swarm-<version>/libexec/SwarmHUD.app         the notch usage HUD (ADR 0087)
 #   swarm-<version>/libexec/Swarm.app            the window that `swarm ui` opens
+#   swarm-<version>/libexec/SwarmName            the branch namer, Apple's on-device model (ADR 0158)
 #   swarm-<version>/libexec/skills               the plugin swarm (kit/)
 #   swarm-<version>/libexec/NOTICE               third-party notices: the web UI's, then the HUD mascots'
 set -euo pipefail
@@ -22,6 +23,7 @@ cargo build --manifest-path "$repo/Cargo.toml" --release --locked --features ser
 swift build --package-path "$root" --disable-sandbox -c release --product SwarmNotify
 swift build --package-path "$root" --disable-sandbox -c release --product SwarmHUD
 swift build --package-path "$root" --disable-sandbox -c release --product SwarmApp
+swift build --package-path "$root" --disable-sandbox -c release --product SwarmName
 bin_dir="$(swift build --package-path "$root" --disable-sandbox -c release --show-bin-path)"
 version="$(cargo metadata --manifest-path "$repo/Cargo.toml" --no-deps --format-version 1 | jq -r '.packages[0].version')"
 
@@ -69,6 +71,9 @@ rm -rf "$out/Swarm.iconset"
 iconutil -c icns "$out/Swarm.iconset" -o "$app/Contents/Resources/Swarm.icns"
 plutil -insert CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 codesign --force -s "$sign" "$app"
+
+cp "$bin_dir/SwarmName" "$stage/libexec/SwarmName"
+codesign --force -s "$sign" "$stage/libexec/SwarmName"
 
 tarball="$out/swarm-$version-macos-arm64.tar.gz"
 tar -czf "$tarball" -C "$out" "swarm-$version"

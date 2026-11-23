@@ -63,7 +63,12 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
             if text.trim().is_empty() {
                 return Err(error(StatusCode::BAD_REQUEST, "swarm: empty text"));
             }
-            name_chat_worktree(app, call.cwd.clone(), text.clone()).await;
+            // The prompt goes at once; the model can take seconds to name the branch (ADR 0158).
+            tokio::spawn(name_chat_worktree(
+                app.clone(),
+                call.cwd.clone(),
+                text.clone(),
+            ));
             (call.args(&["type", &agent]), Some(text))
         }
         Action::Interrupt(body) if interrupt_clears_box(app, &body)? => {
@@ -228,8 +233,8 @@ fn archived_titles(snapshot: &Value, owner: &choices::OwnerChoices) -> BTreeMap<
 }
 
 /// Names a chat worktree's branch from the chat's first prompt, and its sidebar row with it
-/// (ADR 0146). A failure only logs, because the prompt must still go.
-async fn name_chat_worktree(app: &App, cwd: PathBuf, prompt: String) {
+/// (ADR 0146). A failure only logs, and the next send tries again while the branch is unnamed.
+async fn name_chat_worktree(app: App, cwd: PathBuf, prompt: String) {
     let root = app.root.clone();
     let named = tokio::task::spawn_blocking(move || {
         let Some(branch) = swarm::task::name_chat(&root, &cwd, &prompt)? else {

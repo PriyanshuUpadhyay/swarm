@@ -165,8 +165,8 @@ export class NewChat {
   }
 
   /** The card's read of what place `new` in `cwd` makes from `prompt`. */
-  preview(cwd: string, prompt: string) {
-    return this.app.api.get<Preview>("/api/chat/new-preview", { cwd, prompt });
+  preview(cwd: string) {
+    return this.app.api.get<Preview>("/api/chat/new-preview", { cwd });
   }
 
   /** The `/` menu rows that `provider` offers in `cwd`, before a chat exists (ADR 0155). */
