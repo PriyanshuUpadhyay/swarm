@@ -1,4 +1,5 @@
-use crate::profiles::native::{AppServer, read_json, read_stdout};
+use crate::process::read_stdout;
+use crate::profiles::native::{AppServer, read_json};
 use crate::profiles::{
     Account, AccountList, AuthState, ReasonCode, ResetCredits, Usage, UsageMeter,
 };
@@ -25,6 +26,8 @@ struct Cache {
 #[derive(Serialize, Deserialize)]
 struct CachedAccount {
     home: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    identity: Option<String>,
     meters: Vec<UsageMeter>,
 }
 

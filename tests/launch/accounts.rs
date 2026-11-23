@@ -95,7 +95,7 @@ fn fable_launch_cache(home: &Path, work_fb: i64, default_fb: i64) {
                 })
             })
             .collect();
-        serde_json::json!({"home":home.join(dir), "meters":meters})
+        serde_json::json!({"home":home.join(dir), "identity":fixture_identity(), "meters":meters})
     })
     .collect();
     std::fs::write(
@@ -175,8 +175,8 @@ fn renewable_launch_cache(home: &Path, work_used: i64) {
     std::fs::write(
         home.join(".swarm/claude-usage.json"),
         serde_json::json!({"accounts":[
-            {"home":home.join(".claude/.profiles/work"), "meters":[work]},
-            {"home":home.join(".claude"), "meters":[default]},
+            {"home":home.join(".claude/.profiles/work"), "identity":fixture_identity(), "meters":[work]},
+            {"home":home.join(".claude"), "identity":fixture_identity(), "meters":[default]},
         ]})
         .to_string(),
     )

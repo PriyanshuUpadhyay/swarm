@@ -2,6 +2,26 @@
 
 use super::*;
 
+pub(super) fn usage_fixture(name: &str) -> PathBuf {
+    let home = fixture(name);
+    let path = home.join("bin/claude");
+    let script = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(
+        path,
+        script.replace(
+            r#"{"loggedIn":true}"#,
+            r#"{"loggedIn":true,"email":"owner@example.test"}"#,
+        ),
+    )
+    .unwrap();
+    home
+}
+
+pub(super) fn usage_identity() -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest("owner@example.test"))
+}
+
 fn model_cache(
     home: &Path,
     provider: &str,
@@ -18,7 +38,7 @@ fn model_cache(
         if !fb.is_null() {
             meters.push(serde_json::json!({"provider":provider,"account":name,"label":name,"window":"fb","used_pct":fb,"state":"fresh","reset_time_seconds":now+3600,"as_of_seconds":now}));
         }
-        serde_json::json!({"home":home.join(dir),"meters":meters})
+        serde_json::json!({"home":home.join(dir),"identity":usage_identity(),"meters":meters})
     }).collect();
     std::fs::write(
         home.join(format!(".swarm/{provider}-usage.json")),
@@ -29,7 +49,7 @@ fn model_cache(
 
 #[test]
 fn run_and_account_json_scope_fable_usage_to_the_model() {
-    let home = fixture("model-scope");
+    let home = usage_fixture("model-scope");
     model_cache(&home, "claude", 100.into(), 10.into());
     for (args, expected) in [
         (vec!["run", "claude"], "work"),
@@ -89,7 +109,7 @@ fn run_and_account_json_scope_fable_usage_to_the_model() {
 
 #[test]
 fn run_refuses_all_spent_fable_accounts_and_keeps_unknown_samples_usable() {
-    let home = fixture("model-all-spent");
+    let home = usage_fixture("model-all-spent");
     for (fb, refused) in [
         (serde_json::json!(100), true),
         (serde_json::Value::Null, false),

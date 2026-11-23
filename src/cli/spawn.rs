@@ -296,11 +296,7 @@ pub(crate) fn spawn_agent(
     let current_adapter = adapter_name();
     // A host that stacks seats anchors on these, so a seat never lands beside another
     // session's seats on the same server.
-    let panes = swarm::store::live_children(connection, &session_id, "orchestrator")?
-        .into_iter()
-        .map(|(_, pane)| pane)
-        .collect::<Vec<_>>()
-        .join(" ");
+    let panes = session_seat_panes(connection, &session_id)?;
     // ADR 0131: a chair of the app's adapter runs on a headless host of its own, so its chat
     // needs no tmux, unless the owner chose tmux. A chair under `SWARM_CHILD_HOST=pty` keeps the
     // host of ADR 0126 inside its tmux pane.
@@ -426,6 +422,19 @@ pub(crate) fn spawn_agent(
         eprintln!("model {model}");
     }
     Ok(())
+}
+
+pub(crate) fn session_seat_panes(
+    connection: &rusqlite::Connection,
+    session: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(
+        swarm::store::live_children(connection, session, "orchestrator")?
+            .into_iter()
+            .map(|(_, pane)| pane)
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
 }
 
 #[path = "spawn/run_files.rs"]

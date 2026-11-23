@@ -239,11 +239,21 @@ pub(super) fn write_link(plan: &LinkPlan) -> Result<(), String> {
                 .ok_or_else(|| format!("swarm: {} has no parent", plan.path.display()))?;
             std::fs::create_dir_all(parent).map_err(fail)?;
             validate_link_leaf(plan)?;
-            if matches!(plan.before, LinkState::Link(_)) {
-                std::fs::remove_file(&plan.path).map_err(fail)?;
+            if matches!(plan.before, LinkState::Absent) {
+                return std::os::unix::fs::symlink(target, &plan.path).map_err(fail);
             }
-            std::os::unix::fs::symlink(target, &plan.path).map_err(fail)
+
+            let destination = &plan.edits[0].file;
+            let staged =
+                destination.with_file_name(format!(".swarm-link-{}", uuid::Uuid::now_v7()));
+            std::os::unix::fs::symlink(target, &staged).map_err(fail)?;
+            validate_link_leaf(plan)
+                .and_then(|()| std::fs::rename(&staged, destination).map_err(fail))
+                .inspect_err(|_| {
+                    let _ = std::fs::remove_file(&staged);
+                })
         }
+
         LinkState::Absent => {
             validate_link_leaf(plan)?;
             std::fs::remove_file(&plan.path).map_err(fail)
@@ -297,4 +307,26 @@ pub(super) fn link_removal(
         });
     }
     Ok(plan)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audit_regression_failed_link_update_keeps_the_old_target() {
+        let dir = std::env::temp_dir().join(format!("swarm-link-update-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir(&dir).unwrap();
+        let store = crate::store::open(&dir.join("store.db")).unwrap();
+        let link = dir.join("skill");
+        let old = dir.join("old");
+        let plan = LinkPlan::create(&store, link.clone(), old.clone()).unwrap();
+        apply(&store, &[plan.into()]).unwrap();
+        let too_long = dir.join("x".repeat(8192));
+        let plan = LinkPlan::create(&store, link.clone(), too_long).unwrap();
+        assert!(apply(&store, &[plan.into()]).is_err());
+        let target = std::fs::read_link(link);
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(target.unwrap(), old);
+    }
 }

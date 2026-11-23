@@ -133,7 +133,9 @@ fn codex_identity_uses_the_protocol_and_active_named_home_without_yelo() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let cache = serde_json::json!({"accounts":[{"home":work,"meters":[
+    use sha2::{Digest, Sha256};
+    let identity = format!("{:x}", Sha256::digest("owner@example.test"));
+    let cache = serde_json::json!({"accounts":[{"home":work,"identity":identity,"meters":[
         {"provider":"codex","account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":now},
         {"provider":"codex","account":"work","label":"work","used_pct":30,"state":"fresh","as_of_seconds":now}
     ]}]});

@@ -136,6 +136,41 @@ fn login_registers_before_open_and_uses_fixed_native_argv_and_home() {
 }
 
 #[test]
+fn herdr_login_from_a_chair_passes_only_its_session_seats_to_spawn() {
+    let home = fixture("herdr-login");
+    let initial = revision(&home);
+    let db = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    let session = swarm::store::create_session(&db, "lane", &home, None, Some("herdr")).unwrap();
+    let other = swarm::store::create_session(&db, "lane", &home, None, Some("herdr")).unwrap();
+    for (session, id, pane) in [
+        (&session, "orchestrator", "chair"),
+        (&session, "worker", "seat-pane"),
+        (&other, "worker", "other-pane"),
+    ] {
+        swarm::store::add_agent(&db, session, id, id).unwrap();
+        swarm::store::set_pane(&db, session, id, pane).unwrap();
+    }
+
+    std::fs::write(
+        home.join(".swarm/adapters/herdr.conf"),
+        "self = printf chair\nspawn = printf '%s' \"$SWARM_PANES\" > \"$HOME/login-panes\"; printf 'login-pane'\nring = true\n",
+    )
+    .unwrap();
+    let opened = json(
+        command(&home, &login("codex", "work", &initial))
+            .env("SWARM_ADAPTER", "herdr")
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(opened["pane"], "login-pane");
+    assert_eq!(
+        std::fs::read_to_string(home.join("login-panes")).unwrap(),
+        "seat-pane"
+    );
+    std::fs::remove_dir_all(home).unwrap();
+}
+
+#[test]
 fn claude_login_clears_inherited_keys_and_uses_the_requested_directory() {
     let home = fixture("personal-login");
     let cwd = home.join("work project 'quoted'");

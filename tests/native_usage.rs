@@ -180,7 +180,9 @@ fn invalid_claude_home_has_no_usage_with_matching_missing_or_failed_cache() {
 fn claude_cache(home: &Path, meters: serde_json::Value) {
     json(run(home, &["accounts", "--provider", "claude", "--json"]));
     std::fs::create_dir_all(home.join(".swarm")).unwrap();
-    let cache = serde_json::json!({"accounts":[{"home":home.join(".claude"),"meters":meters}]});
+    use sha2::{Digest, Sha256};
+    let identity = format!("{:x}", Sha256::digest("owner@example.test"));
+    let cache = serde_json::json!({"accounts":[{"home":home.join(".claude"),"identity":identity,"meters":meters}]});
     std::fs::write(home.join(".swarm/claude-usage.json"), cache.to_string()).unwrap();
 }
 

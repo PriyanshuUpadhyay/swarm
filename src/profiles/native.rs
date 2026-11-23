@@ -2,10 +2,10 @@ use super::{Account, AccountList, AuthState};
 use crate::providers::Provider;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
 #[derive(Debug)]
@@ -475,7 +475,6 @@ fn claude_identity(
 }
 
 mod transport;
-pub(crate) use transport::read_stdout;
 pub use transport::{AppServer, read_json};
 
 pub fn deadline(seconds: u64) -> Instant {

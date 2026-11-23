@@ -117,11 +117,13 @@ pub fn read(deadline: Instant) -> Result<Usage, String> {
 fn emails(accounts: &[Account]) -> Vec<(String, String)> {
     accounts
         .iter()
-        .filter_map(|account| {
-            let email = account.email.as_deref()?.trim().to_lowercase();
-            (!email.is_empty()).then(|| (account.name.clone(), email))
-        })
+        .filter_map(|account| Some((account.name.clone(), normalized_email(account)?)))
         .collect()
+}
+
+fn normalized_email(account: &Account) -> Option<String> {
+    let email = account.email.as_deref()?.trim();
+    (!email.is_empty()).then(|| email.to_lowercase())
 }
 
 /// Two accounts of one provider that sign in with one email are one account, so the meters show it
@@ -164,14 +166,18 @@ pub(super) fn fold_twins(emails: &[(String, String)], meters: Vec<UsageMeter>) -
 }
 
 pub(crate) fn for_accounts(list: &AccountList, now: i64) -> Result<Vec<UsageMeter>, String> {
-    cached_accounts(&list.provider, &list.accounts, now)
+    Ok(cached_accounts(&list.provider, &list.accounts, now))
 }
 
-fn cached_accounts(
-    provider: &str,
-    accounts: &[Account],
-    now: i64,
-) -> Result<Vec<UsageMeter>, String> {
+fn login_digest(account: &Account) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    if account.auth_state != AuthState::SignedIn {
+        return None;
+    }
+    normalized_email(account).map(|email| format!("{:x}", Sha256::digest(email)))
+}
+
+fn cached_accounts(provider: &str, accounts: &[Account], now: i64) -> Vec<UsageMeter> {
     let stored = match cache_path(provider) {
         Err(_) => Err("refused cache"),
         Ok(path) => match std::fs::read(path) {
@@ -182,6 +188,15 @@ fn cached_accounts(
             Err(_) => Err("unavailable cache"),
         },
     };
+    meters_from_cache(provider, accounts, now, stored)
+}
+
+fn meters_from_cache(
+    provider: &str,
+    accounts: &[Account],
+    now: i64,
+    stored: Result<Option<Cache>, &str>,
+) -> Vec<UsageMeter> {
     let mut meters = Vec::new();
     for account in accounts {
         if account.usage_state == "no_source" {
@@ -198,53 +213,82 @@ fn cached_accounts(
             ));
             continue;
         }
-        match &stored {
-            Ok(Some(cache)) => match cache
-                .accounts
-                .iter()
-                .find(|entry| entry.home == account.home)
-            {
-                Some(entry) if !entry.meters.is_empty() => {
-                    meters.extend(entry.meters.iter().map(|meter| {
-                        let mut meter = meter.clone();
-                        meter.provider = provider.into();
-                        meter.account = Some(account.name.clone());
-                        meter.label = account.name.clone();
-                        normalize_meter(&meter, now)
-                    }));
-                }
-                Some(_) => meters.push(status_meter(
-                    provider,
-                    Some(account),
-                    "missing",
-                    ReasonCode::NoCachedUsage,
-                    None,
-                )),
-                None => meters.push(status_meter(
-                    provider,
-                    Some(account),
-                    "missing",
-                    ReasonCode::NoCachedUsage,
-                    None,
-                )),
-            },
-            Ok(None) => meters.push(status_meter(
-                provider,
-                Some(account),
-                "missing",
-                ReasonCode::NoCachedUsage,
-                None,
-            )),
-            Err(_) => meters.push(status_meter(
+        let Ok(cache) = &stored else {
+            meters.push(status_meter(
                 provider,
                 Some(account),
                 "failed",
                 ReasonCode::ReadFailed,
                 Some("Usage cache is unavailable"),
-            )),
+            ));
+            continue;
+        };
+        if account.auth_state == AuthState::SignedOut {
+            meters.push(status_meter(
+                provider,
+                Some(account),
+                "missing",
+                ReasonCode::NoCredentials,
+                None,
+            ));
+            continue;
+        }
+        if provider == "codex"
+            && account.auth_state == AuthState::Unavailable
+            && cache.as_ref().is_some_and(|cache| {
+                cache.accounts.iter().any(|entry| {
+                    entry.home == account.home
+                        && entry.identity.is_none()
+                        && matches!(
+                            entry.meters.as_slice(),
+                            [meter] if meter.state == "no_source"
+                                && meter.reason_code == Some(ReasonCode::NoSource)
+                                && meter.used_pct.is_none()
+                        )
+                })
+            })
+        {
+            meters.push(status_meter(
+                provider,
+                Some(account),
+                "no_source",
+                ReasonCode::NoSource,
+                Some("API-key mode has no plan-quota source"),
+            ));
+            continue;
+        }
+
+        let identity = login_digest(account);
+        let entry = identity.as_ref().and_then(|identity| {
+            cache.as_ref()?.accounts.iter().find(|entry| {
+                entry.home == account.home
+                    && entry.identity.as_ref() == Some(identity)
+                    && !entry.meters.is_empty()
+            })
+        });
+
+        if let Some(entry) = entry {
+            meters.extend(entry.meters.iter().map(|meter| {
+                let mut meter = meter.clone();
+                meter.provider = provider.into();
+                meter.account = Some(account.name.clone());
+                meter.label = account.name.clone();
+
+                normalize_meter(&meter, now)
+            }));
+        } else {
+            meters.push(status_meter(
+                provider,
+                Some(account),
+                "missing",
+                ReasonCode::NoCachedUsage,
+                identity
+                    .is_none()
+                    .then_some("Usage unknown: sign-in identity unavailable"),
+            ));
         }
     }
-    Ok(meters)
+    meters
 }
 
 pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
@@ -355,7 +399,7 @@ fn refresh_accounts(
     deadline: Instant,
 ) -> Result<Usage, String> {
     let path = cache_path(provider.id())?;
-    let previous = cached_accounts(provider.id(), &accounts, now_seconds())?;
+    let previous = cached_accounts(provider.id(), &accounts, now_seconds());
     let resolved_cache = resolved_parent(&path);
     if accounts.iter().any(|account| {
         resolved_cache.starts_with(resolved_parent(std::path::Path::new(&account.home)))
@@ -427,6 +471,7 @@ fn refresh_accounts(
             },
         };
         cache.accounts.push(CachedAccount {
+            identity: login_digest(&account),
             home: account.home,
             meters: account_meters.clone(),
         });
@@ -449,3 +494,6 @@ fn refresh_accounts(
     written?;
     Ok(Usage { meters })
 }
+
+#[cfg(test)]
+mod tests;

@@ -59,11 +59,7 @@ fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
 pub fn load() -> Result<(Config, Vec<u8>), String> {
     let path = path()?;
     if let Some(bytes) = read(&path)? {
-        let text = String::from_utf8(bytes.clone())
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        let config = parse(&text).map_err(|error| format!("{}: {error}", path.display()))?;
-        warn_if_old_is_newer(&path, &config);
-        return Ok((config, bytes));
+        return loaded(&path, bytes);
     }
     let old = old_path()?;
     let Some(bytes) = read(&old)? else {
@@ -72,8 +68,30 @@ pub fn load() -> Result<(Config, Vec<u8>), String> {
     let value: Value =
         serde_json::from_slice(&bytes).map_err(|error| format!("{}: {error}", old.display()))?;
     let config = import(&value, &old.to_string_lossy())?;
-    let bytes = write(&path, &config)?;
+    with_profile_lock(&path, || {
+        if let Some(bytes) = read(&path)? {
+            return loaded(&path, bytes);
+        }
+        let bytes = write(&path, &config)?;
+        Ok((config, bytes))
+    })
+}
+
+fn loaded(path: &Path, bytes: Vec<u8>) -> Result<(Config, Vec<u8>), String> {
+    let text =
+        std::str::from_utf8(&bytes).map_err(|error| format!("{}: {error}", path.display()))?;
+    let config = parse(text).map_err(|error| format!("{}: {error}", path.display()))?;
+    warn_if_old_is_newer(path, &config);
     Ok((config, bytes))
+}
+
+fn with_profile_lock<T>(
+    path: &Path,
+    change: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let parent = path.parent().ok_or("profiles path has no folder")?;
+    std::fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+    crate::managed::with_lock(&path.with_extension("lock"), change)
 }
 
 /// The import runs once, so a later edit to the old file changes nothing; say so rather than
@@ -203,15 +221,19 @@ pub(super) fn update_at(
     expected: &str,
     change: impl FnOnce(&mut Config) -> Result<(), String>,
 ) -> Result<String, String> {
-    if revision(bytes) != expected {
-        return Err("profiles changed on disk; reload and try again".into());
-    }
-    change(&mut config)?;
-    let errors = validate(&config);
-    if !errors.is_empty() {
-        return Err(errors.join("\n"));
-    }
-    write(path, &config).map(|bytes| revision(&bytes))
+    with_profile_lock(path, || {
+        let on_disk = read(path)?;
+        if revision(bytes) != expected || on_disk.as_deref().unwrap_or(DEFAULT.as_bytes()) != bytes
+        {
+            return Err("profiles changed on disk; reload and try again".into());
+        }
+        change(&mut config)?;
+        let errors = validate(&config);
+        if !errors.is_empty() {
+            return Err(errors.join("\n"));
+        }
+        write(path, &config).map(|bytes| revision(&bytes))
+    })
 }
 
 /// Writes `config`: a timestamped backup beside an existing file, then an atomic rename onto the
@@ -240,5 +262,100 @@ pub(super) fn write(path: &Path, config: &Config) -> Result<Vec<u8>, String> {
             let _ = std::fs::remove_file(&temp);
             format!("{}: {error}", target.display())
         })?;
+    prune_backups(path);
     Ok(text.into_bytes())
+}
+
+fn prune_backups(path: &Path) {
+    const BACKUP_LIMIT: usize = 10;
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return;
+    };
+    let prefix = format!("{name}.");
+
+    let Some(entries) = path.parent().and_then(|dir| std::fs::read_dir(dir).ok()) else {
+        return;
+    };
+
+    let mut backups: Vec<_> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let stamp = name.to_str()?.strip_prefix(&prefix)?.strip_suffix(".bak")?;
+            let stamp: u64 = stamp.parse().ok()?;
+            entry
+                .file_type()
+                .ok()?
+                .is_file()
+                .then(|| (stamp, entry.path()))
+        })
+        .collect();
+
+    backups.sort_unstable_by(|a, b| b.cmp(a));
+    for (_, path) in backups.into_iter().skip(BACKUP_LIMIT) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn folder() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("swarm-profiles-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn audit_regression_profile_save_checks_the_revision_on_disk() {
+        let dir = folder();
+        let path = dir.join("profiles.json");
+        let config = built_in();
+        let bytes = write(&path, &config).unwrap();
+        let expected = revision(&bytes);
+        let rename = |config: &mut Config| {
+            let lock = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path.with_extension("lock"))
+                .unwrap();
+            assert!(matches!(
+                lock.try_lock(),
+                Err(std::fs::TryLockError::WouldBlock)
+            ));
+            apply_action(config, ProfileAction::New("first"))
+        };
+
+        update_at(&path, config.clone(), &bytes, &expected, rename).unwrap();
+        let stale = |config: &mut Config| apply_action(config, ProfileAction::New("second"));
+        let result = update_at(&path, config, &bytes, &expected, stale);
+        let saved = parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        assert!(result.is_err());
+        assert!(saved.profile("first").is_ok());
+    }
+
+    #[test]
+    fn audit_regression_profile_backups_keep_only_the_newest_ten() {
+        let dir = folder();
+        let path = dir.join("profiles.json");
+        let config = built_in();
+        write(&path, &config).unwrap();
+        for stamp in 1..=12 {
+            std::fs::write(dir.join(format!("profiles.json.{stamp}.bak")), "backup").unwrap();
+        }
+        std::fs::write(dir.join("profiles.json.manual.bak"), "owner copy").unwrap();
+
+        write(&path, &config).unwrap();
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        std::fs::remove_dir_all(dir).unwrap();
+        assert!(names.contains(&"profiles.json.manual.bak".into()));
+        assert!(names.contains(&"profiles.json.12.bak".into()));
+        assert!(!names.contains(&"profiles.json.3.bak".into()));
+        assert_eq!(names.len(), 12); // Ten backups, the owner copy, and the profile.
+    }
 }

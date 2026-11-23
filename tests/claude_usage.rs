@@ -25,7 +25,7 @@ fn fixture(name: &str) -> PathBuf {
         ),
     )
     .unwrap();
-    tool(&home, "claude", "echo '{\"loggedIn\":true}'");
+    tool(&home, "claude", r#"echo '{"loggedIn":true,"email":"a@b"}'"#);
     tool(
         &home,
         "security",

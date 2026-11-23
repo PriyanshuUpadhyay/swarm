@@ -33,25 +33,41 @@ fn herdr(args: &[&str]) -> Result<Value, String> {
     }
 }
 
-/// Panes right of the orchestrator, top to bottom, as (pane id, height).
-fn children(orchestrator: &str) -> Result<Vec<(String, f64)>, String> {
-    let layout = herdr(&["pane", "layout", "--pane", orchestrator])?;
+/// Seat panes right of the orchestrator, top to bottom, as (pane id, height).
+fn children(
+    orchestrator: &str,
+    seats: &[&str],
+    run: &Herdr<'_>,
+) -> Result<Vec<(String, f64)>, String> {
+    let layout = run(&["pane", "layout", "--pane", orchestrator])?;
     let panes = layout["result"]["layout"]["panes"]
         .as_array()
         .ok_or("herdr pane layout: no panes")?;
+
     let x = |pane: &Value| pane["rect"]["x"].as_f64().unwrap_or_default();
     let left = panes
         .iter()
         .find(|pane| pane["pane_id"] == orchestrator)
         .map(x)
         .ok_or("orchestrator pane is not in its layout")?;
-    let mut children: Vec<&Value> = panes.iter().filter(|pane| x(pane) > left).collect();
+
+    let mut children: Vec<&Value> = panes
+        .iter()
+        .filter(|pane| {
+            x(pane) > left
+                && pane["pane_id"]
+                    .as_str()
+                    .is_some_and(|id| seats.contains(&id))
+        })
+        .collect();
+
     children.sort_by(|a, b| {
         a["rect"]["y"]
             .as_f64()
             .unwrap_or_default()
             .total_cmp(&b["rect"]["y"].as_f64().unwrap_or_default())
     });
+
     Ok(children
         .into_iter()
         .map(|pane| {
@@ -93,14 +109,14 @@ pub fn tag_options(tags: &[(&str, &str)]) -> Vec<String> {
 }
 
 /// Best effort: a missing tag only costs the sidebar its label. The pane id goes first.
-fn report_tags(pane: &str, tags: &[(&str, &str)]) {
+fn report_tags(pane: &str, tags: &[(&str, &str)], run: &Herdr<'_>) {
     let options = tag_options(tags);
     if options.is_empty() {
         return;
     }
     let mut args = vec!["pane", "report-metadata", pane, "--source", "swarm-split"];
     args.extend(options.iter().map(String::as_str));
-    if let Err(error) = herdr(&args) {
+    if let Err(error) = run(&args) {
         eprintln!("swarm herdr-split: pane tags skipped: {error}");
     }
 }
@@ -112,7 +128,20 @@ pub fn split(
     cwd: &str,
     env: impl Fn(&str) -> Option<String>,
 ) -> Result<String, String> {
-    let before = children(orchestrator)?;
+    split_with(orchestrator, cwd, env, &herdr)
+}
+
+type Herdr<'a> = dyn Fn(&[&str]) -> Result<Value, String> + 'a;
+
+fn split_with(
+    orchestrator: &str,
+    cwd: &str,
+    env: impl Fn(&str) -> Option<String>,
+    run: &Herdr<'_>,
+) -> Result<String, String> {
+    let panes = env("SWARM_PANES").unwrap_or_default();
+    let mut seats: Vec<&str> = panes.split_whitespace().collect();
+    let before = children(orchestrator, &seats, run)?;
     let (target, direction) = match before.last() {
         Some((pane, _)) => (pane.as_str(), "down"),
         None => (orchestrator, "right"),
@@ -136,7 +165,7 @@ pub fn split(
     for value in &forwarded {
         args.extend(["--env", value.as_str()]);
     }
-    let split = herdr(&args)?;
+    let split = run(&args)?;
     let pane = split["result"]["pane"]["pane_id"]
         .as_str()
         .ok_or("herdr pane split: no pane id")?
@@ -147,15 +176,24 @@ pub fn split(
     // keeps this inside the Herdr adapter. Herdr trims whitespace from a value, so the child
     // indent is two U+2800 braille blanks, which it keeps.
     let child_tree = env("SWARM_PANE_TREE").unwrap_or("\u{2800}\u{2800}↳".into());
-    report_tags(orchestrator, &[("tree", "◆")]);
+    report_tags(orchestrator, &[("tree", "◆")], run);
     report_tags(
         &pane,
         &[
             ("tree", &child_tree),
             ("seat", &env("SWARM_AGENT_ID").unwrap_or_default()),
         ],
+        run,
     );
-    let after = children(orchestrator)?;
+    seats.push(&pane);
+    if let Err(error) = equalise(orchestrator, &seats, run) {
+        eprintln!("swarm herdr-split: resize skipped: {error}");
+    }
+    Ok(pane)
+}
+
+fn equalise(orchestrator: &str, seats: &[&str], run: &Herdr<'_>) -> Result<(), String> {
+    let after = children(orchestrator, seats, run)?;
     let heights: Vec<f64> = after.iter().map(|(_, height)| *height).collect();
     for (index, delta) in equalise_steps(&heights) {
         if delta.abs() < 0.01 {
@@ -167,7 +205,7 @@ pub fn split(
         } else {
             (&after[index + 1].0, "up")
         };
-        herdr(&[
+        run(&[
             "pane",
             "resize",
             "--pane",
@@ -178,12 +216,67 @@ pub fn split(
             &format!("{:.4}", delta.abs()),
         ])?;
     }
-    Ok(pane)
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn layout(panes: &[(&str, i32, i32, i32)]) -> Value {
+        let panes: Vec<_> = panes.iter().map(|&(id, x, y, height)| {
+            serde_json::json!({"pane_id": id, "rect": {"x": x, "y": y, "height": height}})
+        }).collect();
+        serde_json::json!({"result": {"layout": {"panes": panes}}})
+    }
+
+    #[test]
+    fn audit_regression_herdr_reports_split_even_without_its_second_layout() {
+        let split = std::cell::Cell::new(false);
+        let run = |args: &[&str]| match args[1] {
+            "layout" if split.get() => Err("layout unavailable".into()),
+            "layout" => Ok(layout(&[("chair", 0, 0, 100)])),
+            "split" => {
+                split.set(true);
+                Ok(serde_json::json!({"result": {"pane": {"pane_id": "new"}}}))
+            }
+            _ => Ok(Value::Null),
+        };
+        assert_eq!(split_with("chair", ".", |_| None, &run).unwrap(), "new");
+    }
+
+    #[test]
+    fn audit_regression_herdr_uses_only_seat_panes() {
+        let split = std::cell::Cell::new(false);
+
+        let run = |args: &[&str]| match args[1] {
+            "layout" if split.get() => Ok(layout(&[
+                ("chair", 0, 0, 100),
+                ("seat", 20, 0, 20),
+                ("other", 20, 20, 60),
+                ("new", 20, 80, 20),
+            ])),
+            "layout" => Ok(layout(&[
+                ("chair", 0, 0, 100),
+                ("seat", 20, 0, 20),
+                ("other", 20, 20, 80),
+            ])),
+
+            "split" => {
+                assert_eq!(args[2], "seat");
+                split.set(true);
+                Ok(serde_json::json!({"result": {"pane": {"pane_id": "new"}}}))
+            }
+            "resize" => {
+                assert_ne!(args[3], "other");
+                Ok(Value::Null)
+            }
+            _ => Ok(Value::Null),
+        };
+
+        let env = |name: &str| (name == "SWARM_PANES").then(|| "chair seat".to_string());
+        assert_eq!(split_with("chair", ".", env, &run).unwrap(), "new");
+    }
 
     fn close(steps: Vec<(usize, f64)>, expected: &[f64]) {
         assert_eq!(steps.len(), expected.len(), "{steps:?}");

@@ -145,6 +145,11 @@ pub(super) fn recorded_trust(home: &Path) -> Vec<serde_json::Value> {
         .collect()
 }
 
+pub(super) fn fixture_identity() -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest("owner@example.test"))
+}
+
 pub(super) fn account_launch_fixture(role: &str) -> (PathBuf, String, String) {
     let home = scratch(role);
     std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();
@@ -152,7 +157,7 @@ pub(super) fn account_launch_fixture(role: &str) -> (PathBuf, String, String) {
     tool(
         &home,
         "claude",
-        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.05; echo '{"loggedIn":true}'"#,
+        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.05; echo '{"loggedIn":true,"email":"owner@example.test"}'"#,
     );
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(home.join(".swarm/adapters/fake.conf"), "self = printf chair\nspawn = printf pane-work\nring = true\nlist = true\nclose = true\ncapture = true\n").unwrap();

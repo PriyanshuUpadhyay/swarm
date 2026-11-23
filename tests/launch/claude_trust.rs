@@ -16,13 +16,14 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
     tool(
         &home,
         "claude",
-        r#"if [ "$*" = 'auth status' ]; then /bin/echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; echo '{"loggedIn":true}'; fi"#,
+        r#"if [ "$*" = 'auth status' ]; then /bin/echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; echo '{"loggedIn":true,"email":"owner@example.test"}'; fi"#,
     );
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let accounts: Vec<_> = profiles.iter().zip([30,75]).map(|(path,used)| serde_json::json!({"home":path,"meters":[{"provider":"claude","account":path.file_name().unwrap().to_str().unwrap(),"label":"account","window":"5h","window_minutes":300,"used_pct":used,"reset_time_seconds":null,"state":"fresh","source":"claude_api","reason":null,"as_of_seconds":now}]})).collect();
+    let identity = fixture_identity();
+    let accounts: Vec<_> = profiles.iter().zip([30,75]).map(|(path,used)| serde_json::json!({"home":path,"identity":identity,"meters":[{"provider":"claude","account":path.file_name().unwrap().to_str().unwrap(),"label":"account","window":"5h","window_minutes":300,"used_pct":used,"reset_time_seconds":null,"state":"fresh","source":"claude_api","reason":null,"as_of_seconds":now}]})).collect();
     std::fs::write(
         home.join(".swarm/claude-usage.json"),
         serde_json::json!({"accounts":accounts}).to_string(),
