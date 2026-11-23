@@ -241,16 +241,36 @@ pub fn planned() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 pub fn install(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
-    let text = planned()?;
-    let path = plist_path(home);
-    std::fs::create_dir_all(path.parent().ok_or("swarm: bad LaunchAgents path")?)?;
-    std::fs::write(&path, text)?;
-    if let Err(error) = reload(&path) {
-        // A plist left behind would start the HUD at the next login while the switch reads off.
-        let _ = std::fs::remove_file(&path);
-        return Err(error);
-    }
+    install_plist(&plist_path(home), &planned()?, reload)?;
     Ok(wait_running(home))
+}
+
+fn install_plist(
+    path: &Path,
+    text: &str,
+    reload: impl FnOnce(&Path) -> Result<(), Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all(path.parent().ok_or("swarm: bad LaunchAgents path")?)?;
+    let previous = match std::fs::read_to_string(path) {
+        Ok(text) => Some(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    crate::managed::write_text(path, previous.as_deref().unwrap_or_default(), text)?;
+    if let Err(error) = reload(path) {
+        let restored = match previous {
+            Some(previous) => crate::managed::write_text(path, text, &previous),
+            // A new plist left behind would start the HUD at the next login.
+            None => crate::managed::remove_file(path, text),
+        };
+        return match restored {
+            Ok(()) => Err(error),
+            Err(restore) => {
+                Err(format!("{error}; cannot restore the old HUD setup: {restore}").into())
+            }
+        };
+    }
+    Ok(())
 }
 
 /// Start the installed HUD again with the app that `opt` names now: boot the login item out and
@@ -322,6 +342,18 @@ pub fn uninstall(home: &Path) -> Result<Status, Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audit_regression_hud_restores_the_installed_plist_on_reload_failure() {
+        let home = std::env::temp_dir().join(format!("swarm-hud-plist-{}", uuid::Uuid::now_v7()));
+        let path = plist_path(&home);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "previous").unwrap();
+        assert!(install_plist(&path, "next", |_| Err("bootstrap failed".into())).is_err());
+        let kept = std::fs::read_to_string(&path);
+        std::fs::remove_dir_all(home).unwrap();
+        assert_eq!(kept.unwrap(), "previous");
+    }
 
     #[test]
     fn restart_leaves_a_login_item_that_is_not_installed_alone() {
