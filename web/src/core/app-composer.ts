@@ -1,6 +1,6 @@
 
 
-import { agentInput, outgoing, submission, type AgentInput, type Prompt, type SendKey } from "./composer";
+import { agentInput, outgoing, submission, type AgentInput, type Answer, type Prompt, type SendKey } from "./composer";
 import { recallOrder, recordSent, type HistoryEntry } from "./history";
 import { editPicks, fileRows, validPicks, type CommandList, type SkillPick } from "./slash";
 import {
@@ -243,14 +243,16 @@ export class AppComposer {
   }
 
   /** Picks choice `choice` (zero-based); swarm refuses it when the question changed. */
-  async answer(sessionId: string, prompt: Prompt, choice: number) {
+  async answer(sessionId: string, prompt: Prompt, answer: Answer) {
     if (this.input(sessionId).answering?.prompt === prompt.id) return;
+    const choice = typeof answer === "number" ? answer : -1;
+    const body = typeof answer === "number" ? { choice } : { text: answer.text };
     const ok = await this.act(
       sessionId,
       { answering: { prompt: prompt.id, choice } },
       {},
-      () => this.app.api.action("/api/chat/answer", { ...this.target(sessionId), prompt_id: prompt.id, choice }),
-      () => void this.answer(sessionId, prompt, choice),
+      () => this.app.api.action("/api/chat/answer", { ...this.target(sessionId), prompt_id: prompt.id, ...body }),
+      () => void this.answer(sessionId, prompt, answer),
     );
     // The card stays busy until the next snapshot drops this prompt.
     if (!ok) this.update(sessionId, { answering: null });

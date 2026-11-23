@@ -61,7 +61,8 @@ pub fn tool_row(name: &str, input: &Value, id: String) -> Option<Row> {
             row
         }
         _ if is_task_change(name) => Row::new(RowKind::TodoList, String::new(), id),
-        "ExitPlanMode" => {
+        // Swarm's Pi plan tool (src/bus/pi_live.ts) takes the same `plan` text.
+        "ExitPlanMode" | "approve_plan" => {
             let plan = text_of(input, "plan");
             if plan.is_empty() {
                 return None;

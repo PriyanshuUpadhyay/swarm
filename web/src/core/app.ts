@@ -2,7 +2,7 @@
 
 import { Api, type Row, type RowFrame, type Snapshot } from "./api";
 import { installKeys, Registry } from "./commands";
-import { type AgentInput, type Prompt } from "./composer";
+import { type AgentInput, type Answer, type Prompt } from "./composer";
 import { whenPainted } from "./perf";
 import { focusOpenedChat, keepFocus } from "./focus";
 import { chatFromPath, resolveChat } from "./route";
@@ -375,8 +375,8 @@ export class App {
     return this.composing.interrupt(sessionId);
   }
 
-  answer(sessionId: string, prompt: Prompt, choice: number) {
-    return this.composing.answer(sessionId, prompt, choice);
+  answer(sessionId: string, prompt: Prompt, answer: Answer) {
+    return this.composing.answer(sessionId, prompt, answer);
   }
 
   dismissBanner(sessionId: string) {

@@ -23,6 +23,9 @@ pub struct Prompt {
     /// a typed reply that names it, not as keys (codex-rs/tui/src/async_question_reply.rs).
     #[serde(skip)]
     pub reply: Option<String>,
+    /// The question takes typed text, not a choice: Pi's `ctx.ui.input` dialog.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub input: bool,
 }
 
 /// Rows that end a choice list on every prompt seen: Claude permission and AskUserQuestion,
@@ -239,6 +242,7 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
         id,
         cut: !bounded,
         reply: None,
+        input: false,
     })
 }
 
@@ -269,6 +273,7 @@ fn pi_plan_pointer() -> Prompt {
         cursor: 0,
         cut: false,
         reply: None,
+        input: false,
     }
 }
 
@@ -310,12 +315,15 @@ pub(super) fn pi_prompt(screen: &str) -> Option<Prompt> {
     }
     let lines: Vec<_> = screen.lines().collect();
     let (footer, bottom) = pi_dialog_footer(&lines)?;
-    if !lines[footer].trim().starts_with(PI_SELECT) {
-        return None;
-    }
     let top = lines[..footer]
         .iter()
         .rposition(|line| line.trim_end() == lines[bottom].trim_end());
+    if lines[footer].trim().starts_with(PI_INPUT) {
+        return pi_input_prompt(&lines[top? + 1..footer]);
+    }
+    if !lines[footer].trim().starts_with(PI_SELECT) {
+        return None;
+    }
     let start = top.map_or(0, |i| i + 1);
     let last = (start..footer)
         .rev()
@@ -369,7 +377,49 @@ pub(super) fn pi_prompt(screen: &str) -> Option<Prompt> {
         cursor,
         cut: false,
         reply: None,
+        input: false,
     })
+}
+
+/// Pi's input dialog: the title (and an optional description) above one `> ` input row. A
+/// dialog whose top border is off the screen is left to the pane.
+fn pi_input_prompt(rows: &[&str]) -> Option<Prompt> {
+    let field = rows
+        .iter()
+        .rposition(|line| line.starts_with("> ") || *line == ">")?;
+    let question = rows[..field]
+        .iter()
+        .map(|line| line.strip_prefix(' ').unwrap_or(line).trim_end())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let question = question.trim().to_string();
+    if question.is_empty() || rows[field + 1..].iter().any(|line| !line.trim().is_empty()) {
+        return None;
+    }
+    Some(Prompt {
+        id: prompt_id(&question, &[]),
+        question,
+        choices: Vec::new(),
+        details: Vec::new(),
+        numbered: false,
+        cursor: 0,
+        cut: false,
+        reply: None,
+        input: true,
+    })
+}
+
+/// The text in the input row of Pi's input dialog, or None when no such dialog is on screen.
+pub fn pi_input_text(screen: &str) -> Option<String> {
+    let lines: Vec<_> = screen.lines().collect();
+    let (footer, _) = pi_dialog_footer(&lines)?;
+    if !lines[footer].trim().starts_with(PI_INPUT) {
+        return None;
+    }
+    let field = lines[..footer]
+        .iter()
+        .rposition(|line| line.starts_with("> ") || *line == ">")?;
+    Some(lines[field][1..].trim().to_string())
 }
 
 pub(super) fn prompt_id(question: &str, choices: &[String]) -> String {

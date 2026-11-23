@@ -6,7 +6,11 @@ import type { Meter } from "./settings";
 import type { Profile } from "./settings-types";
 
 /** `swarm agents --json` `prompt`: a question on the agent's screen (ADR 0029). */
-export type Prompt = { id: string; question: string; choices: string[]; details?: string[] };
+/** `input` marks a question that takes typed text, not a choice (Pi's text dialog). */
+export type Prompt = { id: string; question: string; choices: string[]; details?: string[]; input?: boolean };
+
+/** A choice's index, or the typed text for a question that takes text. */
+export type Answer = number | { text: string };
 
 export type SendKey = "return" | "commandReturn";
 

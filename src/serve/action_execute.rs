@@ -96,10 +96,22 @@ pub(super) async fn execute_action(app: &App, action: Action) -> Result<Value, A
                 return Err(error(StatusCode::BAD_REQUEST, "prompt_id required"));
             }
             let (call, agent) = action_target(app, &body.session, &body.agent)?;
-            (
-                call.args(&["answer", &agent, &body.prompt_id, &body.choice.to_string()]),
-                None,
-            )
+            match (body.choice, body.text) {
+                (Some(choice), None) => (
+                    call.args(&["answer", &agent, &body.prompt_id, &choice.to_string()]),
+                    None,
+                ),
+                (None, Some(text)) => (
+                    call.args(&["answer", &agent, &body.prompt_id, "--text"]),
+                    Some(text),
+                ),
+                _ => {
+                    return Err(error(
+                        StatusCode::BAD_REQUEST,
+                        "give choice or text, not both",
+                    ));
+                }
+            }
         }
         Action::Archive(body) | Action::Unarchive(body) => {
             let verb = if archive { "archive" } else { "unarchive" };

@@ -1,0 +1,12 @@
+────────────────────────────────────────────────────────────
+
+ Please describe the arrow behavior you expect. Which keys
+ do you press?
+
+>
+
+ enter submit  escape/ctrl+c cancel
+
+────────────────────────────────────────────────────────────
+~/project
+0.0%/200k (auto)                             test-model • low

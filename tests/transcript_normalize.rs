@@ -110,6 +110,41 @@ fn pi_bookkeeping_is_ignored_instead_of_unmapped() {
 }
 
 #[test]
+fn pi_owner_questions_plans_and_process_notices_get_readable_rows() {
+    let result = snapshot(
+        NativeFormat::Pi,
+        &[
+            json!({"type":"message","id":"a1","message":{"role":"assistant","content":[
+                {"type":"toolCall","id":"q1","name":"ask_user_question","arguments":{"question":"Pick a color.","choices":["Amber","Blue"]}}
+            ],"stopReason":"toolUse"}}),
+            json!({"type":"message","id":"r1","message":{"role":"toolResult","toolCallId":"q1","toolName":"ask_user_question",
+                "content":[{"type":"text","text":"Owner answered:\nBlue"}],"details":{"answer":"Blue"},"isError":false}}),
+            json!({"type":"message","id":"a2","message":{"role":"assistant","content":[
+                {"type":"toolCall","id":"p1","name":"approve_plan","arguments":{"plan":"1. Read the README."}}
+            ],"stopReason":"toolUse"}}),
+            json!({"type":"custom_message","id":"n1","customType":"ad-process:notification","display":true,
+                "content":"<process_event type=\"lifecycle\"><summary>Process \"cargo-build\" succeeded after 24s.</summary></process_event>",
+                "details":{"summary":"Process \"cargo-build\" succeeded after 24s."}}),
+        ],
+    );
+    let rows: Vec<_> = result["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| (row["kind"].as_str().unwrap(), row["text"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("question", "Pick a color."),
+            ("result", "Blue"),
+            ("proposedPlan", "1. Read the README."),
+            ("system", "Process \"cargo-build\" succeeded after 24s."),
+        ]
+    );
+}
+
+#[test]
 fn claude_task_result_links_later_updates_to_the_created_task() {
     let result = snapshot(
         NativeFormat::Claude,

@@ -15,9 +15,24 @@ pub(crate) fn answer(
                 "swarm: only the owner answers an agent's question; the Swarm app sends it".into(),
             );
         }
-        let choice: usize = choice
-            .parse()
-            .map_err(|_| format!("swarm: choice {choice:?} is not a number"))?;
+        // `--text` answers a question that takes typed text; the text comes on stdin.
+        let text = if choice == "--text" {
+            let text = std::io::read_to_string(std::io::stdin())?;
+            let text = text.trim();
+            // Pi's input row is one line, and a newline in it would submit the text early.
+            if text.is_empty() || text.chars().any(char::is_control) {
+                return Err("swarm: give one nonempty line of text on stdin".into());
+            }
+            Some(text.to_string())
+        } else {
+            None
+        };
+        let choice: usize = match text {
+            Some(_) => 0,
+            None => choice
+                .parse()
+                .map_err(|_| format!("swarm: choice {choice:?} is not a number"))?,
+        };
         let session = session_id()?;
         let pane = swarm::store::require_pane(connection, &session, agent_id)?;
         let agent = swarm::store::agents(connection, &session)?
@@ -65,6 +80,31 @@ pub(crate) fn answer(
                 "swarm: the question changed; read it again"
             }
             .into());
+        }
+        if prompt.input != text.is_some() {
+            return Err(if prompt.input {
+                "swarm: the question takes typed text; send it with --text"
+            } else {
+                "swarm: the question takes a choice, not text"
+            }
+            .into());
+        }
+        if let Some(text) = text {
+            let screen = adapter
+                .capture_within(
+                    &[("pane", pane.as_str())],
+                    std::time::Duration::from_secs(1),
+                )
+                .ok_or(format!("swarm: cannot read {agent_id}'s screen"))?;
+            // Text typed in the pane would join the answer.
+            if swarm::screen::pi_input_text(&screen).as_deref() != Some("") {
+                return Err(format!(
+                    "swarm: {agent_id}'s answer box is not empty; answer in its pane"
+                )
+                .into());
+            }
+            adapter.run("ring", &[("pane", &pane), ("text", &text)])?;
+            return Ok(Some(()));
         }
         if prompt.reply.is_some() {
             let answer = prompt

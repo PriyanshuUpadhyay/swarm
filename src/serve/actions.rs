@@ -31,7 +31,11 @@ pub(super) struct AnswerAction {
     pub(super) session: String,
     pub(super) agent: String,
     pub(super) prompt_id: String,
-    pub(super) choice: usize,
+    #[serde(default)]
+    pub(super) choice: Option<usize>,
+    /// Typed text for a question that takes text (`Prompt::input`), sent in place of a choice.
+    #[serde(default)]
+    pub(super) text: Option<String>,
 }
 
 #[derive(Deserialize)]

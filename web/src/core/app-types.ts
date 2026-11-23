@@ -67,6 +67,7 @@ export type Input = {
   sending: boolean;
   stopping: boolean;
   pulling: boolean;
+  /** `choice` is -1 while typed text is sent. */
   answering: { prompt: string; choice: number } | null;
   alreadySent: boolean;
   banner: Banner | null;

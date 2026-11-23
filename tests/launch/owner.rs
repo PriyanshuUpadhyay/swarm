@@ -204,6 +204,47 @@ fn the_owner_answers_a_pi_question_from_the_notice_inbox() {
 }
 
 #[test]
+fn the_owner_answers_a_pi_text_question_with_typed_text() {
+    let home = scratch("pi-input");
+    let session = answer_session(&home, "true");
+    let conf = home.join(".swarm/adapters/fake.conf");
+    let ring = "ring = printf '%s\\n' \"$SWARM_TEXT\" >> \"$HOME/rang\"";
+    let fake = std::fs::read_to_string(&conf)
+        .unwrap()
+        .replace("ring = true", ring);
+    std::fs::write(&conf, fake).unwrap();
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_provider(&connection, &session, "seat", "pi").unwrap();
+    std::fs::write(home.join("status"), "state=blocked:kind=question:at=100\n").unwrap();
+    let screen = include_str!("../fixtures/screens/pi-question-input.txt");
+    std::fs::write(home.join("screen"), screen).unwrap();
+    let prompt = listed_prompt(&home, &session);
+    assert_eq!(
+        prompt["question"],
+        "Please describe the arrow behavior you expect. Which keys\ndo you press?"
+    );
+    assert_eq!(prompt["input"], true, "{prompt}");
+    let id = prompt["id"].as_str().unwrap();
+    let app = chair(&session);
+    let answer =
+        |text: &str| swarm_input(&home, &app, &["answer", "seat", id, "--text"], Some(text));
+    let output = answer("Up and Down switch projects\n");
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        std::fs::read_to_string(home.join("rang")).unwrap(),
+        "Up and Down switch projects\n"
+    );
+
+    // Text the owner left in the pane's box would join the answer, so the app does not type.
+    std::fs::write(home.join("screen"), screen.replace("\n>\n", "\n> Up\n")).unwrap();
+    assert!(!answer("More").status.success());
+    assert_eq!(
+        std::fs::read_to_string(home.join("rang")).unwrap(),
+        "Up and Down switch projects\n"
+    );
+}
+
+#[test]
 fn a_pi_plan_can_be_answered_only_when_the_full_plan_is_visible() {
     let home = scratch("pi-plan");
     let session = answer_session(&home, "true");

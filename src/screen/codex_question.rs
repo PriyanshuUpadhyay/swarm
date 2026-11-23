@@ -84,6 +84,7 @@ pub(super) fn open_question(path: &Path) -> Option<Prompt> {
         id,
         cut: false,
         reply: Some(reply),
+        input: false,
     })
 }
 

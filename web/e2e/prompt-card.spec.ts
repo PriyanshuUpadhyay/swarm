@@ -89,6 +89,22 @@ test.describe("prompt layout and chat identity", () => {
   });
 });
 
+test("a question that takes text sends the typed answer", async ({ page: tab }, info) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await showPrompt(tab, [session], { id: "typed", question: "Please describe the arrow behavior you expect.", choices: [], input: true });
+  const sent: unknown[] = [];
+  await tab.route("**/api/chat/answer", async (route) => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill({ json: { ok: true } });
+  });
+  await openChat(tab, session);
+  const field = tab.getByTestId("prompt-card").getByTestId("prompt-text");
+  await field.fill("Up and Down switch projects");
+  await field.press("Enter");
+  await expect.poll(() => sent).toEqual([expect.objectContaining({ prompt_id: "typed", text: "Up and Down switch projects" })]);
+  await tab.screenshot({ path: info.outputPath("typed-question.png") });
+});
+
 test("a long error token wraps and keeps Retry and Dismiss inside the banner", async ({ page: tab }, info) => {
   const home = process.env.SWARM_E2E_HOME!;
   const error = `failed-${"unbroken".repeat(100)}`;

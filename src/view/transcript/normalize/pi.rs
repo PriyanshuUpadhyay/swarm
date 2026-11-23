@@ -8,6 +8,9 @@ use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_json::{Value, json, value::RawValue};
 
+/// Swarm's Pi question tool (src/bus/pi_live.ts), shown like Claude's AskUserQuestion.
+const QUESTION_TOOL: &str = "ask_user_question";
+
 #[derive(Clone, Debug)]
 pub(super) struct Meta {
     uuid: String,
@@ -175,7 +178,14 @@ pub(crate) fn parse_fact(line: &[u8], work: &mut dyn Work) -> Result<Fact, Snaps
             json!({"kind": kind, "text": record.text("summary")}),
         ),
         "custom_message" => {
-            let text = pi_text::join_text(record.get("content"), work)?;
+            // pi-processes writes its notice for the model as XML, and a summary line for people.
+            let summary = (record.text("customType") == "ad-process:notification")
+                .then(|| record.object("details")?.optional_text("summary"))
+                .flatten();
+            let text = match summary {
+                Some(summary) => summary,
+                None => pi_text::join_text(record.get("content"), work)?,
+            };
             fact.push("system_message", json!({"kind": if record.boolean("display") == Some(true) { "custom_message" } else { "injected" }, "text": text}));
             if record.boolean("display") == Some(true) {
                 pi_text::append_images(&mut fact, record.get("content"), "custom", work)?;
@@ -232,6 +242,20 @@ fn parse_message(
             pi_text::append_images(fact, content, "user", work)?;
         }
         "assistant" => parse_assistant(fact, message, line, work)?,
+        "toolResult" if message.text("toolName") == QUESTION_TOOL => {
+            // Swarm's Pi question tool keeps the owner's answer, or null, in its details.
+            let answer = match message
+                .object("details")
+                .and_then(|d| d.optional_text("answer"))
+            {
+                Some(answer) => answer,
+                None => pi_text::join_text(content, work)?,
+            };
+            fact.push(
+                "elicitation_result",
+                json!({"tool_call_id": message.text("toolCallId"), "answers": [{"question": "", "answer": answer}]}),
+            );
+        }
         "toolResult" => {
             let text = pi_text::join_text(content, work)?;
             fact.push(
@@ -332,6 +356,31 @@ fn parse_assistant(
                 "thinking" => {
                     let text = block.text("thinking");
                     fact.push("agent_thought_chunk", json!({"text": text}));
+                }
+                "toolCall" if block.text("name") == QUESTION_TOOL => {
+                    let args = block.object("arguments");
+                    let question = args
+                        .as_ref()
+                        .map(|a| a.text("question"))
+                        .unwrap_or_default();
+                    let mut options = Vec::new();
+                    for raw in args
+                        .as_ref()
+                        .and_then(|a| a.array("choices"))
+                        .unwrap_or_default()
+                    {
+                        work.check()?;
+                        if let Ok(label) = serde_json::from_str::<String>(raw.get()) {
+                            options.push(json!({"label": label, "description": ""}));
+                        }
+                    }
+                    fact.push(
+                        "elicitation",
+                        json!({"tool_call_id": block.text("id"), "questions": [{
+                            "question": question, "header": "", "multi_select": false, "options": options,
+                        }]}),
+                    );
+                    called_tool = true;
                 }
                 "toolCall" => {
                     let input = match block.get("arguments") {
