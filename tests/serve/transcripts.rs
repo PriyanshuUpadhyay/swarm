@@ -327,7 +327,7 @@ fn row_pages_hold_display_keys_for_the_merged_page_and_the_cached_tail() {
 }
 
 #[test]
-fn patch_entries_cover_tool_diffs_fold_steps_and_full_output() {
+fn patch_entries_cover_tool_diffs_and_full_output() {
     let fixture: Value = serde_json::from_str(include_str!("patch-wire.json")).unwrap();
     let server = Server::new();
     let log = fixture["log"]
@@ -346,23 +346,10 @@ fn patch_entries_cover_tool_diffs_fold_steps_and_full_output() {
     let mut expected = serde_json::Map::new();
     let mut full = Vec::new();
     let mut wanted = Vec::new();
-    let mut direct = false;
-    let mut nested = false;
     let mut text = false;
-    let mut stack: Vec<_> = page["rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| (r, false))
-        .collect();
-    while let Some((row, step)) = stack.pop() {
-        if let Some(steps) = row["steps"].as_array() {
-            stack.extend(steps.iter().map(|r| (r, true)));
-        }
+    for row in page["rows"].as_array().unwrap() {
         if let Some(diffs) = row["tool"]["diffs"].as_array() {
             for diff in diffs {
-                direct |= !step;
-                nested |= step;
                 let id = diff["id"].as_str().unwrap();
                 expected.insert(id.to_owned(), fixture["diff"].clone());
                 let path = format!(
@@ -381,7 +368,8 @@ fn patch_entries_cover_tool_diffs_fold_steps_and_full_output() {
             expected.insert(id.to_owned(), fixture["text"].clone());
         }
     }
-    assert!(direct && nested && text);
+    assert_eq!(full.len(), 3);
+    assert!(text);
     assert_eq!(page["patch"], Value::Object(expected));
     assert_eq!(full, wanted);
 }
@@ -402,7 +390,9 @@ fn a_shown_chunk_diff_carries_the_diff_layout_on_the_page_and_the_full_output() 
     let (status, _, body) = server.request("GET", &page_path, "", "", true);
     assert_eq!(status, 200, "{body}");
     let page: Value = serde_json::from_str(&body).unwrap();
-    let output = page["rows"][0]["tool"]["output"]["id"].as_str().unwrap();
+    let fold = &page["rows"][0];
+    assert_eq!(fold["kind"], "fold");
+    let output = fold["steps"][0]["tool"]["output"]["id"].as_str().unwrap();
     assert!(page["patch"][output]["split"].is_array(), "{body}");
 
     let full = format!(

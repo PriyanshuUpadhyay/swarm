@@ -14,11 +14,6 @@
       "f": "text"
     }
   ],
-  "fold:t1:call@raw-288-1": [
-    {
-      "f": "fold.text"
-    }
-  ],
   "t1:call@raw-288-1": [
     {
       "f": "tool.name"
@@ -32,6 +27,11 @@
     {
       "f": "tool.output.text",
       "p": "raw-572-0:output"
+    }
+  ],
+  "fold:t2:call@raw-776-0": [
+    {
+      "f": "fold.text"
     }
   ],
   "t2:call@raw-776-0": [
