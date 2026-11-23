@@ -102,7 +102,7 @@ fn fable_launch_cache(home: &Path, work_fb: i64, default_fb: i64) {
                 })
             })
             .collect();
-        serde_json::json!({"home":home.join(dir), "meters":meters})
+        serde_json::json!({"home":home.join(dir), "identity":fixture_identity(), "meters":meters})
     })
     .collect();
     std::fs::write(
@@ -165,6 +165,11 @@ fn launch_uses_model_usage_and_refuses_spent_fable_auto_before_starting_a_pane()
     assert!(stderr(&fable).contains("account default"));
 }
 
+fn fixture_identity() -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest("owner@example.test"))
+}
+
 fn renewable_launch_cache(home: &Path, work_used: i64) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -182,8 +187,8 @@ fn renewable_launch_cache(home: &Path, work_used: i64) {
     std::fs::write(
         home.join(".swarm/claude-usage.json"),
         serde_json::json!({"accounts":[
-            {"home":home.join(".claude/.profiles/work"), "meters":[work]},
-            {"home":home.join(".claude"), "meters":[default]},
+            {"home":home.join(".claude/.profiles/work"), "identity":fixture_identity(), "meters":[work]},
+            {"home":home.join(".claude"), "identity":fixture_identity(), "meters":[default]},
         ]})
         .to_string(),
     )

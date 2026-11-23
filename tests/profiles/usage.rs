@@ -3,6 +3,7 @@ use super::*;
 
 /// Native auth fixtures and the Claude usage cache.
 fn claude_accounts(bin: &Path, claude_rows: &str) {
+    use sha2::{Digest, Sha256};
     use std::os::unix::fs::PermissionsExt;
     let home = bin.parent().unwrap();
     let profiles = home.join(".claude/.profiles");
@@ -20,11 +21,13 @@ fn claude_accounts(bin: &Path, claude_rows: &str) {
     for row in rows {
         let name = row["name"].as_str().unwrap();
         std::fs::create_dir_all(profiles.join(name)).unwrap();
+        let email = format!("{name}@example.test");
+        let identity = format!("{:x}", Sha256::digest(&email));
         auth.push_str(&format!(
-            "  */{name}) echo '{{\"loggedIn\":{}}}' ;;\n",
+            "  */{name}) echo '{{\"loggedIn\":{},\"email\":\"{email}\"}}' ;;\n",
             row["signed_in"]
         ));
-        meters.push(serde_json::json!({"home":std::fs::canonicalize(profiles.join(name)).unwrap(),"meters":[{"provider":"claude","account":name,"label":name,"window":"5h","window_minutes":300,"used_pct":100-row["remaining"].as_i64().unwrap(),"reset_time_seconds":null,"state":"fresh","source":"claude_api","reason":null,"as_of_seconds":now}]}));
+        meters.push(serde_json::json!({"home":std::fs::canonicalize(profiles.join(name)).unwrap(),"identity":identity,"meters":[{"provider":"claude","account":name,"label":name,"window":"5h","window_minutes":300,"used_pct":100-row["remaining"].as_i64().unwrap(),"reset_time_seconds":null,"state":"fresh","source":"claude_api","reason":null,"as_of_seconds":now}]}));
     }
     auth.push_str("  *) echo '{\"loggedIn\":false}' ;;\nesac\n");
     std::fs::write(bin.join("claude"), auth).unwrap();

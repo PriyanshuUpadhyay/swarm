@@ -152,7 +152,7 @@ pub(super) fn account_launch_fixture(role: &str) -> (PathBuf, String, String) {
     tool(
         &home,
         "claude",
-        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.05; echo '{"loggedIn":true}'"#,
+        r#"echo "$CLAUDE_CONFIG_DIR" >> "$HOME/native-reads"; /bin/sleep 0.05; echo '{"loggedIn":true,"email":"owner@example.test"}'"#,
     );
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(home.join(".swarm/adapters/fake.conf"), "self = printf chair\nspawn = printf pane-work\nring = true\nlist = true\nclose = true\ncapture = true\n").unwrap();

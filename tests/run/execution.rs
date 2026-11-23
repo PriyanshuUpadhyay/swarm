@@ -95,7 +95,7 @@ fi"#,
 
 #[test]
 fn auto_run_and_named_run_apply_each_providers_launch_env() {
-    let home = fixture("auto");
+    let home = model_usage::usage_fixture("auto");
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -106,7 +106,7 @@ fn auto_run_and_named_run_apply_each_providers_launch_env() {
         } else {
             ".codex-work"
         });
-        let cache = serde_json::json!({"accounts":[{"home":path,"meters":[{"provider":provider,"account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":now}]}]});
+        let cache = serde_json::json!({"accounts":[{"home":path,"identity":model_usage::usage_identity(),"meters":[{"provider":provider,"account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":now}]}]});
         std::fs::write(
             home.join(format!(".swarm/{provider}-usage.json")),
             cache.to_string(),

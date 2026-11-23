@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn accounts_pick_prints_the_account_that_run_would_use() {
-    let home = fixture("pick");
+    let home = model_usage::usage_fixture("pick");
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -15,7 +15,7 @@ fn accounts_pick_prints_the_account_that_run_would_use() {
         } else {
             ".codex-work"
         });
-        let cache = serde_json::json!({"accounts":[{"home":path,"meters":[{"provider":provider,"account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":now}]}]});
+        let cache = serde_json::json!({"accounts":[{"home":path,"identity":model_usage::usage_identity(),"meters":[{"provider":provider,"account":"work","label":"work","used_pct":10,"state":"fresh","as_of_seconds":now}]}]});
         std::fs::write(
             home.join(format!(".swarm/{provider}-usage.json")),
             cache.to_string(),
