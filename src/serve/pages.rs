@@ -360,11 +360,8 @@ fn stop(record: &Path) -> Result<()> {
         println!("no shelf runs");
         return Ok(());
     };
-    unsafe extern "C" {
-        fn kill(pid: i32, signal: i32) -> i32;
-    }
     // SAFETY: the record has a positive pid and its URL just echoed that pid in a header (ADR 0088).
-    if unsafe { kill(pid, 15) } != 0 {
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
         return Err(format!(
             "swarm pages: could not stop pid {pid}: {}",
             std::io::Error::last_os_error()

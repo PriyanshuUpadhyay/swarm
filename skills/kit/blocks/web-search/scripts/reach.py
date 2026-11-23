@@ -110,7 +110,7 @@ def hn_algolia(query, days):
     since = int(time.time()) - days * 86400
     data = get_json(f"https://hn.algolia.com/api/v1/search?query={q(query)}&tags=story"
                     f"&numericFilters={q(f'created_at_i>{since}')}&hitsPerPage=30")
-    return lines({"title": h.get("title"), "date": h.get("created_at", "")[:10],
+    return lines({"title": h.get("title"), "date": (h.get("created_at") or "")[:10],
                   "url": f"https://news.ycombinator.com/item?id={h['objectID']}",
                   "points": h.get("points"), "comments": h.get("num_comments")} for h in data["hits"])
 
@@ -316,7 +316,11 @@ def main(argv):
     days = 30
     if "--days" in argv:
         i = argv.index("--days")
-        days = int(argv[i + 1])
+        try:
+            days = int(argv[i + 1])
+        except (IndexError, ValueError):
+            print(__doc__, file=sys.stderr)
+            return 2
         argv = argv[:i] + argv[i + 2:]
     if len(argv) == 3 and argv[0] == "search" and argv[1] in SEARCH:
         return ladder(argv[1], SEARCH[argv[1]], argv[2], days)

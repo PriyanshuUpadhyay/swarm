@@ -132,7 +132,7 @@ mod tests {
             .map(String::from)
             .collect())
         );
-        agy.model = Some("default".into());
+        agy.model = "default".into();
         agy.permission = Some("plan".into());
         assert_eq!(
             argv("coder", "coder", &agy, "/home", std::path::Path::new("/")),
@@ -141,7 +141,6 @@ mod tests {
                 .map(String::from)
                 .collect())
         );
-        agy.model = None;
         agy.permission = None;
         let agy_args = argv("coder", "coder", &agy, "/home", std::path::Path::new("/")).unwrap();
         assert_eq!(
@@ -152,9 +151,9 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert!(!agy_args.iter().any(|arg| arg.contains("SessionStart")));
-        assert!(agy_takes_effort(Some("gemini-3.8-flash")));
-        assert!(!agy_takes_effort(Some("claude-sonnet-4-6")));
-        agy.model = Some("gemini-3.8-flash-high".into());
+        assert!(agy_takes_effort("gemini-3.8-flash"));
+        assert!(!agy_takes_effort("claude-sonnet-4-6"));
+        agy.model = "gemini-3.8-flash-high".into();
         assert_eq!(
             argv("coder", "coder", &agy, "/home", std::path::Path::new("/")),
             Ok(vec!["agy", "--model", "gemini-3.8-flash-high"]
@@ -167,7 +166,7 @@ mod tests {
     #[test]
     fn pi_reports_its_state_by_osc_7501() {
         let mut pi = role("pi");
-        pi.model = Some("anthropic/claude-haiku-5-5".into());
+        pi.model = "anthropic/claude-haiku-5-5".into();
         assert_eq!(
             argv("coder", "coder", &pi, "/home", std::path::Path::new("/")),
             Ok(vec![
@@ -183,7 +182,7 @@ mod tests {
             .map(String::from)
             .collect())
         );
-        pi.model = Some("default".into());
+        pi.model = "default".into();
         assert_eq!(
             argv("coder", "coder", &pi, "/home", std::path::Path::new("/")).unwrap()[3..],
             ["--thinking", "high"]
@@ -411,61 +410,6 @@ mod tests {
                     "hooks.{event}=[{{hooks=[]}},{{hooks=[{{type=\"command\",command={codex_command},timeout=3}}]}}]"
                 ))
                 .to_vec()
-        );
-    }
-
-    #[test]
-    fn reports_required_fields_and_unsupported_provider() {
-        let mut missing = role("claude");
-        missing.provider = None;
-        assert_eq!(
-            argv(
-                "reviewer",
-                "reviewer",
-                &missing,
-                "/home",
-                std::path::Path::new("/")
-            )
-            .unwrap_err(),
-            "swarm: role reviewer has no provider"
-        );
-        missing.provider = Some("claude".into());
-        missing.model = None;
-        assert_eq!(
-            argv(
-                "reviewer",
-                "reviewer",
-                &missing,
-                "/home",
-                std::path::Path::new("/")
-            )
-            .unwrap_err(),
-            "swarm: role reviewer has no model"
-        );
-        missing.model = Some("model".into());
-        missing.effort = None;
-        assert_eq!(
-            argv(
-                "reviewer",
-                "reviewer",
-                &missing,
-                "/home",
-                std::path::Path::new("/")
-            )
-            .unwrap_err(),
-            "swarm: role reviewer has no effort"
-        );
-        let unsupported = role("other");
-        assert_eq!(
-            argv(
-                "reviewer",
-                "reviewer",
-                &unsupported,
-                "/home",
-                std::path::Path::new("/")
-            )
-            .unwrap_err(),
-            "swarm: role reviewer uses unsupported provider other"
         );
     }
 

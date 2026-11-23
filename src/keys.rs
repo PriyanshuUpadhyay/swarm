@@ -91,7 +91,7 @@ pub fn list() -> Vec<KeyStatus> {
 
 /// The value goes inside double quotes on `security -i`'s stdin, so a quote, a backslash, or any
 /// whitespace or control character could end it early and add a command. API keys use none of them.
-pub fn check_value(value: &str) -> Result<(), String> {
+fn check_value(value: &str) -> Result<(), String> {
     if value.is_empty() || value.len() > 1024 {
         return Err("swarm: a key is 1 to 1024 characters".into());
     }

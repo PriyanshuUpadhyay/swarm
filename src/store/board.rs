@@ -81,7 +81,7 @@ pub struct Claim {
 }
 
 /// A source names what a post rests on: `path@blob` (a file and its git blob hash) or a URL.
-pub fn valid_source(source: &str) -> bool {
+fn valid_source(source: &str) -> bool {
     if source.chars().any(char::is_whitespace) {
         return false;
     }

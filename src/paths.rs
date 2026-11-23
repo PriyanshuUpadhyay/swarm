@@ -4,7 +4,6 @@ const SWARM_DB: &str = "swarm.db";
 const MARKER: &str = "swarm-home";
 /// The owner's guard rule list, which `swarm guard` reads (ADR 0040).
 pub const GUARDS: &str = "guards.json";
-/// The app's held file lock, which makes the CLI leave owner notices to the app (ADR 0058).
 /// The owner's consent for launch folder trust (ADR 0043).
 const CONSENT: &str = "consent.json";
 /// The lock every build takes before it edits a file outside its home (ADR 0043, C6).
@@ -101,7 +100,7 @@ pub fn branch_home(home: &str, branch: &str) -> String {
 /// the same directory as `.swarm-feature`, so `Feature` takes the hashed form. Only an unsafe,
 /// uppercase, or very long name relies on the hash, which keeps `feat/login` apart from
 /// `feat-login`. A folder name is at most 7 + 200 + 17 = 224 bytes, under NAME_MAX 255.
-pub fn branch_folder(branch: &str) -> Option<String> {
+fn branch_folder(branch: &str) -> Option<String> {
     if branch.is_empty() {
         return None;
     }
@@ -126,7 +125,6 @@ pub fn branch_folder(branch: &str) -> Option<String> {
     Some(format!(".swarm-{slug}+{hash:016x}"))
 }
 
-/// The `.swarm` folder, after `claim` proves that swarm owns it.
 /// A file that the release ships beside `swarm` (ADR 0079): `<prefix>/libexec/<name>`, where
 /// `<prefix>/bin/swarm` is the real binary behind any link (Homebrew links `bin/swarm` into the
 /// Cellar), else `<name>` in the binary's own folder.

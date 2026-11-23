@@ -223,7 +223,7 @@ mod tests {
             orchestrator_at_pane(&connection, "wK:p1").unwrap(),
             Some((newer.clone(), ORCHESTRATOR.to_string()))
         );
-        archive_sessions(&mut connection, &[newer]).unwrap();
+        set_sessions_archived(&mut connection, &[newer], true).unwrap();
         assert_eq!(orchestrator_at_pane(&connection, "wK:p1").unwrap(), None);
     }
 

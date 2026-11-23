@@ -121,7 +121,7 @@ def offers(file, rows, selected, text=None):
 def check(file):
     """(stop, start, offers, each step with its resolved blocks), or SystemExit with the first defect."""
     stop, start, rows = section(file)
-    plan_chart.check(file.name, "preset", rows)
+    plan_chart.check("preset", rows)
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
     return stop, start, offers(file, rows, selected), [(name, need, selected[name]) for name, need, *_ in rows]
 
@@ -129,7 +129,7 @@ def check(file):
 def facts(file, verb, mode=None, text=None):
     """One preset as the Skills page draws it: each step's cells as written, its uses, stage, and blocks."""
     stop, start, rows = section(file, text)
-    uses = plan_chart.check(file.name, "preset", rows)
+    uses = plan_chart.check("preset", rows)
     stage = {n: i for i, names in enumerate(plan_chart.stages(uses)) for n in names}
     selected = resolve_blocks(None, {r[0]: r[3] for r in rows}, "default", blocks_dir=KIT / "blocks", pack=False)
     offered = offers(file, rows, selected, text)

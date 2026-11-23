@@ -114,7 +114,7 @@ mod tests {
             agy.keys(1),
             Some(vec!["Down".to_string(), "Enter".to_string()])
         );
-        // A moved cursor changes the arrows, and the id, so a stale answer is refused.
+        // A moved cursor changes the arrows but not the id, so the id stays stable while the answer moves it.
         let moved = prompt(
             &fixture!("agy-trust")
                 .replace("> Yes, I trust", "  Yes, I trust")

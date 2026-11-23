@@ -34,8 +34,7 @@ use the cap. One user line `continue: <key>` in --continue FILE permits one extr
 A refusal preserves the verdict. An answer-only verdict spends no round, and APPROVE can close
 on the last allowed round. --patch starts do not spend the parent-loop budget.
 """
-import fcntl, fnmatch, hashlib, json, os, re, shutil, signal, subprocess, sys, tempfile, time, urllib.parse
-from contextlib import contextmanager, nullcontext
+import re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

@@ -370,8 +370,12 @@ fn an_answered_stored_state_drops_a_cached_prompt() {
 #[test]
 fn a_session_no_longer_listed_by_the_store_drops_its_cached_rows() {
     let (fixture, mut connection, mut previous) = cached_waiting_worker();
-    swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&fixture.session))
-        .unwrap();
+    swarm::store::set_sessions_archived(
+        &mut connection,
+        std::slice::from_ref(&fixture.session),
+        true,
+    )
+    .unwrap();
     let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
     assert!(snapshot.get(&fixture.session).is_none());
     assert!(previous.is_empty());

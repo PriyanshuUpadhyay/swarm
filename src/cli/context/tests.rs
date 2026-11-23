@@ -128,7 +128,8 @@ mod cases {
     #[test]
     fn session_unarchive_names_unknown_id_and_rolls_back() {
         let (home, mut connection, known) = stop_fixture("unarchive-unknown", None);
-        swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&known)).unwrap();
+        swarm::store::set_sessions_archived(&mut connection, std::slice::from_ref(&known), true)
+            .unwrap();
         let unknown = uuid::Uuid::now_v7().to_string();
         let output = session_command(&home, &["session", "unarchive", &known, &unknown]);
         assert_eq!(output.status.code(), Some(1));

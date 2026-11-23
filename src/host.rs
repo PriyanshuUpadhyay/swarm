@@ -115,7 +115,7 @@ mod tests {
 
     const SUPERSET: [(&str, &str); 1] = [("SUPERSET_TERMINAL_ID", "t1")];
 
-    /// One precedence order: `SWARM_ADAPTER` > herdr > superset > rex > tmux. An empty value counts as unset.
+    /// One precedence order: `SWARM_ADAPTER` > herdr > superset > rex > tmux. An empty host marker (`HERDR_PANE_ID`, `SUPERSET_TERMINAL_ID`, `REX_BLOCK`) counts as unset; `SWARM_ADAPTER` is used as given.
     #[test]
     fn the_adapter_follows_one_precedence_order() {
         let nested_rex = [REX[0], ("TERM_PROGRAM", "tmux"), ("TMUX_PANE", "%0")];

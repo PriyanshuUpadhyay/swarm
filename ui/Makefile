@@ -2,7 +2,7 @@
 .PHONY: help build package
 
 help:
-	@printf '%s\n' 'make build    Build the notice and HUD helpers' 'make package  Build the release tarball for the Homebrew formula'
+	@printf '%s\n' 'make build    Build the Swift products' 'make package  Build the release tarball for the Homebrew formula'
 
 build:
 	swift build

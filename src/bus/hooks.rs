@@ -28,14 +28,14 @@ pub fn hook_args(
             }
             // `/clear` opens a new log, so every Claude agent reports SessionStart state; the chair
             // also records its new session id.
-            let mut start = vec![handler(state.clone())];
+            let mut start = vec![handler(state)];
             if agent_id == "orchestrator" {
                 start.insert(0, handler(chair_hook_command(provider.id())?));
             }
             hooks.insert("SessionStart".into(), start.into());
             Ok(vec![
                 "--settings".into(),
-                owner_choice::claude_json(hooks, cwd),
+                owner_choice::claude_json(&hooks, cwd),
             ])
         }
         Provider::Codex => {

@@ -117,9 +117,7 @@ pub(crate) fn list_agents_from(
     cache: &mut ListingCache,
 ) -> Result<AgentListOutput, Box<dyn std::error::Error>> {
     let rows = swarm::store::agents(connection, session_id)?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs() as i64;
+    let now = unix_now()?;
     let alive: Vec<Option<bool>> = rows
         .iter()
         .map(|row| {

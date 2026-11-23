@@ -185,7 +185,10 @@ pub fn record_path(root: &Path, repo: &str, branch: &str) -> PathBuf {
 
 pub fn read_record(root: &Path, repo: &str, branch: &str) -> Option<Task> {
     let text = std::fs::read_to_string(record_path(root, repo, branch)).ok()?;
-    serde_json::from_str(&text).ok()
+    // `key` maps `/` to `-`, so `a/b` and `a-b` share a file; the other task's record is no answer.
+    serde_json::from_str(&text)
+        .ok()
+        .filter(|task: &Task| task.branch == branch)
 }
 
 pub fn records(root: &Path) -> Vec<Task> {
@@ -290,7 +293,7 @@ fn branch_name(name: &str) -> String {
 
 /// The task name of a branch: `swarm/fix-x` gives `fix-x`, the reverse of `branch_name`.
 pub fn task_name(branch: &str) -> &str {
-    branch.trim_start_matches(PREFIX)
+    branch.strip_prefix(PREFIX).unwrap_or(branch)
 }
 
 /// The task that `name` names in the hub of `cwd`, or, with no name, the task worktree that holds

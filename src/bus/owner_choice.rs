@@ -16,7 +16,10 @@ fn home() -> Option<PathBuf> {
 /// The Claude `--settings` object. Claude writes an empty thinking block unless it is asked for
 /// summaries. A flag outranks the owner's settings files, so an explicit owner choice is read and
 /// kept.
-pub(super) fn claude_json(hooks: serde_json::Map<String, serde_json::Value>, cwd: &Path) -> String {
+pub(super) fn claude_json(
+    hooks: &serde_json::Map<String, serde_json::Value>,
+    cwd: &Path,
+) -> String {
     let mut settings = serde_json::json!({ "hooks": hooks });
     let owner = home().map(|home| home.join(".claude"));
     if !claude_settings_name(owner.as_deref(), cwd, CLAUDE_KEY) {

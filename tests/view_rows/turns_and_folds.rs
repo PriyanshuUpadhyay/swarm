@@ -116,7 +116,6 @@ fn ring_rows() {
     assert_eq!(idle[0].id, "ring-1:ring");
     assert!(idle[0].starts_turn);
     assert!(!idle[0].collapsed);
-    assert_eq!(idle[0].search_text(), "New swarm message");
     let rows = build(vec![
         user("Run the council", "prompt"),
         system("swarm_ring", RING, "ring-2", ""),

@@ -274,7 +274,7 @@ def test_bad_parent_stops_both():
     rows = [("01-build", "none", "page", ["diagram"], "draw it"),
             ("02-reply", "build", "reply", ["voice-reply"], "show it")]
     with patch.object(plan_chart, "KIT", folder), patch.object(block_resolver, "BLOCKS", folder / "blocks"):
-        for check in (lambda: plan_chart.check("Plan", "page", rows),
+        for check in (lambda: plan_chart.check("page", rows),
                       lambda: implement_run.resolve_blocks(folder, {"build": ["diagram"]}, "default")):
             try:
                 check()

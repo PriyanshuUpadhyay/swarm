@@ -47,8 +47,8 @@ fn child_agent(swarm_agent: Option<&str>, herdr_agent_pane: Option<&str>) -> boo
 
 /// Fable runs as a child only for review and council seats. The router refuses it too; this is
 /// the second, independent check, so a config edited past the router still cannot reach a pane.
-pub fn fable_refusal(agent_id: &str, role: &str, model: Option<&str>) -> Option<String> {
-    let fable = model.is_some_and(|model| model.to_ascii_lowercase().contains("fable"));
+pub fn fable_refusal(agent_id: &str, role: &str, model: &str) -> Option<String> {
+    let fable = model.to_ascii_lowercase().contains("fable");
     (fable
         && agent_id != "orchestrator"
         && !role.starts_with("review.")

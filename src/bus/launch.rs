@@ -31,26 +31,21 @@ const PACKAGE_HOSTS: &[&str] = &[
 pub fn argv(
     agent_id: &str,
     role: &str,
-    resolved: &ResolvedRole,
+    resolved: &crate::config::Runner,
     swarm_home: &str,
     cwd: &std::path::Path,
 ) -> Result<Vec<String>, String> {
-    let provider = required(role, "provider", resolved.provider.as_deref())?;
-    let effort = || required(role, "effort", resolved.effort.as_deref());
-    let model = || required(role, "model", resolved.model.as_deref());
-    let Some(provider) = Provider::parse(provider) else {
-        return Err(format!(
-            "swarm: role {role} uses unsupported provider {provider}"
-        ));
-    };
+    let provider = resolved.provider;
+    let effort = resolved.effort.as_str();
+    let model = resolved.model.as_str();
     match provider {
         Provider::Claude => {
             let mut args = vec![
                 provider.id().into(),
                 "--model".into(),
-                model()?.into(),
+                model.into(),
                 "--effort".into(),
-                effort()?.into(),
+                effort.into(),
             ];
             if let Some(permission) = &resolved.permission {
                 args.extend(["--permission-mode".into(), permission.clone()]);
@@ -62,9 +57,9 @@ pub fn argv(
             let mut args = vec![
                 provider.id().into(),
                 "--model".into(),
-                model()?.into(),
+                model.into(),
                 "-c".into(),
-                format!("model_reasoning_effort=\"{}\"", effort()?),
+                format!("model_reasoning_effort=\"{}\"", effort),
                 // Codex asks "Update available! 1. Update now 2. Skip" before it reads anything,
                 // and an agent pane has nobody at it to answer.
                 "-c".into(),
@@ -108,9 +103,7 @@ pub fn argv(
                         format!(r#"":workspace_roots"={{{roots}}},{}="write""#, quote(&root));
                     // In a subfolder of main, `.` is only that subfolder, so a write root above
                     // main would open the rest of main; such a chat gets no write roots here.
-                    let at_main = main.as_ref().is_some_and(|main| {
-                        crate::task::resolve(cwd, std::path::Path::new(".")) == *main
-                    });
+                    let at_main = main.as_ref().is_some_and(|main| here == *main);
                     if let Some(main) = main.as_ref().filter(|_| at_main) {
                         let path = |path: &std::path::Path| quote(&path.to_string_lossy());
                         filesystem += &format!(
@@ -225,15 +218,10 @@ pub fn argv(
         }
         Provider::Agy => {
             let mut args = vec![provider.id().into()];
-            if let Some(model) = resolved
-                .model
-                .as_deref()
-                .filter(|model| *model != "default")
-            {
+            if model != "default" {
                 args.extend(["--model".into(), model.into()]);
             }
-            let effort = effort()?;
-            if agy_takes_effort(resolved.model.as_deref()) {
+            if agy_takes_effort(model) {
                 args.extend(["--effort".into(), effort.into()]);
             }
             if let Some(permission) = &resolved.permission {
@@ -253,14 +241,10 @@ pub fn argv(
                 "PI_PROGRAM_STATUS=1".into(),
                 provider.id().into(),
             ];
-            if let Some(model) = resolved
-                .model
-                .as_deref()
-                .filter(|model| *model != "default")
-            {
+            if model != "default" {
                 args.extend(["--model".into(), model.into()]);
             }
-            args.extend(["--thinking".into(), effort()?.into()]);
+            args.extend(["--thinking".into(), effort.into()]);
             Ok(args)
         }
     }
@@ -270,13 +254,11 @@ pub fn argv(
 /// effort, and AGY refuses `--effort` for it and for a Claude model such as `claude-sonnet-4-6`
 /// (probe 2026-10-21).
 // ponytail: a name rule from `agy models`; read AGY's own per-model flag if it gets one.
-pub fn agy_takes_effort(model: Option<&str>) -> bool {
-    !model.is_some_and(|model| {
-        model.starts_with("claude-")
-            || ["-low", "-medium", "-high"]
-                .iter()
-                .any(|level| model.ends_with(level))
-    })
+pub fn agy_takes_effort(model: &str) -> bool {
+    !(model.starts_with("claude-")
+        || ["-low", "-medium", "-high"]
+            .iter()
+            .any(|level| model.ends_with(level)))
 }
 
 /// The model a provider command line names with `--model` or `-m`, without a `[1m]` suffix.
@@ -370,10 +352,4 @@ fn outside_git_dirs(cwd: &std::path::Path) -> Option<(String, String)> {
             common.to_string_lossy().into_owned(),
         )
     })
-}
-
-fn required<'a>(role: &str, field: &str, value: Option<&'a str>) -> Result<&'a str, String> {
-    value
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("swarm: role {role} has no {field}"))
 }

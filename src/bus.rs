@@ -4,17 +4,7 @@ use crate::managed::{
 };
 use crate::providers::Provider;
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Deserialize)]
-pub struct ResolvedRole {
-    pub provider: Option<String>,
-    pub model: Option<String>,
-    pub effort: Option<String>,
-    pub sandbox: Option<String>,
-    pub approval: Option<String>,
-    pub permission: Option<String>,
-}
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct Agent {
@@ -289,11 +279,11 @@ mod tests {
     use super::*;
     use crate::managed::{changed_error, with_lock};
 
-    fn role(provider: &str) -> ResolvedRole {
-        ResolvedRole {
-            provider: Some(provider.into()),
-            model: Some("model-1".into()),
-            effort: Some("high".into()),
+    fn role(provider: &str) -> crate::config::Runner {
+        crate::config::Runner {
+            provider: Provider::parse(provider).unwrap(),
+            model: "model-1".into(),
+            effort: "high".into(),
             sandbox: None,
             approval: None,
             permission: None,

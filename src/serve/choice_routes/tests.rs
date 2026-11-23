@@ -62,8 +62,12 @@ async fn choices_handler_uses_shared_lane_rejects_stale_and_bumps_version() {
 async fn an_archived_chat_folds_under_its_workspace_in_the_tree() {
     let fixture = Fixture::new();
     let mut connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-    swarm::store::archive_sessions(&mut connection, std::slice::from_ref(&fixture.session))
-        .unwrap();
+    swarm::store::set_sessions_archived(
+        &mut connection,
+        std::slice::from_ref(&fixture.session),
+        true,
+    )
+    .unwrap();
     // A workspace with no live chat shows only when the owner opened its project.
     choices_store::update(&fixture.app.root, None, |owner, _| {
         owner.project_paths.push(env!("CARGO_MANIFEST_DIR").into());

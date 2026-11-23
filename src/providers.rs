@@ -1,7 +1,8 @@
 //! The agent CLIs swarm can launch, and what each one accepts. This module is the only place that
-//! names a provider as a string; other code matches on `Provider`, so a new variant shows every
-//! place that must handle it. Code that reads a provider's own file format (hook payloads,
-//! screens, chair logs, trust files) still dispatches by provider in its own module.
+//! names a provider in launch metadata (ids, models, efforts, login); other code matches on
+//! `Provider` where it can, so a new variant shows those places. Code that reads a provider's own file
+//! format (hook payloads, screens, chair logs, trust files) and the plugin install steps still
+//! dispatch by provider name in their own modules, so a new variant needs a check there too.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -399,7 +400,7 @@ fn agy_models(output: &str) -> Vec<Model> {
             (!id.is_empty() && !label.is_empty()).then(|| Model {
                 id: id.into(),
                 label: label.into(),
-                efforts: (!crate::bus::agy_takes_effort(Some(id))).then(Vec::new),
+                efforts: (!crate::bus::agy_takes_effort(id)).then(Vec::new),
                 note: None,
                 default_effort: None,
             })

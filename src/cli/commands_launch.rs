@@ -109,7 +109,7 @@ pub(crate) fn commands_launch(
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let (resolved, probe): (swarm::bus::ResolvedRole, Probe) = match requested_model {
+        let (mut runner, probe): (swarm::config::Runner, Probe) = match requested_model {
             _ if role != "chat" && (requested_model.is_some() || effort.is_some()) => {
                 return Err("swarm: --model and --effort require the chat role".into());
             }
@@ -122,54 +122,33 @@ pub(crate) fn commands_launch(
                     swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
                 let runner = swarm::config::one_off(&config.profiles[0], provider, model)
                     .map_err(|error| format!("swarm: {error}"))?;
-                (
-                    serde_json::from_value(serde_json::to_value(runner)?)?,
-                    Probe::new(&config, account),
-                )
+                (runner, Probe::new(&config, account))
             }
             None => {
-                let (value, probe) = resolve_role(role, requested_provider, account, true)?;
-                let resolved = serde_json::from_value(value)
-                    .map_err(|error| format!("swarm: cannot resolve role {role}: {error}"))?;
-                (resolved, probe)
+                let (runner, _, probe) = resolve_role(role, requested_provider, account, true)?;
+                (runner, probe)
             }
         };
         // A switch keeps the chat and changes only its run, so the effort is the owner's pick.
-        let mut resolved = resolved;
         // pi's `default` hides which login it runs on, so the chat shows no account to switch.
-        if resolved.provider.as_deref() == Some("pi")
-            && resolved.model.as_deref() == Some("default")
+        if runner.provider == Provider::Pi
+            && runner.model == "default"
             && let Some(model) = swarm::providers::pi_default_model()
         {
-            resolved.model = Some(model);
+            runner.model = model;
         }
         if let Some(effort) = effort {
-            let kind = resolved.provider.as_deref().and_then(Provider::parse);
-            if !kind.is_some_and(|kind| kind.info().efforts.contains(&effort)) {
+            if !runner.provider.info().efforts.contains(&effort) {
                 return Err(format!("swarm: --effort {effort} is not a level of this CLI").into());
             }
-            resolved.effort = Some(effort.into());
+            runner.effort = effort.into();
         }
         let account_deadline = probe.deadline;
-        if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, resolved.model.as_deref()) {
+        if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, &runner.model) {
             return Err(reason.into());
         }
-        let provider = resolved.provider.clone();
-        let mut command =
-            swarm::bus::argv(agent_id, role, &resolved, &swarm::paths::home()?, &cwd)?;
-        let kind = Provider::parse(provider.as_deref().unwrap_or_default())
-            .ok_or("swarm: launch has no known provider")?;
-        let runner = swarm::config::Runner {
-            provider: kind,
-            model: resolved.model.clone().ok_or("swarm: launch has no model")?,
-            effort: resolved
-                .effort
-                .clone()
-                .ok_or("swarm: launch has no effort")?,
-            sandbox: resolved.sandbox.clone(),
-            approval: resolved.approval.clone(),
-            permission: resolved.permission.clone(),
-        };
+        let mut command = swarm::bus::argv(agent_id, role, &runner, &swarm::paths::home()?, &cwd)?;
+        let kind = runner.provider;
         let mut extra = swarm::bus::extra_args(kind, extra)?;
         if let Some((_, id)) = &resume {
             extra = resume_args(kind, id);
@@ -205,7 +184,7 @@ pub(crate) fn commands_launch(
                 let picked = select_account(
                     account_kind,
                     owner.as_deref().unwrap_or(requested),
-                    resolved.model.as_deref(),
+                    Some(&runner.model),
                     probe.min_usage_left_pct,
                     accounts.as_ref().map_err(Clone::clone),
                 )?;
@@ -362,7 +341,7 @@ pub(crate) fn commands_launch(
             agent_id,
             role,
             SpawnOptions {
-                provider: provider.as_deref(),
+                provider: Some(kind.id()),
                 account: picked.as_ref().map(|picked| picked.name.as_str()),
                 resolved_account: picked.as_ref(),
                 command: &command,
@@ -373,7 +352,7 @@ pub(crate) fn commands_launch(
         // A resumed chat is open again, and an imported one now has panes the app reaches.
         if resume.is_some() {
             let session = session_id()?;
-            swarm::store::unarchive_sessions(connection, std::slice::from_ref(&session))?;
+            swarm::store::set_sessions_archived(connection, std::slice::from_ref(&session), false)?;
             connection.execute(
                 "UPDATE session SET adapter = ?2 WHERE id = ?1 AND adapter IS NULL",
                 (&session, adapter_name()),
