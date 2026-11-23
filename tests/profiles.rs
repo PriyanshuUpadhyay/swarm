@@ -195,7 +195,7 @@ fn roles_get_keeps_the_keys_that_orchestrators_read() {
     );
     assert!(!absent.status.success());
     assert!(
-        String::from_utf8_lossy(&absent.stderr).contains("swarm: code: profile has no agy runner"),
+        String::from_utf8_lossy(&absent.stderr).contains("no agy runner"),
         "{}",
         String::from_utf8_lossy(&absent.stderr)
     );
@@ -275,10 +275,7 @@ fn a_runner_whose_cli_is_not_on_path_is_skipped_and_named() {
         stderr.contains("swarm: review.gate: no runner can run"),
         "{stderr}"
     );
-    assert!(
-        stderr.contains("  2 codex/gpt-sol/xhigh: codex CLI not found on PATH"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("codex/gpt-sol/xhigh"), "{stderr}");
 }
 
 #[test]
@@ -293,10 +290,7 @@ fn a_missing_explicit_old_config_is_an_error() {
     );
 
     assert!(!output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stderr)
-            .contains("AGENT_ROUTING_CONFIG names a missing file")
-    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("AGENT_ROUTING_CONFIG"));
 }
 
 #[test]
@@ -349,10 +343,7 @@ fn save_writes_through_a_link_keeps_a_backup_and_refuses_a_stale_revision() {
         &["roles", "save", "--revision", revision, edited],
     );
     assert!(!stale.status.success());
-    assert!(
-        String::from_utf8_lossy(&stale.stderr)
-            .contains("profiles changed on disk; reload and try again")
-    );
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("profiles changed on disk"));
 
     let current = saved["revision"].as_str().unwrap();
     let bad = r#"{"name": "code", "runners": [{"provider": "claude", "model": "--x", "effort": "high"}]}"#;

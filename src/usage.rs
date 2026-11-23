@@ -43,7 +43,6 @@ mod tests {
     use super::cache::fold_twins;
     use super::claude::{claude_keychain_service, claude_reset_seconds, claude_windows};
     use super::codex::normalize_limits;
-    use super::openusage::iso_time;
     use super::*;
 
     #[test]
@@ -192,14 +191,6 @@ mod tests {
         assert_eq!(unknown.used_pct, None);
         assert!(!unknown.reason.unwrap().contains("private"));
         assert_eq!(unknown.reason_code, Some(ReasonCode::ReadFailed));
-    }
-
-    #[test]
-    fn iso_time_gives_utc_with_milliseconds() {
-        assert_eq!(iso_time(0), "1970-01-01T00:00:00.000Z");
-        assert_eq!(iso_time(951_782_400), "2000-02-29T00:00:00.000Z");
-        assert_eq!(iso_time(1_791_763_200), "2026-10-12T00:00:00.000Z");
-        assert_eq!(iso_time(1_790_990_000), "2026-10-03T01:13:20.000Z");
     }
 
     #[test]

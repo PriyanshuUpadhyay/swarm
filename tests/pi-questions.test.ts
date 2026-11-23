@@ -7,8 +7,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import type * as Pi from "@earendil-works/pi-coding-agent";
 
-// Run with PI_SDK=/path/to/pi-coding-agent/dist/index.js and Node 24 or later.
-const sdk = pathToFileURL(resolve(process.env.PI_SDK ?? ""));
+// Run with PI_SDK_DIR=/path/to/@earendil-works/pi-coding-agent (the package folder) and Node 24 or later.
+// Nothing in CI runs it; the Pi SDK is not installed there.
+const sdk = pathToFileURL(resolve(process.env.PI_SDK_DIR ?? "", "dist/index.js"));
 const { DefaultResourceLoader, SettingsManager, InteractiveMode, initTheme }: typeof Pi = await import(sdk.href);
 const nativeSelect = Reflect.get(InteractiveMode.prototype, "showExtensionSelector");
 const nativeCustom = Reflect.get(InteractiveMode.prototype, "showExtensionCustom");

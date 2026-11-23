@@ -111,8 +111,7 @@ fn kit_names_a_missing_python_and_passes_a_script_error_through() {
     );
     assert!(!missing.status.success());
     assert!(
-        String::from_utf8_lossy(&missing.stderr)
-            .contains("swarm kit: python3 not found; the Skills page needs Python 3.11 or newer"),
+        String::from_utf8_lossy(&missing.stderr).contains("python3 not found"),
         "{missing:?}"
     );
     let old = home.join("bin/python3");

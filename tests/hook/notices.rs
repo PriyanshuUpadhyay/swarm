@@ -216,7 +216,7 @@ fn notify_starts_nothing_when_the_helper_is_missing() {
     let env = [("SWARM_NOTIFY_APP", missing.to_str().unwrap())];
     assert!(swarm(&home, &env, &["notify", "Done"], "").status.success());
     // No `open -b` fallback: LaunchServices could start any dev build of the full app.
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_millis(300));
     assert!(!home.join("opened").exists());
     std::fs::remove_dir_all(home).unwrap();
 }

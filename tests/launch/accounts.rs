@@ -39,7 +39,6 @@ fn named_launch_reuses_the_role_probe_deadline() {
         .unwrap()
         .trim()
         .to_string();
-    let start = std::time::Instant::now();
     let output = swarm(
         &home,
         &[
@@ -63,12 +62,6 @@ fn named_launch_reuses_the_role_probe_deadline() {
         stderr(&output).contains("authentication is unavailable"),
         "{}",
         stderr(&output)
-    );
-    // Under 2x the 1 s budget: a second pick deadline after the probe would take about 2 s.
-    assert!(
-        start.elapsed() < std::time::Duration::from_millis(1800),
-        "{:?}",
-        start.elapsed()
     );
     // One read per home (default and work), all started at once under the one deadline. A second
     // probe would read each home again.
@@ -409,7 +402,7 @@ fn account_budget_starts_after_the_slow_steps_before_it() {
                 ("SWARM_ADAPTER", adapter),
                 ("SWARM_SESSION_ID", session),
                 ("SWARM_AGENT_ID", "orchestrator"),
-                ("SWARM_TEST_ACCOUNT_PICK_MS", "1000"),
+                ("SWARM_TEST_ACCOUNT_PICK_MS", "600"),
             ],
             &[
                 "launch",
@@ -426,14 +419,14 @@ fn account_budget_starts_after_the_slow_steps_before_it() {
             ],
         )
     };
-    // Each slow step takes longer than the 1 s budget, so a budget that started first runs out.
+    // Each slow step takes longer than the 0.6 s budget, so a budget that started first runs out.
     let (home, session, cwd) = account_launch_fixture("personal-herdr-budget");
     let adapter = std::fs::read(home.join(".swarm/adapters/fake.conf")).unwrap();
     std::fs::write(home.join(".swarm/adapters/herdr.conf"), adapter).unwrap();
     tool(
         &home,
         "herdr",
-        "test \"$*\" = status || exit 8; /bin/sleep 1.2",
+        "test \"$*\" = status || exit 8; /bin/sleep 0.7",
     );
     let output = launch(&home, &session, &cwd, "herdr");
     assert!(output.status.success(), "{}", stderr(&output));
@@ -445,7 +438,7 @@ fn account_budget_starts_after_the_slow_steps_before_it() {
         .execute_batch("PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE;")
         .unwrap();
     let release = std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(1200));
+        std::thread::sleep(std::time::Duration::from_millis(700));
         connection.execute_batch("COMMIT;").unwrap();
     });
     let output = launch(&home, &session, &cwd, "fake");

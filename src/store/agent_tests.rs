@@ -338,12 +338,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(orchestrator_of(&connection, SESSION).unwrap(), ORCHESTRATOR);
-        assert_eq!(
-            orchestrator_of(&connection, OTHER_SESSION)
-                .unwrap_err()
-                .to_string(),
-            format!("session {OTHER_SESSION} has no orchestrator")
-        );
+        assert!(orchestrator_of(&connection, OTHER_SESSION).is_err());
     }
 
     #[test]

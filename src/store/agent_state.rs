@@ -169,11 +169,13 @@ mod tests {
         )
         .unwrap();
         let rows = agents(&connection, SESSION).unwrap();
+
         let coder = rows.iter().find(|row| row.id == CODER).unwrap();
         let orchestrator = rows.iter().find(|row| row.id == ORCHESTRATOR).unwrap();
         assert_eq!(coder.state.as_deref(), Some("error"));
         assert_eq!(coder.state_detail.as_deref(), Some("rate_limit"));
         assert_eq!(orchestrator.state, None);
+
         assert_eq!(
             set_state(
                 &connection,
@@ -215,7 +217,29 @@ mod tests {
             )
             .is_err()
         );
+
         assert!(set_state(&connection, SESSION, CODER, "done", "guess", None, None, 42).is_err());
+
+        {
+            let connection = seed();
+
+            for (state, kind) in [("done", "permission"), ("blocked", "unknown")] {
+                let refused = set_state(
+                    &connection,
+                    SESSION,
+                    CODER,
+                    state,
+                    "hook",
+                    None,
+                    Some(kind),
+                    100,
+                )
+                .is_err();
+
+                assert!(refused);
+                assert_eq!(agents(&connection, SESSION).unwrap()[0].state, None);
+            }
+        }
     }
 
     #[test]
@@ -272,26 +296,6 @@ mod tests {
     }
 
     #[test]
-    fn state_kind_checks_reject_non_waiting_states_and_unknown_kinds() {
-        let connection = seed();
-        for (state, kind) in [("done", "permission"), ("blocked", "unknown")] {
-            let error = set_state(
-                &connection,
-                SESSION,
-                CODER,
-                state,
-                "hook",
-                None,
-                Some(kind),
-                100,
-            )
-            .unwrap_err();
-            assert!(error.to_string().contains("CHECK constraint failed"));
-            assert_eq!(agents(&connection, SESSION).unwrap()[0].state, None);
-        }
-    }
-
-    #[test]
     fn a_kindless_wait_keeps_its_kind_until_the_state_changes() {
         let connection = seed();
         set_state(
@@ -316,12 +320,14 @@ mod tests {
             101,
         )
         .unwrap();
+
         assert_eq!(
             agents(&connection, SESSION).unwrap()[0]
                 .state_kind
                 .as_deref(),
             Some("permission")
         );
+
         set_state(
             &connection,
             SESSION,
@@ -333,6 +339,7 @@ mod tests {
             102,
         )
         .unwrap();
+
         assert_eq!(agents(&connection, SESSION).unwrap()[0].state_kind, None);
         set_state(
             &connection,
@@ -345,59 +352,30 @@ mod tests {
             103,
         )
         .unwrap();
+
         assert_eq!(agents(&connection, SESSION).unwrap()[0].state_kind, None);
-    }
+        {
+            let connection = seed();
 
-    #[test]
-    fn a_same_second_kind_change_stops_the_screen_write() {
-        let connection = seed();
-        set_state(
-            &connection,
-            SESSION,
-            CODER,
-            "blocked",
-            "hook",
-            None,
-            Some("permission"),
-            100,
-        )
-        .unwrap();
-        let read = (Some("blocked"), Some("hook"), Some(100), Some("permission"));
-        set_state(
-            &connection,
-            SESSION,
-            CODER,
-            "blocked",
-            "hook",
-            None,
-            Some("question"),
-            100,
-        )
-        .unwrap();
-        assert!(!set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap());
-        let coder = &agents(&connection, SESSION).unwrap()[0];
-        assert_eq!(coder.state.as_deref(), Some("blocked"));
-        assert_eq!(coder.state_kind.as_deref(), Some("question"));
-    }
+            set_state(
+                &connection,
+                SESSION,
+                CODER,
+                "blocked",
+                "hook",
+                None,
+                Some("permission"),
+                100,
+            )
+            .unwrap();
 
-    #[test]
-    fn a_hook_state_without_kind_clears_the_previous_wait_kind() {
-        let connection = seed();
-        set_state(
-            &connection,
-            SESSION,
-            CODER,
-            "blocked",
-            "hook",
-            None,
-            Some("permission"),
-            100,
-        )
-        .unwrap();
-        set_state(&connection, SESSION, CODER, "done", "hook", None, None, 110).unwrap();
-        let coder = &agents(&connection, SESSION).unwrap()[0];
-        assert_eq!(coder.state.as_deref(), Some("done"));
-        assert_eq!(coder.state_kind, None);
+            set_state(&connection, SESSION, CODER, "done", "hook", None, None, 110).unwrap();
+
+            let coder = &agents(&connection, SESSION).unwrap()[0];
+
+            assert_eq!(coder.state.as_deref(), Some("done"));
+            assert_eq!(coder.state_kind, None);
+        }
     }
 
     #[test]
@@ -414,6 +392,7 @@ mod tests {
             100,
         )
         .unwrap();
+
         // The listing read state_at 100; a hook reports waiting before the screen write lands.
         set_state(
             &connection,
@@ -426,6 +405,7 @@ mod tests {
             105,
         )
         .unwrap();
+
         let read = (Some("working"), Some("hook"), Some(100), None);
         let written =
             set_screen_state(&connection, SESSION, CODER, "done", None, 110, read).unwrap();
@@ -435,49 +415,92 @@ mod tests {
             .into_iter()
             .find(|row| row.id == CODER)
             .unwrap();
+
         assert_eq!(coder.state.as_deref(), Some("blocked"));
         assert_eq!(coder.state_source.as_deref(), Some("hook"));
         let latest = (Some("blocked"), Some("hook"), Some(105), None);
         assert!(set_screen_state(&connection, SESSION, CODER, "done", None, 111, latest).unwrap());
         let unset = (None, None, None, None);
+
         assert!(
             set_screen_state(&connection, SESSION, ORCHESTRATOR, "done", None, 112, unset).unwrap()
         );
-    }
+        {
+            let connection = seed();
 
-    #[test]
-    fn a_hook_in_the_same_second_as_the_read_still_stops_the_screen_write() {
-        let connection = seed();
-        set_screen_state(
-            &connection,
-            SESSION,
-            CODER,
-            "working",
-            None,
-            100,
-            (None, None, None, None),
-        )
-        .unwrap();
-        // The listing read (working, screen, 100); a hook reports waiting in that same second.
-        set_state(
-            &connection,
-            SESSION,
-            CODER,
-            "blocked",
-            "hook",
-            None,
-            None,
-            100,
-        )
-        .unwrap();
-        let read = (Some("working"), Some("screen"), Some(100), None);
-        assert!(!set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap());
-        let coder = agents(&connection, SESSION)
-            .unwrap()
-            .into_iter()
-            .find(|row| row.id == CODER)
+            set_state(
+                &connection,
+                SESSION,
+                CODER,
+                "blocked",
+                "hook",
+                None,
+                Some("permission"),
+                100,
+            )
             .unwrap();
-        assert_eq!(coder.state.as_deref(), Some("blocked"));
+
+            let read = (Some("blocked"), Some("hook"), Some(100), Some("permission"));
+
+            set_state(
+                &connection,
+                SESSION,
+                CODER,
+                "blocked",
+                "hook",
+                None,
+                Some("question"),
+                100,
+            )
+            .unwrap();
+
+            assert!(
+                !set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap()
+            );
+
+            let coder = &agents(&connection, SESSION).unwrap()[0];
+            assert_eq!(coder.state.as_deref(), Some("blocked"));
+            assert_eq!(coder.state_kind.as_deref(), Some("question"));
+        }
+        {
+            let connection = seed();
+
+            set_screen_state(
+                &connection,
+                SESSION,
+                CODER,
+                "working",
+                None,
+                100,
+                (None, None, None, None),
+            )
+            .unwrap();
+
+            // The listing read (working, screen, 100); a hook reports waiting in that same second.
+            set_state(
+                &connection,
+                SESSION,
+                CODER,
+                "blocked",
+                "hook",
+                None,
+                None,
+                100,
+            )
+            .unwrap();
+
+            let read = (Some("working"), Some("screen"), Some(100), None);
+            assert!(
+                !set_screen_state(&connection, SESSION, CODER, "done", None, 100, read).unwrap()
+            );
+            let coder = agents(&connection, SESSION)
+                .unwrap()
+                .into_iter()
+                .find(|row| row.id == CODER)
+                .unwrap();
+
+            assert_eq!(coder.state.as_deref(), Some("blocked"));
+        }
     }
 
     #[test]

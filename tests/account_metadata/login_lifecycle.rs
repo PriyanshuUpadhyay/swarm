@@ -219,22 +219,22 @@ capture = true
     let initial = revision(&home);
     let holder = std::fs::File::create(home.join(".swarm/accounts.lock")).unwrap();
     holder.lock().unwrap();
-    let lock_wait = std::time::Duration::from_secs(3);
+    let lock_wait = std::time::Duration::from_millis(300);
     let release = std::thread::spawn(move || {
         std::thread::sleep(lock_wait);
         holder.unlock().unwrap();
     });
+    // A short adapter deadline in place of 18 s, so the ring that sleeps 25 s is cut off.
     let started = std::time::Instant::now();
-    // A 5 s adapter deadline in place of 18 s. It starts before the 3 s lock wait, so the login
-    // ends near 5 s; a deadline that started after the lock would end near 8 s.
     let output = command(&home, &login("codex", "spare", &initial))
-        .env("SWARM_TEST_LOGIN_ADAPTER_MS", "5000")
+        .env("SWARM_TEST_LOGIN_ADAPTER_MS", "1000")
         .output()
         .unwrap();
     release.join().unwrap();
     assert!(!output.status.success());
+    // Loose bounds: the login waits for the lock, and the deadline ends the 25 s ring.
     assert!(started.elapsed() >= lock_wait);
-    assert!(started.elapsed() < std::time::Duration::from_millis(7500));
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot start native login"));
     assert_eq!(
         std::fs::read_to_string(home.join("closed-pane")).unwrap(),

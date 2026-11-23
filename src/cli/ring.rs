@@ -27,8 +27,9 @@ pub(crate) const RING_TIMEOUT: std::time::Duration =
 #[cfg(test)]
 thread_local! {
     /// The deadline of a test's waiting ring. A short sh fake can take over a second to run under
-    /// load, so a test whose ring must reach its proof sets the production 30 s; a test that waits
-    /// out the deadline keeps `RING_TIMEOUT`.
+    /// load, so a test whose ring must reach its proof sets the production 30 s (`patient_rings`);
+    /// a test that waits out the deadline sets a short one (`short_rings`). The default is
+    /// `RING_TIMEOUT`.
     pub(crate) static RING_DEADLINE: std::cell::Cell<std::time::Duration> =
         const { std::cell::Cell::new(RING_TIMEOUT) };
 }

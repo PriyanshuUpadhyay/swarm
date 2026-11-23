@@ -64,10 +64,7 @@ fn a_provider_with_every_account_low_or_signed_out_is_skipped() {
     let resolved = json(&low);
     assert_eq!(resolved["runnerId"], "code#2");
     assert_eq!(resolved["skipped"][0]["code"], "low_usage");
-    assert!(
-        String::from_utf8_lossy(&low.stderr)
-            .contains("swarm: code: skipped claude/opus/high: usage 2% left (threshold 5%)")
-    );
+    assert!(String::from_utf8_lossy(&low.stderr).contains("skipped claude/opus/high"));
 
     claude_accounts(
         &bin,

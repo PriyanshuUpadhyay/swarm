@@ -350,10 +350,6 @@ mod tests {
         ] {
             assert_eq!(stable_path(Path::new(kept)), PathBuf::from(kept));
         }
-    }
-
-    #[test]
-    fn cellar_prefix_reads_a_cellar_path_and_refuses_other_paths() {
         let exe = Path::new("/opt/homebrew/Cellar/swarm/0.0.37/bin/swarm");
         assert_eq!(cellar_prefix(exe), Some(PathBuf::from("/opt/homebrew")));
         assert_eq!(cellar_prefix(Path::new("/Users/me/.cargo/bin/swarm")), None);

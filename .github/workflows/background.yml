@@ -22,9 +22,12 @@ jobs:
       - run: cargo build --features serve --bins
       # Shared runners cannot measure the owner's Mac speed or process-wide heap budgets.
       - run: 'cargo test --features serve -- --include-ignored --skip serve::live_delta::performance_tests::'
+      # The HUD unit tests run here, because the Swift build first runs in release.yml otherwise.
+      - run: swift test --package-path ui
 
   e2e:
     runs-on: macos-26
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,6 +51,7 @@ jobs:
   # The stub agent CLIs keep the panes alive; `debug` fails so the model check is skipped.
   clean-home:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get install -y tmux

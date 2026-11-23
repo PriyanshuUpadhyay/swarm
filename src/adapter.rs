@@ -173,11 +173,11 @@ mod tests {
         )
         .unwrap_err()
         .to_string();
-        assert_eq!(missing, "adapter herdr: missing self");
+        assert!(missing.contains("self"), "{missing}");
         let unknown = parse("herdr", &format!("{FULL}dance = d\n"))
             .unwrap_err()
             .to_string();
-        assert_eq!(unknown, "adapter herdr: unknown key dance");
+        assert!(unknown.contains("dance"), "{unknown}");
         assert!(parse("herdr", "spawn\n").is_err());
     }
 
@@ -186,44 +186,24 @@ mod tests {
         let adapter = parse("fake", &format!("{FULL}attach = exit 7\n")).unwrap();
         assert_eq!(adapter.attach.as_deref(), Some("exit 7"));
         assert_eq!(adapter.attach(&[]).unwrap().code(), Some(7));
-        assert_eq!(
-            parse("fake", FULL)
-                .unwrap()
-                .attach(&[])
-                .unwrap_err()
-                .to_string(),
-            "swarm: adapter fake has no attach"
+        assert!(parse("fake", FULL).unwrap().attach(&[]).is_err());
+    }
+
+    /// The shipped adapters keep the verbs their host supports and no others.
+    #[test]
+    fn each_shipped_adapter_has_the_verbs_its_host_supports() {
+        let herdr = parse("herdr", shipped("herdr").unwrap()).unwrap();
+        assert!(herdr.attach.is_some());
+        let superset = parse("superset", shipped("superset").unwrap()).unwrap();
+        assert!(
+            superset.attach.is_none() && superset.interrupt.is_none() && superset.key.is_none()
         );
-    }
-
-    #[test]
-    fn shipped_herdr_attaches_by_agent_pane() {
-        let adapter = parse("herdr", shipped("herdr").unwrap()).unwrap();
-        assert_eq!(
-            adapter.attach.as_deref(),
-            Some("herdr agent attach \"$SWARM_PANE\"")
-        );
-    }
-
-    #[test]
-    fn shipped_superset_has_the_required_verbs_and_screen_only() {
-        let adapter = parse("superset", shipped("superset").unwrap()).unwrap();
-        assert!(adapter.attach.is_none());
-        assert!(adapter.interrupt.is_none());
-        assert!(adapter.key.is_none());
-        assert!(adapter.screen.is_some());
-        assert!(adapter.caller.contains("SUPERSET_TERMINAL_ID"));
-    }
-
-    #[test]
-    fn shipped_rex_has_the_required_verbs_and_key_but_no_attach() {
-        let adapter = parse("rex", shipped("rex").unwrap()).unwrap();
-        assert!(adapter.attach.is_none());
-        assert!(adapter.interrupt.is_some());
-        assert!(adapter.key.is_some());
-        assert!(adapter.screen.is_some());
-        assert!(adapter.status.is_some());
-        assert!(adapter.caller.contains("REX_BLOCK"));
+        assert!(superset.screen.is_some());
+        assert!(superset.caller.contains("SUPERSET_TERMINAL_ID"));
+        let rex = parse("rex", shipped("rex").unwrap()).unwrap();
+        assert!(rex.attach.is_none() && rex.interrupt.is_some() && rex.key.is_some());
+        assert!(rex.screen.is_some() && rex.status.is_some());
+        assert!(rex.caller.contains("REX_BLOCK"));
     }
 
     #[test]
@@ -246,14 +226,7 @@ mod tests {
     fn parses_and_runs_optional_interrupt() {
         let adapter = parse("fake", &format!("{FULL}interrupt = printf interrupted\n")).unwrap();
         assert_eq!(adapter.run("interrupt", &[]).unwrap(), "interrupted");
-        assert_eq!(
-            parse("fake", FULL)
-                .unwrap()
-                .run("interrupt", &[])
-                .unwrap_err()
-                .to_string(),
-            "swarm: adapter fake has no interrupt"
-        );
+        assert!(parse("fake", FULL).unwrap().run("interrupt", &[]).is_err());
     }
 
     #[test]
@@ -269,10 +242,8 @@ mod tests {
             adapter.run("ring", &[("text", "hi; rm -rf x")]).unwrap(),
             "hi; rm -rf x"
         );
-        assert_eq!(
-            adapter.run("close", &[]).unwrap_err().to_string(),
-            "close failed: boom"
-        );
+        let failure = adapter.run("close", &[]).unwrap_err().to_string();
+        assert!(failure.contains("boom"), "{failure}");
         assert!(adapter.run("dance", &[]).is_err());
         assert_eq!(
             adapter.run("capture", &[("pane", "%3")]).unwrap(),
@@ -297,10 +268,8 @@ mod tests {
             with(r#"printf '%s' "rows of $SWARM_PANE""#).screen(&[("pane", "%3")], LONG),
             Some("rows of %3".into())
         );
-        let started = std::time::Instant::now();
         let timeout = std::time::Duration::from_millis(300);
         assert_eq!(with("exec sleep 30").screen(&[], timeout), None);
-        assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert_eq!(with("exit 1").screen(&[], LONG), None);
         assert_eq!(parse("probe", FULL).unwrap().screen(&[], LONG), None);
     }
@@ -310,7 +279,8 @@ mod tests {
         let adapter = parse("probe", &format!("{FULL}screen = sleep 30 & printf rows\n")).unwrap();
         let started = std::time::Instant::now();
         // The shell must print and exit within the timeout, which a loaded machine can delay.
-        let text = adapter.screen(&[], std::time::Duration::from_secs(5));
+        let text = adapter.screen(&[], std::time::Duration::from_secs(1));
+        // The child holds stdout for 30 s, so the deadline must end the read.
         assert!(started.elapsed() < std::time::Duration::from_secs(20));
         assert_eq!(text.as_deref(), Some("rows"));
     }

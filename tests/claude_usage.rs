@@ -309,7 +309,7 @@ fn curl_timeout_uses_the_remaining_deadline() {
             "http://127.0.0.1:1/usage",
             &["usage", "--refresh", "--provider", "claude", "--json"],
         )
-        .env("SWARM_TEST_NATIVE_READ_MS", "5000")
+        .env("SWARM_TEST_NATIVE_READ_MS", "1500")
         .output()
         .unwrap(),
     );
@@ -317,7 +317,7 @@ fn curl_timeout_uses_the_remaining_deadline() {
     let words: Vec<_> = args.split_whitespace().collect();
     let index = words.iter().position(|word| *word == "--max-time").unwrap();
     let seconds: f64 = words[index + 1].parse().unwrap();
-    assert!(seconds > 0.0 && seconds < 5.0, "{seconds}");
+    assert!(seconds > 0.0 && seconds < 1.5, "{seconds}");
     assert_eq!(value["meters"][0]["state"], "failed");
     let pid = std::fs::read_to_string(home.join("curl-pid")).unwrap();
     assert!(
@@ -549,7 +549,7 @@ fn a_usage_read_does_not_read_the_roles_config() {
     let output = run(&home, "http://127.0.0.1:9/unused", &["usage", "--json"]);
     usage(&output);
     assert!(!profiles.exists());
-    // The listing does read it, so the fixture is a real import.
+    // The listing reads it: a real import.
     let listing = run(
         &home,
         "http://127.0.0.1:9/unused",
@@ -557,9 +557,13 @@ fn a_usage_read_does_not_read_the_roles_config() {
     );
     assert!(listing.status.success());
     assert!(profiles.exists());
-    // With the old file newer than the import, only a reader of the config says so.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
-    std::fs::write(&roles, std::fs::read(&roles).unwrap()).unwrap();
+    // A config newer than the import: only a reader of it says so.
+    std::fs::File::options()
+        .write(true)
+        .open(&roles)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(10))
+        .unwrap();
     for args in [
         &["usage", "--json"][..],
         &["usage", "--refresh", "--provider", "claude", "--json"][..],

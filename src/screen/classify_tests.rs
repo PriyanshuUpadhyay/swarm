@@ -38,16 +38,12 @@ mod tests {
     }
 
     #[test]
-    fn a_claude_answer_with_no_end_row_under_its_echo_is_working() {
+    fn an_answer_with_no_end_row_under_its_echo_is_working() {
         // Claude hides its spinner row while it writes the answer.
         let writing = "❯ Write about the windmill.\n\n⏺ The first windmills ground grain.\n\n────\n❯ \n────\n";
         assert_eq!(screen_state("claude", writing), Some(ScreenState::Working));
         let ended = writing.replace("\n\n────", "\n✻ Sautéed for 9s · done 1:34 AM\n────");
         assert_eq!(screen_state("claude", &ended), Some(ScreenState::Idle));
-    }
-
-    #[test]
-    fn a_codex_answer_with_no_end_row_under_its_echo_is_working() {
         // Codex hides its working row while it writes the answer.
         let writing = fixture!("codex-turn-text");
         assert_eq!(screen_state("codex", writing), Some(ScreenState::Working));
@@ -159,6 +155,8 @@ mod tests {
         assert_eq!(screen_state("codex", &codex), Some(ScreenState::Idle));
         let asked = format!("• Would you like to run the suite next?\n{codex}");
         assert_eq!(screen_state("codex", &asked), Some(ScreenState::Idle));
+        let list = "• Would you like to:\n  1. Fix the flaky test\n  2. Rerun the suite\n\n› 1. Fix the flaky test\n\n  ? for shortcuts                                100% context left\n";
+        assert_eq!(screen_state("codex", list), Some(ScreenState::Idle));
         // Real approvals still wait.
         assert_eq!(
             screen_state("claude", fixture!("claude-waiting")),
@@ -168,12 +166,6 @@ mod tests {
             screen_state("codex", fixture!("codex-waiting")),
             Some(ScreenState::Blocked)
         );
-    }
-
-    #[test]
-    fn a_codex_answer_with_a_numbered_list_and_a_numbered_draft_is_idle() {
-        let rows = "• Would you like to:\n  1. Fix the flaky test\n  2. Rerun the suite\n\n› 1. Fix the flaky test\n\n  ? for shortcuts                                100% context left\n";
-        assert_eq!(screen_state("codex", rows), Some(ScreenState::Idle));
     }
 
     #[test]

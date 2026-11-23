@@ -282,7 +282,7 @@ fn a_ring_to_an_agy_seat_waits_for_its_ready_record() {
     let ready = {
         let status = home.join("status");
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_millis(300));
             std::fs::write(status, "state=idle:at=1").unwrap();
         })
     };
