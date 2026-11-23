@@ -1,6 +1,6 @@
 //! The agent CLIs swarm can launch, and what each one accepts. This module is the only place that
-//! names a provider as a string; other code matches on `Provider`, so a new variant shows every
-//! place that must handle it. Code that reads a provider's own file format (hook payloads,
+//! names a provider in launch metadata (ids, models, efforts, login); other code matches on
+//! `Provider`, so a new variant shows every place that must handle it. Code that reads a provider's own file format (hook payloads,
 //! screens, chair logs, trust files) still dispatches by provider in its own module.
 
 use serde::{Deserialize, Serialize};
