@@ -1,63 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, type Api, type Snapshot } from "./api";
 import { App } from "./app";
-import { inOrder, moveTarget, navRows, nextBlocked, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type Section, type SidebarRow, type TreeView } from "./nav";
-
-const sel = (workspace: string | null, chat: string | null = null) => ({ workspace, chat, agentSession: null, agent: null });
-
-function row(id: string, kind: SidebarRow["kind"], depth: number, extra: Partial<SidebarRow> = {}): SidebarRow {
-  return {
-    id,
-    kind,
-    depth,
-    parentId: null,
-    expanded: true,
-    hasChildren: false,
-    childrenSummary: null,
-    title: id,
-    detail: "",
-    status: null,
-    counts: [],
-    age: null,
-    help: id,
-    pinned: false,
-    archived: false,
-    missing: false,
-    newChatEnabled: true, startsChatWorktree: false,
-    dimmed: false,
-    fields: [],
-    selection: sel(kind === "workspace" ? id : null),
-    ...extra,
-  };
-}
-
-const chat = (session: string, workspace: string, extra: Partial<SidebarRow> = {}) =>
-  row(`chat:${session}`, "chat", 1, { parentId: workspace, selection: sel(workspace, session), ...extra });
-
-function section(id: string, kind: Section["kind"], rows: SidebarRow[], extra: Partial<Section> = {}): Section {
-  return { id, kind, path: kind === "project" ? id : null, folder: false, collapseId: kind === "project" ? `project:${id}` : "pinned", expanded: true, title: id.split("/").pop()!, status: null, fields: [], rows, ...extra };
-}
-
-const tree = (sections: Section[], view: TreeView["view"] = "workspaces"): TreeView => ({
-  version: 1,
-  revision: "rev-1",
-  view,
-  sections,
-  selectedRow: null,
-  archivedStatus: null,
-  choicesError: null,
-  prefs: {},
-});
-
-// Project /r/app with workspaces main (two chats, the first with a child) and feature; a pinned /r/web.
-const appMain = row("/r/app", "workspace", 0, { hasChildren: true });
-const appFeature = row("/r/app/wt/feature", "workspace", 0);
-const fixRows = chat("fix", "/r/app", { hasChildren: true, expanded: true });
-const fixChild = row("fix/reviewer", "child", 2, { parentId: "chat:fix" });
-const docs = chat("docs", "/r/app");
-const web = row("/r/web", "workspace", 0, { pinned: true, hasChildren: true });
-const webChat = chat("site", "/r/web");
-const sample = tree([section("pinned", "pinned", [web, webChat]), section("/r/app", "project", [appMain, fixRows, fixChild, docs, appFeature])]);
+import { inOrder, moveTarget, navRows, nextBlocked, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type TreeView } from "./nav";
+import { row, chat, section, tree, appMain, appFeature, fixRows, fixChild, docs, web, webChat, sample } from "./nav-fixtures";
 
 describe("sidebar lines", () => {
   it("lays out headers and rows with levels and parents", () => {
@@ -197,8 +142,7 @@ describe("owner choices", () => {
     const app = new App(api);
     const notices: string[] = [];
     app.notice = (text) => notices.push(text);
-    const inner = app as unknown as { refreshSnapshot(): Promise<void> };
-    return { app, writes, notices, load: () => inner.refreshSnapshot(), reads: () => treeReads };
+    return { app, writes, notices, load: () => app.refresh(), reads: () => treeReads };
   }
 
   it("writes one at a time, each on the revision the last write returned", async () => {
@@ -248,7 +192,7 @@ describe("a new chat", () => {
     } as unknown as Api;
     const app = new App(api);
     app.notice = () => {};
-    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    await app.refresh();
     await app.actions.startChat("/r/app");
     await app.newChat.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "new" });
     expect(reads).toBeGreaterThan(2);
@@ -276,11 +220,11 @@ describe("a chat started from the tab strip", () => {
     } as unknown as Api;
     const app = new App(api);
     app.notice = () => {};
-    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    await app.refresh();
     await app.actions.startChat("/r/app");
     await app.newChat.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "new" });
     expect(writes.find((w) => w.op === "open_tab")).toEqual({ op: "open_tab", workspace: "/r/app", chat: "new" });
-    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    await app.refresh();
     await app.closeTab("new");
     await new Promise((r) => setTimeout(r, 0));
     expect(actions).toEqual([]);
@@ -306,7 +250,7 @@ describe("picked chats", () => {
       action: async (path: string, body: unknown) => void actions.push({ path, body }),
     } as unknown as Api;
     const app = new App(api);
-    await (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    await app.refresh();
 
     app.clickRow("chat:site", "toggle");
     app.clickRow("chat:docs", "range");
@@ -331,7 +275,7 @@ describe("picked chats", () => {
       action: async () => {},
     } as unknown as Api;
     const app = new App(api);
-    const refresh = () => (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    const refresh = () => app.refresh();
     await refresh();
 
     app.clickRow("chat:fix", "toggle");

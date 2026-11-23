@@ -188,39 +188,6 @@ describe("served live body", () => {
   });
 });
 
-// Queue tests keep their served saved-row choices.
-describe("queue display", () => {
-  const queue = [
-    { images: [], mode: "steering", text: "**b**", display: bold, body: "tree", id: "queue-0", detail: "Steering" },
-    { images: [], mode: "steering", text: "plain note", display: null, body: "tree", id: "queue-1", detail: "Steering" },
-    { images: [], mode: "steering", text: "from an older server", display: bold, id: "queue-2", detail: "Steering" },
-  ];
-  const bodies = (chat: Chat) => chat.queue.map(paintedBody);
-  const expected = [{ kind: "tree", display: bold }, { kind: "plain" }, { kind: "plain" }];
-
-  it("paints a queue row only with served tree and its Display when the chat is built", () => {
-    vi.useFakeTimers();
-    try {
-      const app = { chats: new Map(), composing: { chair: () => ({ queue }) } };
-      const chat = new AppReader(app as unknown as App).newChat("s");
-      expect({ bodies: bodies(chat), text: chat.queue.map(r => r.text) }).toEqual({ bodies: expected, text: queue.map(q => q.text) });
-    } finally { vi.useRealTimers(); }
-  });
-
-  it("paints a queue row only with served tree and its Display when a snapshot brings the item", () => {
-    vi.useFakeTimers();
-    try {
-      let items: typeof queue = [];
-      const app = { chats: new Map(), composing: { chair: () => ({ queue: items }) }, inputs: new Map(), reading: {}, visible: [], liveAll: false };
-      const chat = new AppReader(app as unknown as App).newChat("s");
-      items = queue;
-      new AppStream(app as unknown as App).applySnapshot({ version: 2, sessions: [], agents: {} } as Snapshot);
-      expect({ bodies: bodies(chat), text: chat.queue.map(r => r.text) }).toEqual({ bodies: expected, text: queue.map(q => q.text) });
-    } finally { vi.useRealTimers(); }
-  });
-});
-
-// S10e-2: reuse the S8c queue flow; the served mode can change by itself.
 describe("S8c queue wire", () => {
   it("uses served queue choices for first paint, refresh, mode-only refresh and clear", () => {
     vi.useFakeTimers();

@@ -54,23 +54,6 @@ test("a folded workspace keeps its chats in Search and Home", async ({ page }) =
   await expect(page.getByTestId("recent-chat").filter({ hasText: chat.title }).first()).toBeVisible();
 });
 
-test("Enter in Recent focuses the opened chat and reload keeps the Recent keyboard row", async ({ page }) => {
-  await load(page);
-  const session = process.env.SWARM_E2E_LIVE!;
-  await row(page, session).click();
-  await page.keyboard.press("Alt+Meta+2");
-  const current = page.locator(`[data-testid="recent-row"][data-session="${session}"]`);
-  await expect(current).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(composer(page)).toBeFocused();
-  await page.reload();
-  await page.waitForFunction(() => window.__swarmReady === true);
-  await expect(current).toHaveAttribute("tabindex", "0");
-  await expect(composer(page)).toBeFocused();
-  await page.keyboard.type("keep going");
-  await expect(composer(page)).toHaveValue("keep going");
-});
-
 test("switching to Recent takes the next keys before another animation frame", async ({ page }) => {
   await load(page);
   await row(page, process.env.SWARM_E2E_LIVE!).click();

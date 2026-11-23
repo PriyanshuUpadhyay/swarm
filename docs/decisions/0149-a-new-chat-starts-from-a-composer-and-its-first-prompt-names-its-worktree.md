@@ -42,7 +42,8 @@ makes the chat's own worktree, and any other folder starts the chat in itself. I
 folder, then answers at once with a start id. The worktree, the setup script, the chair and the
 first send run in the background. Each step goes out as a `chat-start` frame
 `{start, step, state}` with step `worktree`, `setup`, `start`, `send` and last `done`; `done`
-carries the session and its folder, or the error. Setup output keeps its `setup` frames. The
+carries the session and its folder, or the start error. A completed `done` also carries `sendError`:
+the first send's error text, or null if no send failed. Setup output keeps its `setup` frames. The
 app shows a starting tab with these steps at once, and opens the chat when `done` comes. The
 server keeps the last 64 `done` frames, and `GET /api/chat/start?id=` returns `{done}`, or
 `{running: true}` while the start runs, or `{}` for an id it does not know, so a page whose

@@ -3,7 +3,7 @@
 
 import type { App } from "./app";
 import { firstLine, message } from "./app-types";
-import { hasPendingImage } from "./images";
+import { hasPendingImage, type Draft } from "./images";
 import type { Run } from "./composer";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
 import { fileRows, type CommandList } from "./slash";
@@ -57,8 +57,13 @@ export const DEFAULT_ROLE = "chat";
 /** How long the start's POST may take. The server answers in under a second, after its checks. */
 const START_TIMEOUT_MS = 10_000;
 
-/** Options of a start: whether the composer sent it, and the text that goes after its prompt. */
-type StartOptions = { composer?: boolean; queued?: string[] };
+type StartOptions = {
+  composer?: boolean;
+  submittedText?: string;
+  queued?: string[];
+  /** Lets an upload finish in the start's draft after the composer closes. */
+  bindUpload?: (draft: Draft) => void;
+};
 
 /** How many frames of unknown starts wait for their POST reply. */
 const EARLY_KEPT = 50;
@@ -191,7 +196,7 @@ export class NewChat {
 
   /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. Only a
    *  start that the composer sent closes it and takes its text. */
-  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, queued = [] }: StartOptions = {}): Promise<boolean> {
+  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, submittedText, queued = [], bindUpload }: StartOptions = {}): Promise<boolean> {
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
     this.posting = true;
@@ -200,7 +205,8 @@ export class NewChat {
     const from = this.app.view.workspace ?? cwd;
     const nav = this.app.navSeq;
     // The composer on screen; a send from the page's composer leaves a hidden one and its text.
-    const sent = this.composing()?.seq;
+    const sent = this.composing();
+    const submitted = submittedText ?? sent?.text ?? this.state.unsent;
 
     let id: string;
     try {
@@ -214,12 +220,22 @@ export class NewChat {
       this.posting = false;
     }
 
-    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), run, steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: "" };
-    // A composer the owner opened while this one posted stays open, with its text.
-    const closes = fromComposer && sent !== undefined && this.state.composer?.seq === sent;
+    // A composer the owner opened while this one posted keeps its own text.
+    const closes = fromComposer && sent !== null && this.state.composer?.seq === sent.seq;
+    const fromPage = fromComposer && sent === null;
+    const latest = closes ? sent.text : fromPage ? this.state.unsent : submitted;
+    const added = latest.startsWith(submitted) ? latest.slice(submitted.length).trimStart() : latest;
+    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), run, steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: added };
     const composer = closes ? null : this.state.composer;
-    // The page composer has no `composer` state, and its text in `unsent` is the prompt it sent.
-    const unsent = closes || (fromComposer && sent === undefined) ? "" : this.state.unsent;
+    const unsent = fromPage ? "" : this.state.unsent;
+
+    if (hasPendingImage(added)) {
+      bindUpload?.({
+        read: () => this.state.starts[id]?.draft ?? "",
+        change: (next) => this.setDraft(id, next),
+      });
+    }
+
     this.set({ composer, unsent, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
     const early = this.early.filter((data) => data.start === id);
     this.early = this.early.filter((data) => data.start !== id);
@@ -307,6 +323,7 @@ export class NewChat {
     const step = String(data.step);
     const state = data.state === "completed" || data.state === "failed" ? data.state : "running";
     const error = typeof data.error === "string" ? data.error : null;
+
     if (step === "done") {
       if (state === "failed") {
         // A failed start always has an error text, as the page tells a failed start by it.
@@ -317,7 +334,8 @@ export class NewChat {
       }
       if (this.opening.has(id)) return;
       this.opening.add(id);
-      return this.opened(start, String(data.session));
+      const sendError = typeof data.sendError === "string" ? data.sendError : undefined;
+      return this.opened(start, String(data.session), sendError);
     }
 
     const words = typeof data.words === "string" ? data.words : null;
@@ -345,25 +363,24 @@ export class NewChat {
 
   /** The chat runs: open it where the owner still looks at its start, then send the queued text
    *  and the box's draft. Text that did not send goes in the chat's text box, so none is lost. */
-  private async opened(start: Starting, session: string) {
-    const shown = this.shown()?.id === start.id;
+  private async opened(start: Starting, session: string, sendError?: string) {
     // The chat runs, but its first prompt or the issue's text did not go: nothing goes before it,
     // and the chat's text box keeps the rest.
     const failed = start.steps.find((s) => s.step === "send" && s.state === "failed");
     // The start's view stays while the tree lists the chat, so the page behind does not show.
-    await this.app.actions.openNew(session, shown).catch((err) => this.app.notice(message(err), true));
+    await this.app.actions.openNew(session, () => this.shown()?.id === start.id).catch((err) => this.app.notice(message(err), true));
     await this.uploaded(start.id);
     const now = this.state.starts[start.id] ?? start;
     const texts = [...now.queued, now.draft.trim()].filter(Boolean);
     this.dismiss(start.id);
     this.opening.delete(start.id);
 
-    if (failed) {
+    if (sendError || failed) {
       const kept = [start.prompt, ...texts].filter(Boolean).join("\n\n");
       if (kept) this.app.composing.setDraft(session, kept);
       const what = start.prompt ? "Your first prompt" : "The issue's text";
       const where = kept ? " Your text is in the chat's text box." : "";
-      return this.app.notice(`${what} did not send: ${failed.error ?? "the send failed"}.${where}`, true);
+      return this.app.notice(`${what} did not send: ${sendError ?? failed?.error ?? "the send failed"}.${where}`, true);
     }
 
     for (const [i, text] of texts.entries()) {

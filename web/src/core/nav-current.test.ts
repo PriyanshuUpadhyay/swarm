@@ -1,63 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, type Api, type Snapshot } from "./api";
 import { App } from "./app";
-import { currentRow, navRows, type Section, type SidebarRow, type TreeView } from "./nav";
-
-const sel = (workspace: string | null, chat: string | null = null) => ({ workspace, chat, agentSession: null, agent: null });
-
-function row(id: string, kind: SidebarRow["kind"], depth: number, extra: Partial<SidebarRow> = {}): SidebarRow {
-  return {
-    id,
-    kind,
-    depth,
-    parentId: null,
-    expanded: true,
-    hasChildren: false,
-    childrenSummary: null,
-    title: id,
-    detail: "",
-    status: null,
-    counts: [],
-    age: null,
-    help: id,
-    pinned: false,
-    archived: false,
-    missing: false,
-    newChatEnabled: true, startsChatWorktree: false,
-    dimmed: false,
-    fields: [],
-    selection: sel(kind === "workspace" ? id : null),
-    ...extra,
-  };
-}
-
-const chat = (session: string, workspace: string, extra: Partial<SidebarRow> = {}) =>
-  row(`chat:${session}`, "chat", 1, { parentId: workspace, selection: sel(workspace, session), ...extra });
-
-function section(id: string, kind: Section["kind"], rows: SidebarRow[], extra: Partial<Section> = {}): Section {
-  return { id, kind, path: kind === "project" ? id : null, folder: false, collapseId: kind === "project" ? `project:${id}` : "pinned", expanded: true, title: id.split("/").pop()!, status: null, fields: [], rows, ...extra };
-}
-
-const tree = (sections: Section[], view: TreeView["view"] = "workspaces"): TreeView => ({
-  version: 1,
-  revision: "rev-1",
-  view,
-  sections,
-  selectedRow: null,
-  archivedStatus: null,
-  choicesError: null,
-  prefs: {},
-});
-
-// Project /r/app with workspaces main (two chats, the first with a child) and feature; a pinned /r/web.
-const appMain = row("/r/app", "workspace", 0, { hasChildren: true });
-const appFeature = row("/r/app/wt/feature", "workspace", 0);
-const fixRows = chat("fix", "/r/app", { hasChildren: true, expanded: true });
-const fixChild = row("fix/reviewer", "child", 2, { parentId: "chat:fix" });
-const docs = chat("docs", "/r/app");
-const web = row("/r/web", "workspace", 0, { pinned: true, hasChildren: true });
-const webChat = chat("site", "/r/web");
-const sample = tree([section("pinned", "pinned", [web, webChat]), section("/r/app", "project", [appMain, fixRows, fixChild, docs, appFeature])]);
+import { currentRow, navRows, type TreeView } from "./nav";
+import { row, section, tree, appMain, docs, web, webChat, sample } from "./nav-fixtures";
 
 describe("current sidebar row", () => {
   it("uses the visible chat, then its workspace for a chat with no sidebar row or no open chat", () => {
@@ -99,7 +44,7 @@ describe("the sidebar keyboard row", () => {
       choice: async () => ({ revision: "rev-1", version: 1 }),
     } as unknown as Api;
     const app = new App(api);
-    const refresh = () => (app as unknown as { refreshSnapshot(): Promise<void> }).refreshSnapshot();
+    const refresh = () => app.refresh();
     return { app, refresh, setTree: (next: TreeView) => { current = next; } };
   }
 

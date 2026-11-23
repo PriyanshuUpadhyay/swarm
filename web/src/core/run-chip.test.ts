@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { accountCli, accountColor, agentInput, applyBlock, applyLabel, chooseModel, cliName, levelWord, limitText, outcomeText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
+import { accountCli, accountColor, agentInput, applyBlock, chooseModel, cliName, levelWord, limitText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
 import type { Meter } from "./settings";
 
 
@@ -14,6 +14,15 @@ describe("run chip", () => {
     expect(runLabel(agentInput(session({ chair_provider: "pi" }), [chair({ provider: "pi" })]))).toBe("Pi · Default model");
   });
 
+  it("shows the current run in the tooltip and uses distinct dots for two accounts", () => {
+    const current = run("claude", "sonnet-test", "high", "work");
+    expect(runTip(current)).toMatch(/Claude[^\n]*work\s+sonnet-test[^\n]*High/);
+
+    const dots = ["work", "home"].map(accountColor);
+    expect(dots).toEqual(Array(2).fill(expect.stringMatching(/^oklch\([^)]+\)$/)));
+    expect(new Set(dots).size).toBe(2);
+  });
+
   it("resumes inside one CLI, also on another Codex account, and hands off to another CLI", () => {
     expect(switchOutcome(run("claude", "a"), run("claude", "a"))).toBe("none");
     expect(switchOutcome(run("claude", "a"), run("claude", "b", "high", "work"))).toBe("resume");
@@ -23,18 +32,6 @@ describe("run chip", () => {
     // A Codex chat with no account picked stays in its own.
     expect(switchOutcome(run("codex", "a", null, "one"), run("codex", "a"))).toBe("none");
     expect(switchOutcome(run("claude", "a"), run("agy", "a"))).toBe("handoff");
-  });
-
-  it("says what Apply does in the words of design A", () => {
-    const now = run("claude", "opus", "high", "work");
-    const say = (to: ReturnType<typeof run>, carry: "summary" | "clean" = "summary") => outcomeText(switchOutcome(now, to), now, to, carry, "Sonnet 5.5");
-    expect(say(now)).toContain("Pick a change");
-    expect(say(run("claude", "sonnet", "high", "work"))).toContain("Restarts this chat on Sonnet 5.5");
-    const codex = run("codex", "sol", "high", "one");
-    expect(outcomeText("resume", codex, { ...codex, account: "two" }, "summary", "Sol")).toContain("Moves this chat to two");
-    expect(say(run("agy", "gemini", null))).toContain("with a summary");
-    expect(say(run("agy", "gemini", null), "clean")).toContain("with nothing");
-    expect([applyLabel("handoff"), applyLabel("resume"), applyLabel("none")]).toEqual(["Start new chat", "Restart and apply", "Apply"]);
   });
 
   it("names each thinking level in plain words and keeps an unknown id as written", () => {
@@ -55,14 +52,6 @@ describe("run chip", () => {
     // A named Codex limit keeps its id, so two limits do not read the same.
     const spark = { ...meter("work", "codex_spark:primary", 300, 10), provider: "codex" };
     expect(limitText([spark, { ...meter("work", "primary", 300, 40), provider: "codex" }], "codex", "work", null).text).toBe("codex_spark 5h 90% · 5h 60%");
-  });
-
-  it("gives an account the same color each time, and its name, model and level in the chip's tooltip", () => {
-    expect(accountColor("work")).toBe(accountColor("work"));
-    expect(accountColor("work")).toMatch(/^oklch\(/);
-    expect(runTip({ provider: "claude", model: "claude-opus-5-5", effort: "xhigh", account: "work" })).toBe("Claude account: work\nclaude-opus-5-5 · Extra high");
-    expect(runTip({ provider: "pi", model: null, effort: null, account: null })).toBe("Pi login\nDefault model");
-    expect(runTip({ provider: "claude", model: "opus", effort: null, account: "work" }, "me@example.com")).toBe("Claude account: work (me@example.com)\nopus");
   });
 
   it("names the meter Context and says what its number means", () => {

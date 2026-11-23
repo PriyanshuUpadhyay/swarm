@@ -4,7 +4,8 @@ use super::*;
 
 /// `GET /api/chat/start?id=`: `{done: frame}` for a recent start, `{running: true}` while it
 /// runs, and `{}` for an id the server does not know or no longer keeps. A page whose stream
-/// was down reads it, as the frame then never reached it.
+/// was down reads it, as the frame then never reached it. A completed start carries a
+/// `sendError` if its first prompt did not send.
 pub(in crate::serve) async fn chat_start_done(
     State(app): State<App>,
     Query(query): Query<HashMap<String, String>>,
@@ -116,11 +117,11 @@ impl Start {
 
     pub(super) async fn run(mut self, launch: Launch) {
         match self.steps(&launch).await {
-            Ok((session, workspace)) => {
+            Ok((session, workspace, send_error)) => {
                 self.frame(
                     Step::Done,
                     "completed",
-                    json!({"session": session, "workspace": workspace}),
+                    json!({"session": session, "workspace": workspace, "sendError": send_error}),
                 );
             }
             Err(err) => {
@@ -132,9 +133,12 @@ impl Start {
         }
     }
 
-    /// Makes the worktree, the session and the chair, then sends the first prompt. Returns the
-    /// session and its folder.
-    pub(super) async fn steps(&mut self, launch: &Launch) -> Result<(String, String), ApiError> {
+    /// Makes the worktree, the session and the chair, then sends the first prompt. A send error
+    /// does not stop the chat.
+    pub(super) async fn steps(
+        &mut self,
+        launch: &Launch,
+    ) -> Result<(String, String, Option<String>), ApiError> {
         let (body, role, account) = (&launch.body, &launch.role, launch.account.as_deref());
         let app = self.app.clone();
         let prompt = body
@@ -183,6 +187,7 @@ impl Start {
         self.complete(json!({"session": session, "warning": warning}));
 
         // `swarm type` waits for the agent's input box, so the prompt goes once it is ready.
+        let mut send_error = None;
         if let Some(text) = prompt {
             self.enter(Step::Send);
             let send = SendAction {
@@ -195,12 +200,14 @@ impl Start {
             match enqueue_action(&app, Action::Send(send)).await {
                 Ok(_) => self.complete(json!({})),
                 Err(err) => {
-                    self.frame(Step::Send, "failed", json!({"error": failure(&err)}));
+                    let text = failure(&err);
+                    self.frame(Step::Send, "failed", json!({"error": text}));
+                    send_error = Some(text);
                 }
             }
         }
 
-        Ok((session, cwd))
+        Ok((session, cwd, send_error))
     }
 
     /// A worktree for the chat in `project`, made by the New workspace path, so it starts from a

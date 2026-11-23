@@ -29,14 +29,14 @@ export class AppActions {
 
   /** The server's tree lists a new chat after its agent poll sees the chair's pane, about a second
    *  later, and opening the chat writes a tab that the server checks against that tree. With
-   *  `open` false the chat only gets listed, because the owner moved on while it started. */
-  async openNew(session: string, open = true) {
+   *  a guard, the chat opens only if the owner still wants it after the tree read. */
+  async openNew(session: string, shouldOpen = () => true) {
     for (let i = 0; i < LIST_POLLS; i++) {
       await this.app.navigation.refreshSnapshot();
       if (this.app.listsChat(session)) break;
       await sleep(LIST_POLL_MS);
     }
-    if (open) this.app.navigation.openChat(session);
+    if (shouldOpen()) this.app.navigation.openChat(session);
   }
 
   /** Branch from here: a new chat with the conversation before user row `row` of chat `session`,
@@ -107,7 +107,7 @@ export class AppActions {
     this.ask({ title: "Rename project", value: title, save: (name) => void this.app.navigation.choose({ op: "rename_project", project: path, name }) });
   }
 
-  /** The palette's items in Swift order: actions, chat actions, workspaces, chats, agents
+  /** The palette's item order: actions, chat actions, workspaces, chats, agents
    *  (PaletteItems.build). Pure in the view, so the palette can memoize it on the view. */
   paletteItems(): PaletteItem[] {
     const items: PaletteItem[] = this.app.registry
@@ -174,7 +174,7 @@ export class AppActions {
 
   // ---- commands ----
 
-  /** The SwiftUI key map (AppKey.table), in the palette's action order (PaletteItems.actions). */
+  /** Commands in the order of the action list. */
   commands(): Command[] {
     const inTree = () => {
       const a = document.activeElement;

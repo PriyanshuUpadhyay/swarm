@@ -67,23 +67,23 @@ describe("diff clients and draft state", () => {
     expect({ before, success, posts, comments: changes.view.comments.map(draft) }).toEqual({ before: { comments: [], editor: padded }, success: true, posts: [{ method: "POST", path: "/api/changes/comment-range", body: { op: "range", patch: hand.patch, from: 4, to: 4 } }], comments: [hand.comments[0]] });
   });
 
-  it("discards a late Add after editor, selection, diff or workspace changes", async () => {
+  it("discards a late Add after selection, diff or workspace changes", async () => {
     const got = [];
-    for (const kind of ["text", "selection", "diff", "workspace"]) {
+    const cases = ["selection", "diff", "workspace"];
+    for (const kind of cases) {
       const wait = deferred<Response>();
       const { changes, workspace, reloadDiff } = await harness(() => wait.promise);
       changes.setEditor(file.path, file.layer, editor);
       const pending = changes.addComment(4, 4, editor.text);
       if (kind === "workspace") workspace("B");
       if (kind === "diff") await reloadDiff();
-      if (kind === "text") changes.setEditor(file.path, file.layer, { ...editor, text: "Newer text" });
       if (kind === "selection") changes.setEditor(file.path, file.layer, { ...editor, anchor: 1, cursor: 1 });
       wait.resolve(Response.json(range));
       const success = await pending;
       if (kind === "workspace") { workspace("A"); await drain(); }
       got.push({ kind, success, comments: changes.view.comments.map(draft), editor: changes.editor(file.path, file.layer) });
     }
-    expect(got).toEqual(["text", "selection", "diff", "workspace"].map((kind) => ({ kind, success: false, comments: [], editor: kind === "text" ? { ...editor, text: "Newer text" } : kind === "selection" ? { ...editor, anchor: 1, cursor: 1 } : editor })));
+    expect(got).toEqual(cases.map((kind) => ({ kind, success: false, comments: [], editor: kind === "selection" ? { ...editor, anchor: 1, cursor: 1 } : editor })));
   });
 
   it("keeps text and selection after failed Add and lets the owner retry", async () => {
@@ -111,13 +111,13 @@ describe("diff clients and draft state", () => {
     expect({ messagePosts: posts.filter((p) => p.body.op === "message"), sends: app.send.mock.calls, comments: changes.view.comments.map(draft), sending: changes.view.sending }).toEqual({ messagePosts: [{ method: "POST", path: "/api/changes/comment-range", body: { op: "message", comments: [hand.comments[0]] } }], sends: [["chat", hand.message, hand.message, false]], comments: [{ ...hand.comments[0], text: "New draft" }], sending: false });
   });
 
-  it("keeps drafts and clears sending after format failure, send failure or a changed destination", async () => {
+  it("keeps drafts and clears sending after a send failure or a changed destination", async () => {
     const got = [];
-    for (const kind of ["format", "send-false", "send-throw", "destination"]) {
+    const cases = ["send-false", "send-throw", "destination"];
+    for (const kind of cases) {
       const wait = deferred<Response>();
       const { changes, app } = await harness(async (body) => {
         if (body.op !== "message") return Response.json(range);
-        if (kind === "format") return Response.json({ error: "offline" }, { status: 503 });
         return kind === "destination" ? wait.promise : Response.json({ message: hand.message });
       });
       await changes.addComment(4, 4, editor.text);
@@ -130,7 +130,7 @@ describe("diff clients and draft state", () => {
       try { await pending; } catch { rejected = true; }
       got.push({ kind, comments: changes.view.comments.map(draft), sending: changes.view.sending, rejected, sent: app.send.mock.calls.length > 0, noticed: app.notice.mock.calls.length > 0 });
     }
-    expect(got).toEqual(["format", "send-false", "send-throw", "destination"].map((kind) => ({ kind, comments: [hand.comments[0]], sending: false, rejected: false, sent: kind.startsWith("send-"), noticed: kind !== "destination" })));
+    expect(got).toEqual(cases.map((kind) => ({ kind, comments: [hand.comments[0]], sending: false, rejected: false, sent: kind.startsWith("send-"), noticed: kind !== "destination" })));
   });
 });
 

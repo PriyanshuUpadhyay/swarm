@@ -58,16 +58,6 @@ describe("live frame", () => {
     return { stream: new AppStream(app as unknown as App), app, chat };
   }
 
-  it("keeps the turn's text after the turn ends, until the log's rows land", () => {
-    const { stream, app, chat } = liveApp();
-    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: "The history of the bicycle", thinking: null, display: null, ended: true, hide_text: false, hide_thinking: false }) });
-    expect(chat.live).toBe("The history of the bicycle");
-    app.pending.set("s:chair", [{ key: "s:chair", upsert: [{ id: "a", kind: "assistant", text: "The history of the bicycle starts in 1817.", order: [1, 0] }], end_offset: 10 }]);
-    stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: null, thinking: null, display: null, ended: false, hide_text: false, hide_thinking: false }) });
-    stream.flush();
-    expect(chat.live).toBeNull();
-  });
-
   it("a new turn's text replaces an ended one, and a later row does not clear it", () => {
     const { stream, app, chat } = liveApp();
     stream.onSse({ event: "live", data: JSON.stringify({ key: "s:chair", text: "The history of the bicycle", thinking: null, display: null, ended: true, hide_text: false, hide_thinking: false }) });

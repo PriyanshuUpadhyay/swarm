@@ -3,6 +3,9 @@ export function imagePaths(text: string): string[] {
   return [...new Set(text.match(/\/\S+\/uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg|gif|webp)/g) ?? [])];
 }
 
+/** The live draft: `read` gives its current text; `change` replaces it. */
+export type Draft = { read: () => string; change: (next: string) => void };
+
 /** Pending markers hold the insertion position while the owner keeps editing. */
 export const hasPendingImage = (text: string) => /\[\[Uploading image [^\]]+\]\]/.test(text);
 export const insertPendingImage = (text: string, start: number, end: number, marker: string) => `${text.slice(0, start)} ${marker} ${text.slice(end)}`;

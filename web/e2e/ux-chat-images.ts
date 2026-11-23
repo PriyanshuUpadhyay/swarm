@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 import { mockRows, open, row, rows } from "./ux-helpers";
 import type { PatchInfo, Row, TextPreview } from "../src/core/api";
 
-// HAND paths differ from text, so a browser reparse cannot pass this case.
-test("S8d images paint served paths on pages, older rows, upserts and snapshot queues", async ({ page: tab }, info) => {
+// The served paths differ from the raw text, so a browser reparse cannot pass.
+test("images paint served paths on pages, older rows, upserts and snapshot queues", async ({ page: tab }, info) => {
   const a = "/tmp/uploads/00000000-0000-0000-0000-000000000001.png";
   const b = "/tmp/uploads/00000000-0000-0000-0000-000000000002.webp";
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==", "base64");
@@ -18,10 +18,11 @@ test("S8d images paint served paths on pages, older rows, upserts and snapshot q
       ? { ...rows([row("u0", a, "user")]), images: { u0: [b] } }
       : { ...rows([row("u1", a, "user"), row("q2", a, "queued")], 100), images: { u1: [b, a], q2: [b] } } });
   });
+  let queueImages = [b];
   await tab.route("**/api/snapshot", async route => {
     const snapshot = await (await route.fetch()).json();
     snapshot.agents[process.env.SWARM_E2E_LIVE!][0].queue = [
-      { mode: "steering", text: a, id: "served-queue", detail: "Steering", display: null, body: "plain", images: [b] },
+      { mode: "steering", text: a, id: "served-queue", detail: "Steering", display: null, body: "plain", images: queueImages },
     ];
     await route.fulfill({ json: snapshot });
   });
@@ -60,6 +61,12 @@ test("S8d images paint served paths on pages, older rows, upserts and snapshot q
   await previews("u1", [bName]);
   await send([row("u1", a, "user")]);
   await previews("u1", []);
+  queueImages = [b, a];
+  await tab.evaluate(() => {
+    const scope = window as unknown as { s8dFrame: (event: string, data: unknown) => void };
+    scope.s8dFrame("snapshot", {});
+  });
+  await previews("served-queue", [bName, aName]);
   expect([...new Set(requested)].sort()).toEqual([aName, bName]);
   await tab.screenshot({ path: info.outputPath("s8d-served-images.png") });
 });

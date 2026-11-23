@@ -9,6 +9,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { webkit } from "@playwright/test";
+import { giantOpenP95, percentile as p } from "./metrics.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
@@ -30,12 +31,6 @@ const BUDGET = {
   live_drop: 0.01,
   pane_live_drop: 0.01,
   giant_open_p95: 150,
-};
-
-const p = (xs, q) => {
-  if (!xs.length) return NaN;
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.ceil(q * s.length) - 1)];
 };
 
 function startServer() {
@@ -137,10 +132,16 @@ async function suite(browserName, app, url) {
 
   await open();
   // The pane chat has its own scenario; the other scenarios keep the chats they had before it.
-  const paneChat = JSON.parse(fs.readFileSync(path.join(home, "manifest.json"), "utf8")).panes.id;
+  const { panes: { id: paneChat }, giantChat } = JSON.parse(fs.readFileSync(path.join(home, "manifest.json"), "utf8"));
   // Sidebar positions of the chat rows; headers and workspace rows sit between them. A build
   // before P2b names a chat row "c:<session>" and has no data-session.
-  const chatRows = await page.getByTestId("tree-row").evaluateAll((rows, skip) => rows.map((r, i) => ({ i, chat: r.getAttribute("data-kind") === "chat" && (r.getAttribute("data-session") ?? r.getAttribute("data-id")?.slice(2)) !== skip })).filter((r) => r.chat).map((r) => r.i), paneChat);
+  const chatPositions = await page.getByTestId("tree-row").evaluateAll((rows, skip) =>
+    rows.flatMap((r, i) => {
+      if (r.getAttribute("data-kind") !== "chat") return [];
+      const session = r.getAttribute("data-session") ?? r.getAttribute("data-id")?.slice(2);
+      return session && session !== skip ? [{ i, session }] : [];
+    }), paneChat);
+  const chatRows = chatPositions.map((r) => r.i);
 
   if (only.has("cold")) {
   log(browserName, app, "cold opens");
@@ -198,14 +199,18 @@ async function suite(browserName, app, url) {
 
   if (only.has("giant")) {
   log(browserName, app, "giant");
-  // Giant tool output chat.
+  const target = chatPositions.find((r) => r.session === giantChat);
+  const controls = chatPositions.filter((r) => r.session !== giantChat).slice(-4);
+  if (!target || controls.length < 4) throw new Error("The sidebar does not list the giant chat and four controls.");
+  const samples = 10;
   await clearPerf(page);
-  for (let k = 0; k < 10; k++) {
-    await openChat(page, chatRows[1]);
-    await openChat(page, chatRows[4 + (k % 4)]);
+  for (let k = 0; k < samples; k++) {
+    // Four distinct chats evict the giant chat from the four-chat LRU before each open.
+    for (const control of controls) await openChat(page, control.i);
+    await openChat(page, target.i);
   }
-  const giant = await perfOf(page, "open").then(async (opens) => opens.concat(await perfOf(page, "switch")));
-  result.giant_open_p95 = p(giant, 0.95);
+  const records = await page.evaluate(() => window.__swarmPerf ?? []);
+  result.giant_open_p95 = giantOpenP95(records, giantChat, samples);
   }
 
   if (only.has("live")) {

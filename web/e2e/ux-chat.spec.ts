@@ -108,6 +108,7 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
   await tab.route("**/api/usage", (route) => { reads++; return route.fulfill({ json: { meters: [] } }); });
   await open(tab);
   await tab.getByTestId("model-chip").click();
+  await expect(tab.getByTestId("run-popover").getByText("Codex", { exact: true })).toBeVisible();
   await tab.getByTestId("run-query").fill("model-b");
   await tab.getByTestId("run-query").press("ArrowDown");
   await tab.keyboard.press("Enter");
