@@ -164,14 +164,19 @@ pub(super) fn fold_twins(emails: &[(String, String)], meters: Vec<UsageMeter>) -
 }
 
 pub(crate) fn for_accounts(list: &AccountList, now: i64) -> Result<Vec<UsageMeter>, String> {
-    cached_accounts(&list.provider, &list.accounts, now)
+    Ok(cached_accounts(&list.provider, &list.accounts, now))
 }
 
-fn cached_accounts(
-    provider: &str,
-    accounts: &[Account],
-    now: i64,
-) -> Result<Vec<UsageMeter>, String> {
+fn login_digest(account: &Account) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    if account.auth_state != AuthState::SignedIn {
+        return None;
+    }
+    let email = account.email.as_deref()?.trim().to_lowercase();
+    (!email.is_empty()).then(|| format!("{:x}", Sha256::digest(email)))
+}
+
+fn cached_accounts(provider: &str, accounts: &[Account], now: i64) -> Vec<UsageMeter> {
     let stored = match cache_path(provider) {
         Err(_) => Err("refused cache"),
         Ok(path) => match std::fs::read(path) {
@@ -182,6 +187,15 @@ fn cached_accounts(
             Err(_) => Err("unavailable cache"),
         },
     };
+    meters_from_cache(provider, accounts, now, stored)
+}
+
+fn meters_from_cache(
+    provider: &str,
+    accounts: &[Account],
+    now: i64,
+    stored: Result<Option<Cache>, &str>,
+) -> Vec<UsageMeter> {
     let mut meters = Vec::new();
     for account in accounts {
         if account.usage_state == "no_source" {
@@ -198,53 +212,42 @@ fn cached_accounts(
             ));
             continue;
         }
-        match &stored {
-            Ok(Some(cache)) => match cache
-                .accounts
-                .iter()
-                .find(|entry| entry.home == account.home)
-            {
-                Some(entry) if !entry.meters.is_empty() => {
-                    meters.extend(entry.meters.iter().map(|meter| {
-                        let mut meter = meter.clone();
-                        meter.provider = provider.into();
-                        meter.account = Some(account.name.clone());
-                        meter.label = account.name.clone();
-                        normalize_meter(&meter, now)
-                    }));
-                }
-                Some(_) => meters.push(status_meter(
-                    provider,
-                    Some(account),
-                    "missing",
-                    ReasonCode::NoCachedUsage,
-                    None,
-                )),
-                None => meters.push(status_meter(
-                    provider,
-                    Some(account),
-                    "missing",
-                    ReasonCode::NoCachedUsage,
-                    None,
-                )),
-            },
-            Ok(None) => meters.push(status_meter(
-                provider,
-                Some(account),
-                "missing",
-                ReasonCode::NoCachedUsage,
-                None,
-            )),
-            Err(_) => meters.push(status_meter(
+        let Ok(cache) = &stored else {
+            meters.push(status_meter(
                 provider,
                 Some(account),
                 "failed",
                 ReasonCode::ReadFailed,
                 Some("Usage cache is unavailable"),
-            )),
+            ));
+            continue;
+        };
+        let entry = login_digest(account).and_then(|identity| {
+            cache.as_ref()?.accounts.iter().find(|entry| {
+                entry.home == account.home
+                    && entry.identity.as_deref() == Some(identity.as_str())
+                    && !entry.meters.is_empty()
+            })
+        });
+        if let Some(entry) = entry {
+            meters.extend(entry.meters.iter().map(|meter| {
+                let mut meter = meter.clone();
+                meter.provider = provider.into();
+                meter.account = Some(account.name.clone());
+                meter.label = account.name.clone();
+                normalize_meter(&meter, now)
+            }));
+        } else {
+            meters.push(status_meter(
+                provider,
+                Some(account),
+                "missing",
+                ReasonCode::NoCachedUsage,
+                None,
+            ));
         }
     }
-    Ok(meters)
+    meters
 }
 
 pub(crate) fn normalize_meter(stored: &UsageMeter, now: i64) -> UsageMeter {
@@ -355,7 +358,7 @@ fn refresh_accounts(
     deadline: Instant,
 ) -> Result<Usage, String> {
     let path = cache_path(provider.id())?;
-    let previous = cached_accounts(provider.id(), &accounts, now_seconds())?;
+    let previous = cached_accounts(provider.id(), &accounts, now_seconds());
     let resolved_cache = resolved_parent(&path);
     if accounts.iter().any(|account| {
         resolved_cache.starts_with(resolved_parent(std::path::Path::new(&account.home)))
@@ -427,6 +430,7 @@ fn refresh_accounts(
             },
         };
         cache.accounts.push(CachedAccount {
+            identity: login_digest(&account),
             home: account.home,
             meters: account_meters.clone(),
         });
@@ -448,4 +452,49 @@ fn refresh_accounts(
     }
     written?;
     Ok(Usage { meters })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audit_regression_usage_does_not_follow_a_home_to_a_new_login() {
+        let account = Account {
+            name: "work".into(),
+            email: Some("new@example.invalid".into()),
+            home: "/same-home".into(),
+            env: Default::default(),
+            auth_state: AuthState::SignedIn,
+            usage_state: "missing".into(),
+            usage_source: Some("claude_api".into()),
+            remaining_pct: None,
+            summary: None,
+            invalid_home: false,
+            fable_spent: false,
+            renewable: false,
+        };
+        let mut meter = status_meter(
+            "claude",
+            Some(&account),
+            "fresh",
+            ReasonCode::NoCachedUsage,
+            None,
+        );
+        meter.used_pct = Some(15);
+        meter.as_of_seconds = Some(1000);
+        meter.reason = None;
+        meter.reason_code = None;
+        let cache = serde_json::from_value(serde_json::json!({
+            "accounts": [{
+                "home": account.home,
+                "identity": "previous-login-fingerprint",
+                "meters": [meter]
+            }]
+        }))
+        .unwrap();
+        let meters = meters_from_cache("claude", &[account], 1000, Ok(Some(cache)));
+        assert_eq!(meters[0].state, "missing");
+        assert_eq!(meters[0].used_pct, None);
+    }
 }

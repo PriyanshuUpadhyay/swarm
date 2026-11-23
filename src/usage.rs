@@ -25,6 +25,8 @@ struct Cache {
 #[derive(Serialize, Deserialize)]
 struct CachedAccount {
     home: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    identity: Option<String>,
     meters: Vec<UsageMeter>,
 }
 
