@@ -58,7 +58,7 @@ export const DEFAULT_ROLE = "chat";
 const START_TIMEOUT_MS = 10_000;
 
 /** Options of a start: whether the composer sent it, and the text that goes after its prompt. */
-type StartOptions = { composer?: boolean; queued?: string[] };
+type StartOptions = { composer?: boolean; submittedText?: string; queued?: string[] };
 
 /** How many frames of unknown starts wait for their POST reply. */
 const EARLY_KEPT = 50;
@@ -191,7 +191,7 @@ export class NewChat {
 
   /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. Only a
    *  start that the composer sent closes it and takes its text. */
-  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, queued = [] }: StartOptions = {}): Promise<boolean> {
+  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, submittedText, queued = [] }: StartOptions = {}): Promise<boolean> {
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
     this.posting = true;
@@ -200,7 +200,8 @@ export class NewChat {
     const from = this.app.view.workspace ?? cwd;
     const nav = this.app.navSeq;
     // The composer on screen; a send from the page's composer leaves a hidden one and its text.
-    const sent = this.composing()?.seq;
+    const sent = this.composing();
+    const submitted = submittedText ?? sent?.text ?? this.state.unsent;
 
     let id: string;
     try {
@@ -214,12 +215,16 @@ export class NewChat {
       this.posting = false;
     }
 
-    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), run, steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: "" };
-    // A composer the owner opened while this one posted stays open, with its text.
-    const closes = fromComposer && sent !== undefined && this.state.composer?.seq === sent;
+    // A composer the owner opened while this one posted keeps its own text.
+    const closes = fromComposer && sent !== null && this.state.composer?.seq === sent.seq;
+    const fromPage = fromComposer && sent === null;
+    const latest = closes ? sent.text : fromPage ? this.state.unsent : submitted;
+    const added = latest.startsWith(submitted) ? latest.slice(submitted.length).trimStart() : latest;
+    // The compose box still owns any upload in flight and writes its result to unsent.
+    const uploading = hasPendingImage(added);
+    const start: Starting = { id, cwd, place, from, title: startTitle(prompt), prompt: prompt.trim(), run, steps: [], workspace: null, branch: null, setup: null, error: null, queued, draft: uploading ? "" : added };
     const composer = closes ? null : this.state.composer;
-    // The page composer has no `composer` state, and its text in `unsent` is the prompt it sent.
-    const unsent = closes || (fromComposer && sent === undefined) ? "" : this.state.unsent;
+    const unsent = uploading ? added : fromPage ? "" : this.state.unsent;
     this.set({ composer, unsent, starts: { ...this.state.starts, [id]: start }, viewing: { id, nav } });
     const early = this.early.filter((data) => data.start === id);
     this.early = this.early.filter((data) => data.start !== id);

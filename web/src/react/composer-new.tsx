@@ -186,10 +186,9 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     const changed = run && !sameRun(run, base) ? run : null;
     // pi runs a skill only at the message's start, so the first prompt goes as the chat box sends it.
     const first = provider ? (await toSend(text, provider, slash.list, () => app.newChat.commands(target.cwd, provider))).text : text;
-    const ok = await app.newChat.start(target.cwd, first, place, { role: profile?.name ?? role, run: changed }, { composer: true });
-    // A composer that stays on screen, as when the owner moved during the POST, sends again.
+    const ok = await app.newChat.start(target.cwd, first, place, { role: profile?.name ?? role, run: changed }, { composer: true, submittedText: text });
     setSending(false);
-    if (ok) {
+    if (ok && textNow.current === text) {
       textNow.current = "";
       setText("");
     }

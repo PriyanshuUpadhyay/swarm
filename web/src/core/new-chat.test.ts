@@ -103,13 +103,28 @@ describe("new chat composer", () => {
     expect(calls).toEqual(["open chat-9", "draft chat-9 Fix it\n\nThen the docs", "notice Your first prompt did not send: chair is gone. Your text is in the chat's text box."]);
   });
 
+  it.each([false, true])("preserves text typed during the start POST (overlay: %s)", async (overlay) => {
+    let resolvePost = (_value: { start: string }) => {};
+    const post = new Promise<{ start: string }>((resolve) => (resolvePost = resolve));
+    const app = stub({ api: { post: () => post } });
+    const chats = new NewChat(app as unknown as App);
+    if (overlay) chats.open();
+    chats.typed("Fix it");
+    const started = chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { run: null }, { composer: true });
+    chats.typed("Fix it\nThen the docs");
+    resolvePost({ start: "s1" });
+    await started;
+    expect(chats.shown()).toMatchObject({ prompt: "Fix it", draft: "Then the docs" });
+  });
+
   it("does not leave the selected chat when a pending start gets listed", async () => {
-    const treeRead = Promise.withResolvers<void>();
+    let resolveTree = () => {};
+    const treeRead = new Promise<void>((resolve) => (resolveTree = resolve));
     const opened: string[] = [];
     const app = stub({
       api: { post: async () => ({ start: "s1" }) },
       navigation: {
-        refreshSnapshot: () => treeRead.promise,
+        refreshSnapshot: () => treeRead,
         openChat: (id: string) => {
           opened.push(id);
           app.navSeq++;
@@ -124,7 +139,7 @@ describe("new chat composer", () => {
 
     const done = chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
     app.navigation.openChat("other");
-    treeRead.resolve();
+    resolveTree();
     await done;
     expect(opened).toEqual(["other"]);
   });
