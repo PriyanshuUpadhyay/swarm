@@ -68,6 +68,8 @@ final class UsageModel {
     @ObservationIgnored var toggleFromKeyboard: (() -> Void)?
     /// Set by the app delegate: closes the card and the popup at once, after a click.
     @ObservationIgnored var closeHUD: (() -> Void)?
+    /// Set by the app delegate: Swarm.app is the front app, so the owner sees new items there.
+    @ObservationIgnored var swarmInFront: (() -> Bool)?
     /// ⌃⌥⇧⌘U was registered; another app may hold it.
     var hotKeyReady = false
     /// A theme the owner pinned from the menu; nil follows the clock.
@@ -218,8 +220,8 @@ final class UsageModel {
         if inbox != self.inbox { self.inbox = inbox }
 
         var next = prunePopup(popup, inbox: inbox)
-        // The open card lists the same items, so it needs no popup.
-        if !isOpen { next = mergePopup(next, new: new, now: now) }
+        // The open card lists the same items, so it needs no popup. Swarm.app in front shows them too.
+        if !isOpen, swarmInFront?() != true { next = mergePopup(next, new: new, now: now) }
         popup = next
 
         // The open card shows a new item at once, so VoiceOver hears it there too.

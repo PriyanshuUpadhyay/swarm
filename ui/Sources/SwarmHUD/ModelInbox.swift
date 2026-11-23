@@ -6,6 +6,8 @@ extension UsageModel {
     /// Closes the HUD at once, then opens the chat where it lives (the app, or its terminal) and
     /// marks its rows seen. A chat that does not open comes back as a popup line that says why.
     func openChat(session: String, agent: String?) {
+        // `swarm focus` logs the time from this click in open-chat.log.
+        let clicked = String(Int64(Date().timeIntervalSince1970 * 1000))
         let title = inbox.needs.first { $0.session == session }?.title
             ?? inbox.rows.first { $0.session == session }?.title
             ?? inbox.active.first { $0.session == session }?.title ?? "Chat"
@@ -16,7 +18,8 @@ extension UsageModel {
         Task {
             // `focus` takes the chair's pane when the agent's pane is gone. A chat that did not open
             // is not seen, so it stays in the inbox.
-            let focused = await offPool { run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5) }
+            let focused = await offPool { run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5,
+                                                environment: ["SWARM_OPEN_CLICKED_MS": clicked]) }
             opening.remove(session)
             if case .failure(let error) = focused {
                 actionError = "Could not open: \(error.text)"

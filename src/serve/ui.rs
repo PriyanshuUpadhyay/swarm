@@ -55,7 +55,9 @@ fn open_ui(args: &[String], chat: Option<&str>) -> Result<(), Box<dyn std::error
     if assets.is_none() && WEB_ASSETS.is_empty() {
         return Err("swarm ui: this build has no web UI; run `pnpm --dir web build` and rebuild, or pass --assets DIR".into());
     }
+    let started = std::time::Instant::now();
     let running = recorded(&record).filter(|(url, ..)| answers(url));
+    let probe_ms = started.elapsed().as_millis();
     if foreground {
         if let Some((url, ..)) = running {
             return Err(format!(
@@ -87,20 +89,34 @@ fn open_ui(args: &[String], chat: Option<&str>) -> Result<(), Box<dyn std::error
     // ponytail: a page that reloads for a new build in this second can miss the `show` frame and
     // keep its own chat; the app still comes to the front.
     let page = chat.map_or_else(|| url.clone(), |session| chat_url(&url, session));
+    let mut timing = OpenTiming {
+        probe_ms,
+        spawned,
+        ..OpenTiming::default()
+    };
+    let show_started = std::time::Instant::now();
     loop {
+        timing.tries += 1;
         let reached = match chat {
             Some(session) => show_chat(&url, session) > 0,
             None => reload_pages(&url) > 0,
         };
         if reached || std::time::Instant::now() >= deadline {
+            timing.show_ms = show_started.elapsed().as_millis();
+            timing.pages_reached = reached;
             // ponytail: a changed Swarm.app shell takes effect at its next launch, not on Restart.
             if !reached || (shell_app().is_some() && std::env::var_os(RELOAD_ONLY).is_none()) {
                 // `swarm ui` keeps going when `open` fails, as it always did; a notice click
                 // reports it, so it does not claim a window it never opened.
+                let open_started = std::time::Instant::now();
                 let opened = open_page(&page);
-                if chat.is_some() {
+                timing.open_ms = Some(open_started.elapsed().as_millis());
+                if let Some(session) = chat {
+                    log_open(&root, session, &timing);
                     opened?;
                 }
+            } else if let Some(session) = chat {
+                log_open(&root, session, &timing);
             }
             break;
         }
@@ -108,6 +124,39 @@ fn open_ui(args: &[String], chat: Option<&str>) -> Result<(), Box<dyn std::error
     }
     start_hud();
     Ok(())
+}
+
+/// The time of each step of a chat open, logged to find why a HUD or notice click is slow.
+#[derive(Default)]
+struct OpenTiming {
+    probe_ms: u128,
+    spawned: bool,
+    tries: u32,
+    show_ms: u128,
+    pages_reached: bool,
+    open_ms: Option<u128>,
+}
+
+/// Appends one line per chat open to `<root>/open-chat.log`. The HUD passes its click time in
+/// `SWARM_OPEN_CLICKED_MS` (Unix ms), so the line also shows the wait before this process ran.
+/// A failed write is ignored, because the log must not stop the open.
+fn log_open(root: &Path, session: &str, timing: &OpenTiming) {
+    use std::io::Write;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis());
+    let clicked = std::env::var("SWARM_OPEN_CLICKED_MS")
+        .ok()
+        .and_then(|ms| ms.parse::<u128>().ok())
+        .map_or("-".to_string(), |ms| now.saturating_sub(ms).to_string());
+    let open_ms = timing.open_ms.map_or("-".to_string(), |ms| ms.to_string());
+    let line = format!(
+        "{now} session={session} click_to_done_ms={clicked} probe_ms={} spawned={} show_ms={} tries={} pages={} open_ms={open_ms}\n",
+        timing.probe_ms, timing.spawned, timing.show_ms, timing.tries, timing.pages_reached,
+    );
+    if let Ok(mut log) = owner_log(&root.join("open-chat.log")) {
+        let _ = log.write_all(line.as_bytes());
+    }
 }
 
 /// Set by the page's Restart server: the window that asked is open, so the reload is enough and

@@ -126,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.makeMenu = { [weak self] in self?.contextMenu() }
         model.toggleFromKeyboard = { [weak self] in self?.toggleFromKeyboard() }
         model.closeHUD = { [weak self] in self?.closeFromClick() }
+        model.swarmInFront = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "io.github.priyanshuupadhyay.swarm" }
 
         // The popup takes no focus, so VoiceOver hears its new line as an announcement.
         // A system sound, so nothing is bundled; no other swarm notice uses it.
