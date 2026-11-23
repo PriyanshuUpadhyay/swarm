@@ -32,17 +32,9 @@ impl From<Code> for Fault {
 type Result<T> = std::result::Result<T, Fault>;
 type Answer<T> = oneshot::Sender<Result<T>>;
 
-enum Job {
-    Page {
-        tail: u16,
-        before: Option<u64>,
-    },
-    #[allow(dead_code)] // The saved-only test mounts this module on its own.
-    Native(Operation),
-}
 enum Order {
     Start {
-        job: Job,
+        operation: Operation,
         budget: Budget,
         begun: Answer<u64>,
         done: Answer<Value>,
@@ -50,11 +42,6 @@ enum Order {
     Cancel {
         target: u64,
         budget: Budget,
-        done: Answer<()>,
-    },
-    Close {
-        budget: Budget,
-        done: Answer<()>,
     },
 }
 
@@ -62,14 +49,12 @@ enum Order {
 pub struct Source {
     orders: mpsc::UnboundedSender<Order>,
 }
-pub struct PageJob {
+struct NativeJob {
     orders: mpsc::UnboundedSender<Order>,
     target: u64,
     done: Option<oneshot::Receiver<Result<Value>>>,
-    cancelled: bool,
 }
 impl Source {
-    #[allow(dead_code)] // The saved-only test mounts this module on its own.
     pub fn is_closed(&self) -> bool {
         self.orders.is_closed()
     }
@@ -128,79 +113,37 @@ impl Source {
         };
         let opened = connection.open(format, path, budget).await;
         if let Err(fault) = opened {
-            let _ = connection.cleanup(true, budget).await;
+            let _ = connection.cleanup(budget).await;
             return Err(fault);
         }
         let (orders, rx) = mpsc::unbounded_channel();
         tokio::spawn(connection.run(rx));
         Ok(Self { orders })
     }
-    pub async fn start_page(
-        &self,
-        tail: u16,
-        before: Option<u64>,
-        duration: Duration,
-    ) -> Result<PageJob> {
-        self.start(Job::Page { tail, before }, Budget::new(duration)?)
-            .await
-    }
-    #[allow(dead_code)] // The saved-only test mounts this module on its own.
     pub async fn native(&self, operation: Operation, duration: Duration) -> Result<Value> {
-        self.start(Job::Native(operation), Budget::new(duration)?)
-            .await?
-            .wait()
-            .await
-    }
-    async fn start(&self, job: Job, budget: Budget) -> Result<PageJob> {
+        let budget = Budget::new(duration)?;
         let (begun, begin) = oneshot::channel();
         let (done, result) = oneshot::channel();
         self.orders
             .send(Order::Start {
-                job,
+                operation,
                 budget,
                 begun,
                 done,
             })
             .map_err(|_| Fault::Core)?;
         let target = begin.await.map_err(|_| Fault::Core)??;
-        Ok(PageJob {
+        NativeJob {
             orders: self.orders.clone(),
             target,
             done: Some(result),
-            cancelled: false,
-        })
-    }
-    pub async fn page(&self, tail: u16, before: Option<u64>, duration: Duration) -> Result<Value> {
-        self.start_page(tail, before, duration).await?.wait().await
-    }
-    pub async fn close(self, duration: Duration) -> Result<()> {
-        let budget = Budget::new(duration)?;
-        let (done, result) = oneshot::channel();
-        self.orders
-            .send(Order::Close { budget, done })
-            .map_err(|_| Fault::Core)?;
-        result.await.map_err(|_| Fault::Core)?
+        }
+        .wait()
+        .await
     }
 }
-impl PageJob {
-    pub async fn cancel(&mut self, duration: Duration) -> Result<()> {
-        if self.cancelled {
-            return Ok(());
-        }
-        let budget = Budget::new(duration)?;
-        let (done, result) = oneshot::channel();
-        self.orders
-            .send(Order::Cancel {
-                target: self.target,
-                budget,
-                done,
-            })
-            .map_err(|_| Fault::Core)?;
-        result.await.map_err(|_| Fault::Core)??;
-        self.cancelled = true;
-        Ok(())
-    }
-    pub async fn wait(mut self) -> Result<Value> {
+impl NativeJob {
+    async fn wait(mut self) -> Result<Value> {
         let result = self
             .done
             .as_mut()
@@ -208,24 +151,18 @@ impl PageJob {
             .await
             .map_err(|_| Fault::Core)?;
         self.done.take();
-        if self.cancelled {
-            Err(Fault::Cancelled)
-        } else {
-            result
-        }
+        result
     }
 }
-impl Drop for PageJob {
+impl Drop for NativeJob {
     fn drop(&mut self) {
-        if self.done.is_some() && !self.cancelled {
-            let (done, _) = oneshot::channel();
-            if let Ok(budget) = Budget::new(Duration::from_secs(1)) {
-                let _ = self.orders.send(Order::Cancel {
-                    target: self.target,
-                    budget,
-                    done,
-                });
-            }
+        if self.done.is_some()
+            && let Ok(budget) = Budget::new(Duration::from_secs(1))
+        {
+            let _ = self.orders.send(Order::Cancel {
+                target: self.target,
+                budget,
+            });
         }
     }
 }

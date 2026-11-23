@@ -1,7 +1,6 @@
 //! A per-source authority keeps saved child failures apart from retained rows.
 use std::{fs::File, os::fd::AsFd, path::Path, time::Duration};
 use swarm::view::transcript::{
-    reader_rows::ReaderRows,
     source::NativeFormat,
     source_follow::NativeStream,
     worker_protocol::{Binding, MAX_PART_BYTES, MAX_SOURCE_ID_BYTES, v2::*},
@@ -16,20 +15,17 @@ struct Held {
     binding: Binding,
     path: String,
     format: String,
-    rows: Option<ReaderRows>,
     native: Option<NativeStream>,
 }
 struct Active {
     tag: Tag,
     budget: Budget,
-    before: bool,
-    native: bool,
     running: saved::Running,
-    terminal: Option<Terminal>,
+    cancel: Option<PendingCancel>,
 }
-enum Terminal {
-    Cancel { id: u64, budget: Budget },
-    Close { id: u64, budget: Budget },
+struct PendingCancel {
+    id: u64,
+    budget: Budget,
 }
 struct Session {
     ready: bool,
@@ -114,8 +110,7 @@ async fn serve() -> Result<()> {
                 let budget = received.checked_add(Duration::from_millis(remaining_work_ms)).map(Budget).ok_or(Code::BadRequest);
                 let processed = match budget { Ok(budget) => session.control(request, budget).await, Err(code) => Err(code) };
                 match processed {
-                    Ok(true) => break Ok(()),
-                    Ok(false) => {},
+                    Ok(()) => {},
                     Err(code) => {
                         let budget = Budget::new(Duration::from_secs(1))?;
                         if let Err(code) = session.send(Reply::Fault { request_id: id, binding, code }, budget).await { break Err(code); }
@@ -124,7 +119,7 @@ async fn serve() -> Result<()> {
             }
             event = completed.recv(), if session.active.is_some() => {
                 let Some(event) = event else { break Err(Code::Io); };
-                match session.complete(event).await { Ok(true) => break Ok(()), Ok(false) => {}, Err(code) => break Err(code) }
+                if let Err(code) = session.complete(event).await { break Err(code); }
             }
         }
     };
@@ -152,7 +147,7 @@ impl Session {
             Err(Code::BindingMismatch)
         }
     }
-    async fn control(&mut self, request: Request, mut budget: Budget) -> Result<bool> {
+    async fn control(&mut self, request: Request, mut budget: Budget) -> Result<()> {
         budget.check()?;
         let (id, binding, _) = request.context();
         if let Some(id) = id {
@@ -213,7 +208,6 @@ impl Session {
                     binding: binding.clone(),
                     path,
                     format,
-                    rows: None,
                     native: None,
                 });
                 self.send(
@@ -224,49 +218,6 @@ impl Session {
                     budget,
                 )
                 .await?;
-            }
-            Request::Page {
-                request_id,
-                binding,
-                tail,
-                before,
-                ..
-            } => {
-                if self.active.is_some() || !(1..=2000).contains(&tail) {
-                    return Err(Code::BadRequest);
-                }
-                let source = self.held.as_ref().ok_or(Code::BadRequest)?;
-                let (start_byte, end_byte) = saved::range(&source.file, tail, before, budget)?;
-                self.transport = self.transport.checked_add(1).ok_or(Code::Core)?;
-                let tag = Tag {
-                    request_id,
-                    binding,
-                    transport_id: self.transport,
-                };
-                let job = saved::Job {
-                    tag: tag.clone(),
-                    path: source.path.clone(),
-                    format: source.format.clone(),
-                    start_byte,
-                    end_byte,
-                    remaining_work_ms: budget.remaining_ms()?,
-                    eof: false,
-                };
-                let running = saved::spawn(
-                    source.file.try_clone().map_err(|_| Code::Io)?,
-                    job,
-                    budget,
-                    self.events.clone(),
-                )?;
-                self.active = Some(Active {
-                    tag: tag.clone(),
-                    budget,
-                    before: before.is_some(),
-                    native: false,
-                    running,
-                    terminal: None,
-                });
-                self.send(Reply::Begin { tag }, budget).await?;
             }
             Request::Native {
                 request_id,
@@ -337,10 +288,8 @@ impl Session {
                     self.active = Some(Active {
                         tag: tag.clone(),
                         budget,
-                        before: false,
-                        native: true,
                         running,
-                        terminal: None,
+                        cancel: None,
                     });
                     self.send(Reply::Begin { tag }, budget).await?;
                 }
@@ -351,95 +300,48 @@ impl Session {
                 ..
             } => {
                 let active = self.active.as_mut().ok_or(Code::BadRequest)?;
-                if target_request_id != active.tag.request_id || active.terminal.is_some() {
+                if target_request_id != active.tag.request_id || active.cancel.is_some() {
                     return Err(Code::BadRequest);
                 }
-                active.terminal = Some(Terminal::Cancel {
+                active.cancel = Some(PendingCancel {
                     id: request_id,
                     budget,
                 });
                 active.running.cancel(budget);
             }
-            Request::Close {
-                request_id,
-                binding,
-                ..
-            } => {
-                if let Some(active) = self.active.as_mut() {
-                    if active.terminal.is_some() {
-                        return Err(Code::BadRequest);
-                    }
-                    active.terminal = Some(Terminal::Close {
-                        id: request_id,
-                        budget,
-                    });
-                    active.running.cancel(budget);
-                } else {
-                    self.held.take();
-                    self.send(
-                        Reply::Closed {
-                            request_id,
-                            binding,
-                        },
-                        budget,
-                    )
-                    .await?;
-                    return Ok(true);
-                }
-            }
         }
-        Ok(false)
+        Ok(())
     }
-    async fn complete(&mut self, completion: saved::Completion) -> Result<bool> {
+    async fn complete(&mut self, completion: saved::Completion) -> Result<()> {
         let active = self.active.take().ok_or(Code::Core)?;
         if completion.tag != active.tag {
             return Err(Code::BindingMismatch);
         }
         active.running.task.await.map_err(|_| Code::Io)?;
-        if let Some(terminal) = active.terminal {
-            return match terminal {
-                Terminal::Cancel { id, budget } => {
-                    self.send(
-                        Reply::Fenced {
-                            tag: active.tag.clone(),
-                        },
-                        budget,
-                    )
-                    .await?;
-                    self.send(
-                        Reply::Cancelled {
-                            request_id: id,
-                            binding: active.tag.binding,
-                            target_request_id: active.tag.request_id,
-                            transport_id: active.tag.transport_id,
-                            exit: completion.exit,
-                        },
-                        budget,
-                    )
-                    .await?;
-                    Ok(false)
-                }
-                Terminal::Close { id, budget } => {
-                    self.held.take();
-                    self.send(
-                        Reply::Closed {
-                            request_id: id,
-                            binding: active.tag.binding,
-                        },
-                        budget,
-                    )
-                    .await?;
-                    Ok(true)
-                }
-            };
+        if let Some(PendingCancel { id, budget }) = active.cancel {
+            self.send(
+                Reply::Fenced {
+                    tag: active.tag.clone(),
+                },
+                budget,
+            )
+            .await?;
+            self.send(
+                Reply::Cancelled {
+                    request_id: id,
+                    binding: active.tag.binding,
+                    target_request_id: active.tag.request_id,
+                    transport_id: active.tag.transport_id,
+                    exit: completion.exit,
+                },
+                budget,
+            )
+            .await?;
+            return Ok(());
         }
         let result = completion.result.and_then(|payload| {
             active.budget.check()?;
-            if active.native {
-                serde_json::to_vec(&payload).map_err(|_| Code::Core)
-            } else {
-                self.page(payload, active.before, active.budget)
-            }
+            serde_json::to_vec(&payload).map_err(|_| Code::Core)
         });
         let bytes = match result {
             Ok(bytes) => bytes,
@@ -453,11 +355,10 @@ impl Session {
                     Budget::new(Duration::from_secs(1))?,
                 )
                 .await?;
-                return Ok(false);
+                return Ok(());
             }
         };
-        self.publish(active.tag, bytes, active.budget).await?;
-        Ok(false)
+        self.publish(active.tag, bytes, active.budget).await
     }
     async fn publish(&mut self, tag: Tag, bytes: Vec<u8>, budget: Budget) -> Result<()> {
         let mut part_count = 0;
@@ -483,28 +384,5 @@ impl Session {
         )
         .await?;
         Ok(())
-    }
-    fn page(&mut self, payload: saved::Payload, before: bool, budget: Budget) -> Result<Vec<u8>> {
-        let held = self.held.as_mut().ok_or(Code::Core)?;
-        let mut page = ReaderRows::empty(payload.start_byte, held.format == "codex");
-        for line in payload.lines {
-            budget.check()?;
-            page.ingest(line.start_byte, line.end_byte, &line.events);
-        }
-        let mut state = held.rows.clone().unwrap_or_else(|| page.clone());
-        let page = if !before {
-            state.cached_tail(payload.start_byte, payload.end_byte)
-        } else {
-            None
-        }
-        .unwrap_or_else(|| state.merge_page(page, before));
-        let bytes = serde_json::to_vec(&serde_json::json!({
-            "page": {"start_offset": payload.start_byte, "end_offset": payload.end_byte},
-            "rows": page.rows, "usage": page.usage, "remove": page.remove,
-        }))
-        .map_err(|_| Code::Core)?;
-        budget.check()?;
-        held.rows = Some(state);
-        Ok(bytes)
     }
 }

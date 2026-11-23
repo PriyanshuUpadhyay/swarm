@@ -106,13 +106,6 @@ pub mod v2 {
             path: String,
             remaining_work_ms: u64,
         },
-        Page {
-            request_id: u64,
-            binding: Binding,
-            tail: u16,
-            before: Option<u64>,
-            remaining_work_ms: u64,
-        },
         Native {
             request_id: u64,
             binding: Binding,
@@ -125,11 +118,6 @@ pub mod v2 {
             target_request_id: u64,
             remaining_work_ms: u64,
         },
-        Close {
-            request_id: u64,
-            binding: Binding,
-            remaining_work_ms: u64,
-        },
     }
     impl Request {
         pub fn context(&self) -> (Option<u64>, Option<&Binding>, u64) {
@@ -138,12 +126,6 @@ pub mod v2 {
                     remaining_work_ms, ..
                 } => (None, None, *remaining_work_ms),
                 Self::Open {
-                    request_id,
-                    binding,
-                    remaining_work_ms,
-                    ..
-                }
-                | Self::Page {
                     request_id,
                     binding,
                     remaining_work_ms,
@@ -160,11 +142,6 @@ pub mod v2 {
                     binding,
                     remaining_work_ms,
                     ..
-                }
-                | Self::Close {
-                    request_id,
-                    binding,
-                    remaining_work_ms,
                 } => (Some(*request_id), Some(binding), *remaining_work_ms),
             }
         }
@@ -208,10 +185,6 @@ pub mod v2 {
             target_request_id: u64,
             transport_id: u64,
             exit: Exit,
-        },
-        Closed {
-            request_id: u64,
-            binding: Binding,
         },
         Fault {
             request_id: Option<u64>,
