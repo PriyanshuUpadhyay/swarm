@@ -1,6 +1,6 @@
 ---
 name: engineering-standards
-description: "Supply engineering rules, marked as protocol, project rule, or advice. Use when a change touches an API payload, a data model or query, a retry or deadline, a quota or limit counter, or an authorization or entitlement read."
+description: "Supply engineering rules marked protocol, project rule, or advice. Use when a change touches an API payload, data model or query, retry or deadline, quota or limit counter, authorization or entitlement read, or adds a dependency or tool."
 license: MIT
 metadata:
   kind: rule

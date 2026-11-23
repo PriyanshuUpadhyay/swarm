@@ -59,3 +59,9 @@ A plan shows shape, never production cost, so P2 passing is not a benchmark.
 
 Whether retry-with-backoff or backpressure and load-shedding should be the default primitive is
 **contested**. It gets no row. It is an open trade-off for the owner, as `blocks/decision-with-default/SKILL.md` says.
+
+## 5. Dependencies
+
+| # | Rule | Status | Scope | Check | Source |
+|---|---|---|---|---|---|
+| E1 | When a change adds a dependency or tool, its task or plan record names what removing or replacing it would take: the files and calls that use it, and any config or stored data tied to it. A tool whose exit is unknown is a lock-in nobody chose. | ADVICE | a change that adds a package, service, or CLI tool | judgment | [ChiefGyk3D, "Enterprise engineering habits"](https://github.com/ChiefGyk3D/Clouds-Against-Humanity/wiki/Enterprise-Engineering-Habits), "Default to the boring, open, replaceable choice": "Before adopting a tool, ask what it would take to leave it"; council `2026-11-24-align-and-habits` |

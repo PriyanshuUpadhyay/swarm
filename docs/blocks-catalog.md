@@ -54,7 +54,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | base-rules | the rules every step keeps | `blocks/base-rules` | ✅ |
 | requirements | a frame as true-or-false claims (was behavior-claims) | `blocks/requirements` | ✅ |
 | scratch-home | trial and test state in a temporary home, apart from live settings | `blocks/scratch-home` | ✅ basic |
-| decision-with-default | a real fork with a marked default, and the trade-off form | `blocks/decision-with-default` (engineering-standards section 5 points here) | ✅ defect fixed |
+| decision-with-default | a real fork with a marked default, and the trade-off form | `blocks/decision-with-default` (engineering-standards sections 2 and 4 point here) | ✅ defect fixed |
 | prove-it-works | what proves a change works | `blocks/prove-it-works/SKILL.md` (red-first-check merged in) | ✅ |
 | checked-units | small units that each end in a check | `blocks/checked-units/SKILL.md` | ✅ |
 | when-to-extract | code stays inline without a reason | `blocks/when-to-extract/SKILL.md` | ✅ |

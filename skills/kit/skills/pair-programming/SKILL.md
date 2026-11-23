@@ -206,7 +206,8 @@ the task file.
 The `approve` of a behavior's last chunk is the commit order. Earlier chunks of the behavior stay
 uncommitted in the working tree, so one behavior is one commit. The agent writes the message: a subject of one line in the
 imperative, under 60 characters, that names the file or unit and the change; a body is optional
-and goes in only when the chunk cut a corner or rejected an option, in two sentences at most.
+and goes in only when the chunk cut a corner, left a risk open on purpose (name the risk and the
+reason), or rejected an option, in two sentences at most.
 Never ask "yes to commit" and never ask the user for a commit message.
 
 ## Behavior done
