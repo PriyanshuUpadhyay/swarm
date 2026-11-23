@@ -46,6 +46,9 @@ struct OpenContent: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Layout.inset)
+        // A click that hits no button closes the card; buttons inside take their own clicks first.
+        .contentShape(Rectangle())
+        .onTapGesture { model.closeHUD?() }
     }
 
     /// One heading per limit kind, the same for every provider, so Week sits in one column.

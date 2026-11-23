@@ -230,7 +230,7 @@ Notices come from the small SwarmNotify helper that ships beside `swarm`, so a n
 page, and the helper does not start at login (ADR 0077, ADR 0079). A click on a notice focuses the agent's pane.
 While the notch HUD's login item runs, it is the notice inbox, and a chat's notices post no macOS
 banner (ADR 0147). A chat that
-ends or asks drops a popup with its title and the start of its reply; Open goes to the chat. The
+ends or asks drops a popup with its title and the start of its reply; a click on the line goes to the chat. The
 open card lists the agents that wait, with a button per choice (up to 4), and the chats you have not seen.
 
 ## Owner scripts

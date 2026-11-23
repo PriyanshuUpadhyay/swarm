@@ -16,8 +16,6 @@ final class UsageModel {
         didSet {
             // The cursor that held the last popup does not hold the next one.
             if popup == nil { popupHovered = false }
-            // An error belongs to one popup line, so it goes with that line.
-            if let error = popupError, popup?.items.contains(where: { $0.key == error.key }) != true { popupError = nil }
             if popup != oldValue { wingsChanged?() }
         }
     }
@@ -34,9 +32,6 @@ final class UsageModel {
     var actionError: String? {
         didSet { if let actionError { announce?(actionError) } }
     }
-    /// A popup Open that failed: its line's key and why, shown on that line for `Popup.peek`.
-    var popupError: (key: String, text: String)?
-    @ObservationIgnored var popupErrorTimer: Task<Void, Never>?
     /// The chats with an Open on the way, so a double click runs one `swarm focus`.
     @ObservationIgnored var opening: Set<String> = []
     /// The need cards with an answer on the way, so a second click cannot send a second answer.
@@ -71,6 +66,8 @@ final class UsageModel {
     var phase: DayPhase = .at(Date())
     /// Set by the app delegate: opens the card for the keyboard or a VoiceOver action.
     @ObservationIgnored var toggleFromKeyboard: (() -> Void)?
+    /// Set by the app delegate: closes the card and the popup at once, after a click.
+    @ObservationIgnored var closeHUD: (() -> Void)?
     /// ⌃⌥⇧⌘U was registered; another app may hold it.
     var hotKeyReady = false
     /// A theme the owner pinned from the menu; nil follows the clock.

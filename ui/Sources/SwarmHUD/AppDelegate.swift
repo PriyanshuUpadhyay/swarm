@@ -20,12 +20,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let collectionBehavior: NSWindow.CollectionBehavior = [
         .canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle,
     ]
-    private let openDelay: TimeInterval = 0.12
-    private let closeDelay: TimeInterval = 0.35
+    /// Hover opens the card only once the cursor rests this long, so a cursor that passes the notch
+    /// on its way to the menu bar or a tab does not open it.
+    private let openDelay: TimeInterval = 0.2
+    /// A move larger than this, in points, restarts the rest.
+    private let restSlop: CGFloat = 6
+    private let closeDelay: TimeInterval = 0.15
     private let visibilityCheckDelay: TimeInterval = 1.0
     private let maxWedgeRecoveries = 3
 
     private var pendingOpen: DispatchWorkItem?
+    /// Where the cursor was when `pendingOpen` started its rest.
+    private var restFrom: NSPoint = .zero
     private var pendingClose: DispatchWorkItem?
     private var pendingVisibilityCheck: DispatchWorkItem?
     private var wedgeRecoveries = 0
@@ -115,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         view.activeRect = { [weak self] in self?.visibleRectInScreen() ?? .zero }
         view.makeMenu = { [weak self] in self?.contextMenu() }
         model.toggleFromKeyboard = { [weak self] in self?.toggleFromKeyboard() }
+        model.closeHUD = { [weak self] in self?.closeFromClick() }
 
         // The popup takes no focus, so VoiceOver hears its new line as an announcement.
         // A system sound, so nothing is bundled; no other swarm notice uses it.
@@ -197,6 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self.mouseMoved() }
             return event
         }) { mouseMonitors.append(local) }
+        // A scroll under a resting cursor is work in another app, not a wish to open the card.
+        if let scroll = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel, handler: { _ in
+            MainActor.assumeIsolated { self.pendingOpen?.cancel(); self.pendingOpen = nil }
+        }) { mouseMonitors.append(scroll) }
     }
 
     /// The one place hover and click-through are decided, from the cursor position.
@@ -234,7 +245,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleOpen() {
-        guard pendingOpen == nil else { return }
+        let cursor = NSEvent.mouseLocation
+        if pendingOpen != nil, hypot(cursor.x - restFrom.x, cursor.y - restFrom.y) <= restSlop { return }
+        pendingOpen?.cancel()
+        restFrom = cursor
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingOpen = nil
@@ -305,6 +319,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.makeKey()
     }
 
+    /// A click on a line, a row, or an empty spot: the card and the popup close at once, and hover
+    /// does not reopen the card until the cursor leaves.
+    private func closeFromClick() {
+        pendingClose?.cancel(); pendingClose = nil
+        keyOpen = false
+        hoverHeld = hoverRectInScreen().contains(NSEvent.mouseLocation)
+        model.popup = nil
+        if model.isOpen { setOpen(false) } else { mouseMoved() }
+    }
+
     private func closeFromKeyboard() {
         guard keyOpen else { return }
         keyOpen = false
@@ -317,44 +341,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clickThrough = ignore
         panel.ignoresMouseEvents = ignore
     }
-
-    // MARK: Menu (right click)
-
-    private func contextMenu() -> NSMenu {
-        let menu = NSMenu()
-        // Else the menu enables every item whose target answers, and the refresh state is lost.
-        menu.autoenablesItems = false
-        let refresh = NSMenuItem(title: "Refresh usage", action: #selector(refreshUsage), keyEquivalent: "r")
-        refresh.target = self
-        refresh.isEnabled = model.canRefresh
-        menu.addItem(refresh)
-        menu.addItem(.separator())
-        let theme = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
-        let themes = NSMenu()
-        for (title, phase) in [("Follow the clock", nil)] + DayPhase.allCases.map({ ($0.title, Optional($0)) }) {
-            let item = NSMenuItem(title: title, action: #selector(pickTheme(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = phase?.rawValue
-            item.state = model.pinnedPhase == phase ? .on : .off
-            themes.addItem(item)
-        }
-        theme.submenu = themes
-        menu.addItem(theme)
-        menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit Usage HUD", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-        return menu
-    }
-
-    @objc private func refreshUsage() { model.refresh() }
-
-    @objc private func pickTheme(_ item: NSMenuItem) {
-        model.pinnedPhase = (item.representedObject as? String).flatMap(DayPhase.init(rawValue:))
-    }
-
-    /// A clean exit, so the LaunchAgent (KeepAlive.SuccessfulExit = false) does not restart it.
-    @objc private func quit() { NSApp.terminate(nil) }
 
     // MARK: Lock-screen wedge recovery
     //
@@ -404,32 +390,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if self.panelIsOnScreen() { self.wedgeRecoveries = 0 } else { self.recover(rebuild: !rebuild) }
         }
     }
-}
-
-private final class HUDPanel: NSPanel {
-    var onCancel: (() -> Void)?
-    var onResignKey: (() -> Void)?
-    override var canBecomeKey: Bool { true }
-    override func cancelOperation(_ sender: Any?) { onCancel?() }
-    override func resignKey() {
-        super.resignKey()
-        onResignKey?()
-    }
-}
-
-/// Hosts the SwiftUI content and limits hit-testing to the visible shape, so the rest of the
-/// transparent panel never takes a click.
-final class HitTestHostingView<Content: View>: NSHostingView<Content> {
-    var activeRect: (() -> NSRect)?
-    var makeMenu: (() -> NSMenu?)?
-
-    // A nonactivating panel of an accessory app gets every click as a first mouse.
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let window, let rect = activeRect?() else { return nil }
-        return window.convertFromScreen(rect).contains(point) ? super.hitTest(point) : nil
-    }
-
-    override func menu(for event: NSEvent) -> NSMenu? { makeMenu?() }
 }

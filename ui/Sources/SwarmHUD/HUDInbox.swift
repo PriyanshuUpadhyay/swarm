@@ -61,8 +61,8 @@ struct PopupContent: View {
                 .frame(width: model.closedSize.width, height: model.notch.height)
             Spacer().frame(height: InboxLayout.popupGap)
             ForEach(model.popup?.items ?? [], id: \.key) { item in
-                PopupLine(item: item, error: model.popupError?.key == item.key ? model.popupError?.text : nil,
-                          open: { model.openChat(session: item.session, agent: item.agent, line: item.key) },
+                PopupLine(item: item,
+                          open: { model.openChat(session: item.session, agent: item.agent) },
                           dismiss: { model.popup = nil })
                     .frame(height: InboxLayout.popupItem)
             }
@@ -70,31 +70,42 @@ struct PopupContent: View {
         }
         .padding(.horizontal, Layout.ear)
         .frame(width: model.popupSize.width)
+        // A click that hits no line or button closes the popup.
+        .contentShape(Rectangle())
+        .onTapGesture { model.closeHUD?() }
     }
 }
 
+/// The whole line opens the chat; only the cross is a separate button.
 struct PopupLine: View {
     let item: PopupItem
-    /// Why Open failed; it takes the reply's place for a few seconds.
-    let error: String?
     let open: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Circle().fill(kindColor(item.kind)).frame(width: 7, height: 7)
-                    Text(item.title).fontWeight(.semibold).foregroundStyle(Palette.primary)
-                        .lineLimit(1).truncationMode(.tail)
-                    Text(item.word).foregroundStyle(kindColor(item.kind)).fixedSize()
+            Button(action: open) {
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Circle().fill(kindColor(item.kind)).frame(width: 7, height: 7)
+                            Text(item.title).fontWeight(.semibold).foregroundStyle(Palette.primary)
+                                .lineLimit(1).truncationMode(.tail)
+                            Text(item.word).foregroundStyle(kindColor(item.kind)).fixedSize()
+                        }
+                        .font(.system(size: 12))
+                        Text(item.body).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                            .lineLimit(2).truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Text("Click to open").font(.system(size: 11)).foregroundStyle(Palette.tertiary).fixedSize()
                 }
-                .font(.system(size: 12))
-                Text(error ?? item.body).font(.system(size: 11)).foregroundStyle(error == nil ? Palette.secondary : Palette.warn)
-                    .lineLimit(2).truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
             }
-            Button("Open", action: open).buttonStyle(InboxButton(prominent: true))
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(item.title), \(item.word): \(item.body)")
+            .accessibilityHint("Opens the chat")
             Button(action: dismiss) {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 18, height: 18)
                     .contentShape(Rectangle())
@@ -104,7 +115,6 @@ struct PopupLine: View {
         }
         .padding(.horizontal, Layout.rowPadding)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(item.title), \(item.word): \(item.body)")
     }
 }
 
@@ -174,7 +184,7 @@ struct InboxSection: View {
                 Text(row.kind.word).foregroundStyle(kindColor(row.kind)).fixedSize()
                 Text(row.body).foregroundStyle(Palette.secondary).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
-                Text("Open").foregroundStyle(Palette.tertiary).fixedSize()
+                Text("Click to open").foregroundStyle(Palette.tertiary).fixedSize()
             }
             .font(.system(size: 12))
             .padding(.horizontal, Layout.rowPadding)
@@ -198,7 +208,7 @@ extension InboxSection {
                 Text(chat.title).fontWeight(.semibold).foregroundStyle(Palette.primary).lineLimit(1).truncationMode(.tail)
                 Text(state).foregroundStyle(chat.blocked > 0 ? Palette.warn : Palette.secondary).fixedSize()
                 Spacer(minLength: 0)
-                Text("Open").foregroundStyle(Palette.tertiary).fixedSize()
+                Text("Click to open").foregroundStyle(Palette.tertiary).fixedSize()
             }
             .font(.system(size: 12))
             .padding(.horizontal, Layout.rowPadding)

@@ -43,8 +43,8 @@ and the newest row id it shows, so a row that came after the HUD drew stays unse
 **The HUD shows it.** The closed wing says `needs you` with the title as a chip on the right wing, else `stopped`,
 else `N done`. A red usage ring puts the used percent in the chip's place.
 A new item drops a popup out of the notch with the title, the kind, the reply's first sentence,
-and Open. Open runs `swarm focus` and marks the chat seen; when the focus fails, the popup line
-shows why for 4 s. A done popup closes after 4 s; a question, a stop, or a wait stays. A hover
+and "Click to open". A click on the line closes the HUD at once, then runs `swarm focus` and marks
+the chat seen; when the focus fails, the card's error line says why. A click on an empty spot closes the HUD. A done popup closes after 4 s; a question, a stop, or a wait stays. A hover
 on the notch row opens the card, which takes the popup's place. Items within 10 s join one popup. The open card's Inbox
 section lists up to 2 blocked agents, with a button per choice that runs `swarm answer` when the
 prompt has at most 4 choices and Open alone otherwise, and the unseen chats with Clear. The HUD

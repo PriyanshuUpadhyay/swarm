@@ -3,24 +3,20 @@ import SwarmHUDCore
 
 /// ADR 0147: the inbox actions of the open card and the popup.
 extension UsageModel {
-    /// Opens the chat where it lives (the app, or its terminal) and marks its rows seen. `line` is the
-    /// key of the popup line that asked, which shows the error when the chat does not open.
-    func openChat(session: String, agent: String?, line: String? = nil) {
+    /// Closes the HUD at once, then opens the chat where it lives (the app, or its terminal) and
+    /// marks its rows seen. A chat that does not open says why aloud and in the card's error line.
+    func openChat(session: String, agent: String?) {
+        closeHUD?()
         guard opening.insert(session).inserted else { return }
         inboxChanging()
         let swarm = swarm
         Task {
             // `focus` takes the chair's pane when the agent's pane is gone. A chat that did not open
-            // is not seen, so it stays in the inbox, and its popup line says why.
+            // is not seen, so it stays in the inbox.
             let focused = await offPool { run(swarm, ["focus", session, agent ?? "orchestrator"], timeout: 5) }
             opening.remove(session)
             if case .failure(let error) = focused {
-                // Setting actionError says it aloud, so the popup line does not.
-                let message = "Could not open: \(error.text)"
-                actionError = message
-                if let line, popup?.items.contains(where: { $0.key == line }) == true {
-                    showPopupError(line, message)
-                }
+                actionError = "Could not open: \(error.text)"
                 inboxChanged()
                 return
             }
@@ -30,19 +26,6 @@ extension UsageModel {
             let seen = await offPool { run(swarm, ["notices", "seen", session], timeout: 3) }
             if case .failure(let error) = seen { actionError = "Could not mark it seen: \(error.text)" } else { actionError = nil }
             inboxChanged()
-        }
-    }
-
-    /// Shows the error for `Popup.peek`, and keeps a done popup up that long too.
-    func showPopupError(_ line: String, _ text: String) {
-        popupError = (line, text)
-        popup?.lastAt = Date()
-        popupErrorTimer?.cancel()
-        popupErrorTimer = Task {
-            try? await Task.sleep(for: .seconds(Popup.peek))
-            guard !Task.isCancelled else { return }
-            popupError = nil
-            closeExpiredPopup()
         }
     }
 
