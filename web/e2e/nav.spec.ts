@@ -194,7 +194,8 @@ test("Recent lists chats across projects and opens one in another project from t
   const errors = await open(tab);
   const sessionIn = async (ws: string) => (await workspaceRow(tab, ws).locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
   const build = await sessionIn("ws-build");
-  const edit = await sessionIn("ws-edit");
+  // The ended chats have no composer. Use a live chair to check where focus goes.
+  const live = process.env.SWARM_E2E_LIVE!;
   await openChat(tab, build);
   await expect(tab.getByTestId("tab-strip")).toContainText("ws-build");
 
@@ -204,17 +205,17 @@ test("Recent lists chats across projects and opens one in another project from t
   await expect(tab.locator(`[data-testid="recent-row"][data-session="${build}"]`)).toBeFocused();
   const order = await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-session")));
 
-  const target = order.indexOf(edit);
+  const target = order.indexOf(live);
   expect(target).toBeGreaterThanOrEqual(0);
   await tab.keyboard.press("Home");
   await expect(rows.first()).toBeFocused();
   for (let i = 0; i < target; i++) await tab.keyboard.press("j");
-  await expect(tab.locator(`[data-testid="recent-row"][data-session="${edit}"]`)).toHaveAttribute("aria-selected", "true");
-  const saved = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat === edit);
+  const current = tab.locator(`[data-testid="recent-row"][data-session="${live}"]`);
+  await expect(current).toHaveAttribute("aria-selected", "true");
+  const saved = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat === live);
   await tab.keyboard.press("Enter");
-  await expect(tab.locator(`[data-testid="transcript"][data-chat="${edit}"][data-state="ready"]`)).toBeVisible();
-  await expect(tab.getByTestId("tab-strip")).toContainText("ws-edit");
-  const current = tab.locator(`[data-testid="recent-row"][data-session="${edit}"]`);
+  await expect(tab.locator(`[data-testid="transcript"][data-chat="${live}"][data-state="ready"]`)).toBeVisible();
+  await expect(tab.getByTestId("tab-strip")).toContainText("ws-live");
   const composer = tab.locator(".strip-chat .chat-input").getByTestId("composer");
   await expect(current).toHaveAttribute("aria-current", "true");
   await expect(composer).toBeFocused();
