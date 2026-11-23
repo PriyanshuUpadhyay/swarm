@@ -66,6 +66,7 @@ pub fn set_pane(
             ))",
         (pane_id, session_id, agent_id, moves_orchestrator),
     )?;
+    crate::hud::signal_changed();
     Ok(())
 }
 
@@ -318,6 +319,7 @@ pub fn clear_pane(
          state_detail = NULL, state_kind = NULL WHERE session_id = ?1 AND id = ?2",
         (session_id, agent_id),
     )?;
+    crate::hud::signal_changed();
     Ok(())
 }
 

@@ -18,12 +18,14 @@ enum InboxLayout {
     /// The open card shows this many need cards and rows; the rest are a "+N more".
     static let shownNeeds = 2
     static let shownRows = 5
+    static let shownActive = 5
     static let below: CGFloat = 6
 
     static func height(_ inbox: InboxSnapshot, error: Bool) -> CGFloat {
         var height: CGFloat = 0
         if !inbox.needs.isEmpty { height += sectionHeader + CGFloat(min(inbox.needs.count, shownNeeds)) * needCard }
         if !inbox.rows.isEmpty { height += sectionHeader + CGFloat(min(inbox.rows.count, shownRows)) * row }
+        if !inbox.active.isEmpty { height += sectionHeader + CGFloat(min(inbox.active.count, shownActive)) * row }
         if error { height += row }
         return height == 0 ? 0 : height + below
     }
@@ -135,6 +137,13 @@ struct InboxSection: View {
                 }
             }
 
+            if !inbox.active.isEmpty {
+                header("Active chats", more: inbox.activeTotal - min(inbox.active.count, InboxLayout.shownActive))
+                ForEach(inbox.active.prefix(InboxLayout.shownActive), id: \.session) { chat in
+                    activeView(chat).frame(height: InboxLayout.row)
+                }
+            }
+
             if let error = model.shownError {
                 Text(error).font(.system(size: 11)).foregroundStyle(Palette.warn)
                     .lineLimit(1).truncationMode(.tail)
@@ -175,6 +184,30 @@ struct InboxSection: View {
         .buttonStyle(.plain)
         .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
         .accessibilityLabel("\(row.title), \(row.kind.word): \(row.body)")
+        .accessibilityHint("Opens the chat")
+    }
+}
+
+extension InboxSection {
+    /// ADR 0156: a chat that still works; the whole row opens it.
+    func activeView(_ chat: ActiveChat) -> some View {
+        let state = chat.blocked > 0 ? InboxKind.waiting.word : "\(chat.working) working"
+        return Button { model.openChat(session: chat.session, agent: nil) } label: {
+            HStack(spacing: 8) {
+                Circle().fill(chat.blocked > 0 ? Palette.warn : theme.calm).frame(width: Layout.dot, height: Layout.dot)
+                Text(chat.title).fontWeight(.semibold).foregroundStyle(Palette.primary).lineLimit(1).truncationMode(.tail)
+                Text(state).foregroundStyle(chat.blocked > 0 ? Palette.warn : Palette.secondary).fixedSize()
+                Spacer(minLength: 0)
+                Text("Open").foregroundStyle(Palette.tertiary).fixedSize()
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, Layout.rowPadding)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .top) { Palette.rule.frame(height: 1) }
+        .accessibilityLabel("\(chat.title), \(state)")
         .accessibilityHint("Opens the chat")
     }
 }

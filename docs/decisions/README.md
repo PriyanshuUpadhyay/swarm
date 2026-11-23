@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0156 | The HUD lists active chats, chimes when a chat converges, and reads on a change signal | 2 | accepted | 2026-11-23 | ↑0147 ↑0087 →0138 |
 | 0155 | The new chat composer changes the project with arrows and shows the `/` menu | 2 | accepted | 2026-11-23 | ↑0149 →0038 →0111 |
 | 0152 | Pierre paints code colours and every diff in the web app | 2 | accepted | 2026-11-19 | →0075 →0134 |
 | 0151 | `swarm task land` keeps the worktree until the owner approves cleanup | 2 | accepted | 2026-11-19 | ↑0145 →0144 →0150 |

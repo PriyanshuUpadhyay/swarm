@@ -13,13 +13,16 @@ front. `SWARM_APP` points `swarm ui` at another build of the app. Its icon is th
 `make package` draws it with `SwarmHUD --app-icon <dir.iconset>` and `iconutil`. It has no Dock badge.
 
 `SwarmHUD` is the notch usage HUD (ADR 0087). It ships at `libexec/SwarmHUD.app`, reads
-`swarm usage --json` each minute and `swarm working --json` every 3 s, and keeps 7 days of samples
+`swarm usage --json` each minute, and `swarm working --json` and `swarm notices --inbox --json` when
+`swarm` posts its change signal and each minute (ADR 0156). It keeps 7 days of samples
 for the pace in `~/Library/Application Support/SwarmHUD/history.json`. `swarm hud install` starts it
 at login. Closed, it shows a pixel mascot that works, waits or sleeps with the swarm agents, and a
 ring for the best account's fullest limit; while agents run, the wings add the working count and
 model tags or "needs you", and at 95% the ring's number (ADR 0114). The open card shows the same
-mascot top left with its credit on hover, the running agents, and one table with a column per limit
-kind. A Codex account row shows its usage limit resets under its name, or in the name's tooltip when
+mascot top left with its credit on hover, the inbox, the active chats (a click opens one), the running
+agents, and one table with a column per limit
+kind. When a chat converges, the HUD plays the system sound "Glass" while Settings' "Play a sound" is on.
+A Codex account row shows its usage limit resets under its name, or in the name's tooltip when
 more than 5 rows make each row one line; past the 660 pt cap the rows scroll. Swarm's own mascot, its
 bee, 17 open-licence guests and any pets installed for Codex (`$CODEX_HOME/pets`, by default
 `~/.codex/pets`, read once at launch) take turns every 10 minutes. `python3 -I Tools/mascots.py`

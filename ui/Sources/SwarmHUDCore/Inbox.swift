@@ -9,16 +9,24 @@ public struct InboxSnapshot: Decodable, Equatable, Sendable {
     /// The full counts; the store cuts each list, so "+N more" and the wing read these.
     public var needsTotal: Int
     public var rowsTotal: Int
+    /// ADR 0156: the chats with a working or waiting agent, and their full count. An older swarm
+    /// sends none.
+    public var active: [ActiveChat]
+    public var activeTotal: Int
+    /// Settings' "Play a sound"; on when an older swarm does not say.
+    public var sound: Bool
 
-    public init(needs: [NeedCard] = [], rows: [InboxRow] = [], rowsTotal: Int? = nil) {
-        (self.needs, self.rows) = (needs, rows)
-        (self.needsTotal, self.rowsTotal) = (needs.count, rowsTotal ?? rows.count)
+    public init(needs: [NeedCard] = [], rows: [InboxRow] = [], rowsTotal: Int? = nil, active: [ActiveChat] = [],
+                sound: Bool = true) {
+        (self.needs, self.rows, self.active, self.sound) = (needs, rows, active, sound)
+        (self.needsTotal, self.rowsTotal, self.activeTotal) = (needs.count, rowsTotal ?? rows.count, active.count)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schema, needs, rows
+        case schema, needs, rows, active, sound
         case needsTotal = "needs_total"
         case rowsTotal = "rows_total"
+        case activeTotal = "active_total"
     }
 
     public init(from decoder: Decoder) throws {
@@ -32,6 +40,9 @@ public struct InboxSnapshot: Decodable, Equatable, Sendable {
         rows = try container.decodeIfPresent([Lossy<InboxRow>].self, forKey: .rows)?.compactMap(\.value) ?? []
         needsTotal = try container.decode(Int.self, forKey: .needsTotal)
         rowsTotal = try container.decode(Int.self, forKey: .rowsTotal)
+        active = try container.decodeIfPresent([Lossy<ActiveChat>].self, forKey: .active)?.compactMap(\.value) ?? []
+        activeTotal = try container.decodeIfPresent(Int.self, forKey: .activeTotal) ?? active.count
+        sound = try container.decodeIfPresent(Bool.self, forKey: .sound) ?? true
     }
 
     /// Nil for another schema or a reply that does not decode, so the HUD keeps its last inbox
@@ -77,6 +88,18 @@ public struct InboxRow: Decodable, Equatable, Sendable {
         case id, kind, title, body
         case session = "session_id"
         case agent = "agent_id"
+    }
+}
+
+/// ADR 0156: a chat that still works, so its last "done" is not its end.
+public struct ActiveChat: Decodable, Equatable, Sendable {
+    public let session: String
+    public let title: String
+    public let working: Int
+    public let blocked: Int
+
+    public init(session: String, title: String, working: Int, blocked: Int = 0) {
+        (self.session, self.title, self.working, self.blocked) = (session, title, working, blocked)
     }
 }
 
@@ -185,6 +208,12 @@ public func prunePopup(_ popup: Popup?, inbox: InboxSnapshot) -> Popup? {
     let live = inboxKeys(inbox)
     popup.items.removeAll { !live.contains($0.key) }
     return popup.items.isEmpty ? nil : popup
+}
+
+/// ADR 0156: a new done or asks row means a chat converged: its chair ended its turn while no child
+/// worked. `new` is empty on a HUD's first read, so a HUD that starts plays nothing.
+public func playsConvergedSound(_ inbox: InboxSnapshot, new: [PopupItem]) -> Bool {
+    inbox.sound && new.contains { $0.kind == .done || $0.kind == .asks }
 }
 
 /// The closed wing's words for the inbox, or nil to leave the working count. A need wins, then a

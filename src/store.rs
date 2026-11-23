@@ -137,6 +137,7 @@ pub fn add_notice(
         "INSERT INTO notice (session_id, agent_id, kind, title, body) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![session, agent, kind, title, body],
     )?;
+    crate::hud::signal_changed();
     Ok(())
 }
 
@@ -199,13 +200,17 @@ pub fn mark_notices_seen(
     let marks = vec!["?"; sessions.len()].join(", ");
     let mut values: Vec<rusqlite::types::Value> = vec![through.unwrap_or(i64::MAX).into()];
     values.extend(sessions.iter().map(|session| session.to_string().into()));
-    connection.execute(
+    let changed = connection.execute(
         &format!(
             "UPDATE notice SET seen_at = unixepoch()
              WHERE seen_at IS NULL AND id <= ?1 AND session_id IN ({marks})"
         ),
         rusqlite::params_from_iter(values),
-    )
+    )?;
+    if changed > 0 {
+        crate::hud::signal_changed();
+    }
+    Ok(changed)
 }
 
 fn known_version(version: i64) -> bool {

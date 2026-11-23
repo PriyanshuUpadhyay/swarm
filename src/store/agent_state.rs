@@ -27,7 +27,7 @@ pub fn set_state(
     let transaction =
         rusqlite::Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
 
-    let Some(old) = transaction
+    let Some(old): Option<Option<String>> = transaction
         .query_row(
             "SELECT state FROM agent WHERE session_id = ?1 AND id = ?2",
             (session_id, agent_id),
@@ -53,6 +53,10 @@ pub fn set_state(
     )?;
 
     transaction.commit()?;
+    // A turn reports `working` at each tool call; only a change of state moves the HUD.
+    if old.as_deref() != Some(state) || state == "blocked" {
+        crate::hud::signal_changed();
+    }
     Ok(Some(old))
 }
 
@@ -124,6 +128,9 @@ pub fn set_screen_state(
         ),
     )?;
 
+    if changed == 1 && read_state != Some(state) {
+        crate::hud::signal_changed();
+    }
     Ok(changed == 1)
 }
 

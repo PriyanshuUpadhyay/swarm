@@ -288,6 +288,14 @@ pub(crate) fn notices_due() -> Result<(), Box<dyn std::error::Error>> {
     print_json(&due_notices(&mut connection, &root, hud_runs)?)
 }
 
+/// The owner's `notices` prefs. A bad choices file must not lose notices, so it reads as the
+/// defaults, where each switch is on.
+pub(crate) fn notice_prefs(root: &std::path::Path) -> serde_json::Value {
+    swarm::view::choices_store::load(root, true)
+        .map(|saved| saved.owner.prefs["notices"].clone())
+        .unwrap_or_default()
+}
+
 /// ADR 0147: while the HUD runs, it shows each chat's notices, so a row of a chat posts no banner.
 /// A row with no chat, such as the Settings test notice or a `swarm notify` from a shell, has no
 /// place in the HUD, so it keeps its banner.
@@ -303,10 +311,7 @@ pub(crate) fn due_notices(
         .collect();
     let connection = &*connection;
 
-    // A bad choices file must not lose notices, so it reads as the defaults.
-    let prefs = swarm::view::choices_store::load(root, true)
-        .map(|saved| saved.owner.prefs["notices"].clone())
-        .unwrap_or_default();
+    let prefs = notice_prefs(root);
     let on = |key: &str| prefs[key].as_bool().unwrap_or(true);
     let muted: Vec<&str> = prefs["mutedProjects"]
         .as_array()

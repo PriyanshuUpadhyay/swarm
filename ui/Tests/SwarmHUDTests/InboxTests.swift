@@ -53,3 +53,17 @@ import Testing
     // The owner saw chat B in the app, so its line leaves.
     #expect(prunePopup(popup, inbox: first)?.items.map(\.title) == ["Chat A"])
 }
+
+/// ADR 0156: the inbox lists the chats that still work, and a chat that converges plays the sound
+/// once, but not on the HUD's first read or with "Play a sound" off.
+@Test func aChatThatConvergesPlaysTheSoundAndAWorkingChatIsActive() throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "fixtures/inbox.json")
+    let inbox = try #require(InboxSnapshot.read(Data(contentsOf: url)))
+    #expect(inbox.active.map(\.title) == ["Notice redesign", "Twilio integration review"])
+
+    #expect(!playsConvergedSound(inbox, new: newPopupItems(inbox, known: nil)))
+    #expect(playsConvergedSound(inbox, new: newPopupItems(inbox, known: [])))
+    var muted = inbox
+    muted.sound = false
+    #expect(!playsConvergedSound(muted, new: newPopupItems(inbox, known: [])))
+}

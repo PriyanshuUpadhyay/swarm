@@ -359,7 +359,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
         && cmd == "working"
         && json == "--json"
     {
-        // The usage HUD polls this every few seconds, so it reads the store and no pane.
+        // The usage HUD reads this on each change signal (ADR 0156), so it reads the store and no pane.
         let connection = swarm::store::open(&swarm::paths::sqlite_db()?)?;
         let agents = swarm::store::running_agents(&connection)?;
         return print_json(&serde_json::json!({

@@ -4,6 +4,23 @@ use std::path::{Path, PathBuf};
 
 pub const HUD_SCHEMA: &str = "swarm.hud.v1";
 pub const LABEL: &str = "io.github.priyanshuupadhyay.swarm.hud";
+/// ADR 0156: the Darwin notify name that a store write posts when the HUD's chats or inbox change.
+/// It carries no data, so the HUD reads the store again; SwarmHUD/AppDelegate.swift uses the same name.
+pub const CHANGED: &str = "io.github.priyanshuupadhyay.swarm.changed";
+
+/// Tells a running HUD to read again. It costs one call into libSystem and fails silently: the
+/// HUD's slow poll still reads, so a lost signal only delays a row.
+pub fn signal_changed() {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe extern "C" {
+            fn notify_post(name: *const std::ffi::c_char) -> u32;
+        }
+        let name = std::ffi::CString::new(CHANGED).expect("the name has no NUL");
+        // SAFETY: `name` is a valid C string that lives through the call.
+        unsafe { notify_post(name.as_ptr()) };
+    }
+}
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub struct Status {

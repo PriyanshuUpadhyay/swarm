@@ -100,6 +100,8 @@ pub(crate) fn notices_command(args: &[String]) -> Result<(), Box<dyn std::error:
 const INBOX_NEEDS: usize = 3;
 /// At most this many unseen chats show in the HUD's "Since you looked" list.
 const INBOX_ROWS: usize = 20;
+/// At most this many active chats show in the HUD; each costs a title read.
+const INBOX_ACTIVE: usize = 10;
 
 /// ADR 0147: the HUD's inbox. `needs` holds each waiting agent with the prompt on its screen, whose
 /// id `swarm answer` accepts; `rows` holds the newest unseen result of each chat. Each list is cut,
@@ -164,13 +166,57 @@ pub(crate) fn inbox(
     }
 
     let (rows, rows_total) = swarm::store::notice_inbox(connection, INBOX_ROWS)?;
+    let (active, active_total) = active_chats(connection)?;
     Ok(serde_json::json!({
         "schema": "swarm.inbox.v1",
         "needs": needs,
         "needs_total": needs_total,
         "rows": rows,
         "rows_total": rows_total,
+        "active": active,
+        "active_total": active_total,
+        // ADR 0156: the HUD plays its converged sound only while Settings' "Play a sound" is on.
+        "sound": notice_prefs(root)["sound"].as_bool().unwrap_or(true),
     }))
+}
+
+/// ADR 0156: each chat with a working or waiting agent, chats with a wait first, at most
+/// `INBOX_ACTIVE`, and the full count. `working` and `blocked` count its agents.
+fn active_chats(
+    connection: &rusqlite::Connection,
+) -> Result<(Vec<serde_json::Value>, usize), Box<dyn std::error::Error>> {
+    // `running_agents` lists waits first, so a chat's first agent decides its place.
+    let mut chats: Vec<(String, String, usize, usize)> = Vec::new();
+    for agent in swarm::store::running_agents(connection)? {
+        let index = match chats.iter().position(|chat| chat.0 == agent.session) {
+            Some(index) => index,
+            None => {
+                chats.push((agent.session.clone(), agent.id.clone(), 0, 0));
+                chats.len() - 1
+            }
+        };
+        if agent.state == "blocked" {
+            chats[index].3 += 1;
+        } else {
+            chats[index].2 += 1;
+        }
+    }
+
+    let total = chats.len();
+    let mut active = Vec::new();
+    for (session, agent, working, blocked) in chats.into_iter().take(INBOX_ACTIVE) {
+        let log = swarm::store::agents(connection, &session)?
+            .into_iter()
+            .find(|row| row.id == agent)
+            .and_then(|row| row.log);
+        active.push(serde_json::json!({
+            "session": session,
+            "title": chat_title(connection, &session, &agent, log.as_deref())?,
+            "working": working,
+            "blocked": blocked,
+        }));
+    }
+    Ok((active, total))
 }
 
 /// A wait lasts while its pane is open (ADR 0147). No sweep covers a chair, so a chair whose pane

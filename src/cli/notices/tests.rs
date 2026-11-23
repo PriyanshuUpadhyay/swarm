@@ -136,3 +136,38 @@ fn the_inbox_drops_a_wait_whose_pane_is_gone() {
     assert_eq!(running, [sessions[0].clone()]);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// ADR 0156: the HUD lists each chat that still works, so a chat whose chair is done while a child
+/// works shows as active, not as done.
+#[test]
+fn the_inbox_lists_a_chat_whose_child_still_works() {
+    let root = std::env::temp_dir().join(format!("swarm-inbox-active-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let connection = swarm::store::open(std::path::Path::new(":memory:")).unwrap();
+    let session = swarm::store::create_session(
+        &connection,
+        "lane",
+        std::path::Path::new("/work/lane"),
+        Some(("claude", "chair-id")),
+        None,
+    )
+    .unwrap();
+    for (agent, state) in [("orchestrator", "done"), ("reviewer", "working")] {
+        swarm::store::add_agent(&connection, &session, agent, agent).unwrap();
+        swarm::store::set_pane(&connection, &session, agent, &format!("%{agent}")).unwrap();
+        swarm::store::set_provider(&connection, &session, agent, "claude").unwrap();
+        let now = swarm::usage::now_seconds();
+        swarm::store::set_state(&connection, &session, agent, state, "hook", None, None, now)
+            .unwrap();
+    }
+
+    let inbox = inbox(&root, &connection).unwrap();
+
+    assert_eq!(inbox["active_total"], 1, "{inbox}");
+    assert_eq!(
+        inbox["active"][0],
+        serde_json::json!({"session": session, "title": "lane", "working": 1, "blocked": 0})
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}

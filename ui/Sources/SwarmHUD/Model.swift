@@ -23,6 +23,8 @@ final class UsageModel {
     }
     /// Set by the app delegate: says a new popup line aloud for VoiceOver.
     @ObservationIgnored var announce: ((String) -> Void)?
+    /// Set by the app delegate: plays the sound for a chat that converged (ADR 0156).
+    @ObservationIgnored var chime: (() -> Void)?
     /// The cursor is on the popup, so a done popup waits for it to leave.
     @ObservationIgnored var popupHovered = false
     /// The keys of the last inbox read; nil before the first, so a new HUD pops nothing old.
@@ -46,7 +48,7 @@ final class UsageModel {
     /// Set by the app delegate: the closed shape changed width under a cursor that may not move.
     @ObservationIgnored var wingsChanged: (() -> Void)?
     /// When an agent last worked or waited; the mascot sleeps 5 minutes later. Launch counts, so a
-    /// new HUD starts awake. Unobserved: the 30 s clock re-reads it, and polls would redraw every 3 s.
+    /// new HUD starts awake. Unobserved: the 30 s clock re-reads it, and each read would redraw.
     @ObservationIgnored var lastActive = Date()
     /// The provider whose agents worked last, so an idle mascot keeps its family.
     var lastWorking: String?
@@ -82,6 +84,10 @@ final class UsageModel {
     private var readQueued = false
     private var readingWorking = false
     private var readingInbox = false
+    /// A change signal that came during a read; the read runs again after it, so the change is not
+    /// left for the slow poll.
+    private var workingQueued = false
+    private var inboxQueued = false
     /// Why the last inbox read failed; nil after a good one. The last good inbox stays.
     var inboxError: String? {
         didSet { if let inboxError, inboxError != oldValue { announce?(inboxError) } }
@@ -158,7 +164,7 @@ final class UsageModel {
 
     /// Reads the store only, so it may run every few seconds; a failure reads as nothing working.
     func readWorking() {
-        guard !readingWorking else { return }
+        guard !readingWorking else { workingQueued = true; return }
         readingWorking = true
         let swarm = swarm
         Task {
@@ -168,18 +174,20 @@ final class UsageModel {
             if let busy = busiest(agents.working), busy != lastWorking { lastWorking = busy }
             if agents != self.agents { self.agents = agents }
             readingWorking = false
+            if workingQueued { workingQueued = false; readWorking() }
         }
     }
 
     /// The store and at most three screen reads; a failure keeps the last inbox on screen.
     func readInbox() {
-        guard !readingInbox else { return }
+        guard !readingInbox else { inboxQueued = true; return }
         readingInbox = true
         let swarm = swarm, epoch = inboxEpoch
         Task {
             let result = await offPool { run(swarm, ["notices", "--inbox", "--json"], timeout: 3) }
             readingInbox = false
-            guard epoch == inboxEpoch else { readInbox(); return }
+            guard epoch == inboxEpoch else { inboxQueued = false; readInbox(); return }
+            defer { if inboxQueued { inboxQueued = false; readInbox() } }
 
             // A failed read keeps the last inbox on screen, and the error line says it is old.
             switch result {
@@ -208,6 +216,8 @@ final class UsageModel {
     func apply(inbox: InboxSnapshot, now: Date) {
         let new = newPopupItems(inbox, known: knownKeys)
         knownKeys = inboxKeys(inbox)
+        // One sound per read, so a burst of chats that end together plays once.
+        if playsConvergedSound(inbox, new: new) { chime?() }
         if inbox != self.inbox { self.inbox = inbox }
 
         var next = prunePopup(popup, inbox: inbox)

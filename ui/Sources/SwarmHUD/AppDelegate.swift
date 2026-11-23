@@ -13,7 +13,7 @@ let panelSize = NSSize(width: Layout.openWidth + 40, height: Layout.maxOpenHeigh
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let model = UsageModel()
+    let model = UsageModel()
     private var panel: HUDPanel!
 
     // The exact set is re-asserted after unlock and during wedge recovery (below).
@@ -36,7 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Closed by the keyboard with the cursor on the notch: hover may not reopen it until the cursor leaves.
     private var hoverHeld = false
     private var readTimer: Timer?
-    private var workingTimer: Timer?
+    /// The change signal's registration and its pending read (AppDelegateChanges.swift).
+    var changeToken: Int32 = 0
+    var pendingChange: DispatchWorkItem?
+    var workingTimer: Timer?
     private var phaseTimer: Timer?
     private var clickThrough: Bool?
 
@@ -52,15 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self.model.read() }
         }
         readTimer?.tolerance = 10
-        model.readWorking()
-        model.readInbox()
-        workingTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                self.model.readWorking()
-                self.model.readInbox()
-            }
-        }
-        workingTimer?.tolerance = 1
+        startChatReads()
         schedulePhaseChange()
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil
@@ -122,6 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.toggleFromKeyboard = { [weak self] in self?.toggleFromKeyboard() }
 
         // The popup takes no focus, so VoiceOver hears its new line as an announcement.
+        // A system sound, so nothing is bundled; no other swarm notice uses it.
+        model.chime = { NSSound(named: "Glass")?.play() }
         model.announce = { text in
             NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
                                  userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
