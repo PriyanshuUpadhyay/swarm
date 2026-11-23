@@ -222,6 +222,16 @@ fn meters_from_cache(
             ));
             continue;
         };
+        if account.auth_state == AuthState::SignedOut {
+            meters.push(status_meter(
+                provider,
+                Some(account),
+                "missing",
+                ReasonCode::NoCredentials,
+                None,
+            ));
+            continue;
+        }
         let entry = login_digest(account).and_then(|identity| {
             cache.as_ref()?.accounts.iter().find(|entry| {
                 entry.home == account.home
