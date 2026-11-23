@@ -105,7 +105,7 @@ pub(crate) fn resolve_role(
     provider: Option<&str>,
     account: Option<&str>,
     running: bool,
-) -> Result<(serde_json::Value, Probe), String> {
+) -> Result<(swarm::config::Runner, serde_json::Value, Probe), String> {
     let (config, _) = swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
     let profile = config
         .profile(role)
@@ -172,7 +172,7 @@ pub(crate) fn resolve_role(
         "skipped".into(),
         serde_json::to_value(&selection.skipped).map_err(|error| error.to_string())?,
     );
-    Ok((value, probe))
+    Ok((runner.clone(), value, probe))
 }
 
 /// A provider counts as installed when an executable file of its name is on PATH, because that

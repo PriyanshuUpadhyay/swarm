@@ -225,7 +225,7 @@ pub(crate) fn commands_info(args: &[String]) -> Result<Option<()>, Box<dyn std::
             [flag, provider] if flag == "--provider" => Some(provider.as_str()),
             _ => return Err(USAGE.into()),
         };
-        let (resolved, _) = resolve_role(role, provider, None, false)?;
+        let (_, resolved, _) = resolve_role(role, provider, None, false)?;
         println!("{}", serde_json::to_string_pretty(&resolved)?);
         return Ok(Some(()));
     }
