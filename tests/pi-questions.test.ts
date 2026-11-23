@@ -164,6 +164,6 @@ test("the installed Pi renderer keeps decisions visible while paging through a t
     assert.equal(result.details.approved, approved);
     assert.equal(blocking, undefined);
     tui.renderNow();
-    assert.ok(!tui.captureRenderState().previousLines.join("\n").includes("Pi plan (pane only)"));
+    assert.ok(!tui.captureRenderState().previousLines.join("\n").includes("Pi plan approval"));
   }
 });

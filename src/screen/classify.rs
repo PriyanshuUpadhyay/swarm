@@ -139,7 +139,7 @@ pub fn screen_state(provider: &str, rows: &str) -> Option<ScreenState> {
             (!lower.trim().is_empty()).then_some(ScreenState::Idle)
         }
         "pi" => {
-            if super::prompt::pi_dialog(rows) {
+            if super::pi_prompt::pi_dialog(rows) {
                 return Some(ScreenState::Blocked);
             }
             // While a turn runs, the top rule of pi's input box carries a spinner:

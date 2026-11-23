@@ -15,8 +15,8 @@ import { nativeChild, registerSubagents, reportChildReady } from "./swarm-subage
 /** How often the file is written while text streams; serve reads it at the same rate. */
 const WRITE_MS = 250;
 const PLAN_CHOICES = ["Request changes", "Approve"];
-// The screen reader treats this footer as a pane-only plan, not a remotely answerable list.
-const PLAN_PANE_ONLY = "Pi plan (pane only)";
+// The screen reader finds this footer, and then reads the whole plan from the session log.
+const PLAN_FOOTER = "Pi plan approval";
 
 async function selectPlan(ui: ExtensionUIContext, body: string, tuiMode: boolean, signal: AbortSignal | undefined) {
   const title = `Approve this plan?\n\n${body}\n\nReview the plan above before you answer.\n`;
@@ -48,7 +48,7 @@ async function selectPlan(ui: ExtensionUIContext, body: string, tuiMode: boolean
     if (signal?.aborted) close();
     else signal?.addEventListener("abort", close, { once: true });
 
-    const enoughRoom = () => tui.terminal.rows >= 4 && tui.terminal.columns >= PLAN_PANE_ONLY.length;
+    const enoughRoom = () => tui.terminal.rows >= 4 && tui.terminal.columns >= PLAN_FOOTER.length;
     const pageSize = () => Math.max(1, tui.terminal.rows - 4);
     const clamp = (offset: number, width: number) =>
       Math.max(0, Math.min(offset, text.render(width).length - pageSize()));
@@ -56,14 +56,14 @@ async function selectPlan(ui: ExtensionUIContext, body: string, tuiMode: boolean
     return {
       render(width) {
         if (!enoughRoom()) {
-          return ["Enlarge the pane to read the plan.", PLAN_PANE_ONLY]
+          return ["Enlarge the pane to read the plan.", PLAN_FOOTER]
             .slice(-tui.terminal.rows).map((line) => truncateToWidth(line, width));
         }
         offset = clamp(offset, width);
         const lines = text.render(width);
         const end = Math.min(offset + pageSize(), lines.length);
         const heading = `Approve this plan? Rows ${offset + 1}–${end} of ${lines.length}`;
-        const help = `${PLAN_PANE_ONLY} | ${hint("tui.select.pageUp")}/${hint("tui.select.pageDown")} scroll · ${hint("tui.select.up")}/${hint("tui.select.down")} choose · ${hint("tui.select.confirm")} select`;
+        const help = `${PLAN_FOOTER} | ${hint("tui.select.pageUp")}/${hint("tui.select.pageDown")} scroll · ${hint("tui.select.up")}/${hint("tui.select.down")} choose · ${hint("tui.select.confirm")} select`;
         return [
           ...(tui.terminal.rows >= 5 ? [theme.fg("accent", heading)] : []),
           ...lines.slice(offset, end),
@@ -89,7 +89,7 @@ async function selectPlan(ui: ExtensionUIContext, body: string, tuiMode: boolean
   }, {
     overlay: true,
     overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" },
-    blocked: { kind: "question", message: PLAN_PANE_ONLY },
+    blocked: { kind: "question", message: PLAN_FOOTER },
   });
 }
 

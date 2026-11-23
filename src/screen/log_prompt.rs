@@ -14,8 +14,8 @@ pub fn agent_prompt(
     history: impl FnOnce() -> Option<String>,
     log: Option<&Path>,
 ) -> Option<Prompt> {
-    if provider == Some("pi") && super::prompt::pi_dialog(screen) {
-        return super::prompt::pi_prompt(screen);
+    if provider == Some("pi") && super::pi_prompt::pi_dialog(screen) {
+        return super::pi_prompt::pi_prompt(screen, log);
     }
     if let Some(found) = whole_prompt(screen, history) {
         return Some(found);

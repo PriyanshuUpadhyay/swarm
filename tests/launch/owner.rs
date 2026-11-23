@@ -245,7 +245,7 @@ fn the_owner_answers_a_pi_text_question_with_typed_text() {
 }
 
 #[test]
-fn a_pi_plan_can_be_answered_only_when_the_full_plan_is_visible() {
+fn a_pi_plan_is_answered_from_the_card_with_its_whole_text() {
     let home = scratch("pi-plan");
     let session = answer_session(&home, "true");
     let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
@@ -274,33 +274,66 @@ fn a_pi_plan_can_be_answered_only_when_the_full_plan_is_visible() {
         serde_json::json!(["Request changes", "Approve"])
     );
 
-    // A clipped native selector and the pageable overlay both keep decisions in the pane.
+    // A plan taller than the pane, in a clipped native selector or the pageable overlay, comes
+    // whole from the open `approve_plan` call in Pi's log, so the card answers it.
+    let log = home.join("pi.jsonl");
+    swarm::store::set_log(&connection, &session, "seat", &log).unwrap();
+    let plan = (1..=30)
+        .map(|n| format!("Step {n}."))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let call = serde_json::json!({"type": "message", "message": {"role": "assistant", "content": [
+        {"type": "toolCall", "id": "call-1", "name": "approve_plan", "arguments": {"plan": plan}}
+    ]}});
+    let result = serde_json::json!({"type": "message", "message": {
+        "role": "toolResult", "toolCallId": "call-1", "toolName": "approve_plan"
+    }});
     for pane in [
         &screen[screen.find(" 2. Report").unwrap()..],
-        "Approve this plan? Rows 1–2 of 30\nStep 1\nStep 2\n→ Request changes\n  Approve\nPi plan (pane only) | pageUp/pageDown scroll\n",
+        "Approve this plan? Rows 1–2 of 30\nStep 1.\nStep 2.\n→ Request changes\n  Approve\nPi plan approval | pageUp/pageDown scroll\n",
     ] {
         std::fs::write(home.join("screen"), pane).unwrap();
-        let clipped = notice();
-        assert_eq!(clipped["kind"], "plan");
+        std::fs::write(&log, format!("{call}\n")).unwrap();
+        let long = notice();
+        assert_eq!(long["kind"], "plan");
         assert!(
-            clipped["question"]
+            long["question"]
                 .as_str()
                 .unwrap()
-                .contains("Open the Pi pane")
+                .contains("Step 1.\nStep 2.")
         );
-        assert_eq!(clipped["choices"], serde_json::json!([]));
-        for id in [
-            full["id"].as_str().unwrap(),
-            clipped["id"].as_str().unwrap(),
-        ] {
+        assert!(long["question"].as_str().unwrap().contains("Step 30."));
+        assert_eq!(
+            long["choices"],
+            serde_json::json!(["Request changes", "Approve"])
+        );
+        let _ = std::fs::remove_file(home.join("keys"));
+        let output = swarm(
+            &home,
+            &app,
+            &["answer", "seat", long["id"].as_str().unwrap(), "0"],
+        );
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert_eq!(
+            std::fs::read_to_string(home.join("keys")).unwrap(),
+            "Enter\n"
+        );
+
+        // Once the call has a result, the log names no open plan, so the card cannot answer.
+        std::fs::write(&log, format!("{call}\n{result}\n")).unwrap();
+        let closed = notice();
+        assert_eq!(closed["kind"], "plan");
+        assert_eq!(closed["choices"], serde_json::json!([]));
+        std::fs::remove_file(home.join("keys")).unwrap();
+        for id in [long["id"].as_str().unwrap(), closed["id"].as_str().unwrap()] {
             assert!(
-                !swarm(&home, &app, &["answer", "seat", id, "1"])
+                !swarm(&home, &app, &["answer", "seat", id, "0"])
                     .status
                     .success()
             );
         }
+        assert!(!home.join("keys").exists());
     }
-    assert!(!home.join("keys").exists());
 }
 
 #[test]
