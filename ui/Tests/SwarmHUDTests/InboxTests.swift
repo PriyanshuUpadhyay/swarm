@@ -54,6 +54,18 @@ import Testing
     #expect(prunePopup(popup, inbox: first)?.items.map(\.title) == ["Chat A"])
 }
 
+/// The HUD closes before an Open is known to work, so a failed Open comes back as a popup line
+/// that stays through the next inbox read and takes the place of its chat's older line.
+@Test func aFailedOpenStaysAsAPopupLineThroughARead() {
+    let at = Date(timeIntervalSince1970: 1_795_000_000)
+    let done = InboxRow(id: 1, session: "a", kind: .done, title: "Chat A", body: "Done.")
+    let failed = PopupItem(openFailed: "a", agent: nil, title: "Chat A", error: "no pane")
+    let popup = mergePopup(mergePopup(nil, new: [PopupItem(row: done)], now: at), new: [failed], now: at)
+    #expect(popup?.items.map(\.word) == ["did not open"])
+    #expect(popup?.expired(now: at.addingTimeInterval(60), hovered: false) == false)
+    #expect(prunePopup(popup, inbox: InboxSnapshot())?.items.map(\.body) == ["no pane"])
+}
+
 /// ADR 0156: the inbox lists the chats that still work, and a chat that converges plays the sound
 /// once, but not on the HUD's first read or with "Play a sound" off.
 @Test func aChatThatConvergesPlaysTheSoundAndAWorkingChatIsActive() throws {

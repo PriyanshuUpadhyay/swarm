@@ -4,8 +4,11 @@ import SwarmHUDCore
 /// ADR 0147: the inbox actions of the open card and the popup.
 extension UsageModel {
     /// Closes the HUD at once, then opens the chat where it lives (the app, or its terminal) and
-    /// marks its rows seen. A chat that does not open says why aloud and in the card's error line.
+    /// marks its rows seen. A chat that does not open comes back as a popup line that says why.
     func openChat(session: String, agent: String?) {
+        let title = inbox.needs.first { $0.session == session }?.title
+            ?? inbox.rows.first { $0.session == session }?.title
+            ?? inbox.active.first { $0.session == session }?.title ?? "Chat"
         closeHUD?()
         guard opening.insert(session).inserted else { return }
         inboxChanging()
@@ -17,6 +20,10 @@ extension UsageModel {
             opening.remove(session)
             if case .failure(let error) = focused {
                 actionError = "Could not open: \(error.text)"
+                if !isOpen {
+                    let line = PopupItem(openFailed: session, agent: agent, title: title, error: error.text)
+                    popup = mergePopup(popup, new: [line], now: Date())
+                }
                 inboxChanged()
                 return
             }

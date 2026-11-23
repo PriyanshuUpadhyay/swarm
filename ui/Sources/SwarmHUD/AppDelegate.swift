@@ -132,10 +132,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Clicks follow the new width; opening still waits for a real mouse move, so wings that
-        // grow under a resting cursor do not open the card.
+        // grow under a resting cursor do not open the card. A popup that lands under a resting
+        // cursor is held by it, as if the cursor had moved onto it.
         model.wingsChanged = { [weak self] in
             guard let self, self.panel.isVisible else { return }
-            self.setClickThrough(!self.hoverRectInScreen().contains(NSEvent.mouseLocation))
+            let inside = self.hoverRectInScreen().contains(NSEvent.mouseLocation)
+            self.setClickThrough(!inside)
+            if !self.model.isOpen, self.model.popup != nil { self.model.popupHovered = inside }
         }
         panel.contentView = view
     }
@@ -204,10 +207,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self.mouseMoved() }
             return event
         }) { mouseMonitors.append(local) }
-        // A scroll under a resting cursor is work in another app, not a wish to open the card.
+        // A scroll under a resting cursor is work, not a wish to open the card. The global monitor
+        // sees scrolls over other apps; the local one sees scrolls over the panel itself.
         if let scroll = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel, handler: { _ in
-            MainActor.assumeIsolated { self.pendingOpen?.cancel(); self.pendingOpen = nil }
+            MainActor.assumeIsolated { self.cancelRest() }
         }) { mouseMonitors.append(scroll) }
+        if let scroll = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { event in
+            MainActor.assumeIsolated { self.cancelRest() }
+            return event
+        }) { mouseMonitors.append(scroll) }
+    }
+
+    private func cancelRest() {
+        pendingOpen?.cancel(); pendingOpen = nil
+    }
+
+    /// Hover may open the card here: inside the shape, not held by a click or the keyboard, and with
+    /// a popup only on the notch row, which is as wide as the closed wings, not the wider popup.
+    private func hoverMayOpen() -> Bool {
+        let cursor = NSEvent.mouseLocation
+        guard !model.isOpen, !hoverHeld, hoverRectInScreen().contains(cursor) else { return false }
+        guard model.popup != nil else { return true }
+        let visible = visibleRectInScreen()
+        return cursor.y >= visible.maxY - model.notch.height && abs(cursor.x - visible.midX) <= model.closedSize.width / 2
     }
 
     /// The one place hover and click-through are decided, from the cursor position.
@@ -223,11 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !model.isOpen, model.popup != nil {
             model.popupHovered = inside
             if !inside { model.closeExpiredPopup(); hoverHeld = false }
-            // The notch row is as wide as the closed wings, not the wider popup under them.
-            let visible = visibleRectInScreen(), cursor = NSEvent.mouseLocation
-            let onNotch = inside && cursor.y >= visible.maxY - model.notch.height
-                && abs(cursor.x - visible.midX) <= model.closedSize.width / 2
-            if onNotch && !hoverHeld { scheduleOpen() } else { pendingOpen?.cancel(); pendingOpen = nil }
+            if hoverMayOpen() { scheduleOpen() } else { cancelRest() }
             return
         }
 
@@ -252,7 +270,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.pendingOpen = nil
-            guard !self.model.isOpen, self.hoverRectInScreen().contains(NSEvent.mouseLocation) else { return }
+            // A click, a popup, or a keyboard close may have come during the rest.
+            guard self.hoverMayOpen() else { return }
             self.setOpen(true)
         }
         pendingOpen = item
@@ -322,6 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// A click on a line, a row, or an empty spot: the card and the popup close at once, and hover
     /// does not reopen the card until the cursor leaves.
     private func closeFromClick() {
+        cancelRest()
         pendingClose?.cancel(); pendingClose = nil
         keyOpen = false
         hoverHeld = hoverRectInScreen().contains(NSEvent.mouseLocation)

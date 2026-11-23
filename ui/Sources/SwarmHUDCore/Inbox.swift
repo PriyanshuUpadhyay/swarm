@@ -133,13 +133,24 @@ public struct PopupItem: Equatable, Sendable {
     public let title: String
     public let kind: InboxKind
     public let body: String
+    public let word: String
 
-    public var word: String { kind.word }
     public var stays: Bool { kind.stays }
+    /// A line for an Open that failed; it is not in the inbox, so a read does not prune it.
+    public var openFailed: Bool { key.hasPrefix("open-failed/") }
 
     public init(row: InboxRow) {
         key = "row/\(row.id)"
         (session, agent, kind, title, body) = (row.session, row.agent, row.kind, row.title, row.body)
+        word = kind.word
+    }
+
+    /// The HUD closes before `swarm focus` answers, so a failed Open comes back as a line that
+    /// stays; a click on it tries again.
+    public init(openFailed session: String, agent: String?, title: String, error: String) {
+        key = "open-failed/\(session)"
+        (self.session, self.agent, self.title, kind, body) = (session, agent, title, .failed, error)
+        word = "did not open"
     }
 
     public init(need: NeedCard) {
@@ -147,6 +158,7 @@ public struct PopupItem: Equatable, Sendable {
         key = "need/\(need.session)/\(need.agent)"
         (session, agent, title, kind) = (need.session, need.agent, need.title, .waiting)
         body = need.prompt?.question.split(separator: "\n").first.map(String.init) ?? "Waiting on a permission."
+        word = kind.word
     }
 }
 
@@ -206,7 +218,7 @@ public func mergePopup(_ popup: Popup?, new: [PopupItem], now: Date) -> Popup? {
 public func prunePopup(_ popup: Popup?, inbox: InboxSnapshot) -> Popup? {
     guard var popup else { return nil }
     let live = inboxKeys(inbox)
-    popup.items.removeAll { !live.contains($0.key) }
+    popup.items.removeAll { !$0.openFailed && !live.contains($0.key) }
     return popup.items.isEmpty ? nil : popup
 }
 

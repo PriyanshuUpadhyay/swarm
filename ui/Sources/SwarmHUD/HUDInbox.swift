@@ -107,7 +107,10 @@ struct PopupLine: View {
             .accessibilityLabel("\(item.title), \(item.word): \(item.body)")
             .accessibilityHint("Opens the chat")
             Button(action: dismiss) {
-                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 18, height: 18)
+                // The glyph stays small; its target is the line's full height, so a near miss hides
+                // the line rather than opening the chat or closing the HUD.
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                    .frame(width: 28).frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain).foregroundStyle(Palette.tertiary)
