@@ -433,7 +433,7 @@ fn load_inner(
     Ok(list)
 }
 
-pub fn codex_identity(result: Value) -> Result<(AuthState, Option<String>), String> {
+fn codex_identity(result: Value) -> Result<(AuthState, Option<String>), String> {
     match &result["account"] {
         Value::Null if result.get("account").is_some() => Ok((AuthState::SignedOut, None)),
         Value::Object(account)

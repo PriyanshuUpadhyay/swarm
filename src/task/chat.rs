@@ -33,7 +33,7 @@ pub fn unnamed_chat(branch: &str) -> bool {
 
 /// The branch name a first prompt gives: the on-device model's name for it (ADR 0158), else
 /// the word rules of `chat_branch`. The model can take up to `MODEL_DEADLINE`.
-pub fn prompt_branch(prompt: &str) -> Option<String> {
+fn prompt_branch(prompt: &str) -> Option<String> {
     // The model invents a task for a prompt as short as "fix it"; its own words name it better.
     let words = prompt
         .split(|c: char| !c.is_ascii_alphanumeric())

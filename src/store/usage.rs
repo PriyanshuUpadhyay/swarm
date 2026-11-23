@@ -1,4 +1,4 @@
-//! Agent usage updates and cursor tests.
+//! Agent usage updates.
 
 use super::*;
 
