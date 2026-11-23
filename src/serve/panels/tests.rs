@@ -26,6 +26,10 @@ esac
             "--nocapture",
         ])
         .env_clear()
+        .env(
+            "SWARM_TEST_WORKER",
+            crate::serve::test_support::real_worker(),
+        )
         .env("HOME", &root)
         .env(
             "PATH",
