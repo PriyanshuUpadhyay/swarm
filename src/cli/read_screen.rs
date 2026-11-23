@@ -53,29 +53,33 @@ pub(crate) fn owner_prompt(
     capture: impl Fn() -> Option<String>,
     log: Option<&str>,
 ) -> Option<swarm::screen::Prompt> {
-    swarm::screen::agent_prompt(provider, screen, &capture, log.map(std::path::Path::new)).or_else(
-        || {
-            if let Some(status) = swarm::screen::herdr_state(screen) {
-                if status != swarm::screen::ScreenState::Blocked {
-                    return None;
-                }
-                let rows = capture()?;
-                return swarm::screen::waits_on_owner(provider, Some("blocked"), &rows)
-                    .then(|| swarm::screen::screen_prompt(&rows))
-                    .flatten();
+    let choices =
+        swarm::screen::agent_prompt(provider, screen, &capture, log.map(std::path::Path::new));
+    choices.or_else(|| {
+        if let Some(status) = swarm::screen::herdr_state(screen) {
+            let blocked = status == swarm::screen::ScreenState::Blocked
+                || (status == swarm::screen::ScreenState::Idle && state == Some("blocked"));
+            if !blocked {
+                return None;
             }
-            // The screen can show a wait before any hook reports it, such as a folder trust
-            // question at launch.
-            let state = match swarm::screen::read_pane(provider, screen, &capture) {
-                Some((swarm::screen::ScreenState::Blocked, _)) => Some("blocked"),
-                _ => state,
-            };
-            swarm::screen::waits_on_owner(provider, state, screen)
-                .then(&capture)
-                .flatten()
-                .and_then(|rows| swarm::screen::screen_prompt(&rows))
-        },
-    )
+
+            let rows = capture()?;
+            return swarm::screen::waits_on_owner(provider, Some("blocked"), &rows)
+                .then(|| swarm::screen::screen_prompt(&rows))
+                .flatten();
+        }
+
+        // The screen can show a wait before any hook reports it, such as a folder trust
+        // question at launch.
+        let state = match swarm::screen::read_pane(provider, screen, &capture) {
+            Some((swarm::screen::ScreenState::Blocked, _)) => Some("blocked"),
+            _ => state,
+        };
+        swarm::screen::waits_on_owner(provider, state, screen)
+            .then(&capture)
+            .flatten()
+            .and_then(|rows| swarm::screen::screen_prompt(&rows))
+    })
 }
 
 #[cfg(test)]
@@ -89,6 +93,11 @@ mod tests {
         let dialog = || Some("Allow access to this folder?".to_string());
         let card = owner_prompt(Some("claude"), None, blocked, dialog, None).unwrap();
         assert!(card.screen);
+        assert!(
+            owner_prompt(Some("claude"), Some("blocked"), idle, dialog, None)
+                .unwrap()
+                .screen
+        );
         assert!(owner_prompt(Some("claude"), Some("done"), idle, dialog, None).is_none());
     }
 }

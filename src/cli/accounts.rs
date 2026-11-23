@@ -313,7 +313,13 @@ pub(crate) fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::E
         .collect();
     let attempt = uuid::Uuid::now_v7().simple().to_string();
     let pane_name = format!("login-{}-{label}-{}", provider.id(), &attempt[16..]);
-    let session = env::var("SWARM_SESSION_ID").unwrap_or_default();
+    let mut session = env::var("SWARM_SESSION_ID").unwrap_or_default();
+    let panes = if adapter.name == "herdr" {
+        login_seat_panes(&adapter, &mut session)?
+    } else {
+        String::new()
+    };
+
     let home = swarm::paths::home()?;
     let pane = adapter
         .run(
@@ -323,6 +329,7 @@ pub(crate) fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::E
                 ("session_id", &session),
                 ("home", &home),
                 ("adapter", &adapter.name),
+                ("panes", &panes),
             ],
         )
         .map_err(|_| "swarm: account registered; cannot open login pane")?;
@@ -371,6 +378,30 @@ pub(crate) fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::E
     print_json(
         &serde_json::json!({"provider":provider.id(), "account":entry.name, "pane":pane, "state":"opened", "revision":revision}),
     )
+}
+
+fn login_seat_panes(
+    adapter: &swarm::adapter::Adapter,
+    session: &mut String,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let db = swarm::paths::sqlite_db()?;
+    if !db.try_exists()? {
+        return Ok(String::new());
+    }
+    let connection =
+        rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+
+    if session.is_empty()
+        && let Ok(pane) = adapter.run("self", &[])
+        && let Some((id, _)) = swarm::store::orchestrator_at_pane(&connection, &pane)?
+        && swarm::store::adapter_of(&connection, &id)?.as_deref() == Some(&adapter.name)
+    {
+        *session = id;
+    }
+    if session.is_empty() {
+        return Ok(String::new());
+    }
+    super::spawn::session_seat_panes(&connection, &valid_session_id(session)?)
 }
 
 #[cfg(test)]

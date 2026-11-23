@@ -43,12 +43,14 @@ fn children(
     let panes = layout["result"]["layout"]["panes"]
         .as_array()
         .ok_or("herdr pane layout: no panes")?;
+
     let x = |pane: &Value| pane["rect"]["x"].as_f64().unwrap_or_default();
     let left = panes
         .iter()
         .find(|pane| pane["pane_id"] == orchestrator)
         .map(x)
         .ok_or("orchestrator pane is not in its layout")?;
+
     let mut children: Vec<&Value> = panes
         .iter()
         .filter(|pane| {
@@ -58,12 +60,14 @@ fn children(
                     .is_some_and(|id| seats.contains(&id))
         })
         .collect();
+
     children.sort_by(|a, b| {
         a["rect"]["y"]
             .as_f64()
             .unwrap_or_default()
             .total_cmp(&b["rect"]["y"].as_f64().unwrap_or_default())
     });
+
     Ok(children
         .into_iter()
         .map(|pane| {
@@ -244,6 +248,7 @@ mod tests {
     #[test]
     fn audit_regression_herdr_uses_only_seat_panes() {
         let split = std::cell::Cell::new(false);
+
         let run = |args: &[&str]| match args[1] {
             "layout" if split.get() => Ok(layout(&[
                 ("chair", 0, 0, 100),
@@ -256,6 +261,7 @@ mod tests {
                 ("seat", 20, 0, 20),
                 ("other", 20, 20, 80),
             ])),
+
             "split" => {
                 assert_eq!(args[2], "seat");
                 split.set(true);
@@ -267,6 +273,7 @@ mod tests {
             }
             _ => Ok(Value::Null),
         };
+
         let env = |name: &str| (name == "SWARM_PANES").then(|| "chair seat".to_string());
         assert_eq!(split_with("chair", ".", env, &run).unwrap(), "new");
     }
