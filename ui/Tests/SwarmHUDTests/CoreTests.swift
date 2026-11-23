@@ -72,6 +72,11 @@ private let fixture = """
     #expect(shortDuration(until: Date(timeIntervalSince1970: 3 * 86400 + 20 * 3600 + 59), now: now) == "3d 20h")
     #expect(shortDuration(until: Date(timeIntervalSince1970: 720), now: now) == "12m")
     #expect(shortDuration(until: Date(timeIntervalSince1970: 30), now: now) == "now")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: 1e300), now: now) == "99d")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: -1e300), now: now) == "now")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: 9_000), now: now) == "2h 30m")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: 59.5), now: now) == "now")
+    #expect(shortDuration(until: Date(timeIntervalSince1970: 60), now: now) == "1m")
 }
 
 @Test func dayPhaseHours() {
@@ -96,15 +101,6 @@ private let fixture = """
     let list = accounts(from: [meter("codex:primary", 20), meter("spark:primary", 70), meter("other:primary", 40)])
     #expect(list[0].windows.map(\.kind) == [.week])
     #expect(list[0].windows[0].usedPct == 70)
-}
-
-@Test func shortDurationSurvivesAnOutOfRangeResetTime() {
-    let now = Date(timeIntervalSince1970: 0)
-    #expect(shortDuration(until: Date(timeIntervalSince1970: 1e300), now: now) == "99d")
-    #expect(shortDuration(until: Date(timeIntervalSince1970: -1e300), now: now) == "now")
-    #expect(shortDuration(until: Date(timeIntervalSince1970: 9_000), now: now) == "2h 30m")
-    #expect(shortDuration(until: Date(timeIntervalSince1970: 59.5), now: now) == "now")
-    #expect(shortDuration(until: Date(timeIntervalSince1970: 60), now: now) == "1m")
 }
 
 func window(_ kind: WindowKind, _ pct: Int, resetIn hours: Double? = nil, now: Date = Date(timeIntervalSince1970: 100_000),

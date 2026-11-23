@@ -13,6 +13,17 @@ import Testing
     #expect(!read(#"{"schema":"swarm.working.v2","working":{}}"#).isActive)
     #expect(read(#"{"schema":"swarm.working.v1","working":{"claude":2}}"#) == WorkingSnapshot())
     #expect(read("swarm: unknown command") == WorkingSnapshot())
+    let json = #"{"schema":"swarm.working.v2","working":{"claude":1},"blocked":{"codex":1},"agents":[{"id":"reviewer","session":"s1","provider":"codex","model":"gpt-6-luna","account":"team","state":"blocked","since_seconds":1792662983},{"id":"orchestrator","provider":"claude","model":null,"account":null,"state":"working","since_seconds":1792662900},{"id":"thinker","provider":"pi","state":"thinking"}]}"#
+    let agents = WorkingSnapshot.read(Data(json.utf8)).agents
+    #expect(agents.map(\.id) == ["reviewer", "orchestrator", "thinker"])
+    #expect(agents.first == RunningAgent(id: "reviewer", session: "s1", provider: "codex", model: "gpt-6-luna", account: "team", blocked: true))
+    // Another state reads as working (A4); a missing list is an older swarm.
+    #expect(agents.last?.blocked == false)
+    #expect(agents.map(\.key) == ["s1/reviewer", "/orchestrator", "/thinker"])
+    // A bad entry is skipped; the counts and the other agents stay.
+    let bad = WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v2","working":{"claude":2},"agents":[{"id":"thinker"},{"id":"orchestrator","provider":"claude"}]}"#.utf8))
+    #expect(bad.working == ["claude": 2] && bad.agents.map(\.id) == ["orchestrator"])
+    #expect(WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v2","working":{}}"#.utf8)).agents.isEmpty)
 }
 
 @Test func mascotFamilyGoesWorkingThenWaitingThenLastThenBestThenClaude() {
@@ -89,29 +100,14 @@ import Testing
     #expect(custom.animations[.waiting] == .init(frames: [0, 1], fps: 8))
 }
 
-@Test func codexPetManifestRefusesAPathOutsideItsFolderAndBadFrames() {
-    for json in [#"{"spritesheetPath":"../x.webp"}"#, #"{"spritesheetPath":"/etc/x.webp"}"#,
-                 #"{"spritesheetPath":"~/x.webp"}"#, #"{"spritesheetPath":"a/../../x.webp"}"#,
-                 #"{"frame":{"width":0,"height":208,"columns":8,"rows":9}}"#,
+@Test func codexPetManifestRefusesBadFrames() {
+    // A path outside the folder is refused by the loader (RenewalTests, codexPetsLoadFromTheirFolders...).
+    for json in [#"{"frame":{"width":0,"height":208,"columns":8,"rows":9}}"#,
                  #"{"animations":{"idle":{"frames":[72]}}}"#, #"{"animations":{"idle":{"frames":[]}}}"#] {
         #expect(throws: (any Error).self) { try CodexPetManifest.parse(Data(json.utf8), folder: "p") }
     }
 }
 
-
-@Test func workingReadsTheAgentListWhenPresent() {
-    let json = #"{"schema":"swarm.working.v2","working":{"claude":1},"blocked":{"codex":1},"agents":[{"id":"reviewer","session":"s1","provider":"codex","model":"gpt-6-luna","account":"team","state":"blocked","since_seconds":1792662983},{"id":"orchestrator","provider":"claude","model":null,"account":null,"state":"working","since_seconds":1792662900},{"id":"thinker","provider":"pi","state":"thinking"}]}"#
-    let agents = WorkingSnapshot.read(Data(json.utf8)).agents
-    #expect(agents.map(\.id) == ["reviewer", "orchestrator", "thinker"])
-    #expect(agents.first == RunningAgent(id: "reviewer", session: "s1", provider: "codex", model: "gpt-6-luna", account: "team", blocked: true))
-    // Another state reads as working (A4); a missing list is an older swarm.
-    #expect(agents.last?.blocked == false)
-    #expect(agents.map(\.key) == ["s1/reviewer", "/orchestrator", "/thinker"])
-    // A bad entry is skipped; the counts and the other agents stay.
-    let bad = WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v2","working":{"claude":2},"agents":[{"id":"thinker"},{"id":"orchestrator","provider":"claude"}]}"#.utf8))
-    #expect(bad.working == ["claude": 2] && bad.agents.map(\.id) == ["orchestrator"])
-    #expect(WorkingSnapshot.read(Data(#"{"schema":"swarm.working.v2","working":{}}"#.utf8)).agents.isEmpty)
-}
 
 @Test func modelLabelsAreShortFamilyNames() {
     #expect(modelLabel("claude-sonnet-5-5", provider: "claude") == "sonnet")
