@@ -21,42 +21,63 @@ pub(super) struct Fixture {
     pub(super) log: PathBuf,
 }
 
-pub(super) fn real_worker() -> &'static Path {
+const WORKER_ENV: &str = "SWARM_TEST_WORKER";
+
+pub(super) fn worker_child(test: &str) -> std::process::Command {
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", test, "--nocapture"])
+        .env_clear()
+        .env(WORKER_ENV, real_worker());
+    command
+}
+
+fn real_worker() -> &'static Path {
     static WORKER: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     WORKER.get_or_init(|| {
-        if let Some(path) = std::env::var_os("SWARM_TEST_WORKER") {
-            return path.into();
-        }
-        // Cargo supplies CARGO_BIN_EXE_swarm only to integration tests. A bin-only
-        // test run may not have built the CLI, so ask Cargo for the current artifact.
-        let output = std::process::Command::new(env!("CARGO"))
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .args([
-                "build",
-                "--features",
-                "serve",
-                "--bin",
-                "swarm",
-                "--message-format=json",
-            ])
-            .output()
-            .expect("run Cargo to build the serve test worker");
+        let Some(path) = std::env::var_os(WORKER_ENV).map(PathBuf::from) else {
+            return build_worker();
+        };
         assert!(
-            output.status.success(),
-            "cannot build the serve test worker: {}{}",
-            String::from_utf8_lossy(&output.stderr),
-            String::from_utf8_lossy(&output.stdout)
+            path.is_file(),
+            "{WORKER_ENV} must name a file ({}); build it with cargo build --features serve --bin swarm",
+            path.display()
         );
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-            .find_map(|message| {
-                (message["reason"] == "compiler-artifact" && message["target"]["name"] == "swarm")
-                    .then(|| message["executable"].as_str().map(PathBuf::from))
-                    .flatten()
-            })
-            .expect("Cargo did not report the swarm executable")
+        path
     })
+}
+
+// Cargo supplies CARGO_BIN_EXE_swarm only to integration tests. A bin-only
+// test run may not have built the CLI, so ask Cargo for the current artifact.
+fn build_worker() -> PathBuf {
+    let output = std::process::Command::new(env!("CARGO"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args([
+            "build",
+            "--features",
+            "serve",
+            "--bin",
+            "swarm",
+            "--message-format=json",
+        ])
+        .output()
+        .expect("run Cargo to build the serve test worker");
+
+    assert!(
+        output.status.success(),
+        "cannot build the serve test worker: {}{}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|message| {
+            message["reason"] == "compiler-artifact" && message["target"]["name"] == "swarm"
+        })
+        .find_map(|message| message["executable"].as_str().map(PathBuf::from))
+        .expect("Cargo did not report the swarm executable")
 }
 
 impl Fixture {

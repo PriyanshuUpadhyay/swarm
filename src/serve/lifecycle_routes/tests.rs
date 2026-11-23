@@ -38,17 +38,7 @@ exec /usr/bin/git "$@"
     if let Some(wt) = real.iter().find(|path| path.is_file()) {
         std::os::unix::fs::symlink(wt, root.join("bin/wt")).unwrap();
     }
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "serve::tests::lifecycle_routes_child",
-            "--nocapture",
-        ])
-        .env_clear()
-        .env(
-            "SWARM_TEST_WORKER",
-            crate::serve::test_support::real_worker(),
-        )
+    let output = crate::serve::test_support::worker_child("serve::tests::lifecycle_routes_child")
         .env("HOME", &root)
         .env(
             "PATH",

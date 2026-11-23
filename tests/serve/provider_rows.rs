@@ -1,5 +1,13 @@
 use super::*;
 
+fn has_assistant_text(page: &Value, text: &str) -> bool {
+    page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["kind"] == "assistant" && row["text"] == text)
+}
+
 /// pi has no hook to report its log, so the server finds it by the session id that `launch` gave
 /// pi, `<session>-<agent>` (ADR 0086).
 #[test]
@@ -73,16 +81,15 @@ fn a_claude_chair_log_is_found_by_its_id_before_its_hook_stores_it() {
     let (status, _, body) = server.request("GET", &rows, "", "", true);
     assert_eq!(status, 200, "{body}");
     let page: Value = serde_json::from_str(&body).unwrap();
-    assert!(page["rows"].as_array().unwrap().iter().any(|row| {
-        row["kind"] == "assistant" && row["text"] == "I will look at the build first."
-    }));
+    assert!(has_assistant_text(&page, "I will look at the build first."));
 }
 
 #[test]
 fn rows_return_assistant_text_for_codex_and_agy_logs() {
     let server = Server::new();
     let connection = swarm::store::open(&server.dir.join("home/.swarm/swarm.db")).unwrap();
-    for (provider, log, text) in [
+
+    let cases = [
         (
             "codex",
             include_str!("../fixtures/provider-logs/codex-chair-run.jsonl"),
@@ -93,12 +100,15 @@ fn rows_return_assistant_text_for_codex_and_agy_logs() {
             include_str!("../fixtures/provider-logs/agy-chair-run.jsonl"),
             "The reviewer approved the change.",
         ),
-    ] {
+    ];
+
+    for (provider, log, text) in cases {
         let path = server.dir.join(format!("{provider}.jsonl"));
         fs::write(&path, log).unwrap();
         swarm::store::add_agent(&connection, &server.session, provider, "chat").unwrap();
         swarm::store::set_provider(&connection, &server.session, provider, provider).unwrap();
         swarm::store::set_log(&connection, &server.session, provider, &path).unwrap();
+
         let route = format!(
             "/api/rows?session={}&agent={provider}&tail=200",
             server.session
@@ -106,13 +116,6 @@ fn rows_return_assistant_text_for_codex_and_agy_logs() {
         let (status, _, body) = server.request("GET", &route, "", "", true);
         assert_eq!(status, 200, "{provider}: {body}");
         let page: Value = serde_json::from_str(&body).unwrap();
-        assert!(
-            page["rows"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|row| { row["kind"] == "assistant" && row["text"] == text }),
-            "{provider}: {body}"
-        );
+        assert!(has_assistant_text(&page, text), "{provider}: {body}");
     }
 }

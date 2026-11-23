@@ -19,28 +19,19 @@ esac
     )
     .unwrap();
     std::fs::set_permissions(root.join("bin/gh"), std::fs::Permissions::from_mode(0o755)).unwrap();
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "serve::tests::workspace_panel_routes_child",
-            "--nocapture",
-        ])
-        .env_clear()
-        .env(
-            "SWARM_TEST_WORKER",
-            crate::serve::test_support::real_worker(),
-        )
-        .env("HOME", &root)
-        .env(
-            "PATH",
-            format!("{}:/usr/bin:/bin", root.join("bin").display()),
-        )
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig"))
-        .env("GIT_CEILING_DIRECTORIES", &root)
-        .env("SWARM_PANEL_ROUTES", "1")
-        .output()
-        .unwrap();
+    let output =
+        crate::serve::test_support::worker_child("serve::tests::workspace_panel_routes_child")
+            .env("HOME", &root)
+            .env(
+                "PATH",
+                format!("{}:/usr/bin:/bin", root.join("bin").display()),
+            )
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", root.join(".gitconfig"))
+            .env("GIT_CEILING_DIRECTORIES", &root)
+            .env("SWARM_PANEL_ROUTES", "1")
+            .output()
+            .unwrap();
     std::fs::remove_dir_all(root).unwrap();
     assert!(
         output.status.success(),

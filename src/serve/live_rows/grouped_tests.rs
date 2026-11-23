@@ -63,6 +63,7 @@ async fn synthetic_provider_logs_match_full_rebuild() {
         );
     }
 }
+
 #[test]
 fn two_hundred_fifty_grouped_reads_make_three_stable_folds() {
     let records = (0..250)
@@ -75,7 +76,9 @@ fn two_hundred_fifty_grouped_reads_make_three_stable_folds() {
             Record::new(event, format!("raw-{number}-0"), false)
         })
         .collect::<Vec<_>>();
+
     let rows = view::view_rows(&records, false, false, &HashSet::new());
+
     assert_eq!(
         rows.iter().map(|row| row.steps.len()).collect::<Vec<_>>(),
         [100, 100, 50]
