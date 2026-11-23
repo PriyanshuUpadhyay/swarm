@@ -253,7 +253,9 @@ fn install_plist(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(error.into()),
     };
+
     crate::managed::write_text(path, previous.as_deref().unwrap_or_default(), text)?;
+
     if let Err(error) = reload(path) {
         let restored = match previous {
             Some(previous) => crate::managed::write_text(path, text, &previous),

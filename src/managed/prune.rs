@@ -19,6 +19,7 @@ fn prune_with(
     missing: impl Fn(&std::path::Path) -> bool,
 ) -> Result<(), String> {
     let mut errors = Vec::new();
+    let mut recheck = None;
     for entry in state::recorded(store, true)? {
         let Some(dir) = trust_folder(&entry.edit) else {
             continue;
@@ -54,7 +55,8 @@ fn prune_with(
                 return Ok(());
             }
             let plan = removal::removal(&entry.edit.file, &[&entry])?;
-            if !still_missing(dir) {
+            let check = recheck.get_or_insert_with(folder_recheck);
+            if !check(dir) {
                 return Ok(());
             }
             // removal checks the live value again, and revert checks the complete file before
@@ -72,16 +74,31 @@ fn prune_with(
     }
 }
 
-fn still_missing(dir: &std::path::Path) -> bool {
-    // A mount may stall after the first check. A late check must not hold the write lock.
-    let (sender, result) = std::sync::mpsc::channel();
-    let dir = dir.to_path_buf();
+fn folder_recheck() -> impl FnMut(&std::path::Path) -> bool {
+    use std::sync::mpsc::{Sender, channel};
+
+    // Use one worker per batch. If a mount stalls, keep the remaining trust entries.
+    let (request, paths) = channel::<(std::path::PathBuf, Sender<bool>)>();
     std::thread::spawn(move || {
-        let _ = sender.send(missing_folder(&dir));
+        for (dir, reply) in paths {
+            let _ = reply.send(missing_folder(&dir));
+        }
     });
-    result
-        .recv_timeout(std::time::Duration::from_millis(100))
-        .unwrap_or(false)
+
+    let mut worker = Some(request);
+    move |dir| {
+        let (reply, result) = channel();
+        let Some(request) = worker.as_ref() else {
+            return false;
+        };
+        if request.send((dir.to_path_buf(), reply)).is_ok()
+            && let Ok(missing) = result.recv_timeout(std::time::Duration::from_millis(100))
+        {
+            return missing;
+        }
+        worker = None;
+        false
+    }
 }
 
 fn trust_folder(edit: &Edit) -> Option<&std::path::Path> {
@@ -119,6 +136,7 @@ mod tests {
         let dir = root.join("worktree");
         let plan = crate::bus::codex_trust_plan(&root.join(".codex"), &dir).unwrap();
         apply(&store, &[plan.into()]).unwrap();
+
         prune_with(&store, &root.join("trust.lock"), |dir| {
             let missing = missing_folder(dir);
             if missing {

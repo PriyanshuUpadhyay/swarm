@@ -242,6 +242,7 @@ pub(super) fn write_link(plan: &LinkPlan) -> Result<(), String> {
             if matches!(plan.before, LinkState::Absent) {
                 return std::os::unix::fs::symlink(target, &plan.path).map_err(fail);
             }
+
             let destination = &plan.edits[0].file;
             let staged =
                 destination.with_file_name(format!(".swarm-link-{}", uuid::Uuid::now_v7()));
@@ -252,6 +253,7 @@ pub(super) fn write_link(plan: &LinkPlan) -> Result<(), String> {
                     let _ = std::fs::remove_file(&staged);
                 })
         }
+
         LinkState::Absent => {
             validate_link_leaf(plan)?;
             std::fs::remove_file(&plan.path).map_err(fail)
