@@ -112,7 +112,7 @@ def read_ledger(path):
     return ledger
 
 
-def check(title, done, rows):
+def check(done, rows):
     """Each step's needed step files, or SystemExit with the first defect."""
     if not rows:
         raise SystemExit("no | File | Needs | Holds | Block | Why | table")
@@ -247,10 +247,10 @@ def main(argv):
     if (bad := next((i for i, c in enumerate(text) if c not in "\t\n\r" and unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp")), None)) is not None:
         line = text[:bad].count("\n") + 1
         raise SystemExit(f"plan.md has the control character U+{ord(text[bad]):04X} on line {line}; remove it")
-    title, done, rows = read_plan(plan)
+    _, done, rows = read_plan(plan)
     if rows and rows[0][5] is None and not chat_preset(plan):
         raise SystemExit("the step table has no Writes column; add one (`none` for a step that writes only its run folder)")
-    uses = check(title, done, rows)
+    uses = check(done, rows)
     read_claims(plan)
     ledger = read_ledger(plan)
     check_ledger(rows, ledger)

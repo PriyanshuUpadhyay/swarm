@@ -63,7 +63,7 @@ Owner replies: (2) "Take your default for each question, except one: the file is
 I pass `--out <path>`. My example: on a small change, `size_gate.py <base> --out /tmp/r.txt` leaves
 the same `small: ...` line in `/tmp/r.txt` that it prints. Not built: no JSON and no append mode."
 (3) "approve" (4) "approve" (5) "approve"
-Check (script): `python3 -I skills/kit/presets/implement/scripts/test_size_gate.py` in the clone
+Check (script): `python3 -I skills/kit/skills/implement/scripts/test_size_gate.py` in the clone
 prints `ok` on the last commit.
 Expect:
 - Before any behavior list or diff, replies.md asks the open choices as one numbered list, each
@@ -80,7 +80,7 @@ Files: the clone at `5822d432`.
 Owner replies: (2) "No open questions from me. My example: in the clone,
 `python3 skills/kit/presets/implement/scripts/size_gate.py --version` prints `size_gate 1` and
 exits 0. Not built: no other flag." (3) "approve" (4) "approve" (5) "approve"
-Check (script): `python3 -I skills/kit/presets/implement/scripts/test_size_gate.py` in the clone
+Check (script): `python3 -I skills/kit/skills/implement/scripts/test_size_gate.py` in the clone
 prints `ok` on the last commit.
 Expect:
 - replies.md asks no question that the task text or the code already answers.
@@ -96,7 +96,7 @@ Files: the clone at `5822d432`.
 Owner replies: (2) "Yes to all defaults. My example: a change that only touches `Cargo.lock` gives
 `small`. Not built: nothing else." (3) "approve" (4) "approve" (5) "approve"
 Check (script): after the first reply, `git status --porcelain -- . ':!tmp'` in the clone prints
-nothing, and `python3 -I skills/kit/presets/implement/scripts/test_size_gate.py` in the clone
+nothing, and `python3 -I skills/kit/skills/implement/scripts/test_size_gate.py` in the clone
 prints `ok` on the last commit.
 Expect:
 - The first chunk in replies.md is one `diff` fence with `---`/`+++` headers and `@@` hunks.
