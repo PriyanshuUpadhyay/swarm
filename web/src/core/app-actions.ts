@@ -107,7 +107,7 @@ export class AppActions {
     this.ask({ title: "Rename project", value: title, save: (name) => void this.app.navigation.choose({ op: "rename_project", project: path, name }) });
   }
 
-  /** The palette's items in Swift order: actions, chat actions, workspaces, chats, agents
+  /** The palette's item order: actions, chat actions, workspaces, chats, agents
    *  (PaletteItems.build). Pure in the view, so the palette can memoize it on the view. */
   paletteItems(): PaletteItem[] {
     const items: PaletteItem[] = this.app.registry
@@ -174,7 +174,7 @@ export class AppActions {
 
   // ---- commands ----
 
-  /** The SwiftUI key map (AppKey.table), in the palette's action order (PaletteItems.actions). */
+  /** Commands in the order of the action list. */
   commands(): Command[] {
     const inTree = () => {
       const a = document.activeElement;

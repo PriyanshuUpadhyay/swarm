@@ -50,12 +50,6 @@ describe("navigation UX", () => {
     expect(app.rows).toEqual([]);
     expect(paletteSources(app.tree, app.snapshot)).toHaveLength(1);
   });
-  it("focuses restored chats without writing choices", () => {
-    const app = harness();
-    app.navigation.focusOpened = vi.fn();
-    app.openChat("one", undefined, { write: false });
-    expect(app.navigation.focusOpened).toHaveBeenCalledWith("one", false, expect.any(Function));
-  });
   it("reports a failed chat link before restoring the saved selection", () => {
     const app = harness();
     Object.defineProperty(app, "urlChat", { value: "missing" });

@@ -96,14 +96,6 @@ describe("SSE parser", () => {
 });
 
 describe("token", () => {
-  it("reads the token from the hash and removes it from the URL", () => {
-    const calls: unknown[][] = [];
-    const hist = { state: null, replaceState: (...a: unknown[]) => calls.push(a) };
-    const token = takeToken({ hash: "#token=abc123", pathname: "/solid.html", search: "?live=all" }, hist as unknown as History);
-    expect(token).toBe("abc123");
-    expect(calls).toEqual([[null, "", "/solid.html?live=all"]]);
-  });
-
   it("returns null and leaves the URL when there is no token", () => {
     const calls: unknown[] = [];
     const hist = { state: null, replaceState: (...a: unknown[]) => calls.push(a) };

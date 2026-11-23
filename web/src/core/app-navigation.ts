@@ -87,7 +87,7 @@ export class AppNavigation {
   }
 
   /** After each tree: the first one restores the owner's last chat. A chat is marked seen only when
-   *  it is selected (`selected_chat`), as in Swift's WorkspaceNavigation.select. */
+   *  it is selected (`selected_chat`). */
   afterNav(read: NavRead | null) {
     const tree = this.app.tree;
     if (!tree) return;
@@ -333,7 +333,7 @@ export class AppNavigation {
       }
     }
     if (workspace && this.app.revision !== null && opts.write !== false) {
-      // Swift's select: open the tab, then select; only a move to another workspace opens its project.
+      // Open the tab before selecting it. Only a workspace change opens its project.
       const section = this.app.tree?.sections.find((s) => s.rows.some((r) => r.id === workspace));
       if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
       void this.choose({ op: "open_tab", workspace, chat: sessionId });
