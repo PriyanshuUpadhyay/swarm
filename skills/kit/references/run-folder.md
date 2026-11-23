@@ -17,10 +17,14 @@ The following scopes use these paths, including when invoked from a repository.
 | Run kind | Run state | Durable result |
 |---|---|---|
 | research | `<reports>/<YYYY-MM-DD>-<slug>/` | `<reports>/<YYYY-MM-DD>-<slug>.md` |
-| web-search | `<reports>/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `~/.swarm/ws/<run>` | `<reports>/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
+| web-search | `<reports>/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `<repo-root>/tmp/web-search/<run>/`, or `~/.swarm/ws/<run>` when the run starts outside a repository | `<reports>/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
 | council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
 | build piece | `<piece>/ink/` | source and export stay in `<piece>/` |
 | plan | the verb's run state folder above, or `<repo-root>/tmp/plan/<YYYY-MM-DD>-<slug>/` for a verb with no row | `plan.md` and `plan.html` in that folder |
+
+Scratch, such as copies, builds, and launch folders, goes in the worktree's `tmp/` too. `/tmp/` is
+ignored, and `swarm task drop` deletes ignored files with the worktree, so no one must clean up
+after the run. `~/.swarm/ws/` and other folders outside the worktree stay until someone deletes them.
 
 For build, `<piece>` is the folder the owner names. When none is named, ask the owner at intake,
 and do not default to a product repo's root. Keep its source and export there, with the `ink/` progress folder inside it.

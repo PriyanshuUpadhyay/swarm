@@ -24,7 +24,8 @@ skill, check that the same failure happened in at least two real runs.
   committed version, made with `git show HEAD:<path>` into the scratch folder.
 - The cases file, `<skill>/evals/cases.md`. Step 2 writes it when it is missing.
 
-Scratch work goes in `~/.swarm/ws/skill-eval/<skill>-<YYYY-MM-DD>/`. Each pane gets its own empty
+Scratch work goes in `<repo-root>/tmp/skill-eval/<skill>-<YYYY-MM-DD>/`, as
+`references/run-folder.md` says. Each pane gets its own empty
 `mktemp -d` folder as its working folder, so no run edits a repository.
 
 An eval spans many turns, so keep a task file as `<kit root>/blocks/task-file/SKILL.md` says, at
