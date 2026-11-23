@@ -39,9 +39,9 @@ mod tests {
             .unwrap();
 
         assert!(!has_rung_unread(&connection, SESSION, CODER).unwrap());
-        assert!(!rering_due(&connection, SESSION, CODER, 62).unwrap());
+        // No ring typed either message, as a held ring leaves them, so they are due at once.
+        assert!(rering_due(&connection, SESSION, CODER, 62).unwrap());
         assert!(!rering_due(&connection, OTHER_SESSION, OUTSIDER, 60).unwrap());
-        assert!(rering_due(&connection, SESSION, CODER, 60).unwrap());
         connection
             .execute(
                 "UPDATE message SET rung_at = unixepoch(), rings = 1 WHERE seq = 0",

@@ -7,6 +7,7 @@ use super::*;
 pub enum StallKind {
     Unacked,
     Silent,
+    Error,
 }
 
 impl StallKind {
@@ -15,6 +16,7 @@ impl StallKind {
         match self {
             StallKind::Unacked => "unacked",
             StallKind::Silent => "silent",
+            StallKind::Error => "error",
         }
     }
 }
@@ -25,23 +27,26 @@ pub type Stall = (String, StallKind, i64);
 /// The stalls of a session's children that no report names yet, as (agent, what, seq) (ADR
 /// 0041). `unacked`: the child is done, and the oldest message it read but did not ack was read
 /// before it got done. `silent`: no such message, and the child got done after the last ring that
-/// proved a turn, and sent nothing since that ring but its own reports. The chair is never the
-/// subject: a message about the chair would go to the chair.
+/// proved a turn, and sent nothing since that ring but its own reports. `error`: the child's turn
+/// failed after such a message, so the message has no answer and the child does no more work. The
+/// chair is never the subject: a message about the chair would go to the chair.
 pub fn stalls(
     connection: &Connection,
     session_id: &str,
 ) -> Result<Vec<Stall>, Box<dyn std::error::Error>> {
-    let children: Vec<(String, i64)> = connection
+    let children: Vec<(String, i64, bool)> = connection
         .prepare(
-            "SELECT id, state_at FROM agent
-             WHERE session_id = ?1 AND pane_id IS NOT NULL AND state = 'done'
+            "SELECT id, state_at, state = 'error' FROM agent
+             WHERE session_id = ?1 AND pane_id IS NOT NULL AND state IN ('done', 'error')
                AND state_at IS NOT NULL AND role != 'orchestrator' AND id != 'orchestrator'
              ORDER BY id",
         )?
-        .query_map([session_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .query_map([session_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?
         .collect::<Result<_, _>>()?;
     let mut found = Vec::new();
-    for (agent, done_at) in children {
+    for (agent, done_at, failed) in children {
         let unacked: Option<(i64, i64)> = connection
             .query_row(
                 "SELECT seq, seen_at FROM message
@@ -55,7 +60,7 @@ pub fn stalls(
             )
             .optional()?;
         let stall = match unacked {
-            Some((seq, seen_at)) if seen_at < done_at => Some((StallKind::Unacked, seq)),
+            Some((seq, seen_at)) if seen_at < done_at && !failed => Some((StallKind::Unacked, seq)),
             _ => connection
                 .query_row(
                     "SELECT seq FROM message AS inbound
@@ -73,7 +78,14 @@ pub fn stalls(
                     |row| row.get(0),
                 )
                 .optional()?
-                .map(|seq| (StallKind::Silent, seq)),
+                .map(|seq| {
+                    let what = if failed {
+                        StallKind::Error
+                    } else {
+                        StallKind::Silent
+                    };
+                    (what, seq)
+                }),
         };
         let Some((what, seq)) = stall else {
             continue;
@@ -267,9 +279,10 @@ pub fn rering_due(
     agent_id: &str,
     age_secs: i64,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    // Unseen messages that no ring typed, as a held ring leaves them, are due at once: they
+    // waited only for the question to close.
     let due: bool = connection.query_row(
         "SELECT COUNT(*) > 0
-             AND MIN(created_at) <= unixepoch() - ?3
              AND (MAX(rung_at) IS NULL OR MAX(rung_at) <= unixepoch() - ?3)
              AND MAX(rings) < ?4
          FROM message
@@ -284,6 +297,42 @@ pub fn rering_due(
         |row| row.get(0),
     )?;
     Ok(due)
+}
+
+/// Whether all of `agent_id`'s unseen messages are unrung, as a held ring leaves them.
+pub fn ring_held(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let held: bool = connection.query_row(
+        "SELECT COUNT(*) > 0 AND MAX(rung_at) IS NULL
+         FROM message
+         WHERE session_id = ?1 AND recipient_id = ?2 AND seen_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM read_mark
+                           WHERE read_mark.session_id = message.session_id
+                             AND message_seq = message.seq AND agent_id = ?2)",
+        (session_id, agent_id),
+        |row| row.get(0),
+    )?;
+    Ok(held)
+}
+
+/// Undo the ring at `rung_at` on `seqs`, because nothing was typed: the recipient waited on a
+/// question. The hold does not count as a ring, so it never makes a message lost.
+pub fn hold_ring(
+    connection: &Connection,
+    session_id: &str,
+    seqs: &[i64],
+    rung_at: i64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    connection.execute(
+        "UPDATE message SET rings = rings - 1, rung_at = NULL, delivery = NULL
+         WHERE session_id = ?1 AND seq IN (SELECT value FROM json_each(?2)) AND rung_at = ?3
+           AND rings > 0",
+        (session_id, serde_json::to_string(seqs)?, rung_at),
+    )?;
+    Ok(())
 }
 
 /// Mark `agent_id`'s unseen messages as rung once more, and return each one's seq and ring

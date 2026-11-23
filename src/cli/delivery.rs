@@ -285,6 +285,16 @@ pub(crate) fn report_stalls(
             swarm::store::StallKind::Silent => {
                 format!("{agent} finished its turn after message {seq} and sent nothing back")
             }
+            swarm::store::StallKind::Error => {
+                let detail = swarm::store::agents(connection, session_id)?
+                    .into_iter()
+                    .find(|row| row.id == agent)
+                    .and_then(|row| row.state_detail)
+                    .map_or(String::new(), |detail| format!(": {detail}"));
+                format!(
+                    "{agent} stopped with an error after message {seq} and does no more work{detail}"
+                )
+            }
         };
         let what = what.as_str();
         let kind = format!("stall:{what}:{seq}");

@@ -89,4 +89,5 @@ stops with the session.
 The sweep also sends you a message in a child's name when its work is stuck. `unconfirmed:<seq>`:
 two rings of message `<seq>` started no turn; check the pane and send again. `stall:unacked:<seq>`:
 the child is done but did not ack `<seq>`. `stall:silent:<seq>`: the child finished after `<seq>`
-and sent nothing back. Ack each one like any other message.
+and sent nothing back. `stall:error:<seq>`: the child's turn failed after `<seq>`, and the body
+names the error; replace the seat or fix its cause. Ack each one like any other message.

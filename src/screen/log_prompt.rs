@@ -7,6 +7,18 @@ use std::path::Path;
 
 const LOG_TAIL_BYTES: u64 = 256 * 1024;
 
+/// Whether the pane shows a question or a Pi dialog, readable or not. Such a dialog takes Enter
+/// as its answer, so text and Enter typed into it would choose for the owner.
+pub fn question_open(
+    provider: Option<&str>,
+    screen: &str,
+    history: impl FnOnce() -> Option<String>,
+    log: Option<&Path>,
+) -> bool {
+    (provider == Some("pi") && super::pi_prompt::pi_dialog(screen))
+        || agent_prompt(provider, screen, history, log).is_some()
+}
+
 /// The screen proves the question is live; the log fills text lost above the pane's top row.
 pub fn agent_prompt(
     provider: Option<&str>,

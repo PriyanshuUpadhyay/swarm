@@ -49,8 +49,8 @@ pub use composer::{
     pi_composer, pi_queue, queue, reads_composer,
 };
 pub use live::turn_text;
-pub use log_prompt::agent_prompt;
 pub(crate) use log_prompt::log_tail;
+pub use log_prompt::{agent_prompt, question_open};
 pub use pi_prompt::pi_input_text;
 pub use prompt::{Prompt, prompt, whole_prompt};
 pub use screen_prompt::{screen_prompt, waits_on_owner};

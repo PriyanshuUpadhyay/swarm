@@ -279,7 +279,19 @@ pub(crate) fn list_agents_from(
         if Some(&row.id) == chair.as_ref() {
             chair_row_idle = idle;
         }
-        if idle
+        // A ring held for a question goes as soon as the question is gone, even while the agent
+        // works, as its first ring would have; `ring_pane` checks the question again.
+        let question_gone = screen
+            .is_some_and(|screen| screen != swarm::screen::ScreenState::Blocked)
+            && prompt.is_none()
+            && state.as_deref() != Some("blocked");
+        let held = || {
+            swarm::store::ring_held(connection, session_id, &row.id).unwrap_or_else(|error| {
+                eprintln!("swarm: {error}");
+                false
+            })
+        };
+        if (idle || (question_gone && held()))
             && let Some(pane) = row.pane.as_deref()
             && let Err(error) = rering_if_due(
                 connection,

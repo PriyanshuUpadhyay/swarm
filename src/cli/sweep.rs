@@ -399,6 +399,47 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// A seat whose sign-in failed sat in `error`, and nothing told the chair (rv-web-check,
+    /// 2026-11-24).
+    #[test]
+    fn sweep_reports_a_child_that_failed_on_its_ask() {
+        let (root, mut connection, session) = ring_session(
+            "stall-error",
+            None,
+            "ring = true",
+            include_str!("../../tests/fixtures/screens/claude-idle.txt"),
+        );
+        swarm::store::set_pane(&connection, &session, ORCHESTRATOR, "%1").unwrap();
+        swarm::store::set_chair(&connection, &session, Some(("claude", "chair-id"))).unwrap();
+        let ask = send_task(&root, &mut connection, &session);
+        connection
+            .execute_batch("UPDATE message SET delivery = 'hook', rung_at = unixepoch() - 30")
+            .unwrap();
+        let now = unix_now().unwrap();
+        let detail = "Failed to authenticate";
+        swarm::store::set_state(
+            &connection,
+            &session,
+            CODER,
+            "error",
+            "host",
+            Some(detail),
+            None,
+            now,
+        )
+        .unwrap();
+        let adapter = swarm::adapter::load(&root, "fake").unwrap();
+
+        assert_eq!(
+            swept(&mut connection, &root, &adapter, &session),
+            [format!("stall coder error {ask}")]
+        );
+        let body = std::fs::read_to_string(root.join(format!("runs/{session}/1.txt"))).unwrap();
+        assert!(body.ends_with(&format!(": {detail}")), "{body}");
+        assert!(swept(&mut connection, &root, &adapter, &session).is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn sweep_rerings_its_own_chair_for_an_old_unseen_finish() {
         patient_rings();
