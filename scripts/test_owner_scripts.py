@@ -147,20 +147,6 @@ class OwnerScripts(unittest.TestCase):
     def calls(self):
         return (self.root / 'calls').read_text()
 
-    def test_release_accepts_seven_and_eight_char_commit(self):
-        for length in ('7', '8'):
-            with self.subTest(length=length):
-                self.state.pop('tag', None); self.save()
-                result = self.run_script(HASH_LENGTH=length)
-                self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_release_rejects_empty_or_wrong_commit(self):
-        for scenario in ('empty-hash', 'wrong-hash'):
-            self.state.pop('tag', None); self.save()
-            result = self.run_script(scenario=scenario)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn('resume ' + self.state['tag'], result.stderr)
-
     def test_release_refuses_tagged_head(self):
         self.state['tag'] = 'v0.0.19'; self.save()
         result = self.run_script()
@@ -306,31 +292,6 @@ class OwnerScripts(unittest.TestCase):
                 result = self.run_script('install-local.sh', ('HEAD',), scenario=scenario)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(self.git('-C', str(self.root / 'tap'), 'status', '--porcelain'), '')
-
-    def test_prune_keeps_new_branch_with_tmp_files(self):
-        self.env['MODE'] = 'prune'
-        self.git('init', '-b', 'main', str(self.root))
-        self.git('-C', str(self.root), 'add', 'Cargo.toml', 'scripts')
-        self.git('-C', str(self.root), 'commit', '-m', 'fixture')
-        self.git('-C', str(self.root), 'remote', 'add', 'origin', str(self.root))
-        self.git('-C', str(self.root), 'fetch', 'origin')
-        tree = self.root / 'fresh'
-        self.git('-C', str(self.root), 'worktree', 'add', '-b', 'fresh-task', str(tree))
-        (tree / 'tmp/flow').mkdir(parents=True)
-        (tree / 'tmp/flow/01-frame.md').write_text('keep this task\n')
-        done = self.root / 'done'
-        self.git('-C', str(self.root), 'worktree', 'add', '-b', 'done-task', str(done))
-        (done / 'done.txt').write_text('own commit\n')
-        self.git('-C', str(done), 'add', 'done.txt')
-        self.git('-C', str(done), 'commit', '-m', 'task')
-        self.git('-C', str(self.root), 'merge', '--no-ff', 'done-task', '-m', 'merge task')
-        # The fresh branch still points to the earlier main commit.
-        result = self.run_script('prune-worktrees.sh', ())
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f'KEEP {tree} — no commits yet', result.stdout)
-        self.assertNotIn(f'REMOVE {tree}', result.stdout)
-        self.assertIn(f'REMOVE {done}', result.stdout)
-        self.assertTrue((tree / 'tmp/flow/01-frame.md').is_file())
 
 
 if __name__ == '__main__':

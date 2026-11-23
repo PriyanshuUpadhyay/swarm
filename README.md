@@ -243,7 +243,6 @@ The install and release scripts accept `--dry-run` and make no changes in that m
 | `scripts/install-local.sh <tag-or-commit>` | Build a clean copy of the ref and install it through Homebrew. |
 | `scripts/release.sh patch\|minor\|major [--no-local]` | Check main, wait for its `ci` run, bump the version, push the release, install the tag locally (skip with `--no-local`), and wait for Release and Tap. |
 | `scripts/kit-checks.sh [worktree]` | Run the nine kit checks and keep full logs in `tmp/kit-checks/`. |
-| `scripts/prune-worktrees.sh [--yes]` | List merged, clean worktrees after a fetch; use `--yes` to remove them and their branches. |
 
 A local build uses the Homebrew version `<version>.local.<commit>`.
 For example, `0.0.19.local.6a56182f` sorts above `0.0.19` and below `0.0.20`.

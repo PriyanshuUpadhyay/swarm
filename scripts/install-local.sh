@@ -4,6 +4,7 @@
 set -eu
 
 die() { printf '%s\n' "install-local: $*" >&2; exit 1; }
+. "$(dirname "$0")/verify-installed.sh"
 dry=false
 ref=
 for arg in "$@"; do
@@ -132,13 +133,4 @@ fi
 git -C "$tap_root" checkout -- Formula/swarm.rb
 [ -z "$(git -C "$tap_root" status --porcelain -- Formula/swarm.rb)" ] || die 'tap formula restore left changes'
 restore=false
-# Reload the HUD login item, so the new build starts at once (ADR 0127).
-swarm hud restart
-installed=$(swarm --version)
-printf '%s\n' "$installed"
-printed=$(printf '%s\n' "$installed" | awk 'NR == 1 {print $3}')
-case "$printed" in ''|*[!0-9a-f]*) die 'swarm --version did not print a commit hash' ;; esac
-case "$commit" in "$printed"*) ;; *) die "PATH does not run commit $commit" ;; esac
-
-# Cleanup runs in a detached child and never fails the install.
-swarm __prune-stale-trust schedule-upgrade || printf '%s\n' 'swarm: could not schedule trust cleanup' >&2
+verify_installed "$commit"
