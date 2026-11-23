@@ -69,7 +69,8 @@ describe("diff clients and draft state", () => {
 
   it("discards a late Add after selection, diff or workspace changes", async () => {
     const got = [];
-    for (const kind of ["selection", "diff", "workspace"]) {
+    const cases = ["selection", "diff", "workspace"];
+    for (const kind of cases) {
       const wait = deferred<Response>();
       const { changes, workspace, reloadDiff } = await harness(() => wait.promise);
       changes.setEditor(file.path, file.layer, editor);
@@ -82,7 +83,7 @@ describe("diff clients and draft state", () => {
       if (kind === "workspace") { workspace("A"); await drain(); }
       got.push({ kind, success, comments: changes.view.comments.map(draft), editor: changes.editor(file.path, file.layer) });
     }
-    expect(got).toEqual(["selection", "diff", "workspace"].map((kind) => ({ kind, success: false, comments: [], editor: kind === "selection" ? { ...editor, anchor: 1, cursor: 1 } : editor })));
+    expect(got).toEqual(cases.map((kind) => ({ kind, success: false, comments: [], editor: kind === "selection" ? { ...editor, anchor: 1, cursor: 1 } : editor })));
   });
 
   it("keeps text and selection after failed Add and lets the owner retry", async () => {
@@ -112,7 +113,8 @@ describe("diff clients and draft state", () => {
 
   it("keeps drafts and clears sending after a send failure or a changed destination", async () => {
     const got = [];
-    for (const kind of ["send-false", "send-throw", "destination"]) {
+    const cases = ["send-false", "send-throw", "destination"];
+    for (const kind of cases) {
       const wait = deferred<Response>();
       const { changes, app } = await harness(async (body) => {
         if (body.op !== "message") return Response.json(range);
@@ -128,7 +130,7 @@ describe("diff clients and draft state", () => {
       try { await pending; } catch { rejected = true; }
       got.push({ kind, comments: changes.view.comments.map(draft), sending: changes.view.sending, rejected, sent: app.send.mock.calls.length > 0, noticed: app.notice.mock.calls.length > 0 });
     }
-    expect(got).toEqual(["send-false", "send-throw", "destination"].map((kind) => ({ kind, comments: [hand.comments[0]], sending: false, rejected: false, sent: kind.startsWith("send-"), noticed: kind !== "destination" })));
+    expect(got).toEqual(cases.map((kind) => ({ kind, comments: [hand.comments[0]], sending: false, rejected: false, sent: kind.startsWith("send-"), noticed: kind !== "destination" })));
   });
 });
 

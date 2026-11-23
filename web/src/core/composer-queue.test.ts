@@ -32,6 +32,7 @@ describe("pull-back through the app", () => {
       vi.advanceTimersByTime(1000);
       await app.pullBack("other");
       expect(app.composing.input("other").alreadySent).toBe(true);
+
       vi.advanceTimersByTime(1000);
       expect(app.composing.input("chat").alreadySent).toBe(false);
       expect(app.composing.input("other").alreadySent).toBe(true);

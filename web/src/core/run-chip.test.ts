@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { accountCli, agentInput, applyBlock, chooseModel, cliName, levelWord, limitText, runLabel, switchOutcome, usageLabel, usageTitle } from "./composer";
+import { accountCli, accountColor, agentInput, applyBlock, chooseModel, cliName, levelWord, limitText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
 import type { Meter } from "./settings";
 
 
@@ -12,6 +12,15 @@ describe("run chip", () => {
   it("names the account, model and thinking, and the CLI where no account is", () => {
     expect(runLabel(agentInput(session(), [chair({ provider: "claude", model: "claude-sonnet-5-5", effort: "high", account: "work" })]))).toBe("work · claude-sonnet-5-5 · high");
     expect(runLabel(agentInput(session({ chair_provider: "pi" }), [chair({ provider: "pi" })]))).toBe("Pi · Default model");
+  });
+
+  it("shows the current run in the tooltip and uses distinct dots for two accounts", () => {
+    const current = run("claude", "sonnet-test", "high", "work");
+    expect(runTip(current)).toMatch(/Claude[^\n]*work\s+sonnet-test[^\n]*High/);
+
+    const dots = ["work", "home"].map(accountColor);
+    expect(dots).toEqual(Array(2).fill(expect.stringMatching(/^oklch\([^)]+\)$/)));
+    expect(new Set(dots).size).toBe(2);
   });
 
   it("resumes inside one CLI, also on another Codex account, and hands off to another CLI", () => {

@@ -203,6 +203,7 @@ test("Recent lists chats across projects and opens one in another project from t
   await expect(tab.locator(`[data-testid="recent-row"][data-session="${build}"]`)).toHaveAttribute("aria-current", "true");
   await expect(tab.locator(`[data-testid="recent-row"][data-session="${build}"]`)).toBeFocused();
   const order = await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-session")));
+
   const target = order.indexOf(edit);
   expect(target).toBeGreaterThanOrEqual(0);
   await tab.keyboard.press("Home");
@@ -218,6 +219,7 @@ test("Recent lists chats across projects and opens one in another project from t
   await expect(current).toHaveAttribute("aria-current", "true");
   await expect(composer).toBeFocused();
   expect((await saved).ok()).toBe(true);
+
   await tab.reload();
   await tab.waitForFunction(() => window.__swarmReady === true);
   await expect(current).toHaveAttribute("tabindex", "0");

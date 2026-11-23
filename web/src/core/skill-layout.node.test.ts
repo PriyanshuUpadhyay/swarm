@@ -24,6 +24,17 @@ describe("layoutSkill", () => {
     expect(crossings(laid)).toEqual([]);
   });
 
+  it("reports an edge that crosses another box", () => {
+    const box = (file: string, y: number) => ({ file, x: 0, y, w: 100, h: 50 });
+    const laid = {
+      width: 100,
+      height: 300,
+      boxes: [box("a", 0), box("b", 100), box("c", 200)],
+      edges: [{ from: "a", to: "c", points: [{ x: 50, y: 50 }, { x: 50, y: 200 }] }],
+    };
+    expect(crossings(laid)).toEqual(["a->c via b"]);
+  });
+
   it("separates stages and routes edges around boxes in a branching preset", () => {
     const preset = kit.presets.find((p) => p.preset === "implement")!;
     const laid = layoutSkill(preset.steps, preset.steps.map(() => ({ w: 236, h: 96 })));
