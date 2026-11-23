@@ -266,7 +266,10 @@ fn hung_captures_share_one_limit() {
 
     // Four reads of CAPTURE_WAIT each would take 60 s; the shared limit ends them.
     for id in &ids {
-        assert!(swarm::store::answered(&connection, &session, id).unwrap(), "{id}");
+        assert!(
+            swarm::store::answered(&connection, &session, id).unwrap(),
+            "{id}"
+        );
     }
     std::fs::remove_dir_all(root).unwrap();
 }

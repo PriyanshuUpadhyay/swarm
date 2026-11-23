@@ -195,7 +195,9 @@ mod tests {
         let herdr = parse("herdr", shipped("herdr").unwrap()).unwrap();
         assert!(herdr.attach.is_some());
         let superset = parse("superset", shipped("superset").unwrap()).unwrap();
-        assert!(superset.attach.is_none() && superset.interrupt.is_none() && superset.key.is_none());
+        assert!(
+            superset.attach.is_none() && superset.interrupt.is_none() && superset.key.is_none()
+        );
         assert!(superset.screen.is_some());
         assert!(superset.caller.contains("SUPERSET_TERMINAL_ID"));
         let rex = parse("rex", shipped("rex").unwrap()).unwrap();
