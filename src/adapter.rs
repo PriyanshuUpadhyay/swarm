@@ -127,6 +127,7 @@ fn build(name: &str, mut verbs: Verbs) -> Result<Adapter, Box<dyn std::error::Er
 pub fn load(root: &std::path::Path, name: &str) -> Result<Adapter, Box<dyn std::error::Error>> {
     let path = root.join("adapters").join(format!("{name}.conf"));
     let deployed = std::fs::read_to_string(&path);
+    use std::io::ErrorKind::NotFound;
     match (shipped(name), deployed) {
         (Some(base), Ok(text)) => {
             let mut merged = verbs(name, base)?;
@@ -145,9 +146,9 @@ pub fn load(root: &std::path::Path, name: &str) -> Result<Adapter, Box<dyn std::
             merged.extend(deployed);
             build(name, merged)
         }
-        (Some(base), Err(_)) => parse(name, base),
+        (Some(base), Err(error)) if error.kind() == NotFound => parse(name, base),
         (None, Ok(text)) => parse(name, &text),
-        (None, Err(error)) => Err(format!("adapter {name}: {}: {error}", path.display()).into()),
+        (_, Err(error)) => Err(format!("adapter {name}: {}: {error}", path.display()).into()),
     }
 }
 
@@ -159,6 +160,20 @@ mod tests {
     const LONG: std::time::Duration = std::time::Duration::from_secs(30);
 
     const FULL: &str = "# herdr\nself = printf '%s' \"$HERDR_PANE_ID\"\nspawn = herdr pane split\nring = herdr pane send-text\nlist = herdr pane list\nclose = herdr pane close\ncapture = herdr pane read\n";
+
+    #[test]
+    fn audit_regression_unreadable_override_does_not_load_shipped_adapter() {
+        let root = std::env::temp_dir().join(format!(
+            "swarm-adapter-invalid-override-{}",
+            std::process::id()
+        ));
+        let adapters = root.join("adapters");
+        std::fs::create_dir_all(&adapters).unwrap();
+        std::fs::write(adapters.join("tmux.conf"), [0xff]).unwrap();
+        let result = load(&root, "tmux");
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(result.is_err());
+    }
 
     #[test]
     fn parses_verbs_and_rejects_missing_or_unknown() {
