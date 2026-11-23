@@ -124,6 +124,7 @@ impl Source {
         let budget = Budget::new(duration)?;
         let (begun, begin) = oneshot::channel();
         let (done, result) = oneshot::channel();
+
         self.orders
             .send(Order::Start {
                 operation,
@@ -132,6 +133,7 @@ impl Source {
                 done,
             })
             .map_err(|_| Fault::Core)?;
+
         let target = begin.await.map_err(|_| Fault::Core)??;
         NativeJob {
             orders: self.orders.clone(),

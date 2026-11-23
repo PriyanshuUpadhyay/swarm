@@ -50,7 +50,6 @@ pub(crate) use delivery::*;
 
 mod dispatch;
 #[cfg(feature = "serve")]
-#[path = "cli/transcript_worker_v2.rs"]
 mod transcript_worker;
 
 pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {

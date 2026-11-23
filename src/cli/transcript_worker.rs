@@ -1,4 +1,4 @@
-//! A per-source authority keeps saved child failures apart from retained rows.
+//! Runs native transcript reads against one open file.
 use std::{fs::File, os::fd::AsFd, path::Path, time::Duration};
 use swarm::view::transcript::{
     source::NativeFormat,
