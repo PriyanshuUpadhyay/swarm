@@ -29,7 +29,7 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
 /// A new chat that a model switch starts in `body.cwd`; it waits for the chat to start.
 pub(super) async fn new_chat_now(app: &App, body: NewChat) -> Result<Value, ApiError> {
     let (mut start, launch) = checked_start(app, body).await?;
-    let (session, workspace) = start.steps(&launch).await?;
+    let (session, workspace, _) = start.steps(&launch).await?;
     Ok(json!({"ok": true, "session": session, "workspace": workspace}))
 }
 

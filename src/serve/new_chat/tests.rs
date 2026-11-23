@@ -63,6 +63,7 @@ async fn new_chat_route() {
 async fn start_status_keeps_the_first_send_failure() {
     let fixture = action_fixture();
     let session = uuid::Uuid::now_v7();
+
     std::fs::write(
         &fixture.app.cli,
         format!(
@@ -76,6 +77,7 @@ esac
         ),
     )
     .unwrap();
+
     let done = start_chat(
         &fixture,
         json!({"cwd": env!("CARGO_MANIFEST_DIR"), "prompt": "Fix it"}),

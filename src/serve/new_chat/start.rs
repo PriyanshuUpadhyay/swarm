@@ -116,7 +116,7 @@ impl Start {
     }
 
     pub(super) async fn run(mut self, launch: Launch) {
-        match self.steps_with_send(&launch).await {
+        match self.steps(&launch).await {
             Ok((session, workspace, send_error)) => {
                 self.frame(
                     Step::Done,
@@ -133,14 +133,9 @@ impl Start {
         }
     }
 
-    pub(super) async fn steps(&mut self, launch: &Launch) -> Result<(String, String), ApiError> {
-        let (session, cwd, _) = self.steps_with_send(launch).await?;
-        Ok((session, cwd))
-    }
-
     /// Makes the worktree, the session and the chair, then sends the first prompt. A send error
     /// does not stop the chat.
-    async fn steps_with_send(
+    pub(super) async fn steps(
         &mut self,
         launch: &Launch,
     ) -> Result<(String, String, Option<String>), ApiError> {
