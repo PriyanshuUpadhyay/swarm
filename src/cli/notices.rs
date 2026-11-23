@@ -131,7 +131,13 @@ pub(crate) fn inbox(
             (Some(adapter), Some(pane)) => swarm::adapter::load(root, adapter)
                 .ok()
                 .and_then(|loaded| {
-                    read_screen(&loaded, pane, Some(&waiting.provider), log.as_deref())
+                    read_screen(
+                        &loaded,
+                        pane,
+                        Some(&waiting.provider),
+                        log.as_deref(),
+                        Some("blocked"),
+                    )
                 })
                 .and_then(|(_, _, prompt, _)| prompt),
             _ => None,

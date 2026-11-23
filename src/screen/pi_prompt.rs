@@ -96,6 +96,7 @@ fn choice_prompt(question: String, choices: Vec<String>, cursor: usize, input: b
         cut: false,
         reply: None,
         input,
+        screen: false,
     }
 }
 
@@ -267,6 +268,7 @@ pub(super) fn pi_prompt(screen: &str, log: Option<&std::path::Path>) -> Option<P
         cut: false,
         reply: None,
         input: false,
+        screen: false,
     })
 }
 
@@ -295,6 +297,7 @@ fn pi_input_prompt(rows: &[&str]) -> Option<Prompt> {
         cut: false,
         reply: None,
         input: true,
+        screen: false,
     })
 }
 

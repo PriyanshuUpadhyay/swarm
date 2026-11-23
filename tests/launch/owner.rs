@@ -67,7 +67,12 @@ const FOLDER_TRUST: &str =
 #[test]
 fn the_owner_answers_a_listed_question_with_its_choice_key() {
     let home = scratch("answer");
-    let session = answer_session(&home, "printf 'done\\n' > \"$HOME/screen\"");
+    // The answer closes the dialog, and Claude's input box comes back.
+    let idle = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/screens/claude-idle.txt"
+    );
+    let session = answer_session(&home, &format!("cp '{idle}' \"$HOME/screen\""));
     std::fs::write(home.join("screen"), PERMISSION).unwrap();
     let prompt = listed_prompt(&home, &session);
     assert_eq!(prompt["choices"], serde_json::json!(["Yes", "No"]));
@@ -197,23 +202,29 @@ fn the_owner_presses_only_up_and_ctrl_u_in_an_agent_pane() {
 }
 
 #[test]
-fn a_folder_trust_screen_that_nothing_closes_above_is_answered_only_in_the_pane() {
+fn a_folder_trust_screen_that_nothing_closes_above_gets_a_screen_card() {
     let home = scratch("answer-trust");
     let session = answer_session(&home, "true");
+    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
+    swarm::store::set_provider(&connection, &session, "seat", "codex").unwrap();
     std::fs::write(home.join("screen"), FOLDER_TRUST).unwrap();
-    assert_eq!(listed_prompt(&home, &session), serde_json::Value::Null);
-    let app = [
-        ("SWARM_ADAPTER", "fake"),
-        ("SWARM_SESSION_ID", session.as_str()),
-        ("SWARM_AGENT_ID", "orchestrator"),
-    ];
-    let output = swarm(&home, &app, &["answer", "seat", "0000000000000000", "0"]);
+    // No row above proves where the question starts, so it is not read as choices.
+    let prompt = listed_prompt(&home, &session);
+    assert_eq!(prompt["screen"], true, "{prompt}");
     assert!(
-        stderr(&output).contains("shows no question now"),
-        "{}",
-        stderr(&output)
+        prompt["question"]
+            .as_str()
+            .unwrap()
+            .contains("Trust this folder?")
     );
-    assert!(!home.join("keys").exists());
+    let app = chair(&session);
+    let id = prompt["id"].as_str().unwrap();
+    let output = swarm(&home, &app, &["answer", "seat", id, "2"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        std::fs::read_to_string(home.join("keys")).unwrap(),
+        "Enter\n"
+    );
 }
 
 #[test]

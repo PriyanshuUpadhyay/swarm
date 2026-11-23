@@ -148,10 +148,9 @@ pub fn permission_for_prompt(
                 delivered = Some(request);
             }
         } else if active.is_some() {
-            return Err(
-                "swarm: more than one hook matches this permission; answer it in the terminal"
-                    .into(),
-            );
+            // Two waiting hooks match the same dialog, so no hook can take the decision. The
+            // answer goes as the dialog's keys, and Claude then answers its own hooks.
+            return Ok(None);
         } else {
             active = Some(request);
         }

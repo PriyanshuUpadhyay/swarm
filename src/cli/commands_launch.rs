@@ -274,7 +274,7 @@ pub(crate) fn commands_launch(
                     agy.run("agy", &target, &settings, swarm::bus::agy_trust_plan)?;
                 }
                 Err(reason) => eprintln!(
-                    "swarm: not pre-trusting for {}: {reason}; answer the prompt in the pane",
+                    "swarm: not pre-trusting for {}: {reason}; its question shows in the chat",
                     kind.id()
                 ),
             },
@@ -340,7 +340,7 @@ pub(crate) fn commands_launch(
                 // chair or a seat gets the entry only where Codex and AGY may be pre-trusted.
                 if let Err(reason) = trust_target(&cwd, &user_home) {
                     eprintln!(
-                        "swarm: not pre-trusting for claude: {reason}; answer the prompt in the pane"
+                        "swarm: not pre-trusting for claude: {reason}; its question shows in the chat"
                     );
                 } else {
                     let configs = vec![user_home.join(".claude.json")];

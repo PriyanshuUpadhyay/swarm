@@ -50,15 +50,16 @@ pub(crate) fn answer(
         let read = || {
             let pane = [("pane", pane.as_str())];
             let screen = adapter.screen(&pane, std::time::Duration::from_secs(1))?;
-            swarm::screen::agent_prompt(
+            super::read_screen::owner_prompt(
                 provider.as_deref(),
+                agent.state.as_deref(),
                 &screen,
                 || adapter.capture_within(&pane, std::time::Duration::from_secs(1)),
-                agent.log.as_deref().map(std::path::Path::new),
+                agent.log.as_deref(),
             )
         };
         let prompt = read().ok_or(format!("swarm: {agent_id} shows no question now"))?;
-        let request = if provider.as_deref() == Some("claude") {
+        let request = if provider.as_deref() == Some("claude") && !prompt.screen {
             swarm::permission::permission_for_prompt(
                 root,
                 &session,
@@ -81,7 +82,14 @@ pub(crate) fn answer(
             }
             .into());
         }
-        if prompt.input != text.is_some() {
+        // A screen card takes a key or typed text, which goes with Enter as the pane would take it.
+        if prompt.screen
+            && let Some(text) = &text
+        {
+            adapter.run("ring", &[("pane", &pane), ("text", text)])?;
+            return Ok(Some(()));
+        }
+        if !prompt.screen && prompt.input != text.is_some() {
             return Err(if prompt.input {
                 "swarm: the question takes typed text; send it with --text"
             } else {
@@ -134,7 +142,7 @@ pub(crate) fn answer(
             if !swarm::screen::codex_input_ready(&screen) {
                 return Err(format!(
                     "swarm: {agent_id}'s input box is not on screen, so the reply would go \
-                     nowhere; answer in its pane"
+                     nowhere; close its open dialog in the chat first"
                 )
                 .into());
             }

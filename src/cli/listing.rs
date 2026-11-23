@@ -183,8 +183,15 @@ pub(crate) fn list_agents_from(
                 Ok(scope.spawn(move || {
                     let host = host_record_of(adapter, provider, pane, seen_work);
                     let fresh = kept.is_none();
-                    let screen =
-                        kept.or_else(|| read_screen(adapter, pane, provider, row.log.as_deref()));
+                    let screen = kept.or_else(|| {
+                        read_screen(
+                            adapter,
+                            pane,
+                            provider,
+                            row.log.as_deref(),
+                            row.state.as_deref(),
+                        )
+                    });
                     (screen, host, fresh)
                 }))
             })

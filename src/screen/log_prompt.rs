@@ -66,6 +66,7 @@ pub fn agent_prompt(
             cut: false,
             reply: None,
             input: false,
+            screen: false,
         })
     });
     let found = matches.next()?;

@@ -40,6 +40,7 @@ mod live;
 mod log_prompt;
 mod pi_prompt;
 mod prompt;
+mod screen_prompt;
 
 pub use classify::{failure_detail, herdr_state, read_pane, screen_state};
 pub use codex_question::codex_reply;
@@ -52,6 +53,7 @@ pub use log_prompt::agent_prompt;
 pub(crate) use log_prompt::log_tail;
 pub use pi_prompt::pi_input_text;
 pub use prompt::{Prompt, prompt, whole_prompt};
+pub use screen_prompt::{screen_prompt, waits_on_owner};
 
 /// The states a provider's hooks cannot send. Only these may let a screen read overturn a hook
 /// report younger than `STALE_S`, after the `HOOK_AUTHORITY_S` window.

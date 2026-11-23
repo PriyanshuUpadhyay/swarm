@@ -28,6 +28,10 @@ pub struct Prompt {
     /// The question takes typed text, not a choice: Pi's `ctx.ui.input` dialog.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub input: bool,
+    /// A screen card: `question` holds the pane's rows, and each choice presses one key
+    /// (src/screen/screen_prompt.rs).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub screen: bool,
 }
 
 /// Rows that end a choice list on every prompt seen: Claude permission and AskUserQuestion,
@@ -245,6 +249,7 @@ fn prompt_above(lines: &[&str], footer: usize) -> Option<Prompt> {
         cut: !bounded,
         reply: None,
         input: false,
+        screen: false,
     })
 }
 
@@ -270,6 +275,11 @@ impl Prompt {
     pub fn keys(&self, index: usize) -> Option<Vec<String>> {
         if index >= self.choices.len() {
             return None;
+        }
+        if self.screen {
+            return super::screen_prompt::SCREEN_KEYS
+                .get(index)
+                .map(|key| vec![key.to_string()]);
         }
         if self.numbered {
             return Some(vec![(index + 1).to_string()]);

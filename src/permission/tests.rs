@@ -120,3 +120,19 @@ fn the_exclusive_file_claim_accepts_one_answer_across_threads() {
     ));
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn two_waiting_hooks_for_one_dialog_leave_the_answer_to_the_dialog_keys() {
+    let root = std::env::temp_dir().join(format!("swarm-permission-two-{}", uuid::Uuid::now_v7()));
+    let session = uuid::Uuid::now_v7().to_string();
+    let screen = include_str!("../../tests/fixtures/screens/claude-waiting.txt");
+    let prompt = crate::screen::prompt(screen).unwrap();
+    add_permission_request(&root, &session, "worker", &payload(), 1000).unwrap();
+    let one = permission_for_prompt(&root, &session, "worker", &prompt, 101).unwrap();
+    assert!(one.is_some());
+    // No hook can take the decision, so the answer goes as keys, not as an error.
+    add_permission_request(&root, &session, "worker", &payload(), 1000).unwrap();
+    let two = permission_for_prompt(&root, &session, "worker", &prompt, 101).unwrap();
+    assert!(two.is_none());
+    std::fs::remove_dir_all(&root).unwrap();
+}

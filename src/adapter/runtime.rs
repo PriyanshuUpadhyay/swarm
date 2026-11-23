@@ -66,7 +66,7 @@ impl Adapter {
                 .ok_or_else(|| format!("swarm: adapter {} has no interrupt", self.name))?,
             "key" => self.key.as_ref().ok_or_else(|| {
                 format!(
-                    "swarm: adapter {} cannot send a key, so answer in the pane",
+                    "swarm: adapter {} has no `key` verb, so Swarm cannot press keys in its panes",
                     self.name
                 )
             })?,

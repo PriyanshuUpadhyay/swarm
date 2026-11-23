@@ -18,6 +18,8 @@ mod model_check;
 mod owner;
 #[path = "launch/owner_pi.rs"]
 mod owner_pi;
+#[path = "launch/owner_screen.rs"]
+mod owner_screen;
 #[path = "launch/pi.rs"]
 mod pi;
 #[path = "launch/providers.rs"]
