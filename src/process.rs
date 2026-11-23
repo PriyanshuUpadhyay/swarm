@@ -17,41 +17,31 @@ pub fn bounded_run(
     mut command: std::process::Command,
     timeout: std::time::Duration,
 ) -> Option<(bool, String)> {
-    let mut child = command
+    let deadline = std::time::Instant::now() + timeout;
+    let child = command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
         .ok()?;
-    let mut stdout = child.stdout.take()?;
+    let (bytes, status) = crate::profiles::native::read_stdout(child, u64::MAX, deadline);
+    Some((
+        status?.success(),
+        String::from_utf8_lossy(&bytes.ok()?.ok()?).into_owned(),
+    ))
+}
 
-    // The read runs on its own thread, so a full pipe cannot stall the deadline loop.
-    let reader = std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        std::io::Read::read_to_end(&mut stdout, &mut bytes).map(|_| bytes)
-    });
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let deadline = std::time::Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let bytes = reader.join().ok()?.ok()?;
-                return Some((
-                    status.success(),
-                    String::from_utf8_lossy(&bytes).into_owned(),
-                ));
-            }
-
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(20));
-            }
-
-            Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-            Err(_) => return None,
-        }
+    #[test]
+    fn audit_regression_stdout_inherited_after_exit_still_has_a_deadline() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "sleep 0.6 & printf ready"]);
+        assert_eq!(
+            bounded_run(command, std::time::Duration::from_millis(50)),
+            None
+        );
     }
 }
