@@ -20,7 +20,6 @@ mod records;
 mod shell;
 pub mod source;
 pub mod source_follow;
-pub mod source_readers;
 mod state;
 pub mod worker_protocol;
 

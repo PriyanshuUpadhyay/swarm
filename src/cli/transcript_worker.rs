@@ -1,530 +1,388 @@
-//! Runs the private snapshot worker over framed standard input and output.
-
-use std::fs::File;
-use std::io::{self, Read, Write};
-use std::path::Path;
-use std::time::{Duration, Instant};
-use swarm::view::transcript::source::{EndPolicy, NativeFormat, SnapshotError, SourceMeta, Work};
-use swarm::view::transcript::source_follow::{SourceError, SourceFollow};
-use swarm::view::transcript::worker_protocol::{
-    Binding, FaultCode, MAX_FRAME_BYTES, MAX_PART_BYTES, MAX_SOURCE_ID_BYTES, PROTOCOL, Reply,
-    Request,
+//! Runs native transcript reads against one open file.
+use std::{fs::File, os::fd::AsFd, path::Path, time::Duration};
+use swarm::view::transcript::{
+    source::NativeFormat,
+    source_follow::NativeStream,
+    worker_protocol::{Binding, MAX_PART_BYTES, MAX_SOURCE_ID_BYTES, v2::*},
 };
+use tokio::sync::mpsc;
 
-#[cfg(feature = "serve")]
-#[path = "transcript_worker_v2.rs"]
-mod v2;
+#[path = "transcript_worker_saved.rs"]
+mod saved;
 
-struct Budget {
-    deadline: Instant,
-}
-
-impl Budget {
-    fn new(received: Instant, remaining_work_ms: u64) -> Result<Self, FaultCode> {
-        if remaining_work_ms == 0 {
-            return Err(FaultCode::BadRequest);
-        }
-        let deadline = received
-            .checked_add(Duration::from_millis(remaining_work_ms))
-            .ok_or(FaultCode::BadRequest)?;
-        Ok(Self { deadline })
-    }
-
-    fn check_work(&mut self) -> Result<(), FaultCode> {
-        self.check().map_err(core_fault)
-    }
-}
-
-impl Work for Budget {
-    fn check(&mut self) -> Result<(), SnapshotError> {
-        if Instant::now() >= self.deadline {
-            Err(SnapshotError::Deadline)
-        } else {
-            Ok(())
-        }
-    }
-}
-
-struct Source {
-    follow: SourceFollow,
+struct Held {
+    file: File,
     binding: Binding,
+    path: String,
+    format: String,
+    native: Option<NativeStream>,
 }
-
-#[derive(Default)]
+struct Active {
+    tag: Tag,
+    budget: Budget,
+    running: saved::Running,
+    cancel: Option<PendingCancel>,
+}
+struct PendingCancel {
+    id: u64,
+    budget: Budget,
+}
 struct Session {
     ready: bool,
-    source: Option<Source>,
-    last_request_id: Option<u64>,
+    last: u64,
+    transport: u64,
+    held: Option<Held>,
+    active: Option<Active>,
+    events: mpsc::UnboundedSender<saved::Completion>,
+    output: tokio::fs::File,
 }
 
-struct Failure {
-    request_id: Option<u64>,
-    binding: Option<Binding>,
-    code: FaultCode,
-}
-
-impl Failure {
-    fn bare(code: FaultCode) -> Self {
-        Self {
-            request_id: None,
-            binding: None,
-            code,
-        }
-    }
-}
-
-pub(crate) fn run(args: &[String]) -> i32 {
-    #[cfg(feature = "serve")]
-    if args.get(1).is_some_and(|version| version == "2") {
-        return v2::run(args);
-    }
-    let input = io::stdin();
-    let output = io::stdout();
-    let mut input = input.lock();
-    let mut output = output.lock();
-    let result = if args.len() == 2 && args[0] == "--protocol" && args[1] == "1" {
-        serve(&mut input, &mut output)
-    } else {
-        Err(Failure::bare(FaultCode::BadRequest))
+pub(super) fn run(args: &[String]) -> i32 {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(_) => return 1,
     };
-    match result {
-        Ok(()) => 0,
-        Err(failure) => {
-            let status = match failure.code {
-                FaultCode::BadFrame
-                | FaultCode::BadRequest
-                | FaultCode::UnsupportedVersion
-                | FaultCode::UnsupportedFormat
-                | FaultCode::BindingMismatch
-                | FaultCode::InvalidRange => 2,
-                _ => 1,
-            };
-            // Fault reporting has no expired work budget, and exposes no source diagnostics.
-            let reply = Reply::Fault {
-                request_id: failure.request_id,
-                binding: failure.binding,
-                code: failure.code,
-            };
-            if let Ok(bytes) = serde_json::to_vec(&reply) {
-                let _ = write_frame(&mut output, &bytes);
+    let result = runtime.block_on(async {
+        match args {
+            [flag, version] if flag == "--protocol" && version == "2" => serve().await,
+            [flag, version, job_flag, job]
+                if flag == "--protocol"
+                    && version == "2"
+                    && job_flag == "--saved-job"
+                    && job.len() <= 16384 =>
+            {
+                saved::execute(job).await
             }
-            status
+            _ => Err(Code::BadRequest),
         }
-    }
+    });
+    if result.is_ok() { 0 } else { 1 }
 }
 
-fn serve(input: &mut impl Read, output: &mut impl Write) -> Result<(), Failure> {
-    let mut session = Session::default();
-    loop {
-        let Some(bytes) = read_frame(input).map_err(Failure::bare)? else {
-            return Ok(());
-        };
-        // Waiting for the next complete request is idle, outside its active work budget.
-        let received = Instant::now();
-        let request: Request = serde_json::from_slice(&bytes).map_err(|error| {
-            Failure::bare(if error.is_syntax() || error.is_eof() {
-                FaultCode::BadFrame
-            } else {
-                FaultCode::BadRequest
-            })
-        })?;
-        let (request_id, binding) = match &request {
-            Request::Hello { .. } => (None, None),
+async fn serve() -> Result<()> {
+    let mut input = tokio::net::unix::pipe::Receiver::from_owned_fd(
+        std::io::stdin()
+            .as_fd()
+            .try_clone_to_owned()
+            .map_err(|_| Code::Io)?,
+    )
+    .map_err(|_| Code::Io)?;
+    let output = tokio::fs::File::from_std(File::from(
+        std::io::stdout()
+            .as_fd()
+            .try_clone_to_owned()
+            .map_err(|_| Code::Io)?,
+    ));
+    let (tx, mut controls) = mpsc::channel(8);
+    let reader = tokio::spawn(async move {
+        loop {
+            let frame = read_frame(&mut input).await;
+            let end = !matches!(frame, Ok(Some(_)));
+            let received = tokio::time::Instant::now();
+            if tx.send((received, frame)).await.is_err() || end {
+                break;
+            }
+        }
+    });
+    let (events, mut completed) = mpsc::unbounded_channel();
+    let mut session = Session {
+        ready: false,
+        last: 0,
+        transport: 0,
+        held: None,
+        active: None,
+        events,
+        output,
+    };
+    let result = loop {
+        tokio::select! {
+            biased;
+            control = controls.recv() => {
+                let Some((received, frame)) = control else { break Err(Code::Io); };
+                let bytes = match frame { Ok(Some(bytes)) => bytes, Ok(None) => break Ok(()), Err(code) => break Err(code) };
+                let request: Request = match serde_json::from_slice(&bytes) { Ok(request) => request, Err(_) => break Err(Code::BadRequest) };
+                let (id, binding, remaining_work_ms) = request.context();
+                let binding = binding.cloned();
+                let budget = received.checked_add(Duration::from_millis(remaining_work_ms)).map(Budget).ok_or(Code::BadRequest);
+                let processed = match budget { Ok(budget) => session.control(request, budget).await, Err(code) => Err(code) };
+                match processed {
+                    Ok(()) => {},
+                    Err(code) => {
+                        let budget = Budget::new(Duration::from_secs(1))?;
+                        if let Err(code) = session.send(Reply::Fault { request_id: id, binding, code }, budget).await { break Err(code); }
+                    }
+                }
+            }
+            event = completed.recv(), if session.active.is_some() => {
+                let Some(event) = event else { break Err(Code::Io); };
+                if let Err(code) = session.complete(event).await { break Err(code); }
+            }
+        }
+    };
+    // Retain child ownership until exit and both drains, including on a broken control pipe.
+    if let Some(mut active) = session.active.take() {
+        active.running.cancel(Budget::new(Duration::from_secs(1))?);
+        let _ = active.running.task.await;
+    }
+    reader.abort();
+    let _ = reader.await;
+    result
+}
+impl Session {
+    async fn send(&mut self, reply: Reply, budget: Budget) -> Result<()> {
+        budget.run(write_frame(&mut self.output, &reply)).await
+    }
+    fn bound(&self, binding: &Binding) -> Result<()> {
+        if self
+            .held
+            .as_ref()
+            .is_some_and(|source| source.binding == *binding)
+        {
+            Ok(())
+        } else {
+            Err(Code::BindingMismatch)
+        }
+    }
+    async fn control(&mut self, request: Request, mut budget: Budget) -> Result<()> {
+        budget.check()?;
+        let (id, binding, _) = request.context();
+        if let Some(id) = id {
+            if !self.ready || id <= self.last {
+                return Err(Code::BadRequest);
+            }
+            self.last = id;
+        }
+        if !matches!(request, Request::Open { .. })
+            && let Some(binding) = binding
+        {
+            self.bound(binding)?;
+        }
+        match request {
+            Request::Hello { protocol, .. } => {
+                if self.ready {
+                    return Err(Code::BadRequest);
+                }
+                if protocol != PROTOCOL {
+                    return Err(Code::UnsupportedVersion);
+                }
+                self.send(
+                    Reply::Ready {
+                        protocol: PROTOCOL,
+                        formats: vec!["claude".into(), "codex".into(), "agy".into(), "pi".into()],
+                    },
+                    budget,
+                )
+                .await?;
+                self.ready = true;
+            }
             Request::Open {
                 request_id,
                 binding,
+                format,
+                path,
                 ..
-            }
-            | Request::Snapshot {
-                request_id,
-                binding,
-                ..
-            }
-            | Request::BindReader {
-                request_id,
-                binding,
-                ..
-            }
-            | Request::ReplayReader {
-                request_id,
-                binding,
-                ..
-            }
-            | Request::Advance {
-                request_id,
-                binding,
-                ..
-            }
-            | Request::CloseReader {
-                request_id,
-                binding,
-                ..
-            }
-            | Request::Close {
-                request_id,
-                binding,
-                ..
-            } => (
-                Some(*request_id),
-                valid_binding(binding).then(|| binding.clone()),
-            ),
-        };
-        match process(request, received, &mut session, output) {
-            Ok(true) => return Ok(()),
-            Ok(false) => {}
-            Err(code) => {
-                return Err(Failure {
-                    request_id,
-                    binding,
-                    code,
-                });
-            }
-        }
-    }
-}
-
-fn process(
-    request: Request,
-    received: Instant,
-    session: &mut Session,
-    output: &mut impl Write,
-) -> Result<bool, FaultCode> {
-    let remaining_work_ms = match &request {
-        Request::Hello {
-            remaining_work_ms, ..
-        }
-        | Request::Open {
-            remaining_work_ms, ..
-        }
-        | Request::Snapshot {
-            remaining_work_ms, ..
-        }
-        | Request::BindReader {
-            remaining_work_ms, ..
-        }
-        | Request::ReplayReader {
-            remaining_work_ms, ..
-        }
-        | Request::Advance {
-            remaining_work_ms, ..
-        }
-        | Request::CloseReader {
-            remaining_work_ms, ..
-        }
-        | Request::Close {
-            remaining_work_ms, ..
-        } => *remaining_work_ms,
-    };
-    let mut work = Budget::new(received, remaining_work_ms)?;
-    work.check_work()?;
-    match request {
-        Request::Hello { protocol, .. } => {
-            if session.ready {
-                return Err(FaultCode::BadRequest);
-            }
-            if protocol != PROTOCOL {
-                return Err(FaultCode::UnsupportedVersion);
-            }
-            send(
-                output,
-                &Reply::Ready {
-                    protocol: PROTOCOL,
-                    formats: NativeFormat::ALL
-                        .into_iter()
-                        .map(|format| format.name().to_owned())
-                        .collect(),
-                },
-                &mut work,
-            )?;
-            session.ready = true;
-        }
-        Request::Open {
-            request_id,
-            binding,
-            format,
-            path,
-            ..
-        } => {
-            check_request(session, request_id)?;
-            if session.source.is_some() || !valid_binding(&binding) {
-                return Err(FaultCode::BadRequest);
-            }
-            let format = NativeFormat::from_name(&format).ok_or(FaultCode::UnsupportedFormat)?;
-            let file_path = Path::new(&path);
-            if !file_path.is_absolute() {
-                return Err(FaultCode::BadRequest);
-            }
-            work.check_work()?;
-            // Reject ordinary non-files before opening, then verify the actual bound handle.
-            if !file_path.metadata().map_err(|_| FaultCode::Io)?.is_file() {
-                return Err(FaultCode::BadRequest);
-            }
-            work.check_work()?;
-            let file = File::open(file_path).map_err(|_| FaultCode::Io)?;
-            work.check_work()?;
-            if !file.metadata().map_err(|_| FaultCode::Io)?.is_file() {
-                return Err(FaultCode::BadRequest);
-            }
-            send(
-                output,
-                &Reply::Opened {
-                    request_id,
+            } => {
+                if self.held.is_some()
+                    || binding.source_id.is_empty()
+                    || binding.source_id.len() > MAX_SOURCE_ID_BYTES
+                    || !matches!(format.as_str(), "claude" | "codex" | "agy" | "pi")
+                    || !Path::new(&path).is_absolute()
+                {
+                    return Err(Code::BadRequest);
+                }
+                if !Path::new(&path).metadata().map_err(|_| Code::Io)?.is_file() {
+                    return Err(Code::BadRequest);
+                }
+                budget.check()?;
+                let file = File::open(&path).map_err(|_| Code::Io)?;
+                if !file.metadata().map_err(|_| Code::Io)?.is_file() {
+                    return Err(Code::BadRequest);
+                }
+                budget.check()?;
+                self.held = Some(Held {
+                    file,
                     binding: binding.clone(),
-                },
-                &mut work,
-            )?;
-            session.source = Some(Source {
-                follow: SourceFollow::with_open_path(file, format, &path),
+                    path,
+                    format,
+                    native: None,
+                });
+                self.send(
+                    Reply::Opened {
+                        request_id,
+                        binding,
+                    },
+                    budget,
+                )
+                .await?;
+            }
+            Request::Native {
+                request_id,
                 binding,
-            });
-        }
-        Request::Snapshot {
-            request_id,
-            binding,
-            start_byte,
-            end_byte,
-            end_policy,
-            ..
-        } => {
-            check_request(session, request_id)?;
-            let source = bound_source(session, &binding)?;
-            snapshot(
-                source, request_id, start_byte, end_byte, end_policy, output, &mut work,
-            )?;
-        }
-        Request::BindReader {
-            request_id,
-            binding,
-            reader,
-            from_byte,
-            ..
-        } => {
-            check_request(session, request_id)?;
-            let source = bound_source(session, &binding)?;
-            let batch = source
-                .follow
-                .bind_reader(reader, from_byte, &mut work)
-                .map_err(source_fault)?;
-            send_payload(&source.binding, request_id, &batch, output, &mut work)?;
-        }
-        Request::ReplayReader {
-            request_id,
-            binding,
-            reader,
-            start_byte,
-            end_byte,
-            ..
-        } => {
-            check_request(session, request_id)?;
-            let source = bound_source(session, &binding)?;
-            let batch = source
-                .follow
-                .replay_reader(reader, start_byte, end_byte, &mut work)
-                .map_err(source_fault)?;
-            send_payload(&source.binding, request_id, &batch, output, &mut work)?;
-        }
-        Request::Advance {
-            request_id,
-            binding,
-            ..
-        } => {
-            check_request(session, request_id)?;
-            let source = bound_source(session, &binding)?;
-            let batch = source.follow.advance(&mut work).map_err(source_fault)?;
-            send_payload(&source.binding, request_id, &batch, output, &mut work)?;
-        }
-        Request::CloseReader {
-            request_id,
-            binding,
-            reader,
-            ..
-        } => {
-            check_request(session, request_id)?;
-            let source = bound_source(session, &binding)?;
-            let batch = source
-                .follow
-                .close_reader(reader, &mut work)
-                .map_err(source_fault)?;
-            send_payload(&source.binding, request_id, &batch, output, &mut work)?;
-        }
-        Request::Close {
-            request_id,
-            binding,
-            ..
-        } => {
-            check_request(session, request_id)?;
-            bound_source(session, &binding)?;
-            drop(session.source.take());
-            send(
-                output,
-                &Reply::Closed {
+                operation,
+                ..
+            } => {
+                if self.active.is_some() {
+                    return Err(Code::BadRequest);
+                }
+                let source = self.held.as_mut().ok_or(Code::BadRequest)?;
+                self.transport = self.transport.checked_add(1).ok_or(Code::Core)?;
+                let tag = Tag {
                     request_id,
                     binding,
-                },
-                &mut work,
-            )?;
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn check_request(session: &mut Session, request_id: u64) -> Result<(), FaultCode> {
-    if !session.ready
-        || session
-            .last_request_id
-            .is_some_and(|previous| request_id <= previous)
-    {
-        return Err(FaultCode::BadRequest);
-    }
-    session.last_request_id = Some(request_id);
-    Ok(())
-}
-
-fn valid_binding(binding: &Binding) -> bool {
-    !binding.source_id.is_empty() && binding.source_id.len() <= MAX_SOURCE_ID_BYTES
-}
-
-fn bound_source<'a>(
-    session: &'a mut Session,
-    binding: &Binding,
-) -> Result<&'a mut Source, FaultCode> {
-    let source = session.source.as_mut().ok_or(FaultCode::BadRequest)?;
-    if &source.binding != binding {
-        return Err(FaultCode::BindingMismatch);
-    }
-    Ok(source)
-}
-
-fn snapshot(
-    source: &mut Source,
-    request_id: u64,
-    start_byte: u64,
-    end_byte: Option<u64>,
-    end_policy: EndPolicy,
-    output: &mut impl Write,
-    work: &mut Budget,
-) -> Result<(), FaultCode> {
-    let snapshot = source
-        .follow
-        .snapshot(
-            SourceMeta {
-                source_id: source.binding.source_id.clone(),
-            },
-            start_byte,
-            end_byte,
-            end_policy,
-            work,
-        )
-        .map_err(source_fault)?;
-    send_payload(&source.binding, request_id, &snapshot, output, work)
-}
-
-fn send_payload(
-    binding: &Binding,
-    request_id: u64,
-    value: &impl serde::Serialize,
-    output: &mut impl Write,
-    work: &mut Budget,
-) -> Result<(), FaultCode> {
-    work.check_work()?;
-    let payload = serde_json::to_vec(value).map_err(|_| FaultCode::Encode)?;
-    work.check_work()?;
-    let payload_bytes = u64::try_from(payload.len()).map_err(|_| FaultCode::Encode)?;
-    send(
-        output,
-        &Reply::Begin {
-            request_id,
-            binding: binding.clone(),
-        },
-        work,
-    )?;
-    let mut part_count = 0_u64;
-    for bytes in payload.chunks(MAX_PART_BYTES) {
-        send(
-            output,
-            &Reply::Part {
+                    transport_id: self.transport,
+                };
+                if let Operation::Follow { from } = operation {
+                    if let Some(from) = from {
+                        let from = from.min(source.file.metadata().map_err(|_| Code::Io)?.len());
+                        source.native = Some(NativeStream::new(
+                            source.file.try_clone().map_err(|_| Code::Io)?,
+                            from,
+                            NativeFormat::from_name(&source.format).ok_or(Code::BadRequest)?,
+                            &source.path,
+                        ));
+                    }
+                    let mut native = source.native.take().ok_or(Code::BadRequest)?;
+                    let payload = native
+                        .advance(&source.binding.source_id, &mut budget)
+                        .map_err(|_| Code::Core)?;
+                    let bytes = serde_json::to_vec(&payload).map_err(|_| Code::Core)?;
+                    budget.check()?;
+                    self.send(Reply::Begin { tag: tag.clone() }, budget).await?;
+                    self.publish(tag, bytes, budget).await?;
+                    self.held.as_mut().ok_or(Code::BadRequest)?.native = Some(native);
+                } else {
+                    let (start_byte, end_byte, eof) = match operation {
+                        Operation::Window { start, end } => (start, end, false),
+                        Operation::Raw { tail, before } => {
+                            if !(1..=2000).contains(&tail) {
+                                return Err(Code::BadRequest);
+                            }
+                            let (start, end) =
+                                saved::raw_range(&source.file, tail, before, budget)?;
+                            (start, end, true)
+                        }
+                        Operation::Line { offset } => {
+                            (offset, saved::line_end(&source.file, offset, budget)?, true)
+                        }
+                        Operation::Follow { .. } => return Err(Code::BadRequest),
+                    };
+                    let job = saved::Job {
+                        tag: tag.clone(),
+                        path: source.path.clone(),
+                        format: source.format.clone(),
+                        start_byte,
+                        end_byte,
+                        remaining_work_ms: budget.remaining_ms()?,
+                        eof,
+                    };
+                    let running = saved::spawn(
+                        source.file.try_clone().map_err(|_| Code::Io)?,
+                        job,
+                        budget,
+                        self.events.clone(),
+                    )?;
+                    self.active = Some(Active {
+                        tag: tag.clone(),
+                        budget,
+                        running,
+                        cancel: None,
+                    });
+                    self.send(Reply::Begin { tag }, budget).await?;
+                }
+            }
+            Request::Cancel {
                 request_id,
-                binding: binding.clone(),
-                part_index: part_count,
-                bytes: bytes.to_vec(),
+                target_request_id,
+                ..
+            } => {
+                let active = self.active.as_mut().ok_or(Code::BadRequest)?;
+                if target_request_id != active.tag.request_id || active.cancel.is_some() {
+                    return Err(Code::BadRequest);
+                }
+                active.cancel = Some(PendingCancel {
+                    id: request_id,
+                    budget,
+                });
+                active.running.cancel(budget);
+            }
+        }
+        Ok(())
+    }
+    async fn complete(&mut self, completion: saved::Completion) -> Result<()> {
+        let active = self.active.take().ok_or(Code::Core)?;
+        if completion.tag != active.tag {
+            return Err(Code::BindingMismatch);
+        }
+        active.running.task.await.map_err(|_| Code::Io)?;
+        if let Some(PendingCancel { id, budget }) = active.cancel {
+            self.send(
+                Reply::Fenced {
+                    tag: active.tag.clone(),
+                },
+                budget,
+            )
+            .await?;
+            self.send(
+                Reply::Cancelled {
+                    request_id: id,
+                    binding: active.tag.binding,
+                    target_request_id: active.tag.request_id,
+                    transport_id: active.tag.transport_id,
+                    exit: completion.exit,
+                },
+                budget,
+            )
+            .await?;
+            return Ok(());
+        }
+        let result = completion.result.and_then(|payload| {
+            active.budget.check()?;
+            serde_json::to_vec(&payload).map_err(|_| Code::Core)
+        });
+        let bytes = match result {
+            Ok(bytes) => bytes,
+            Err(code) => {
+                self.send(
+                    Reply::Fault {
+                        request_id: Some(active.tag.request_id),
+                        binding: Some(active.tag.binding),
+                        code,
+                    },
+                    Budget::new(Duration::from_secs(1))?,
+                )
+                .await?;
+                return Ok(());
+            }
+        };
+        self.publish(active.tag, bytes, active.budget).await
+    }
+    async fn publish(&mut self, tag: Tag, bytes: Vec<u8>, budget: Budget) -> Result<()> {
+        let mut part_count = 0;
+        for bytes in bytes.chunks(MAX_PART_BYTES) {
+            self.send(
+                Reply::Part {
+                    tag: tag.clone(),
+                    part_index: part_count,
+                    bytes: bytes.into(),
+                },
+                budget,
+            )
+            .await?;
+            part_count += 1;
+        }
+        self.send(
+            Reply::Commit {
+                tag,
+                part_count,
+                payload_bytes: bytes.len() as u64,
             },
-            work,
-        )?;
-        part_count = part_count.checked_add(1).ok_or(FaultCode::Encode)?;
+            budget,
+        )
+        .await?;
+        Ok(())
     }
-    send(
-        output,
-        &Reply::Commit {
-            request_id,
-            binding: binding.clone(),
-            part_count,
-            payload_bytes,
-        },
-        work,
-    )
-}
-
-fn source_fault(error: SourceError) -> FaultCode {
-    match error {
-        SourceError::InvalidRange => FaultCode::InvalidRange,
-        SourceError::BindingMismatch => FaultCode::BindingMismatch,
-        SourceError::Io => FaultCode::Io,
-        SourceError::InputChanged => FaultCode::InputChanged,
-        SourceError::Work(error) => core_fault(error),
-    }
-}
-
-fn core_fault(error: SnapshotError) -> FaultCode {
-    match error {
-        SnapshotError::OffsetOverflow | SnapshotError::NativeTokenOverflow => FaultCode::Core,
-        SnapshotError::Deadline => FaultCode::Deadline,
-    }
-}
-
-fn read_frame(input: &mut impl Read) -> Result<Option<Vec<u8>>, FaultCode> {
-    let mut prefix = [0; 4];
-    match input.read_exact(&mut prefix[..1]) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(_) => return Err(FaultCode::Io),
-    }
-    input
-        .read_exact(&mut prefix[1..])
-        .map_err(frame_read_fault)?;
-    let length = usize::try_from(u32::from_be_bytes(prefix)).map_err(|_| FaultCode::BadFrame)?;
-    if !(1..=MAX_FRAME_BYTES).contains(&length) {
-        return Err(FaultCode::BadFrame);
-    }
-    let mut bytes = vec![0; length];
-    input.read_exact(&mut bytes).map_err(frame_read_fault)?;
-    Ok(Some(bytes))
-}
-
-fn frame_read_fault(error: io::Error) -> FaultCode {
-    if error.kind() == io::ErrorKind::UnexpectedEof {
-        FaultCode::BadFrame
-    } else {
-        FaultCode::Io
-    }
-}
-
-fn send(output: &mut impl Write, reply: &Reply, work: &mut Budget) -> Result<(), FaultCode> {
-    work.check_work()?;
-    let bytes = serde_json::to_vec(reply).map_err(|_| FaultCode::Encode)?;
-    work.check_work()?;
-    // The caller retains its original deadline and kills/reaps blocked system calls.
-    write_frame(output, &bytes)
-}
-
-fn write_frame(output: &mut impl Write, bytes: &[u8]) -> Result<(), FaultCode> {
-    if !(1..=MAX_FRAME_BYTES).contains(&bytes.len()) {
-        return Err(FaultCode::Encode);
-    }
-    let length = u32::try_from(bytes.len()).map_err(|_| FaultCode::Encode)?;
-    output
-        .write_all(&length.to_be_bytes())
-        .and_then(|()| output.write_all(bytes))
-        .and_then(|()| output.flush())
-        .map_err(|_| FaultCode::Io)
 }

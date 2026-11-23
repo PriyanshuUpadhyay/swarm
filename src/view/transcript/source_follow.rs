@@ -1,20 +1,17 @@
 //! Physical framing and the single held-file boundary for transcript readers.
 
 use super::source::{NativeFormat, SnapshotError, Work};
-use super::source_readers::ReaderSet;
 use std::fs::File;
 
 mod file;
 mod legacy;
 mod native;
-mod operations;
 pub use legacy::ingest_log_line;
 pub use native::NativeStream;
 
 #[derive(Debug)]
 pub enum SourceError {
     InvalidRange,
-    BindingMismatch,
     Io,
     InputChanged,
     Work(SnapshotError),
@@ -23,35 +20,6 @@ pub enum SourceError {
 impl From<SnapshotError> for SourceError {
     fn from(error: SnapshotError) -> Self {
         Self::Work(error)
-    }
-}
-
-#[derive(Debug)]
-pub struct SourceFollow {
-    format: NativeFormat,
-    session_id: String,
-    file: File,
-    framer: PhysicalFramer,
-    readers: ReaderSet,
-}
-
-impl SourceFollow {
-    pub fn new(file: File) -> Self {
-        Self::with_format(file, NativeFormat::Claude)
-    }
-
-    pub fn with_format(file: File, format: NativeFormat) -> Self {
-        Self::with_open_path(file, format, "")
-    }
-
-    pub fn with_open_path(file: File, format: NativeFormat, open_path: &str) -> Self {
-        Self {
-            format,
-            session_id: format.session_id_from_path(open_path),
-            file,
-            framer: PhysicalFramer::new(0),
-            readers: ReaderSet::new(format),
-        }
     }
 }
 

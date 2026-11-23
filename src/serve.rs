@@ -323,7 +323,6 @@ use prompt_actions::*;
 
 mod row_pages;
 mod source_backend;
-#[allow(dead_code)]
 mod transcript_caller;
 use row_pages::*;
 

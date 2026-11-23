@@ -187,51 +187,18 @@ async fn drain(mut input: impl AsyncRead + Unpin) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn range(
-    file: &File,
-    tail: u16,
-    before: Option<u64>,
-    budget: Budget,
-) -> Result<(u64, u64)> {
-    range_inner(file, tail, before, budget, true)
-}
 pub(super) fn raw_range(
     file: &File,
     tail: u16,
     before: Option<u64>,
     budget: Budget,
 ) -> Result<(u64, u64)> {
-    range_inner(file, tail, before, budget, false)
-}
-fn range_inner(
-    file: &File,
-    tail: u16,
-    before: Option<u64>,
-    budget: Budget,
-    complete: bool,
-) -> Result<(u64, u64)> {
-    let mut end = file
+    let end = file
         .metadata()
         .map_err(|_| Code::Io)?
         .len()
         .min(before.unwrap_or(u64::MAX));
     let mut buffer = [0; MAX_PART_BYTES];
-    let mut cursor = end;
-    while complete && cursor > 0 {
-        budget.check()?;
-        let count = cursor.min(buffer.len() as u64) as usize;
-        let start = cursor - count as u64;
-        file.read_exact_at(&mut buffer[..count], start)
-            .map_err(|_| Code::Io)?;
-        if let Some(index) = buffer[..count].iter().rposition(|byte| *byte == b'\n') {
-            end = start + index as u64 + 1;
-            break;
-        }
-        cursor = start;
-    }
-    if complete && cursor == 0 {
-        end = 0;
-    }
     let (mut cursor, mut lines) = (end, 0);
     while cursor > 0 {
         budget.check()?;

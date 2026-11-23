@@ -205,7 +205,5 @@ impl ReaderRows {
                 self.contexts.remove(&key);
             }
         }
-        self.unavailable
-            .retain(|key| self.records.contains_key(key));
     }
 }

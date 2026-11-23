@@ -76,75 +76,43 @@ impl Connection {
             };
             match order {
                 Order::Start {
-                    job,
+                    operation,
                     budget,
                     begun,
                     done,
-                } => {
-                    let result = self.page(job, budget, begun, &mut orders).await;
-                    match result {
-                        PageResult::Done(result) => {
-                            let _ = done.send(result);
-                        }
-                        PageResult::Close(budget, answer) => {
-                            orders.close();
-                            let _ = done.send(Err(Fault::Cancelled));
-                            let result = self.close(budget).await;
-                            let _ = answer.send(result);
-                            return;
-                        }
-                        PageResult::Broken(fault) => {
-                            orders.close();
-                            let _ = done.send(Err(fault));
-                            let cleanup = Budget::new(Duration::from_secs(1)).unwrap_or(budget);
-                            let _ = self.cleanup(true, cleanup).await;
-                            return;
-                        }
+                } => match self.read(operation, budget, begun, &mut orders).await {
+                    ReadResult::Done(result) => {
+                        let _ = done.send(result);
                     }
-                }
-                Order::Cancel { done, .. } => {
-                    let _ = done.send(Ok(()));
-                }
-                Order::Close { budget, done } => {
-                    orders.close();
-                    let result = self.close(budget).await;
-                    let _ = done.send(result);
-                    return;
-                }
+                    ReadResult::Broken(fault) => {
+                        orders.close();
+                        let _ = done.send(Err(fault));
+                        let cleanup = Budget::new(Duration::from_secs(1)).unwrap_or(budget);
+                        let _ = self.cleanup(cleanup).await;
+                        return;
+                    }
+                },
+                Order::Cancel { .. } => {}
             }
         }
         if let Ok(budget) = Budget::new(Duration::from_secs(1)) {
-            let _ = self.cleanup(true, budget).await;
+            let _ = self.cleanup(budget).await;
         }
     }
-    async fn page(
+    async fn read(
         &mut self,
-        job: Job,
+        operation: Operation,
         budget: Budget,
         begun: Answer<u64>,
         orders: &mut mpsc::UnboundedReceiver<Order>,
-    ) -> PageResult {
+    ) -> ReadResult {
         let started = async {
             let id = self.id()?;
-            let request = match job {
-                Job::Page { tail, before } => {
-                    if !(1..=2000).contains(&tail) {
-                        return Err(Fault::Core);
-                    }
-                    Request::Page {
-                        request_id: id,
-                        binding: self.binding.clone(),
-                        tail,
-                        before,
-                        remaining_work_ms: budget.remaining_ms()?,
-                    }
-                }
-                Job::Native(operation) => Request::Native {
-                    request_id: id,
-                    binding: self.binding.clone(),
-                    operation,
-                    remaining_work_ms: budget.remaining_ms()?,
-                },
+            let request = Request::Native {
+                request_id: id,
+                binding: self.binding.clone(),
+                operation,
+                remaining_work_ms: budget.remaining_ms()?,
             };
             self.send(request, budget).await?;
             let tag = match self.reply(budget).await? {
@@ -165,7 +133,7 @@ impl Connection {
             Ok(value) => value,
             Err(fault) => {
                 let _ = begun.send(Err(fault));
-                return PageResult::Done(Err(fault));
+                return ReadResult::Done(Err(fault));
             }
         };
         if tag.request_id != id || tag.binding != self.binding || tag.transport_id <= self.transport
@@ -175,9 +143,9 @@ impl Connection {
                 match self.reply(budget).await {
                     Ok(Reply::Part { .. }) => {}
                     Ok(Reply::Commit { .. } | Reply::Fault { .. }) => {
-                        break PageResult::Done(Err(Fault::BindingMismatch));
+                        break ReadResult::Done(Err(Fault::BindingMismatch));
                     }
-                    _ => break PageResult::Broken(Fault::BindingMismatch),
+                    _ => break ReadResult::Broken(Fault::BindingMismatch),
                 }
             };
             let _ = begun.send(Err(Fault::BindingMismatch));
@@ -191,57 +159,51 @@ impl Connection {
             tokio::select! {
                 biased;
                 order = orders.recv() => match order {
-                    Some(Order::Cancel { target, budget: cancel_budget, done }) if target == id => {
-                        let result = self.cancel(&tag, cancel_budget).await;
-                        let failed = result.is_err();
-                        let _ = done.send(result);
-                        return if failed { PageResult::Broken(Fault::Core) } else { PageResult::Done(Err(Fault::Cancelled)) };
-                    }
-                    Some(Order::Close { budget, done }) => {
-                        if self.cancel(&tag, budget).await.is_err() {
-                            let _ = done.send(Err(Fault::Core));
-                            return PageResult::Broken(Fault::Core);
-                        }
-                        return PageResult::Close(budget, done);
+                    Some(Order::Cancel { target, budget: cancel_budget }) if target == id => {
+                        return if self.cancel(&tag, cancel_budget).await.is_err() {
+                            ReadResult::Broken(Fault::Core)
+                        } else {
+                            ReadResult::Done(Err(Fault::Cancelled))
+                        };
                     }
                     Some(Order::Start { begun, done, .. }) => { let _ = begun.send(Err(Fault::Core)); let _ = done.send(Err(Fault::Core)); }
-                    Some(Order::Cancel { done, .. }) => { let _ = done.send(Err(Fault::Core)); }
-                    None => return PageResult::Broken(Fault::Cancelled),
+                    Some(Order::Cancel { .. }) => {}
+                    None => return ReadResult::Broken(Fault::Cancelled),
                 },
-                _ = tokio::time::sleep_until(budget.0) => return self.expired_page(&tag).await,
+                _ = tokio::time::sleep_until(budget.0) => return self.expired_read(&tag).await,
                 frame = self.frames.recv() => {
-                    let reply = match frame { Some(Ok(reply)) => reply, Some(Err(code)) => return PageResult::Broken(code.into()), None => return PageResult::Broken(Fault::Core) };
+                    let reply = match frame { Some(Ok(reply)) => reply, Some(Err(code)) => return ReadResult::Broken(code.into()), None => return ReadResult::Broken(Fault::Core) };
                     match reply {
                         Reply::Part { tag: actual, part_index, bytes: part } => {
                             if actual != tag { failure = Some(Fault::BindingMismatch); }
                             if part_index != parts || part.is_empty() || part.len() > MAX_PART_BYTES { failure = Some(Fault::Core); }
-                            parts = match parts.checked_add(1) { Some(n) => n, None => return PageResult::Broken(Fault::Core) };
+                            parts = match parts.checked_add(1) { Some(n) => n, None => return ReadResult::Broken(Fault::Core) };
                             bytes.extend(part);
                         }
                         Reply::Commit { tag: actual, part_count, payload_bytes } => {
                             if actual != tag { failure = Some(Fault::BindingMismatch); }
                             if part_count != parts || payload_bytes != bytes.len() as u64 { failure = Some(Fault::Core); }
                             let result = match failure { Some(fault) => Err(fault), None => serde_json::from_slice(&bytes).map_err(|_| Fault::Core) };
-                            if budget.check().is_err() { return PageResult::Done(Err(Fault::Core)); }
-                            return PageResult::Done(result);
+                            if budget.check().is_err() { return ReadResult::Done(Err(Fault::Core)); }
+                            return ReadResult::Done(result);
                         }
-                        Reply::Fault { request_id, binding, code } if request_id == Some(id) && binding.as_ref() == Some(&self.binding) => return PageResult::Done(Err(code.into())),
-                        _ => return PageResult::Broken(Fault::Core),
+                        Reply::Fault { request_id, binding, code } if request_id == Some(id) && binding.as_ref() == Some(&self.binding) => return ReadResult::Done(Err(code.into())),
+                        _ => return ReadResult::Broken(Fault::Core),
                     }
                 }
             }
         }
     }
-    async fn expired_page(&mut self, tag: &Tag) -> PageResult {
+    async fn expired_read(&mut self, tag: &Tag) -> ReadResult {
         let Ok(cleanup) = Budget::new(Duration::from_secs(1)) else {
-            return PageResult::Broken(Fault::Core);
+            return ReadResult::Broken(Fault::Core);
         };
         // Drain the terminal reply before reuse.
         loop {
             match self.reply(cleanup).await {
                 Ok(Reply::Part { tag: actual, .. }) if actual == *tag => {}
                 Ok(Reply::Commit { tag: actual, .. }) if actual == *tag => {
-                    return PageResult::Done(Err(Fault::Core));
+                    return ReadResult::Done(Err(Fault::Core));
                 }
                 Ok(Reply::Fault {
                     request_id,
@@ -250,9 +212,9 @@ impl Connection {
                 }) if request_id == Some(tag.request_id)
                     && binding.as_ref() == Some(&self.binding) =>
                 {
-                    return PageResult::Done(Err(Fault::Core));
+                    return ReadResult::Done(Err(Fault::Core));
                 }
-                _ => return PageResult::Broken(Fault::Core),
+                _ => return ReadResult::Broken(Fault::Core),
             }
         }
     }
@@ -292,44 +254,12 @@ impl Connection {
             }
         }
     }
-    async fn close(mut self, budget: Budget) -> Result<()> {
-        let result = async {
-            let id = self.id()?;
-            self.send(
-                Request::Close {
-                    request_id: id,
-                    binding: self.binding.clone(),
-                    remaining_work_ms: budget.remaining_ms()?,
-                },
-                budget,
-            )
-            .await?;
-            match self.reply(budget).await? {
-                Reply::Closed {
-                    request_id,
-                    binding,
-                } if request_id == id && binding == self.binding => Ok(()),
-                _ => Err(Fault::BindingMismatch),
-            }
-        }
-        .await;
-        let cleanup = self.cleanup(result.is_err(), budget).await;
-        result.and(cleanup)
-    }
-    pub(super) async fn cleanup(mut self, kill: bool, budget: Budget) -> Result<()> {
+    pub(super) async fn cleanup(mut self, budget: Budget) -> Result<()> {
         self.input.take();
         self.frames.close();
-        if kill {
-            let _ = self.child.start_kill();
-        }
+        let _ = self.child.start_kill();
         let result = budget
-            .run(async {
-                let status = self.child.wait().await.map_err(|_| Code::Io)?;
-                if !kill && !status.success() {
-                    return Err(Code::Core);
-                }
-                Ok(())
-            })
+            .run(async { self.child.wait().await.map(|_| ()).map_err(|_| Code::Io) })
             .await;
         if result.is_err() {
             let _ = self.child.start_kill();
@@ -345,8 +275,7 @@ impl Connection {
         Ok(())
     }
 }
-enum PageResult {
+enum ReadResult {
     Done(Result<Value>),
-    Close(Budget, Answer<()>),
     Broken(Fault),
 }

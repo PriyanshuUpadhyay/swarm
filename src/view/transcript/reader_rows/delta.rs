@@ -123,7 +123,6 @@ impl ReaderRows {
         let pending_queue = std::mem::take(&mut self.pending_queue);
         let queue_cursor = self.queue_cursor;
         let records = std::mem::take(&mut self.records);
-        let unavailable = std::mem::take(&mut self.unavailable);
         let mut fresh = Self::empty(self.start, self.is_codex);
         if let Some(context) = initial {
             fresh.context = context;
@@ -146,7 +145,6 @@ impl ReaderRows {
         if usage.has_report() {
             fresh.usage = usage;
         }
-        fresh.unavailable = unavailable;
         *self = fresh;
     }
     pub fn rows_full(&self) -> Vec<Row> {
