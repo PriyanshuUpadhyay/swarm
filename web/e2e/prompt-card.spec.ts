@@ -127,7 +127,7 @@ test("a long error token wraps and keeps Retry and Dismiss inside the banner", a
   try {
     writeFileSync(join(home, "fail"), error);
     await composer.fill("show the send error");
-    await composer.press("Enter");
+    await composer.press("Meta+Enter");
     const banner = tab.getByTestId("chat-banner");
     await expect(banner).toContainText(error);
     expect(await banner.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);

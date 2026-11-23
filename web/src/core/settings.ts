@@ -1,4 +1,4 @@
-// Usage meters and the minimal Settings view (S5, Scope v1 items 10 and 11). Theme, send key and the
+// Usage meters and the minimal Settings view (S5, Scope v1 items 10 and 11). Theme and the
 // notice switches are owner choices under `prefs` in choices.json, the file `swarm notices --due`
 // and `/api/badge` read (ADR 0077). Profiles and accounts go to `swarm roles` and `swarm accounts`
 // with the revision this page read, so a stale page gets a 409 and reloads. Framework-free.
@@ -208,7 +208,7 @@ export class Settings {
 
   // ---- preferences ----
 
-  /** One `prefs` key: `theme`, `sendKey`, `switchCarry`, `terminalHost`, `fontSans`, `fontMono`, `usageHUDAsked` or `notices.post|sound|done|badge`. */
+  /** One `prefs` key: `theme`, `switchCarry`, `terminalHost`, `fontSans`, `fontMono`, `usageHUDAsked` or `notices.post|sound|done|badge`. */
   setPref(key: string, value: string | boolean): Promise<boolean> {
     return this.app.choose({ op: "pref", key, value });
   }

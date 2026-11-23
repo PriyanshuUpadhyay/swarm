@@ -117,7 +117,7 @@ pub enum ChoiceOp {
         list: String,
         fields: Vec<String>,
     },
-    /// One owner preference under `prefs`, in the Swift `Prefs` keys: `theme`, `sendKey`, `fontSans`, `fontMono`, `usageHUDAsked`,
+    /// One owner preference under `prefs`, in the Swift `Prefs` keys: `theme`, `fontSans`, `fontMono`, `usageHUDAsked`,
     /// `switchCarry` (what a switch to another CLI brings, ADR 0110), `terminalHost` (`pty` or
     /// `tmux`, where a new chat runs, ADR 0131), `chatDetail` (`compact` or `full`, ADR 0047), or a
     /// notice switch `notices.post|sound|done|badge` that `swarm notices --due` reads (ADR 0077).
@@ -312,7 +312,6 @@ pub fn apply(
         ChoiceOp::Pref { key, value } => {
             let valid = match key.as_str() {
                 "theme" => matches!(value.as_str(), Some("system" | "light" | "dark")),
-                "sendKey" => matches!(value.as_str(), Some("return" | "commandReturn")),
                 "switchCarry" => matches!(value.as_str(), Some("summary" | "clean")),
                 "terminalHost" => matches!(value.as_str(), Some("pty" | "tmux")),
                 "fontSans" => matches!(value.as_str(), Some("system" | "helvetica" | "avenir")),

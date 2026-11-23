@@ -120,15 +120,15 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
   const composer = tab.getByTestId("composer");
   await expect(composer).toBeEnabled();
   try {
-    // ⌘L focuses the box; ⇧Return adds a line; Return sends it and clears the box.
+    // ⌘L focuses the box; Return adds a line; ⌘Return sends it and clears the box.
     await tab.keyboard.press("Meta+l");
     await expect(composer).toBeFocused();
     const first = `hello from ${info.project.name}`;
     await tab.keyboard.type(first);
-    await tab.keyboard.press("Shift+Enter");
+    await tab.keyboard.press("Enter");
     await tab.keyboard.type("second line");
     await expect(composer).toHaveValue(`${first}\nsecond line`);
-    await tab.keyboard.press("Enter");
+    await tab.keyboard.press("Meta+Enter");
     await expect.poll(typed).toContain(`${first}\nsecond line\n`);
     await expect(composer).toHaveValue("");
 
@@ -148,7 +148,7 @@ test("the composer types into the chair, ⌘. interrupts, errors show in a banne
     writeFileSync(join(home, "fail"), "pane is busy in the stand-in adapter");
     const retried = `retried from ${info.project.name}`;
     await tab.keyboard.type(retried);
-    await tab.keyboard.press("Enter");
+    await tab.keyboard.press("Meta+Enter");
     const banner = tab.getByTestId("chat-banner");
     await expect(banner).toContainText("pane is busy in the stand-in adapter");
     await expect(composer).toHaveValue(retried);
@@ -233,7 +233,7 @@ test("the / menu lists the CLI's commands; the send key runs a whole command, a 
   const before = typed().split("/clear ").length;
   await tab.keyboard.type("/cle");
   await expect(menu.getByTestId("slash-row").first()).toContainText("/clear");
-  await tab.keyboard.press("Enter");
+  await tab.keyboard.press("Meta+Enter");
   await expect.poll(() => typed().split("/clear ").length).toBe(before + 1);
   await expect(composer).toHaveValue("");
   expect(typed()).not.toContain("/cle\n");

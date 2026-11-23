@@ -68,7 +68,6 @@ export type TreeView = {
 
 export type Prefs = {
   theme?: string;
-  sendKey?: string;
   /** What a switch to another CLI brings: `summary` (absent) or `clean` (ADR 0110). */
   switchCarry?: string;
   /** Where a new chat runs: `pty` (absent) or `tmux`, which counts only while tmux is on PATH (ADR 0131). */

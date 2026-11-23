@@ -100,7 +100,7 @@ export function SubagentOverlay({ app }: { app: App }) {
 
   const child = app.chats.get(paneId(sessionId, agent));
   // The child has no composer: it takes no input.
-  const pane = child ? { ...app.panes.paneView(child, "return", true), composer: null } : null;
+  const pane = child ? { ...app.panes.paneView(child, true), composer: null } : null;
 
   return (
     <Dialog open onOpenChange={(next) => !next && closeSubagent()}>

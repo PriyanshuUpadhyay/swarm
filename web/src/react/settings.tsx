@@ -177,18 +177,6 @@ function AppearancePage({ app }: { app: App }) {
           onChange={(v) => void app.settings.setPref("chatDetail", v)}
         />
       </Row>
-      <Row title="Send with" detail="The other key adds a new line.">
-        <Segmented
-          label="Send with"
-          testid="pref-send-key"
-          value={prefs.sendKey === "commandReturn" ? "commandReturn" : "return"}
-          options={[
-            ["return", "Return"],
-            ["commandReturn", "⌘Return"],
-          ]}
-          onChange={(v) => void app.settings.setPref("sendKey", v)}
-        />
-      </Row>
       <Row title="Switch to another CLI" detail="What the new chat gets. The run chip asks each time with this as the default.">
         <Segmented
           label="Switch to another CLI"

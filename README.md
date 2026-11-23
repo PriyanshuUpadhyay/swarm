@@ -223,7 +223,7 @@ existing branch, a pull request, a GitHub issue, or the folder itself) and the r
 thinking). ⌘Enter starts it, and the starting tab shows each step and the setup script's output. Switch model hands the chat to another model with a compact summary.
 Child agents show as panes beside the chat. Changes shows the workspace diff, and a line comment
 goes to the agent. Rows show PR and CI status, and compact meters show account usage. Settings has
-Appearance, the send key, Notifications, Profiles, and Accounts.
+Appearance, Notifications, Profiles, and Accounts.
 
 `swarm ui` runs with your terminal's PATH, so the agent CLIs it starts find the same tools.
 Notices come from the small SwarmNotify helper that ships beside `swarm`, so a notice needs no open

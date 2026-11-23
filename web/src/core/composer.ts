@@ -12,11 +12,9 @@ export type Prompt = { id: string; question: string; choices: string[]; details?
 /** A choice's index, or the typed text for a question that takes text. */
 export type Answer = number | { text: string };
 
-export type SendKey = "return" | "commandReturn";
-
-/** Only a bare Return, or ⌘Return when the setting says so, sends; any other Return adds a line. */
-export function sends(e: Pick<KeyboardEvent, "metaKey" | "shiftKey" | "altKey" | "ctrlKey">, key: SendKey): boolean {
-  return !e.shiftKey && !e.altKey && !e.ctrlKey && e.metaKey === (key === "commandReturn");
+/** Only ⌘Return sends, as in the ⌘N composer; any other Return adds a line. */
+export function sends(e: Pick<KeyboardEvent, "metaKey" | "shiftKey" | "altKey" | "ctrlKey">): boolean {
+  return e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey;
 }
 
 /** The text that leaves the box, or null when nothing should be sent. */

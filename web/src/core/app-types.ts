@@ -1,5 +1,5 @@
 import { type Display, type PatchInfo, type Row } from "./api";
-import { type AgentInput, type SendKey, type Usage } from "./composer";
+import { type AgentInput, type Usage } from "./composer";
 import { type PaneCell } from "./panes";
 import { FoldChoices, type Line, type Match } from "./transcript";
 import { type NavRow, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
@@ -83,7 +83,6 @@ export type Composer = {
   /** The owner's queued rows at the end of the transcript. */
   queued: number;
   usage: Usage;
-  sendKey: SendKey;
 };
 
 export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number; pending?: boolean; error?: string | null };

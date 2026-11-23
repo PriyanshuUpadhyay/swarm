@@ -1,6 +1,6 @@
 
 
-import { agentInput, outgoing, submission, type AgentInput, type Answer, type Prompt, type SendKey } from "./composer";
+import { agentInput, outgoing, submission, type AgentInput, type Answer, type Prompt } from "./composer";
 import { recallOrder, recordSent, type HistoryEntry } from "./history";
 import { editPicks, fileRows, validPicks, type CommandList, type SkillPick } from "./slash";
 import {
@@ -20,7 +20,7 @@ import type { App } from "./app";
 export class AppComposer {
   constructor(private readonly app: App) {}
 
-  composerView(chat: Chat, sendKey: SendKey): Composer {
+  composerView(chat: Chat): Composer {
     const agent = this.chair(chat.id);
     // pi's queue comes from its screen; Claude's is the queued rows at the end of its log.
     let queued = chat.queue.length;
@@ -31,7 +31,6 @@ export class AppComposer {
       state: { ...this.input(chat.id) },
       queued,
       usage: chat.usage,
-      sendKey,
     };
   }
 

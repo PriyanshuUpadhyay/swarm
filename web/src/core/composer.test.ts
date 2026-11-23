@@ -10,13 +10,10 @@ const waitingPrompt = { id: "prompt-hash", question: "Do you want to proceed?", 
 describe("send key", () => {
   const press = (mods: Partial<Record<"metaKey" | "shiftKey" | "altKey" | "ctrlKey", boolean>> = {}) => ({ metaKey: false, shiftKey: false, altKey: false, ctrlKey: false, ...mods });
 
-  it("sends on a bare Return by default, and on ⌘Return only when the setting says so", () => {
-    expect(sends(press(), "return")).toBe(true);
-    expect(sends(press({ shiftKey: true }), "return")).toBe(false);
-    expect(sends(press({ metaKey: true }), "return")).toBe(false);
-    expect(sends(press({ metaKey: true }), "commandReturn")).toBe(true);
-    expect(sends(press(), "commandReturn")).toBe(false);
-    expect(sends(press({ metaKey: true, shiftKey: true }), "commandReturn")).toBe(false);
+  it("sends only on ⌘Return; a bare Return adds a line", () => {
+    expect(sends(press({ metaKey: true }))).toBe(true);
+    expect(sends(press())).toBe(false);
+    expect(sends(press({ metaKey: true, shiftKey: true }))).toBe(false);
   });
 });
 

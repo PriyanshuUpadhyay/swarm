@@ -62,7 +62,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     // The pane's composer types into that child.
     const hello = `hello tester from ${project}`;
     await tab.keyboard.type(hello);
-    await tab.keyboard.press("Enter");
+    await tab.keyboard.press("Meta+Enter");
     await expect.poll(() => read("typed").slice(typedBefore)).toContain(hello);
     await expect(tester.getByTestId("composer")).toHaveValue("");
 

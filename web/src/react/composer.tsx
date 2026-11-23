@@ -17,7 +17,7 @@ import { cn } from "../lib/utils";
 const DOUBLE_ESC_MS = 500;
 
 export function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
-  const { id: sessionId, agent: chair, state, sendKey } = composer;
+  const { id: sessionId, agent: chair, state } = composer;
   // "the chair" means nothing to a new owner, so the chat's own agent is named.
   const target = chair.who ?? (chair.provider ? `the ${chair.provider} agent` : "the agent");
   const [text, setText] = useState(() => app.draft(sessionId));
@@ -140,15 +140,17 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
     if (slash.onKeyDown(e, (row) => choose(row, false))) return;
-    if (menu && slash.row && e.key === "Enter" && sends(e, sendKey)) {
+    // As in the ⌘N composer, a plain Return puts the menu's row in the draft.
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+    if (menu && slash.row && e.key === "Enter" && (plain || sends(e))) {
       e.preventDefault();
-      choose(slash.row, picksAndSends(text, menu, slash.row));
+      choose(slash.row, !plain && picksAndSends(text, menu, slash.row));
       return;
     }
     // ⇧⌘↩ zooms the pane.
     if (e.key === "Enter" && e.shiftKey && e.metaKey) return;
     if (e.key === "Enter") {
-      if (sends(e, sendKey)) {
+      if (sends(e)) {
         e.preventDefault();
         void submit();
       } else if (e.metaKey || e.ctrlKey) {
@@ -313,7 +315,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             </Button>
           )}
           {(!showStop || outgoing(text) !== null) && (
-            <Button size="icon" data-testid="send" aria-label="Send" title={sendKey === "return" ? "Send (Return)" : "Send (⌘Return)"} disabled={!canSend} onClick={submit}>
+            <Button size="icon" data-testid="send" aria-label="Send" title="Send (⌘Return)" disabled={!canSend} onClick={submit}>
               <ArrowUpIcon className="size-4" />
             </Button>
           )}

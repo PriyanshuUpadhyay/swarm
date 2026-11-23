@@ -212,7 +212,6 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
     };
     for op in [
         json!({"op":"pref","key":"theme","value":"light"}),
-        json!({"op":"pref","key":"sendKey","value":"commandReturn"}),
         json!({"op":"pref","key":"switchCarry","value":"clean"}),
         json!({"op":"pref","key":"terminalHost","value":"tmux"}),
         json!({"op":"pref","key":"fontSans","value":"avenir"}),
@@ -230,7 +229,7 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
     }
     assert_eq!(
         o.prefs,
-        json!({"usageHUD": true, "theme": "light", "sendKey": "commandReturn", "switchCarry": "clean", "terminalHost": "tmux", "fontSans": "avenir", "fontMono": "menlo", "chatDetail": "full", "usageHUDAsked": true, "notices": {
+        json!({"usageHUD": true, "theme": "light", "switchCarry": "clean", "terminalHost": "tmux", "fontSans": "avenir", "fontMono": "menlo", "chatDetail": "full", "usageHUDAsked": true, "notices": {
             "startAtLogin": false, "post": false, "sound": false, "done": false, "badge": false,
             "mutedProjects": [project]}})
     );
@@ -243,7 +242,6 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
     let before = o.prefs.clone();
     for op in [
         json!({"op":"pref","key":"theme","value":"blue"}),
-        json!({"op":"pref","key":"sendKey","value":true}),
         json!({"op":"pref","key":"switchCarry","value":"resume"}),
         json!({"op":"pref","key":"terminalHost","value":"screen"}),
         json!({"op":"pref","key":"fontSans","value":"Comic Sans"}),

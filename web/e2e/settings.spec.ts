@@ -78,23 +78,19 @@ test("each notification switch is saved and read back by swarm notices --due", a
   expect(errors).toEqual([]);
 });
 
-test("theme and send key are owner choices that the page follows", async ({ page: tab }, info) => {
+test("theme is an owner choice that the page follows", async ({ page: tab }, info) => {
   const errors = await open(tab);
   const dialog = await settings(tab, "appearance");
   await shoot(tab, dialog, "appearance", info.project.name);
   await dialog.getByTestId("pref-theme").getByRole("radio", { name: "Light" }).click();
   await expect(tab.locator("html")).toHaveAttribute("data-theme", "light");
   await expect.poll(() => choices().prefs?.theme).toBe("light");
-  await dialog.getByTestId("pref-send-key").getByRole("radio", { name: "⌘Return" }).click();
-  await expect(dialog.getByTestId("pref-send-key").getByRole("radio", { name: "⌘Return" })).toHaveAttribute("aria-checked", "true");
-  expect(choices().prefs?.sendKey).toBe("commandReturn");
   // Another window's choice reaches this page through the tree.
   const { revision } = await api<{ revision: string }>("/api/tree?view=workspaces");
   await api("/api/choices", { revision, op: "pref", key: "theme", value: "dark" });
   await expect(tab.locator("html")).toHaveAttribute("data-theme", "dark");
   await dialog.getByTestId("pref-theme").getByRole("radio", { name: "System" }).click();
-  await dialog.getByTestId("pref-send-key").getByRole("radio", { name: "Return", exact: true }).click();
-  await expect.poll(() => choices().prefs).toMatchObject({ theme: "system", sendKey: "return" });
+  await expect.poll(() => choices().prefs?.theme).toBe("system");
   await expect(tab.locator("html")).not.toHaveAttribute("data-theme", /./);
   expect(errors).toEqual([]);
 });

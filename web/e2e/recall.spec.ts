@@ -29,7 +29,7 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   // A sent prompt comes back with Up; Down past it gives the typed draft back.
   const prompt = `recall me from ${info.project.name}`;
   await tab.keyboard.type(prompt);
-  await tab.keyboard.press("Enter");
+  await tab.keyboard.press("Meta+Enter");
   await expect.poll(typed).toContain(prompt);
   // The box keeps the text until the server answers the send, and an Up before then does nothing.
   await expect(status).not.toContainText("Sending…");
@@ -98,10 +98,10 @@ test("the composer recalls, stashes, reuses and finds prompts, and @ inserts a f
   await expect(composer).toHaveValue("second draft");
   await tab.keyboard.press("Escape");
 
-  // Down onto a recalled prompt that ends in an @path opens no menu, so Enter sends it.
+  // Down onto a recalled prompt that ends in an @path opens no menu, so ⌘Return sends it.
   await tab.keyboard.type("check @README.md");
   await tab.keyboard.press("Escape");
-  await tab.keyboard.press("Enter");
+  await tab.keyboard.press("Meta+Enter");
   await expect.poll(typed).toContain("check @README.md");
   await expect(status).not.toContainText("Sending…");
   await tab.keyboard.press("ArrowUp");

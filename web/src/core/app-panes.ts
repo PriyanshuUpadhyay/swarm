@@ -1,6 +1,5 @@
 
 
-import { type SendKey } from "./composer";
 import { movePane, paneCells, type Direction, type PaneCell } from "./panes";
 
 
@@ -11,7 +10,6 @@ export class AppPanes {
   constructor(private readonly app: App) {}
 
   makeView(): View {
-    const sendKey: SendKey = this.app.tree?.prefs?.sendKey === "commandReturn" ? "commandReturn" : "return";
     const chat = this.app.reading.open;
     const cells = this.cells();
     // A pane that left the strip takes its focus, its zoom and its Find with it.
@@ -23,7 +21,7 @@ export class AppPanes {
     if (this.app.findId && !cells.some((c) => paneId(this.app.openId!, c.id) === this.app.findId)) this.app.findId = null;
     this.app.reading.refind(this.app.chats.get(this.app.findId ?? this.app.openId ?? ""));
     return {
-      ...(chat ? this.paneView(chat, sendKey, this.chairHasLog(chat.sessionId)) : NO_PANE),
+      ...(chat ? this.paneView(chat, this.chairHasLog(chat.sessionId)) : NO_PANE),
       loaded: this.app.tree !== null,
       tree: this.app.tree,
       treeName: this.app.treeName,
@@ -41,17 +39,17 @@ export class AppPanes {
       paletteOpen: this.app.paletteOpen,
       branchPicking: this.app.branchPicking,
       asking: this.app.asking,
-      strip: this.stripView(cells, sendKey),
+      strip: this.stripView(cells),
     };
   }
 
   /** One chat as its transcript and composer see it. The same object comes back while nothing it
    *  shows has changed, so a sidebar key press does not render every column again. */
-  paneView(chat: Chat, sendKey: SendKey, hasLog = true): Pane {
+  paneView(chat: Chat, hasLog = true): Pane {
     const finds = chat.id === (this.app.findId ?? this.app.openId);
     const find = finds ? this.app.find : NO_FIND;
     const full = this.app.reading.fullDetail;
-    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, sendKey, hasLog, full];
+    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, hasLog, full];
     if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
     if (chat.built?.version !== chat.version || chat.built.full !== full) chat.built = { version: chat.version, full, lines: this.app.reading.build(chat) };
     const pane: Pane = {
@@ -65,7 +63,7 @@ export class AppPanes {
       shift: chat.shift,
       full: chat.full,
       find,
-      composer: this.app.composing.composerView(chat, sendKey),
+      composer: this.app.composing.composerView(chat),
     };
     chat.memo = { sig, pane };
     return pane;
@@ -82,10 +80,10 @@ export class AppPanes {
     return cells;
   }
 
-  stripView(cells: PaneCell[], sendKey: SendKey): Strip {
+  stripView(cells: PaneCell[]): Strip {
     const p = this.app.pane;
     const panes = new Map<string, Pane>();
-    for (const c of cells) panes.set(c.id, this.paneView(this.app.reading.childChat(this.app.openId!, c.id), sendKey, c.hasLog));
+    for (const c of cells) panes.set(c.id, this.paneView(this.app.reading.childChat(this.app.openId!, c.id), c.hasLog));
     const old = this.app.strip;
     const same =
       old.cells === cells &&
