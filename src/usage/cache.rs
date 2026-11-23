@@ -117,11 +117,13 @@ pub fn read(deadline: Instant) -> Result<Usage, String> {
 fn emails(accounts: &[Account]) -> Vec<(String, String)> {
     accounts
         .iter()
-        .filter_map(|account| {
-            let email = account.email.as_deref()?.trim().to_lowercase();
-            (!email.is_empty()).then(|| (account.name.clone(), email))
-        })
+        .filter_map(|account| Some((account.name.clone(), normalized_email(account)?)))
         .collect()
+}
+
+fn normalized_email(account: &Account) -> Option<String> {
+    let email = account.email.as_deref()?.trim();
+    (!email.is_empty()).then(|| email.to_lowercase())
 }
 
 /// Two accounts of one provider that sign in with one email are one account, so the meters show it
@@ -172,8 +174,7 @@ fn login_digest(account: &Account) -> Option<String> {
     if account.auth_state != AuthState::SignedIn {
         return None;
     }
-    let email = account.email.as_deref()?.trim().to_lowercase();
-    (!email.is_empty()).then(|| format!("{:x}", Sha256::digest(email)))
+    normalized_email(account).map(|email| format!("{:x}", Sha256::digest(email)))
 }
 
 fn cached_accounts(provider: &str, accounts: &[Account], now: i64) -> Vec<UsageMeter> {
@@ -256,19 +257,23 @@ fn meters_from_cache(
             ));
             continue;
         }
-        let entry = login_digest(account).and_then(|identity| {
+
+        let identity = login_digest(account);
+        let entry = identity.as_ref().and_then(|identity| {
             cache.as_ref()?.accounts.iter().find(|entry| {
                 entry.home == account.home
-                    && entry.identity.as_deref() == Some(identity.as_str())
+                    && entry.identity.as_ref() == Some(identity)
                     && !entry.meters.is_empty()
             })
         });
+
         if let Some(entry) = entry {
             meters.extend(entry.meters.iter().map(|meter| {
                 let mut meter = meter.clone();
                 meter.provider = provider.into();
                 meter.account = Some(account.name.clone());
                 meter.label = account.name.clone();
+
                 normalize_meter(&meter, now)
             }));
         } else {
@@ -277,7 +282,9 @@ fn meters_from_cache(
                 Some(account),
                 "missing",
                 ReasonCode::NoCachedUsage,
-                None,
+                identity
+                    .is_none()
+                    .then_some("Usage unknown: sign-in identity unavailable"),
             ));
         }
     }
@@ -489,46 +496,4 @@ fn refresh_accounts(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn audit_regression_usage_does_not_follow_a_home_to_a_new_login() {
-        let account = Account {
-            name: "work".into(),
-            email: Some("new@example.invalid".into()),
-            home: "/same-home".into(),
-            env: Default::default(),
-            auth_state: AuthState::SignedIn,
-            usage_state: "missing".into(),
-            usage_source: Some("claude_api".into()),
-            remaining_pct: None,
-            summary: None,
-            invalid_home: false,
-            fable_spent: false,
-            renewable: false,
-        };
-        let mut meter = status_meter(
-            "claude",
-            Some(&account),
-            "fresh",
-            ReasonCode::NoCachedUsage,
-            None,
-        );
-        meter.used_pct = Some(15);
-        meter.as_of_seconds = Some(1000);
-        meter.reason = None;
-        meter.reason_code = None;
-        let cache = serde_json::from_value(serde_json::json!({
-            "accounts": [{
-                "home": account.home,
-                "identity": "previous-login-fingerprint",
-                "meters": [meter]
-            }]
-        }))
-        .unwrap();
-        let meters = meters_from_cache("claude", &[account], 1000, Ok(Some(cache)));
-        assert_eq!(meters[0].state, "missing");
-        assert_eq!(meters[0].used_pct, None);
-    }
-}
+mod tests;

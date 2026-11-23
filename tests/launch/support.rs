@@ -145,6 +145,11 @@ pub(super) fn recorded_trust(home: &Path) -> Vec<serde_json::Value> {
         .collect()
 }
 
+pub(super) fn fixture_identity() -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest("owner@example.test"))
+}
+
 pub(super) fn account_launch_fixture(role: &str) -> (PathBuf, String, String) {
     let home = scratch(role);
     std::fs::create_dir_all(home.join(".claude/.profiles/work")).unwrap();

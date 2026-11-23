@@ -22,8 +22,7 @@ fn a_claude_launch_trusts_the_config_that_the_pane_reads() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    use sha2::{Digest, Sha256};
-    let identity = format!("{:x}", Sha256::digest("owner@example.test"));
+    let identity = fixture_identity();
     let accounts: Vec<_> = profiles.iter().zip([30,75]).map(|(path,used)| serde_json::json!({"home":path,"identity":identity,"meters":[{"provider":"claude","account":path.file_name().unwrap().to_str().unwrap(),"label":"account","window":"5h","window_minutes":300,"used_pct":used,"reset_time_seconds":null,"state":"fresh","source":"claude_api","reason":null,"as_of_seconds":now}]})).collect();
     std::fs::write(
         home.join(".swarm/claude-usage.json"),

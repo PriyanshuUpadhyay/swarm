@@ -165,11 +165,6 @@ fn launch_uses_model_usage_and_refuses_spent_fable_auto_before_starting_a_pane()
     assert!(stderr(&fable).contains("account default"));
 }
 
-fn fixture_identity() -> String {
-    use sha2::{Digest, Sha256};
-    format!("{:x}", Sha256::digest("owner@example.test"))
-}
-
 fn renewable_launch_cache(home: &Path, work_used: i64) {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
