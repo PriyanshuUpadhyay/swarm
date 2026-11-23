@@ -81,7 +81,7 @@ fn all_agent_listings_match_each_sessions_adapter_and_fields() {
             swarm::store::create_session(&connection, "lane", &home, None, adapter).unwrap();
         swarm::store::add_agent(&connection, &session, "coder", "code").unwrap();
         if adapter == Some("dead") {
-            swarm::store::archive_sessions(&mut connection, &[session]).unwrap();
+            swarm::store::set_sessions_archived(&mut connection, &[session], true).unwrap();
         }
     }
     swarm::store::create_session(&connection, "lane", &home, None, Some("live")).unwrap();

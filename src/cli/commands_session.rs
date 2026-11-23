@@ -99,9 +99,9 @@ pub(crate) fn commands_session(
             })
             .collect::<Result<Vec<_>, &str>>()?;
         if sub == "archive" {
-            swarm::store::archive_sessions(connection, &ids)?;
+            swarm::store::set_sessions_archived(connection, &ids, true)?;
         } else {
-            swarm::store::unarchive_sessions(connection, &ids)?;
+            swarm::store::set_sessions_archived(connection, &ids, false)?;
         }
         return Ok(Some(()));
     }

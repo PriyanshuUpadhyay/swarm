@@ -167,21 +167,7 @@ pub fn adapter_of(
     )?)
 }
 
-pub fn archive_sessions(
-    connection: &mut Connection,
-    session_ids: &[String],
-) -> Result<(), Box<dyn std::error::Error>> {
-    set_sessions_archived(connection, session_ids, true)
-}
-
-pub fn unarchive_sessions(
-    connection: &mut Connection,
-    session_ids: &[String],
-) -> Result<(), Box<dyn std::error::Error>> {
-    set_sessions_archived(connection, session_ids, false)
-}
-
-fn set_sessions_archived(
+pub fn set_sessions_archived(
     connection: &mut Connection,
     session_ids: &[String],
     archived: bool,
