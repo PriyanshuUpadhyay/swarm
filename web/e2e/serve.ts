@@ -150,6 +150,7 @@ export default async function setup() {
   const lane = (cwd: string, chair: string) => {
     const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chair}`], { cwd, env, stdio: "pipe" }).toString().trim().split("\n").pop()!;
     plain.push({ session, log: join(logs, `${chair}.jsonl`) });
+    return session;
   };
   for (const [ws, fixture] of [
     ["ws-build", "claude-chair-run.jsonl"],
@@ -161,7 +162,8 @@ export default async function setup() {
     const chair = randomUUID();
     if (fixture) copyFileSync(join(fixtures, fixture), join(logs, `${chair}.jsonl`));
     else writeFileSync(join(logs, `${chair}.jsonl`), giantLog(chair, GIANT_LINES));
-    lane(cwd, chair);
+    const session = lane(cwd, chair);
+    if (!fixture) process.env.SWARM_E2E_GIANT = session;
   }
   // The live chat: its chair registers from the stand-in pane, as a chair CLI does at start.
   mkdirSync(join(home, ".swarm/adapters"), { recursive: true });

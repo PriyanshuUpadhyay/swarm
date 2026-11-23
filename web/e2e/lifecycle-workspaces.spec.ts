@@ -29,7 +29,6 @@ test("⌘Enter makes a worktree named from the prompt and shows each start step 
   // A failed setup starts no chat (ADR 0097), so no agent launches in the shared home.
   const gate = join(process.env.SWARM_E2E_DIR!, `gate-${b}`);
   await setScript(tab, `echo setup-started; while [ ! -e ${gate} ]; do sleep 0.1; done; echo to-stderr >&2; exit 3`);
-  let path: string | null = null;
   try {
     const composer = await compose(tab, "proj-gh", `Fix the flaky smoke ${b}`);
     // The start names the branch, so the card only says where its name comes from (ADR 0158).
@@ -53,16 +52,15 @@ test("⌘Enter makes a worktree named from the prompt and shows each start step 
     await expect(tab.getByTestId("new-chat-prompt")).toHaveValue(`Fix the flaky smoke ${b}`);
     await tab.getByTestId("new-chat-prompt").press("Escape");
 
-    path = execFileSync("git", ["-C", ghProject(), "worktree", "list", "--porcelain"], { encoding: "utf8" })
+    const path = execFileSync("git", ["-C", ghProject(), "worktree", "list", "--porcelain"], { encoding: "utf8" })
       .split("\n\n")
       .find((block) => block.includes(`branch refs/heads/${branch}`))
       ?.match(/^worktree (.*)$/m)?.[1] ?? null;
     expect(path).not.toBeNull();
   } finally {
     await setScript(tab, "");
-    // proj-gh is no worktree hub, so a failed start keeps its worktree; a repeat needs both gone.
-    if (path) execFileSync("git", ["-C", ghProject(), "worktree", "remove", "--force", path]);
-    if (path) execFileSync("git", ["-C", ghProject(), "branch", "-D", branch]);
+    // Leave the registered worktree until teardown. Removing it through Git leaves the
+    // server's workspace selection pointing at a missing folder in the next test.
   }
   expect(errors).toEqual([]);
 });

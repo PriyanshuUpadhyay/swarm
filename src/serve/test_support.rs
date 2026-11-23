@@ -21,16 +21,63 @@ pub(super) struct Fixture {
     pub(super) log: PathBuf,
 }
 
-pub(super) fn real_worker(override_env: &str) -> PathBuf {
-    let path: PathBuf = std::env::var_os(override_env)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/debug/swarm"));
+const WORKER_ENV: &str = "SWARM_TEST_WORKER";
+
+pub(super) fn worker_child(test: &str) -> std::process::Command {
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", test, "--nocapture"])
+        .env_clear()
+        .env(WORKER_ENV, real_worker());
+    command
+}
+
+fn real_worker() -> &'static Path {
+    static WORKER: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    WORKER.get_or_init(|| {
+        let Some(path) = std::env::var_os(WORKER_ENV).map(PathBuf::from) else {
+            return build_worker();
+        };
+        assert!(
+            path.is_file(),
+            "{WORKER_ENV} must name a file ({}); build it with cargo build --features serve --bin swarm",
+            path.display()
+        );
+        path
+    })
+}
+
+// Cargo supplies CARGO_BIN_EXE_swarm only to integration tests. A bin-only
+// test run may not have built the CLI, so ask Cargo for the current artifact.
+fn build_worker() -> PathBuf {
+    let output = std::process::Command::new(env!("CARGO"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args([
+            "build",
+            "--features",
+            "serve",
+            "--bin",
+            "swarm",
+            "--message-format=json",
+        ])
+        .output()
+        .expect("run Cargo to build the serve test worker");
+
     assert!(
-        path.is_file(),
-        "build the real swarm worker with cargo build --features serve --bins; {override_env} may name that binary ({})",
-        path.display()
+        output.status.success(),
+        "cannot build the serve test worker: {}{}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
     );
-    path
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|message| {
+            message["reason"] == "compiler-artifact" && message["target"]["name"] == "swarm"
+        })
+        .find_map(|message| message["executable"].as_str().map(PathBuf::from))
+        .expect("Cargo did not report the swarm executable")
 }
 
 impl Fixture {
@@ -61,7 +108,7 @@ impl Fixture {
     pub(super) fn at(dir: PathBuf) -> Self {
         let root = dir.join("home/.swarm");
         std::fs::create_dir_all(&root).unwrap();
-        let worker = real_worker("S9A_SWARM");
+        let worker = real_worker();
         let executable = swarm::adapter::shell_line(&[worker.to_string_lossy().into_owned()]);
         std::fs::create_dir_all(root.join("adapters")).unwrap();
         // Adapter callbacks must run the CLI, not this unit test harness.
@@ -93,7 +140,7 @@ impl Fixture {
         swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
         let (actions, action_queue) = mpsc::channel(64);
         let mut sources = source_backend::Sources::default();
-        sources.worker_cli = Some(worker);
+        sources.worker_cli = Some(worker.to_path_buf());
         let app = Arc::new(Server {
             sources,
             root,

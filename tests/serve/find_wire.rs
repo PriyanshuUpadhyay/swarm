@@ -20,7 +20,7 @@ fn subscribe_rows(server: &Server, live: &mut BufReader<TcpStream>, from: u64) {
 }
 
 #[test]
-fn find_map_on_merged_page_and_cached_tail_matches_original_rows() {
+fn find_map_on_merged_page_and_cached_tail_indexes_the_visible_rows() {
     let server = Server::new();
     let log = include_str!("find-t1.jsonl");
     fs::write(&server.log, log).unwrap();

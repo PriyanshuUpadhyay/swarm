@@ -140,18 +140,18 @@ fn queue_modes(queue: &Value) -> Value {
 #[test]
 fn s10e2_body_pairs_merged_cached_steps_sse_and_queue_refresh() {
     let server = Server::with_actions(true);
-    // Two tools and a collapsed multiline compaction produce a Markdown step.
+    // A Claude read group keeps the multiline compaction as a Markdown step.
     let mut seed = (0..32)
         .map(|i| record(&format!("pair-pad-{i}"), "user", "text", "pad"))
         .collect::<String>();
-    seed.push_str(&(json!({"type":"assistant","uuid":"pair-call","message":{"content":[{"type":"tool_use","id":"pair-tool","name":"Bash","input":{"command":"print"}}]}}).to_string()+"\n"));
+    seed.push_str(&(json!({"type":"assistant","uuid":"pair-call","message":{"content":[{"type":"tool_use","id":"pair-tool","name":"Bash","input":{"command":"cat notes.txt"}}]}}).to_string()+"\n"));
     seed.push_str(&(json!({"type":"user","uuid":"pair-result","message":{"content":[{"type":"tool_result","tool_use_id":"pair-tool","content":"done"}]}}).to_string()+"\n"));
     seed.push_str(
         &(json!({"type":"system","uuid":"pair-step","subtype":"compact_boundary","content":"\n"})
             .to_string()
             + "\n"),
     );
-    seed.push_str(&(json!({"type":"assistant","uuid":"pair-call-two","message":{"content":[{"type":"tool_use","id":"pair-tool-two","name":"Bash","input":{"command":"print"}}]}}).to_string()+"\n"));
+    seed.push_str(&(json!({"type":"assistant","uuid":"pair-call-two","message":{"content":[{"type":"tool_use","id":"pair-tool-two","name":"Bash","input":{"command":"cat more.txt"}}]}}).to_string()+"\n"));
     seed.push_str(&(json!({"type":"user","uuid":"pair-result-two","message":{"content":[{"type":"tool_result","tool_use_id":"pair-tool-two","content":"done"}]}}).to_string()+"\n"));
     seed.push_str(&record("pair-answer", "assistant", "text", "kept"));
     fs::write(&server.log, &seed).unwrap();
