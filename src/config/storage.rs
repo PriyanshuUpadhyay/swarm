@@ -272,9 +272,11 @@ fn prune_backups(path: &Path) {
         return;
     };
     let prefix = format!("{name}.");
+
     let Some(entries) = path.parent().and_then(|dir| std::fs::read_dir(dir).ok()) else {
         return;
     };
+
     let mut backups: Vec<_> = entries
         .filter_map(Result::ok)
         .filter_map(|entry| {
@@ -288,6 +290,7 @@ fn prune_backups(path: &Path) {
                 .then(|| (stamp, entry.path()))
         })
         .collect();
+
     backups.sort_unstable_by(|a, b| b.cmp(a));
     for (_, path) in backups.into_iter().skip(BACKUP_LIMIT) {
         let _ = std::fs::remove_file(path);
@@ -311,7 +314,19 @@ mod tests {
         let config = built_in();
         let bytes = write(&path, &config).unwrap();
         let expected = revision(&bytes);
-        let rename = |config: &mut Config| apply_action(config, ProfileAction::New("first"));
+        let rename = |config: &mut Config| {
+            let lock = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path.with_extension("lock"))
+                .unwrap();
+            assert!(matches!(
+                lock.try_lock(),
+                Err(std::fs::TryLockError::WouldBlock)
+            ));
+            apply_action(config, ProfileAction::New("first"))
+        };
+
         update_at(&path, config.clone(), &bytes, &expected, rename).unwrap();
         let stale = |config: &mut Config| apply_action(config, ProfileAction::New("second"));
         let result = update_at(&path, config, &bytes, &expected, stale);
@@ -331,6 +346,7 @@ mod tests {
             std::fs::write(dir.join(format!("profiles.json.{stamp}.bak")), "backup").unwrap();
         }
         std::fs::write(dir.join("profiles.json.manual.bak"), "owner copy").unwrap();
+
         write(&path, &config).unwrap();
         let names: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()

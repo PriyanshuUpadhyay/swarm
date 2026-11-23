@@ -120,7 +120,8 @@ pub fn render(provider: &str, context: Option<&str>) -> String {
 }
 
 /// An AGY worker's history goes through the classifier before the session starts. Best effort:
-/// a missing classifier or one that outlives six seconds changes nothing.
+/// a missing classifier or one that outlives six seconds changes nothing. The same deadline
+/// covers the write and the wait; there is no separate payload size limit.
 pub fn contain_worker_history(provider: &str, payload: &str, home: &str) {
     if provider != "agy" || !is_worker(|name| std::env::var(name).ok()) {
         return;
@@ -137,12 +138,10 @@ pub fn contain_worker_history(provider: &str, payload: &str, home: &str) {
 fn classify_history(classifier: &str, provider: &str, payload: &str, within: std::time::Duration) {
     let deadline = std::time::Instant::now() + within;
     let poll = std::time::Duration::from_millis(20);
-    let Ok((mut stdin, reader)) = std::os::unix::net::UnixStream::pair() else {
+    let Ok((stdin, reader)) = std::os::unix::net::UnixStream::pair() else {
         return;
     };
-    if stdin.set_nonblocking(true).is_err() {
-        return;
-    }
+
     let Ok(mut child) = std::process::Command::new(classifier)
         .args(["--provider", provider])
         .stdin(std::os::fd::OwnedFd::from(reader))
@@ -152,7 +151,25 @@ fn classify_history(classifier: &str, provider: &str, payload: &str, within: std
     else {
         return;
     };
-    let mut input = payload.as_bytes();
+    write_history(stdin, payload.as_bytes(), deadline, poll);
+
+    while matches!(child.try_wait(), Ok(None)) && std::time::Instant::now() < deadline {
+        std::thread::sleep(poll.min(deadline.saturating_duration_since(std::time::Instant::now())));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn write_history(
+    mut stdin: std::os::unix::net::UnixStream,
+    mut input: &[u8],
+    deadline: std::time::Instant,
+    poll: std::time::Duration,
+) {
+    if stdin.set_nonblocking(true).is_err() {
+        return;
+    }
+
     while !input.is_empty() && std::time::Instant::now() < deadline {
         match stdin.write(input) {
             Ok(0) => break,
@@ -166,18 +183,50 @@ fn classify_history(classifier: &str, provider: &str, payload: &str, within: std
             Err(_) => break,
         }
     }
-    drop(stdin);
-    while matches!(child.try_wait(), Ok(None)) && std::time::Instant::now() < deadline {
-        std::thread::sleep(poll.min(deadline.saturating_duration_since(std::time::Instant::now())));
-    }
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
     use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::net::UnixStream;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn audit_regression_history_never_writes_after_its_deadline() {
+        let (writer, mut reader) = UnixStream::pair().unwrap();
+        write_history(writer, b"late", Instant::now(), Duration::from_millis(2));
+        let mut received = Vec::new();
+        reader.read_to_end(&mut received).unwrap();
+        assert!(received.is_empty());
+    }
+
+    #[test]
+    fn audit_regression_history_does_not_block_on_a_full_socket() {
+        let (mut writer, mut reader) = UnixStream::pair().unwrap();
+        writer.set_nonblocking(true).unwrap();
+        let mut prefix = 0;
+        loop {
+            match writer.write(&[0; 8192]) {
+                Ok(n) => prefix += n,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("{error}"),
+            }
+        }
+
+        writer.set_nonblocking(false).unwrap();
+        let reader = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            let mut received = Vec::new();
+            reader.read_to_end(&mut received).unwrap();
+            received
+        });
+        let late = vec![1; 1024 * 1024];
+        let deadline = Instant::now() + Duration::from_millis(40);
+        write_history(writer, &late, deadline, Duration::from_millis(2));
+        assert_eq!(reader.join().unwrap().len(), prefix);
+    }
 
     #[test]
     fn audit_regression_classifier_deadline_covers_stdin() {
@@ -185,12 +234,14 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         let classifier = root.join("classify");
         let marker = root.join("consumed");
+
         std::fs::write(
             &classifier,
             "#!/bin/sh\nsleep 0.25\ncat >/dev/null\ntouch \"${0%/*}/consumed\"\n",
         )
         .unwrap();
         std::fs::set_permissions(&classifier, std::fs::Permissions::from_mode(0o700)).unwrap();
+
         classify_history(
             classifier.to_str().unwrap(),
             "agy",

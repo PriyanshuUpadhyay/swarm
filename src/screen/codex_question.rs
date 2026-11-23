@@ -148,13 +148,18 @@ fn turn_lines(path: &Path) -> Option<Vec<Vec<u8>>> {
     if !std::fs::metadata(path).ok()?.is_file() {
         return None;
     }
-    let mut file = std::fs::File::open(path).ok()?;
+    let file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
+    snapshot_lines(file, len)
+}
+
+fn snapshot_lines(mut file: std::fs::File, len: u64) -> Option<Vec<Vec<u8>>> {
     let start = turn_start(&mut file, len)?;
     file.seek(SeekFrom::Start(start)).ok()?;
     let mut reader = std::io::BufReader::new(file.take(len - start));
     let mut lines = Vec::new();
     let mut line = Vec::new();
+
     // At the cap's floor the first line can be cut, and a cut record must not count.
     if start > 0 && start == len.saturating_sub(TURN_CAP) {
         reader.read_until(b'\n', &mut line).ok()?;
@@ -214,6 +219,7 @@ mod tests {
             std::env::temp_dir().join(format!("swarm-codex-question-id-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("rollout.jsonl");
+
         let record = |id: &str| {
             serde_json::json!({
                 "type": "response_item",
@@ -225,6 +231,7 @@ mod tests {
                 }
             })
         };
+
         std::fs::write(&path, format!("{}\n", record("first"))).unwrap();
         let first = open_question(&path).unwrap();
         std::fs::write(
@@ -234,6 +241,28 @@ mod tests {
         .unwrap();
         let second = open_question(&path).unwrap();
         assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn audit_regression_codex_snapshot_ignores_appends_during_both_scans() {
+        let path =
+            std::env::temp_dir().join(format!("swarm-codex-snapshot-{}", uuid::Uuid::now_v7()));
+        let before = b"{\"type\":\"request_user_input_async\"}\n";
+        std::fs::write(&path, before).unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let len = file.metadata().unwrap().len();
+
+        use std::io::Write;
+        let mut writer = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(writer, r#"{{"type":"task_started"}}"#).unwrap();
+        writeln!(writer, r#"{{"type":"task_complete"}}"#).unwrap();
+
+        let lines = snapshot_lines(file, len).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(lines, [before.to_vec()]);
     }
 
     #[test]
