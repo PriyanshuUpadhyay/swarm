@@ -139,7 +139,9 @@ test("the installed Pi renderer keeps decisions visible while paging through a t
     const frame = tui.captureRenderState();
     return check(frame.previousLines.slice(frame.previousViewportTop, frame.previousViewportTop + terminal.rows));
   };
-  for (const approved of [false, true]) {
+  // A 3-row pane has no room for plan rows, but the app still reads and presses its choices.
+  for (const [rows, approved] of [[24, false], [24, true], [3, true]] as const) {
+    terminal.rows = rows;
     const result = await ask("approve_plan", { plan }, {
       select: (...args) => nativeSelect.call(host, ...args),
       custom: (factory, options) => nativeCustom.call(host, factory, {
@@ -147,11 +149,13 @@ test("the installed Pi renderer keeps decisions visible while paging through a t
         onHandle() {
           assert.equal(blocking, "question");
           const first = viewport();
-          assert.ok(first.includes("Step 1:") && !first.includes("Step 30:"), first);
-          tui.handleTerminalInput("\x1b[6~"); // Page Down
-          assert.ok(viewport().includes("Step 30:"));
-          tui.handleTerminalInput("\x1b[5~"); // Page Up
-          assert.ok(viewport().includes("Step 1:"));
+          if (rows > 3) {
+            assert.ok(first.includes("Step 1:") && !first.includes("Step 30:"), first);
+            tui.handleTerminalInput("\x1b[6~"); // Page Down
+            assert.ok(viewport().includes("Step 30:"));
+            tui.handleTerminalInput("\x1b[5~"); // Page Up
+            assert.ok(viewport().includes("Step 1:"));
+          }
           if (approved) {
             tui.handleTerminalInput("\x1b[B");
             tui.handleTerminalInput("\r");

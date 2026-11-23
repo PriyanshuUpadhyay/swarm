@@ -90,16 +90,29 @@ pub(crate) fn answer(
             .into());
         }
         if let Some(text) = text {
-            let screen = adapter
-                .capture_within(
-                    &[("pane", pane.as_str())],
-                    std::time::Duration::from_secs(1),
-                )
-                .ok_or(format!("swarm: cannot read {agent_id}'s screen"))?;
-            // Text typed in the pane would join the answer.
-            if swarm::screen::pi_input_text(&screen).as_deref() != Some("") {
+            let box_text = || {
+                adapter
+                    .capture_within(
+                        &[("pane", pane.as_str())],
+                        std::time::Duration::from_secs(1),
+                    )
+                    .and_then(|screen| swarm::screen::pi_input_text(&screen))
+            };
+            // Text typed in the pane would join the answer, so the box is cleared first: the
+            // cursor goes to the end, then Pi deletes to the line start.
+            if box_text().is_some_and(|typed| !typed.is_empty()) {
+                for key in ["C-e", "C-u"] {
+                    adapter.run("key", &[("pane", &pane), ("key", key)])?;
+                }
+            }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            while box_text().as_deref() != Some("") {
+                if std::time::Instant::now() < deadline {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    continue;
+                }
                 return Err(format!(
-                    "swarm: {agent_id}'s answer box is not empty; answer in its pane"
+                    "swarm: {agent_id}'s answer box could not be cleared; send the answer again"
                 )
                 .into());
             }

@@ -53,11 +53,14 @@ async function selectPlan(ui: ExtensionUIContext, body: string, tuiMode: boolean
     const clamp = (offset: number, width: number) =>
       Math.max(0, Math.min(offset, text.render(width).length - pageSize()));
     const hint = (key: Parameters<typeof keys.getKeys>[0]) => keys.getKeys(key).join("/");
+    const choiceRows = () =>
+      PLAN_CHOICES.map((choice, index) => index === selected ? theme.fg("accent", `→ ${choice}`) : `  ${choice}`);
     return {
       render(width) {
+        // The choices stay on a small pane, because the app reads them there and answers with keys.
         if (!enoughRoom()) {
-          return ["Enlarge the pane to read the plan.", PLAN_FOOTER]
-            .slice(-tui.terminal.rows).map((line) => truncateToWidth(line, width));
+          return [...choiceRows(), PLAN_FOOTER]
+            .slice(-tui.terminal.rows).map((line) => truncateToWidth(line, width, ""));
         }
         offset = clamp(offset, width);
         const lines = text.render(width);
@@ -67,16 +70,16 @@ async function selectPlan(ui: ExtensionUIContext, body: string, tuiMode: boolean
         return [
           ...(tui.terminal.rows >= 5 ? [theme.fg("accent", heading)] : []),
           ...lines.slice(offset, end),
-          ...PLAN_CHOICES.map((choice, index) => index === selected ? theme.fg("accent", `→ ${choice}`) : `  ${choice}`),
+          ...choiceRows(),
           theme.fg("dim", help),
         ].map((line) => truncateToWidth(line, width, ""));
       },
       handleInput(data) {
         if (keys.matches(data, "tui.select.cancel")) return close();
-        if (!enoughRoom()) return;
         if (keys.matches(data, "tui.select.confirm")) return done(PLAN_CHOICES[selected]);
         if (keys.matches(data, "tui.select.up")) selected = 0;
         else if (keys.matches(data, "tui.select.down")) selected = 1;
+        else if (!enoughRoom()) return;
         else if (keys.matches(data, "tui.select.pageUp")) offset -= pageSize();
         else if (keys.matches(data, "tui.select.pageDown")) offset += pageSize();
         else return;

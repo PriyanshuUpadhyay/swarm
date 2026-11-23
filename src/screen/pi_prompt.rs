@@ -33,9 +33,13 @@ fn pi_plan_overlay_cursor(screen: &str) -> Option<usize> {
     }
 }
 
-/// The plan of the newest `approve_plan` call in a Pi log, while it has no result. The screen
-/// shows only one page of a long plan, so the log gives the whole text for the card.
-fn pi_logged_plan(log: Option<&std::path::Path>, cursor: usize) -> Option<Prompt> {
+/// The tools of Swarm's Pi extension (src/bus/pi_live.ts) that open a dialog for the owner.
+const DIALOG_TOOLS: [&str; 2] = ["approve_plan", "ask_user_question"];
+
+/// The name and arguments of the newest owner-dialog call in a Pi log, while it has no result.
+/// The screen shows only part of a long question, so the log gives its whole text for the card.
+/// Pi runs these tools one at a time, so only the newest call can be the open dialog.
+fn open_call(log: Option<&std::path::Path>) -> Option<(String, serde_json::Value)> {
     let tail = super::log_prompt::log_tail(log?)?;
     let mut answered = std::collections::HashSet::new();
     for line in tail.rsplit(|&byte| byte == b'\n') {
@@ -53,47 +57,102 @@ fn pi_logged_plan(log: Option<&std::path::Path>, cursor: usize) -> Option<Prompt
             continue;
         }
         for block in message["content"].as_array().into_iter().flatten().rev() {
-            if block["type"] != "toolCall" || block["name"] != "approve_plan" {
+            let Some(name) = block["name"]
+                .as_str()
+                .filter(|name| DIALOG_TOOLS.contains(name))
+            else {
+                continue;
+            };
+            if block["type"] != "toolCall" {
                 continue;
             }
-            // Only the newest plan call can be the open dialog; an older one is never shown.
             let id = block["id"].as_str().filter(|id| !id.is_empty())?;
-            let plan = block["arguments"]["plan"].as_str()?.trim();
-            if answered.contains(id) || plan.is_empty() {
-                return None;
-            }
-            let question = format!("{PI_PLAN_TITLE}\n\n{plan}");
-            let choices = PI_PLAN_CHOICES.map(String::from).to_vec();
-            return Some(Prompt {
-                id: prompt_id(&question, &choices),
-                question,
-                choices,
-                details: Vec::new(),
-                numbered: false,
-                cursor,
-                cut: false,
-                reply: None,
-                input: false,
-            });
+            return (!answered.contains(id))
+                .then(|| (name.to_string(), block["arguments"].clone()));
         }
     }
     None
 }
 
-/// The card for a plan whose text the log cannot give: no choices, so the owner opens the pane.
-fn pi_plan_pointer() -> Prompt {
-    let question = format!("{PI_PLAN_TITLE}\n\nOpen the Pi pane to read the full plan and answer.");
+/// One line of text as the extension shows a choice: no controls, and runs of white space as one
+/// space. A wrapped screen label compares equal to its log text.
+fn flat(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || c.is_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn choice_prompt(question: String, choices: Vec<String>, cursor: usize, input: bool) -> Prompt {
     Prompt {
-        id: prompt_id(&question, &[]),
+        id: prompt_id(&question, &choices),
         question,
-        choices: Vec::new(),
+        choices,
         details: Vec::new(),
         numbered: false,
-        cursor: 0,
+        cursor,
         cut: false,
         reply: None,
-        input: false,
+        input,
     }
+}
+
+/// The open plan from the log, with the choice the screen's cursor is on.
+fn pi_logged_plan(log: Option<&std::path::Path>, cursor: usize) -> Option<Prompt> {
+    let (name, arguments) = open_call(log)?;
+    let plan = arguments["plan"].as_str()?.trim();
+    if name != "approve_plan" || plan.is_empty() {
+        return None;
+    }
+    let choices = PI_PLAN_CHOICES.map(String::from).to_vec();
+    Some(choice_prompt(
+        format!("{PI_PLAN_TITLE}\n\n{plan}"),
+        choices,
+        cursor,
+        false,
+    ))
+}
+
+/// The open `ask_user_question` from the log, when its top is off the screen. A choice question
+/// must show the same choices on the screen, so the keys pick what the card shows.
+fn pi_logged_question(
+    log: Option<&std::path::Path>,
+    shown: Option<(&[String], usize)>,
+) -> Option<Prompt> {
+    let (name, arguments) = open_call(log)?;
+    let question = arguments["question"].as_str()?.trim();
+    if name != "ask_user_question" || question.is_empty() {
+        return None;
+    }
+    let logged: Option<Vec<String>> = arguments["choices"]
+        .as_array()
+        .map(|choices| {
+            choices
+                .iter()
+                .map(|c| c.as_str().map(flat))
+                .collect::<Option<_>>()
+        })
+        .unwrap_or(Some(Vec::new()))
+        .filter(|choices: &Vec<String>| !choices.is_empty());
+    match (shown, logged) {
+        (Some((choices, cursor)), Some(logged))
+            if choices.iter().map(|c| flat(c)).eq(logged.iter().cloned()) =>
+        {
+            Some(choice_prompt(question.to_string(), logged, cursor, false))
+        }
+        (None, None) => Some(choice_prompt(question.to_string(), Vec::new(), 0, true)),
+        _ => None,
+    }
+}
+
+/// A plan view whose choice rows or log call Swarm cannot read: no buttons, so nothing is approved
+/// blind. Pi writes the call before it opens the view, so this lasts only until the next read.
+fn pi_plan_unread() -> Prompt {
+    let question =
+        format!("{PI_PLAN_TITLE}\n\nSwarm could not read this plan from the agent's log.");
+    choice_prompt(question, Vec::new(), 0, false)
 }
 
 /// The lower rule of Pi's native dialog can have its two normal footer rows below it.
@@ -127,14 +186,14 @@ pub(super) fn pi_dialog(screen: &str) -> bool {
 }
 
 /// Swarm's Pi selector leaves a blank row between the question (or full plan) and the
-/// choices. The screen proves the dialog is open and gives the cursor. A plan taller than the
-/// screen comes from the log, never from scrollback.
+/// choices. The screen proves the dialog is open and gives the cursor. A question or plan taller
+/// than the screen comes from the log, never from scrollback.
 pub(super) fn pi_prompt(screen: &str, log: Option<&std::path::Path>) -> Option<Prompt> {
     if pi_plan_overlay(screen) {
         return Some(
             pi_plan_overlay_cursor(screen)
                 .and_then(|cursor| pi_logged_plan(log, cursor))
-                .unwrap_or_else(pi_plan_pointer),
+                .unwrap_or_else(pi_plan_unread),
         );
     }
     let lines: Vec<_> = screen.lines().collect();
@@ -143,7 +202,10 @@ pub(super) fn pi_prompt(screen: &str, log: Option<&std::path::Path>) -> Option<P
         .iter()
         .rposition(|line| line.trim_end() == lines[bottom].trim_end());
     if lines[footer].trim().starts_with(PI_INPUT) {
-        return pi_input_prompt(&lines[top? + 1..footer]);
+        return match top {
+            Some(top) => pi_input_prompt(&lines[top + 1..footer]),
+            None => pi_logged_question(log, None),
+        };
     }
     if !lines[footer].trim().starts_with(PI_SELECT) {
         return None;
@@ -189,9 +251,10 @@ pub(super) fn pi_prompt(screen: &str, log: Option<&std::path::Path>) -> Option<P
     let question = match (top, plan) {
         (Some(_), Some(body)) => body.trim_end().to_string(),
         (None, Some(_)) => {
-            return Some(pi_logged_plan(log, cursor).unwrap_or_else(pi_plan_pointer));
+            return Some(pi_logged_plan(log, cursor).unwrap_or_else(pi_plan_unread));
         }
         (Some(_), None) if !question.is_empty() => question.to_string(),
+        (None, None) => return pi_logged_question(log, Some((&choices, cursor))),
         _ => return None,
     };
     Some(Prompt {
@@ -208,7 +271,7 @@ pub(super) fn pi_prompt(screen: &str, log: Option<&std::path::Path>) -> Option<P
 }
 
 /// Pi's input dialog: the title (and an optional description) above one `> ` input row. A
-/// dialog whose top border is off the screen is left to the pane.
+/// dialog whose top border is off the screen comes from the log.
 fn pi_input_prompt(rows: &[&str]) -> Option<Prompt> {
     let field = rows
         .iter()
