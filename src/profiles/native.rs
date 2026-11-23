@@ -309,7 +309,7 @@ fn load_inner(
                                 .and_then(|auth| {
                                     auth["tokens"]["account_id"].as_str().map(str::to_string)
                                 });
-                            codex_identity(result)
+                            codex_identity(&result)
                                 .map(|(state, email)| (state, email, api_key, login))
                                 .map_err(NativeReadError::from)
                         }),
@@ -433,7 +433,7 @@ fn load_inner(
     Ok(list)
 }
 
-fn codex_identity(result: Value) -> Result<(AuthState, Option<String>), String> {
+fn codex_identity(result: &Value) -> Result<(AuthState, Option<String>), String> {
     match &result["account"] {
         Value::Null if result.get("account").is_some() => Ok((AuthState::SignedOut, None)),
         Value::Object(account)
