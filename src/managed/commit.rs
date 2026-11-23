@@ -168,9 +168,5 @@ pub fn digest(plans: &[Plan]) -> String {
             }
         }
     }
-    digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    format!("{:x}", digest.finalize())
 }
