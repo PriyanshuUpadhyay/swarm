@@ -49,6 +49,8 @@ mod delivery;
 pub(crate) use delivery::*;
 
 mod dispatch;
+#[cfg(feature = "serve")]
+#[path = "cli/transcript_worker_v2.rs"]
 mod transcript_worker;
 
 pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -57,6 +59,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err("swarm: a native Pi child cannot use Swarm commands".into());
     }
+    #[cfg(feature = "serve")]
     if let [command, rest @ ..] = args
         && command == "_transcript-worker"
     {

@@ -1,1 +1,0 @@
-{"timestamp":"2026-11-05T00:00:00.000Z","type":"response_item","payload":{"type":"function_call","name":"t","arguments":"{\"negzero\":-0,\"whole_float\":1E2}","call_id":"c1"}}

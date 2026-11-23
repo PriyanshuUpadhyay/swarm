@@ -2,11 +2,10 @@
 
 use super::{self as view, Record, Row};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod delta;
 mod pages;
-mod projection;
 mod render;
 pub use delta::RowDelta;
 pub use pages::RowPage;
@@ -50,7 +49,6 @@ pub struct ReaderRows {
     queue_cursor: Option<Position>,
     last_queued: Vec<Row>,
     queue_dirty: bool,
-    pub(super) unavailable: BTreeSet<Position>,
 }
 impl std::fmt::Debug for ReaderRows {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -93,7 +91,6 @@ impl ReaderRows {
             queue_cursor: None,
             last_queued: Vec::new(),
             queue_dirty: false,
-            unavailable: BTreeSet::new(),
         }
     }
     pub fn ingest(&mut self, start: u64, end: u64, events: &[Value]) {

@@ -97,9 +97,6 @@ impl ReaderRows {
     }
 
     fn replace_records(&mut self, page: Self) {
-        self.unavailable
-            .retain(|key| !page.records.contains_key(key));
-        self.unavailable.extend(page.unavailable);
         self.records.extend(page.records);
     }
 }
