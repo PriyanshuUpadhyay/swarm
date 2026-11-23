@@ -15,9 +15,11 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     /// full-screen window never covers that row; macOS leaves it black.
     var strip: NSPanel?
     var stripColor: NSKeyValueObservation?
-    /// The owner's View › Zoom level, kept in this app's UserDefaults. A browser tab has its own zoom.
     static let lastURLKey = "lastServerURL"
+    /// The owner's last View › Zoom level, kept in this app's UserDefaults. A browser tab has its own zoom.
     static let zoomKey = "pageZoom"
+    /// The zoom level for each display, by its name, so a move to a TV or back applies that display's zoom.
+    static let screenZoomKey = "pageZoomByScreen"
     /// Whether the window was in full screen when the app last quit, so a relaunch goes back to it.
     static let fullScreenKey = "fullScreen"
 
@@ -48,9 +50,8 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         webView.configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "swarm")
-        let zoom = UserDefaults.standard.double(forKey: Self.zoomKey)
-        if zoom > 0 { setZoom(zoom) }
         window.contentView = webView
+        applyScreenZoom()
         window.makeFirstResponder(webView)
         window.makeKeyAndOrderFront(nil)
         if UserDefaults.standard.bool(forKey: Self.fullScreenKey) { window.toggleFullScreen(nil) }
@@ -72,6 +73,19 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) { applyScreenZoom() }
+
+    /// A display without a saved zoom gets the last zoom the owner chose.
+    func applyScreenZoom() {
+        let saved = window.screen.flatMap { screenZooms()[$0.localizedName] }
+        let zoom = saved ?? UserDefaults.standard.double(forKey: Self.zoomKey)
+        if zoom > 0 { setZoom(zoom) }
+    }
+
+    func screenZooms() -> [String: Double] {
+        UserDefaults.standard.dictionary(forKey: Self.screenZoomKey) as? [String: Double] ?? [:]
     }
 
     func windowDidEnterFullScreen(_ notification: Notification) {
@@ -166,6 +180,10 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
     func setZoom(_ zoom: CGFloat) {
         webView.pageZoom = min(3, max(0.5, (zoom * 10).rounded() / 10))
         UserDefaults.standard.set(Double(webView.pageZoom), forKey: Self.zoomKey)
+        guard let name = window?.screen?.localizedName else { return }
+        var zooms = screenZooms()
+        zooms[name] = Double(webView.pageZoom)
+        UserDefaults.standard.set(zooms, forKey: Self.screenZoomKey)
     }
 
     /// A `target="_blank"` link opens in the default browser.

@@ -68,7 +68,10 @@ export function PromptCard({
           </button>
         )}
       </div>
-      <div className="min-w-0 text-sm break-words whitespace-pre-wrap select-text">{prompt.question}</div>
+      {/* A long question, such as a plan to approve, scrolls so the choices stay in view. */}
+      <div data-testid="prompt-question" className="max-h-[40vh] min-w-0 overflow-y-auto overscroll-contain text-sm break-words whitespace-pre-wrap select-text">
+        {prompt.question}
+      </div>
       {prompt.input && (
         <form className="flex min-w-0 items-center gap-2" onSubmit={submit}>
           <input

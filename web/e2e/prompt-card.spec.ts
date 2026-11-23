@@ -71,6 +71,18 @@ test.describe("prompt layout and chat identity", () => {
     });
   }
 
+  test("a long question scrolls and its choices stay in view", async ({ page: tab }) => {
+    const session = process.env.SWARM_E2E_LIVE!;
+    const plan = Array.from({ length: 200 }, (_, i) => `Step ${i + 1}: do one part of the plan.`).join("\n");
+    await showPrompt(tab, [session], { id: "long-plan", question: plan, choices: ["Approve", "Request changes"] });
+    await openChat(tab, session);
+    await tab.setViewportSize({ width: 1200, height: 800 });
+    const question = tab.getByTestId("prompt-question");
+    await expect(question).toContainText("Step 200");
+    expect(await question.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await expect(tab.getByTestId("prompt-choice").last()).toBeInViewport();
+  });
+
   test("switching chats with the same chair question gives the card focus", async ({ page: tab }) => {
     const sessions = [process.env.SWARM_E2E_LIVE!, process.env.SWARM_E2E_GIT!];
     await showPrompt(tab, sessions, { id: "same-question", question: "Proceed?", choices: ["Yes", "No"] });
