@@ -29,14 +29,14 @@ export class AppActions {
 
   /** The server's tree lists a new chat after its agent poll sees the chair's pane, about a second
    *  later, and opening the chat writes a tab that the server checks against that tree. With
-   *  `open` false the chat only gets listed, because the owner moved on while it started. */
-  async openNew(session: string, open = true) {
+   *  a guard, the chat opens only if the owner still wants it after the tree read. */
+  async openNew(session: string, shouldOpen = () => true) {
     for (let i = 0; i < LIST_POLLS; i++) {
       await this.app.navigation.refreshSnapshot();
       if (this.app.listsChat(session)) break;
       await sleep(LIST_POLL_MS);
     }
-    if (open) this.app.navigation.openChat(session);
+    if (shouldOpen()) this.app.navigation.openChat(session);
   }
 
   /** Branch from here: a new chat with the conversation before user row `row` of chat `session`,

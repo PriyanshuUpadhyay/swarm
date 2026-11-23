@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AppActions } from "./app-actions";
 import type { App } from "./app";
 import { NewChat } from "./new-chat";
 import type { TreeView } from "./nav";
@@ -28,7 +29,7 @@ describe("new chat composer", () => {
           calls.push(`${path} ${JSON.stringify(body)}`);
         },
       },
-      actions: { openNew: async (session: string, open: boolean) => void calls.push(`open ${session} ${open}`) },
+      actions: { openNew: async (session: string, shouldOpen: () => boolean) => void calls.push(`open ${session} ${shouldOpen()}`) },
       composing: { setDraft: (session: string, text: string) => void calls.push(`draft ${session} ${text}`) },
     });
     const chats = new NewChat(app as unknown as App);
@@ -100,6 +101,32 @@ describe("new chat composer", () => {
     chats.onFrame("chat-start", { start: "s1", step: "send", state: "failed", error: "chair is gone" });
     await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
     expect(calls).toEqual(["open chat-9", "draft chat-9 Fix it\n\nThen the docs", "notice Your first prompt did not send: chair is gone. Your text is in the chat's text box."]);
+  });
+
+  it("does not leave the selected chat when a pending start gets listed", async () => {
+    const treeRead = Promise.withResolvers<void>();
+    const opened: string[] = [];
+    const app = stub({
+      api: { post: async () => ({ start: "s1" }) },
+      navigation: {
+        refreshSnapshot: () => treeRead.promise,
+        openChat: (id: string) => {
+          opened.push(id);
+          app.navSeq++;
+        },
+      },
+      listsChat: () => true,
+      actions: null as AppActions | null,
+    });
+    app.actions = new AppActions(app as unknown as App);
+    const chats = new NewChat(app as unknown as App);
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { run: null });
+
+    const done = chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
+    app.navigation.openChat("other");
+    treeRead.resolve();
+    await done;
+    expect(opened).toEqual(["other"]);
   });
 
   it("gives a failed start's prompt, queued text and draft to the next composer when it closes", async () => {

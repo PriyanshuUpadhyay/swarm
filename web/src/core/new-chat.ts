@@ -346,12 +346,11 @@ export class NewChat {
   /** The chat runs: open it where the owner still looks at its start, then send the queued text
    *  and the box's draft. Text that did not send goes in the chat's text box, so none is lost. */
   private async opened(start: Starting, session: string) {
-    const shown = this.shown()?.id === start.id;
     // The chat runs, but its first prompt or the issue's text did not go: nothing goes before it,
     // and the chat's text box keeps the rest.
     const failed = start.steps.find((s) => s.step === "send" && s.state === "failed");
     // The start's view stays while the tree lists the chat, so the page behind does not show.
-    await this.app.actions.openNew(session, shown).catch((err) => this.app.notice(message(err), true));
+    await this.app.actions.openNew(session, () => this.shown()?.id === start.id).catch((err) => this.app.notice(message(err), true));
     await this.uploaded(start.id);
     const now = this.state.starts[start.id] ?? start;
     const texts = [...now.queued, now.draft.trim()].filter(Boolean);
