@@ -34,8 +34,18 @@ pub fn unnamed_chat(branch: &str) -> bool {
 /// The branch name a first prompt gives: the on-device model's name for it (ADR 0158), else
 /// the word rules of `chat_branch`. The model can take up to `MODEL_DEADLINE`.
 pub fn prompt_branch(prompt: &str) -> Option<String> {
-    named_branch(model_name(prompt), prompt)
+    // The model invents a task for a prompt as short as "fix it"; its own words name it better.
+    let words = prompt
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty());
+    let name = (words.count() > MODEL_MIN_WORDS)
+        .then(|| model_name(prompt))
+        .flatten();
+    named_branch(name, prompt)
 }
+
+/// A prompt of this many ASCII words or fewer is named by the word rules alone.
+const MODEL_MIN_WORDS: usize = 2;
 
 /// The branch of the model's `name` for `prompt`, made safe as each branch name is, else the
 /// word rules' branch. The name is model text, so it passes `slug` and the length cap.

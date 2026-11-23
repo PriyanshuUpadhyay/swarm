@@ -24,6 +24,9 @@ available only from Swift, and the server is Rust.
 The helper `SwarmName`, shipped in `libexec` beside `SwarmNotify.app`, takes the first 2,000
 characters of the prompt as its one argument and prints one kebab-case name. It returns a
 structured reply (`@Generable`), and it exits 1 when the model is not available or refuses.
+Its instructions ask for a verb first and 2 to 4 words, with five examples, and it samples
+greedily, so one prompt always gives one name. A prompt of one or two words skips the model,
+because the model invents a task for it: "fix it" gave `fix-login-issue`.
 
 `prompt_branch` runs the helper with a 3 s deadline and kills it after that. The name is model
 text, so it passes the same `slug`, length cap and `swarm/` prefix as each branch name. A missing
