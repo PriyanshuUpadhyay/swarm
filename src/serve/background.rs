@@ -1,5 +1,5 @@
 //! A chat's background tasks, read from each live agent's log by the reader that `reader()` names
-//! for its provider (ADR 0104).
+//! for its provider (ADR 0104): Claude, Codex, AGY, and Pi.
 //!
 //! Claude Code runs them inside its own process, so nothing outside can stop them or type into
 //! them. Its log names each one: a tool result with `toolUseResult.backgroundTaskId` (a shell) or
@@ -274,6 +274,99 @@ pub(super) fn agy_tasks(agent: &str, log: &str) -> Vec<Task> {
     found
 }
 
+/// Every background process one live Pi agent's log names, oldest first. The `@aliou/pi-processes`
+/// tool result of `process start` holds the process record; a later `process list` result or an
+/// `ad-process:notification` message gives its end state. A success with `onSuccess: "ignore"`
+/// writes no notice, so such a process shows `running` until the agent lists it. The output file
+/// lies outside the folder that the panel's read-only view opens (ADR 0104), so the row has no log.
+pub(super) fn pi_tasks(agent: &str, log: &str) -> Vec<Task> {
+    let mut found: Vec<Task> = Vec::new();
+
+    for line in log.lines() {
+        let Ok(record) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let message = &record["message"];
+        let details = if record["type"] == "custom_message" {
+            &record["details"]
+        } else {
+            &message["details"]
+        };
+
+        if record["customType"] == "ad-process:notification" {
+            let status = match details["kind"].as_str() {
+                Some("success") => "completed",
+                Some("failure" | "crash") => "failed",
+                Some("killed") => "killed",
+                // A log match is no end.
+                _ => continue,
+            };
+            if let Some(task) = found
+                .iter_mut()
+                .find(|task| details["processId"] == task.id.as_str())
+            {
+                task.status = status.into();
+            }
+            continue;
+        }
+
+        if message["role"] != "toolResult" || message["toolName"] != "process" {
+            continue;
+        }
+        match details["action"].as_str() {
+            Some("start") => {
+                let process = &details["process"];
+                let Some(id) = process["id"].as_str().filter(|id| !id.is_empty()) else {
+                    continue;
+                };
+                let title = process["name"]
+                    .as_str()
+                    .filter(|name| !name.is_empty())
+                    .or_else(|| process["command"].as_str())
+                    .unwrap_or("");
+                found.retain(|task| task.id != id);
+                let mut task = Task::new(
+                    agent,
+                    id,
+                    TaskKind::Shell,
+                    title,
+                    record["timestamp"].as_str(),
+                    None,
+                );
+                // A process that ends before `start` answers is reported in this record only.
+                if let Some(status) = pi_end(process) {
+                    task.status = status;
+                }
+                found.push(task);
+            }
+            Some("list") => {
+                for process in details["processes"].as_array().into_iter().flatten() {
+                    if let Some(task) = found
+                        .iter_mut()
+                        .find(|task| process["id"] == task.id.as_str())
+                        && let Some(status) = pi_end(process)
+                    {
+                        task.status = status;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    found
+}
+
+/// The end state of a pi-processes record, or `None` while it still runs or stops.
+fn pi_end(process: &Value) -> Option<String> {
+    match process["status"].as_str()? {
+        "exited" if process["success"] == true => Some("completed".into()),
+        "exited" => Some("failed".into()),
+        "killed" => Some("killed".into()),
+        _ => None,
+    }
+}
+
 /// The number in the word after `label`. AGY ends its exit code with a period (`code 1.`).
 fn number_after(text: &str, label: &str) -> Option<String> {
     let word = text[text.find(label)? + label.len()..]
@@ -349,24 +442,23 @@ pub(super) fn live_agents(agents: &Value) -> impl Iterator<Item = &Value> {
 /// A reader of one provider's log: the agent id and the log text give its background tasks.
 type Reader = fn(&str, &str) -> Vec<Task>;
 
-/// The background reader of a provider, or `None` when it has no background work. The match is
-/// exhaustive, so a new provider shows here.
-fn reader(provider: Provider) -> Option<Reader> {
+/// The background reader of a provider. The match is exhaustive, so a new provider shows here.
+fn reader(provider: Provider) -> Reader {
     match provider {
-        Provider::Claude => Some(tasks),
-        Provider::Codex => Some(codex_tasks),
-        Provider::Agy => Some(agy_tasks),
-        Provider::Pi => None,
+        Provider::Claude => tasks,
+        Provider::Codex => codex_tasks,
+        Provider::Agy => agy_tasks,
+        Provider::Pi => pi_tasks,
     }
 }
 
-/// The live agents of a session that have a background reader, as (agent id, reader, log path).
+/// The live agents of a session with a known provider and a log, as (agent id, reader, log path).
 fn agent_logs(app: &Server, session: &str) -> Vec<(String, Reader, PathBuf)> {
     let hub = app.hub.lock().unwrap();
 
     live_agents(&hub.agents[session])
         .filter_map(|agent| {
-            let read = reader(Provider::parse(agent["provider"].as_str()?)?)?;
+            let read = reader(Provider::parse(agent["provider"].as_str()?)?);
             let log = agent["log"].as_str().filter(|log| !log.is_empty())?;
 
             Some((agent["id"].as_str()?.to_string(), read, PathBuf::from(log)))
