@@ -165,4 +165,24 @@ mod tests {
         assert!(entry(0).get("split").is_some(), "{}", entry(0));
         assert!(entry(1).get("kinds").is_some(), "{}", entry(1));
     }
+
+    // Found in a pair chunk: the second file's headers came out as a deleted and an added line, so
+    // Pierre drew one file with hunks out of order and its scroll jumped back to the top.
+    #[test]
+    fn a_hunk_ends_at_its_counts_so_the_next_file_header_stays_a_header() {
+        let patch = "--- a/one.ts\n+++ b/one.ts\n@@ -1,2 +1,2 @@\n ctx\n-old\n+new\n--- a/two.ts\n+++ b/two.ts\n@@ -9 +9 @@\n-x\n+y\n";
+        let value = super::text_patch(patch, true).unwrap();
+        let kinds: Vec<_> = value["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|line| line["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "meta", "meta", "hunk", "ctx", "del", "add", "meta", "meta", "hunk", "del", "add"
+            ]
+        );
+    }
 }

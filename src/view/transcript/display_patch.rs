@@ -86,12 +86,16 @@ pub fn is_patch(text: &[u16]) -> bool {
 pub fn parse_patch(text: &[u16]) -> Vec<PatchLine<'_>> {
     let mut out = Vec::new();
     let (mut old, mut new) = (0.0, 0.0);
-    let mut in_hunk = false;
+    // Lines left in the current hunk, from its header counts. When both reach 0 the hunk ends, so
+    // the next file's `--- a/x` and `+++ b/x` lines are headers, not a deletion and an addition.
+    let (mut old_left, mut new_left) = (0.0, 0.0);
     for text in text.split(|&c| c == 10) {
+        let in_hunk = old_left > 0.0 || new_left > 0.0;
         let (kind, text, o, n) = if let Some(h) = header(text) {
             old = number(h.old);
             new = number(h.new);
-            in_hunk = true;
+            old_left = h.old_count.map_or(1.0, number);
+            new_left = h.new_count.map_or(1.0, number);
             (PatchKind::Hunk, text, None, None)
         } else if !in_hunk {
             if text.is_empty() {
@@ -103,17 +107,21 @@ pub fn parse_patch(text: &[u16]) -> Vec<PatchLine<'_>> {
                 Some(43) => {
                     let n = new;
                     new += 1.0;
+                    new_left -= 1.0;
                     (PatchKind::Add, &text[1..], None, Some(n))
                 }
                 Some(45) => {
                     let o = old;
                     old += 1.0;
+                    old_left -= 1.0;
                     (PatchKind::Del, &text[1..], Some(o), None)
                 }
                 Some(32) => {
                     let (o, n) = (old, new);
                     old += 1.0;
                     new += 1.0;
+                    old_left -= 1.0;
+                    new_left -= 1.0;
                     (PatchKind::Ctx, &text[1..], Some(o), Some(n))
                 }
                 Some(92) => (PatchKind::Meta, text, None, None),
