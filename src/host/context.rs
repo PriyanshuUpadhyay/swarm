@@ -126,22 +126,79 @@ pub fn contain_worker_history(provider: &str, payload: &str, home: &str) {
         return;
     }
     let classifier = format!("{home}/.claude/hooks/worker-history-classifier.py");
+    classify_history(
+        &classifier,
+        provider,
+        payload,
+        std::time::Duration::from_secs(6),
+    );
+}
+
+fn classify_history(classifier: &str, provider: &str, payload: &str, within: std::time::Duration) {
+    let deadline = std::time::Instant::now() + within;
+    let poll = std::time::Duration::from_millis(20);
+    let Ok((mut stdin, reader)) = std::os::unix::net::UnixStream::pair() else {
+        return;
+    };
+    if stdin.set_nonblocking(true).is_err() {
+        return;
+    }
     let Ok(mut child) = std::process::Command::new(classifier)
         .args(["--provider", provider])
-        .stdin(std::process::Stdio::piped())
+        .stdin(std::os::fd::OwnedFd::from(reader))
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
     else {
         return;
     };
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(payload.as_bytes());
+    let mut input = payload.as_bytes();
+    while !input.is_empty() && std::time::Instant::now() < deadline {
+        match stdin.write(input) {
+            Ok(0) => break,
+            Ok(written) => input = &input[written..],
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(
+                    poll.min(deadline.saturating_duration_since(std::time::Instant::now())),
+                );
+            }
+            Err(_) => break,
+        }
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+    drop(stdin);
     while matches!(child.try_wait(), Ok(None)) && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::thread::sleep(poll.min(deadline.saturating_duration_since(std::time::Instant::now())));
     }
     let _ = child.kill();
     let _ = child.wait();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn audit_regression_classifier_deadline_covers_stdin() {
+        let root = std::env::temp_dir().join(format!("swarm-classifier-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir(&root).unwrap();
+        let classifier = root.join("classify");
+        let marker = root.join("consumed");
+        std::fs::write(
+            &classifier,
+            "#!/bin/sh\nsleep 0.25\ncat >/dev/null\ntouch \"${0%/*}/consumed\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&classifier, std::fs::Permissions::from_mode(0o700)).unwrap();
+        classify_history(
+            classifier.to_str().unwrap(),
+            "agy",
+            &"x".repeat(1024 * 1024),
+            std::time::Duration::from_millis(80),
+        );
+        let consumed = marker.exists();
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(!consumed);
+    }
 }
