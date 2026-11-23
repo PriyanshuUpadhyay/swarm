@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { openChatWithCard } from "./smoke-helpers";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { GIANT_LINES } from "./serve";
@@ -79,7 +78,11 @@ test("a giant output shows a capped card, and Show full output fetches every lin
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
 
-  const card = await openChatWithCard(tab, "cat big.log");
+  const giant = process.env.SWARM_E2E_GIANT!;
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${giant}"]`)).click();
+  const transcript = tab.getByTestId("transcript").and(tab.locator(`[data-chat="${giant}"]`));
+  await transcript.getByTestId("fold").click();
+  const card = transcript.getByTestId("tool-card").filter({ hasText: "cat big.log" });
   await card.getByRole("button", { name: /cat big\.log/ }).click();
   const output = card.getByTestId("output");
   // The preview is capped: 120 lines in one <pre>, and a count of the rest.
