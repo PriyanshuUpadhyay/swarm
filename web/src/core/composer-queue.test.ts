@@ -182,6 +182,21 @@ describe("which typed texts pi's box held", () => {
     expect(app.draft("chat")).toBe(url);
     expect(app.chats.get("chat")!.typed.length).toBe(0);
   });
+
+  it("brings back the whole of a long paste when pi's box shows only its end", async () => {
+    const paste = Array.from({ length: 40 }, (_, i) => `line ${i} of the pasted block`).join("\n");
+    // pi scrolls its box to the cursor at the end and hides the rows above under `↑ N more`.
+    const held = paste.split("\n").slice(-8).join(" ");
+    const { app, snapshot } = harness(undefined, (path) => (path === "/api/chat/pull-back" ? { outcome: "pulled", text: null, held } : null));
+    snapshot({ provider: "pi", state: "working", queue: [{ mode: "steering", text: "line 0 of the pasted block", id: "queue-0", detail: "Steering", images: [] }] });
+    app.openChat("chat");
+    await settle();
+    await app.send("chat", "an earlier message that pi took");
+    await app.send("chat", paste);
+    await app.pullBack("chat");
+    expect(app.draft("chat")).toBe(paste);
+    expect(app.chats.get("chat")!.typed.map((t) => t.text)).toEqual(["an earlier message that pi took"]);
+  });
 });
 
 describe("pi child's queue back in its draft", () => {

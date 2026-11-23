@@ -212,6 +212,7 @@ export class AppComposer {
   async interrupt(sessionId: string) {
     if (this.input(sessionId).stopping || this.chair(sessionId).unreachable) return;
     const typed = this.app.chats.get(sessionId)?.typed ?? [];
+    const queued = this.app.chats.get(sessionId)?.queue.length ?? 0;
     const reply: { box?: string; held?: string | null } = {};
     await this.act(
       sessionId,
@@ -222,7 +223,7 @@ export class AppComposer {
       },
       () => void this.interrupt(sessionId),
     );
-    if (reply.box === "cleared") this.restoreTyped(sessionId, typed, reply.held ?? "");
+    if (reply.box === "cleared") this.restoreTyped(sessionId, typed, reply.held ?? "", queued);
   }
 
   /** Puts the text pi's box `held` before the draft and forgets the typed texts it held.
@@ -231,10 +232,10 @@ export class AppComposer {
    *  texts with no spaces (a long URL that the box wrapped) must make up the whole box once its
    *  spaces are removed. When the box held only those texts, they come back exact, line
    *  breaks and all; otherwise the box text comes back as pi drew it, for it also holds what the
-   *  owner typed in pi. */
-  private restoreTyped(sessionId: string, typed: readonly { text: string }[], held: string) {
+   *  owner typed in pi. `queued` is how many messages pi's screen listed before the call. */
+  private restoreTyped(sessionId: string, typed: readonly { text: string }[], held: string, queued: number) {
     if (!held.trim()) return;
-    const { back, only } = heldTexts(typed, held);
+    const { back, only } = heldTexts(typed, held, queued);
     const chat = this.app.chats.get(sessionId);
     if (chat) chat.typed = chat.typed.filter((t) => !back.includes(t));
     const text = only ? back.map((t) => t.text.trim()).join("\n") : held.trim();
@@ -271,6 +272,7 @@ export class AppComposer {
     if (!chat.queue.length && !chat.rows.some((r) => r.kind === "queued")) return;
     // pi's reply holds no text, because its screen joins lines; the typed texts are exact.
     const typed = chat.typed;
+    const queued = chat.queue.length;
     const result: { pulled: string | null; held?: string | null } = { pulled: null };
     await this.act(
       sessionId,
@@ -291,7 +293,7 @@ export class AppComposer {
       setTimeout(() => seq === this.app.alreadySentSeq && this.update(sessionId, { alreadySent: false }), 2000);
       return;
     }
-    if (chair.provider === "pi") return this.restoreTyped(sessionId, typed, result.held ?? "");
+    if (chair.provider === "pi") return this.restoreTyped(sessionId, typed, result.held ?? "", queued);
     // Keep anything typed while the CLI let go of the text.
     this.prependDraft(sessionId, result.pulled);
   }
@@ -301,7 +303,7 @@ export class AppComposer {
 const TYPED_CAP = 20;
 
 /** The newest typed texts that pi's box `held` still shows, and whether the box held only them. */
-function heldTexts(typed: readonly { text: string }[], held: string): { back: { text: string }[]; only: boolean } {
+function heldTexts(typed: readonly { text: string }[], held: string, queued: number): { back: { text: string }[]; only: boolean } {
   const words = (text: string) => text.trim().split(/\s+/).join(" ");
   const squash = (text: string) => text.replace(/\s+/g, "");
   const box = words(held);
@@ -311,5 +313,10 @@ function heldTexts(typed: readonly { text: string }[], held: string): { back: { 
     if (` ${box} `.includes(` ${joined} `)) return { back: tail, only: joined === box };
     if (tail.every((t) => !/\s/.test(t.text.trim())) && squash(joined) === squash(box)) return { back: tail, only: true };
   }
+  // pi's box shows at most 30% of the terminal's rows and hides the rest above a `↑ N more` rule.
+  // Its cursor ends the restored text, so a long box shows only the end of the queued texts.
+  const tail = typed.slice(-Math.max(1, queued));
+  const joined = squash(tail.map((t) => t.text).join(""));
+  if (tail.length && squash(box) && joined.endsWith(squash(box))) return { back: tail, only: true };
   return { back: [], only: false };
 }
