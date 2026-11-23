@@ -491,14 +491,15 @@ pre.plain {
   background: color-mix(in srgb, var(--surface) 50%, transparent);
   font-size: 12px;
 }
-.todo-list ul {
+/* Child combinators: the plan card shares .todo-list, and its markdown lists must keep normal flow. */
+.todo-list > ul {
   display: grid;
   gap: 2px;
   margin: 4px 0 0;
   padding: 0;
   list-style: none;
 }
-.todo-list li {
+.todo-list > ul > li {
   display: flex;
   align-items: center;
   gap: 8px;

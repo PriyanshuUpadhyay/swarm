@@ -3,11 +3,11 @@ import type { Block, Display, FindPart, Inline, PatchInfo, Row, RowPage } from "
 
 export const row = (id: string, text: string, kind: Row["kind"] = "assistant"): Row => ({ id, kind, text, order: [Number(id.replace(/\D/g, "")) || 1, 0] });
 function displayOf(item: Row): Display {
-  if (item.kind === "proposedPlan" && item.text === "## Steps\n\n1. Add the row") {
+  if (item.kind === "proposedPlan" && item.text === "## Steps\n\n1. Add the row in `src/row.rs` and wire it") {
     return { blocks: [
       { type: "heading", value: { depth: 2, children: [{ type: "text", value: "Steps" }] } },
       { type: "list", value: { ordered: true, start: 1, tight: true, items: [[
-        { type: "paragraph", value: [{ type: "text", value: "Add the row" }] },
+        { type: "paragraph", value: [{ type: "text", value: "Add the row in " }, { type: "code", value: "src/row.rs" }, { type: "text", value: " and wire it" }] },
       ]] } },
     ] };
   }

@@ -16,7 +16,7 @@ test("a checklist row shows its steps and a plan row shows its Markdown", async 
         { text: "Ship", status: "pending" },
       ],
     },
-    row("p1", "## Steps\n\n1. Add the row", "proposedPlan"),
+    row("p1", "## Steps\n\n1. Add the row in `src/row.rs` and wire it", "proposedPlan"),
   ];
 
   await mockRows(tab, rows);
@@ -28,4 +28,6 @@ test("a checklist row shows its steps and a plan row shows its Markdown", async 
   await expect(list.locator('li[data-status="in_progress"]')).toContainText("Editing the parser");
   await expect(list.locator('li[data-status="pending"]').first().getByRole("img", { name: "Pending" })).toBeVisible();
   await expect(tab.getByTestId("plan").locator("h2")).toHaveText("Steps");
+  // The checklist's flex rows must not reach the plan's Markdown list; flex split text and code into columns.
+  await expect(tab.getByTestId("plan").locator("li")).toHaveCSS("display", "list-item");
 });
