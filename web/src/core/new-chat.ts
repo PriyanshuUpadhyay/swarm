@@ -322,7 +322,8 @@ export class NewChat {
       }
       if (this.opening.has(id)) return;
       this.opening.add(id);
-      return this.opened(start, String(data.session));
+      const sendError = typeof data.sendError === "string" ? data.sendError : undefined;
+      return this.opened(start, String(data.session), sendError);
     }
 
     const words = typeof data.words === "string" ? data.words : null;
@@ -350,7 +351,7 @@ export class NewChat {
 
   /** The chat runs: open it where the owner still looks at its start, then send the queued text
    *  and the box's draft. Text that did not send goes in the chat's text box, so none is lost. */
-  private async opened(start: Starting, session: string) {
+  private async opened(start: Starting, session: string, sendError?: string) {
     // The chat runs, but its first prompt or the issue's text did not go: nothing goes before it,
     // and the chat's text box keeps the rest.
     const failed = start.steps.find((s) => s.step === "send" && s.state === "failed");
@@ -362,12 +363,12 @@ export class NewChat {
     this.dismiss(start.id);
     this.opening.delete(start.id);
 
-    if (failed) {
+    if (sendError || failed) {
       const kept = [start.prompt, ...texts].filter(Boolean).join("\n\n");
       if (kept) this.app.composing.setDraft(session, kept);
       const what = start.prompt ? "Your first prompt" : "The issue's text";
       const where = kept ? " Your text is in the chat's text box." : "";
-      return this.app.notice(`${what} did not send: ${failed.error ?? "the send failed"}.${where}`, true);
+      return this.app.notice(`${what} did not send: ${sendError ?? failed?.error ?? "the send failed"}.${where}`, true);
     }
 
     for (const [i, text] of texts.entries()) {

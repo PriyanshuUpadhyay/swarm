@@ -60,6 +60,41 @@ async fn new_chat_route() {
 }
 
 #[tokio::test]
+async fn start_status_keeps_the_first_send_failure() {
+    let fixture = action_fixture();
+    let session = uuid::Uuid::now_v7();
+    std::fs::write(
+        &fixture.app.cli,
+        format!(
+            r#"#!/bin/sh
+case "$1 $2" in
+  'session new') printf '%s\n' '{session}' ;;
+  'launch orchestrator') printf 'fixture-pane\n' ;;
+  type\ *) printf 'The chair is not ready.\n' >&2; exit 1 ;;
+esac
+"#
+        ),
+    )
+    .unwrap();
+    let done = start_chat(
+        &fixture,
+        json!({"cwd": env!("CARGO_MANIFEST_DIR"), "prompt": "Fix it"}),
+    )
+    .await
+    .unwrap();
+
+    let query = HashMap::from([("id".into(), done["start"].as_str().unwrap().to_owned())]);
+    let kept = start::chat_start_done(State(fixture.app.clone()), Query(query)).await;
+    assert_eq!(kept.0["done"], done);
+    assert_eq!(done["session"], session.to_string());
+    assert!(
+        done["sendError"]
+            .as_str()
+            .is_some_and(|text| !text.is_empty())
+    );
+}
+
+#[tokio::test]
 async fn new_chat_commands_lists_a_provider_in_the_folder_before_a_chat_exists() {
     let fixture = action_fixture();
     std::fs::write(

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AppActions } from "./app-actions";
 import type { App } from "./app";
 import { NewChat } from "./new-chat";
@@ -101,6 +101,28 @@ describe("new chat composer", () => {
     chats.onFrame("chat-start", { start: "s1", step: "send", state: "failed", error: "chair is gone" });
     await chats.onFrame("chat-start", { start: "s1", step: "done", state: "completed", session: "chat-9" });
     expect(calls).toEqual(["open chat-9", "draft chat-9 Fix it\n\nThen the docs", "notice Your first prompt did not send: chair is gone. Your text is in the chat's text box."]);
+  });
+
+  it("recovers the first prompt from status when reconnect missed its send failure", async () => {
+    const sent: string[] = [];
+    const drafts: string[] = [];
+    const app = stub({
+      api: {
+        post: async () => ({ start: "s1" }),
+        get: async () => ({ done: { start: "s1", step: "done", state: "completed", session: "chat-9", sendError: "chair is gone" } }),
+        action: async (_path: string, body: { text: string }) => void sent.push(body.text),
+      },
+      actions: { openNew: async () => {} },
+      composing: { setDraft: (_session: string, text: string) => void drafts.push(text) },
+    });
+    const chats = new NewChat(app as unknown as App);
+    await chats.start("/hub/wt/main", "Fix it", { kind: "new" }, { run: null });
+    chats.setDraft("s1", "Then the docs");
+
+    await chats.recheck();
+    await vi.waitFor(() => expect(chats.shown()).toBeNull());
+    expect(drafts).toEqual(["Fix it\n\nThen the docs"]);
+    expect(sent).toEqual([]);
   });
 
   it.each([false, true])("preserves text typed during the start POST (overlay: %s)", async (overlay) => {
