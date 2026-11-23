@@ -19,7 +19,6 @@ import { LineView } from "./transcript-row";
 
 const readingPlaces = new Map<string, { row: string; offset: number; bottom: boolean }>();
 
-export { StatusGlyph } from "./transcript-tool";
 
 /** The chat column: transcript, its empty, loading and error states, and the composer. */
 export function ChatView({ app }: { app: App }) {

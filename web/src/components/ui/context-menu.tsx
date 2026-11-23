@@ -1,5 +1,4 @@
 import * as ContextMenuPrimitive from "@radix-ui/react-context-menu";
-import { ChevronRightIcon } from "lucide-react";
 import type * as React from "react";
 import { cn } from "../../lib/utils";
 import { menuContent, menuItem, menuLabel, menuSeparator, menuShortcut } from "./menu-styles";
@@ -36,27 +35,6 @@ function ContextMenuShortcut({ className, ...props }: React.ComponentProps<"span
   return <span data-slot="context-menu-shortcut" className={cn(menuShortcut, className)} {...props} />;
 }
 
-function ContextMenuSub(props: React.ComponentProps<typeof ContextMenuPrimitive.Sub>) {
-  return <ContextMenuPrimitive.Sub data-slot="context-menu-sub" {...props} />;
-}
-
-function ContextMenuSubTrigger({ className, children, ...props }: React.ComponentProps<typeof ContextMenuPrimitive.SubTrigger>) {
-  return (
-    <ContextMenuPrimitive.SubTrigger data-slot="context-menu-sub-trigger" className={cn(menuItem, "data-[state=open]:bg-selected", className)} {...props}>
-      {children}
-      <ChevronRightIcon className="ml-auto" />
-    </ContextMenuPrimitive.SubTrigger>
-  );
-}
-
-function ContextMenuSubContent({ className, ...props }: React.ComponentProps<typeof ContextMenuPrimitive.SubContent>) {
-  return (
-    <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.SubContent data-slot="context-menu-sub-content" className={cn(menuContent, className)} {...props} />
-    </ContextMenuPrimitive.Portal>
-  );
-}
-
 export {
   ContextMenu,
   ContextMenuContent,
@@ -64,8 +42,5 @@ export {
   ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuShortcut,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
 };

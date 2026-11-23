@@ -189,10 +189,6 @@ export class App {
     return { info: this.snapshot?.sessions.find((s) => s.id === session), agents: this.snapshot?.agents[session] ?? [] };
   }
 
-  refreshSnapshot(): Promise<void> {
-    return this.navigation.refreshSnapshot();
-  }
-
   applySnapshot(snap: Snapshot) {
     return this.streaming.applySnapshot(snap);
   }
