@@ -199,7 +199,7 @@ impl Adapter {
                 Ok(read) => read.ok(),
                 Err(_) => {
                     // Output is complete once the verb exits; stop what holds the pipe.
-                    kill_group(group);
+                    crate::process::kill_group(group);
                     output
                         .recv_timeout(std::time::Duration::from_millis(100))
                         .ok()
@@ -208,7 +208,7 @@ impl Adapter {
             },
             _ => None,
         };
-        kill_group(group);
+        crate::process::kill_group(group);
         let _ = child.kill();
         let _ = child.wait();
         self.check_deadline()?;
@@ -258,12 +258,6 @@ impl Adapter {
         let listing = self.run("list", &[])?;
         Ok(listing_has_pane(&listing, pane))
     }
-}
-
-/// Sends SIGKILL to a whole process group. A group that has already exited is fine.
-fn kill_group(group: i32) {
-    // SAFETY: process_group(0) gave this child its own group.
-    unsafe { libc::killpg(group, libc::SIGKILL) };
 }
 
 pub fn listing_has_pane(listing: &str, pane: &str) -> bool {

@@ -95,8 +95,7 @@ pub(super) fn run(
 }
 
 fn stop_rule(child: &mut std::process::Child) {
-    // SAFETY: process_group(0) made this child the leader of its own group.
-    unsafe { libc::killpg(child.id() as libc::pid_t, libc::SIGKILL) };
+    crate::process::kill_group(child.id() as libc::pid_t);
     let _ = child.kill();
     let _ = child.wait();
 }
@@ -128,6 +127,7 @@ mod tests {
         std::fs::create_dir(&root).unwrap();
         let pipe = root.join("pipe");
         let ready = root.join("ready");
+
         assert!(
             std::process::Command::new("mkfifo")
                 .arg(&pipe)
@@ -140,6 +140,7 @@ mod tests {
             .custom_flags(libc::O_NONBLOCK)
             .open(&pipe)
             .unwrap();
+
         let command = [
             "sh".into(),
             "-c".into(),
@@ -151,6 +152,7 @@ mod tests {
         let result = run(&command, "", None, "", Duration::from_millis(300));
         let mut byte = [0];
         let deadline = Instant::now() + Duration::from_millis(100);
+
         let eof = loop {
             match reader.read(&mut byte) {
                 Ok(0) => break true,
@@ -163,6 +165,7 @@ mod tests {
                 _ => break false,
             }
         };
+
         let started = ready.exists();
         std::fs::remove_dir_all(root).unwrap();
         assert!(matches!(result, Outcome::Failed(_)));
