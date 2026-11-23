@@ -30,23 +30,32 @@ test("an update upgrades, then restarts the server and the HUD, in two asks", as
   await tab.goto(`${server().origin}/${server().hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
   const toast = tab.locator("[data-sonner-toast]").filter({ hasText: "Swarm 0.0.38" });
+  await expect(toast).toContainText("Swarm 0.0.38 is available");
   await toast.getByRole("button", { name: "Upgrade" }).click();
-  await expect(toast).toContainText("brew update failed");
+  await expect(toast).toContainText("Upgrade: brew update failed");
+  await expect(toast).toContainText("Swarm 0.0.38 is available");
   await toast.getByRole("button", { name: "Upgrade" }).click();
+  await expect(toast).toContainText("Swarm 0.0.38 is installed");
+
+
   // A progress step drops the buttons of the step before it.
   await expect(toast.getByRole("button", { name: "Upgrade" })).toHaveCount(0);
-  await expect(toast).toContainText(/HUD.*old version/);
+  const oldHud = "the HUD still run the old version";
+  const oldServer = "The swarm ui server still runs the old version";
+  await expect(toast).toContainText(oldHud);
   await toast.getByRole("button", { name: "Restart server" }).click();
-  await expect(toast).toContainText("already running");
+  await expect(toast).toContainText("Restart: an upgrade or a restart is already running");
   // The server did not try the HUD, so the toast still names it.
-  await expect(toast).toContainText(/HUD.*old version/);
+  await expect(toast).toContainText(oldHud);
+
   await toast.getByRole("button", { name: "Restart server" }).click();
-  await expect(toast).toContainText("no job");
-  // The server tried the HUD once, so the toast now names only the server.
-  await expect(toast).not.toContainText(/HUD.*old version/);
+  await expect(toast).toContainText("Restart: the HUD did not restart: no job");
+  await expect(toast).toContainText(oldServer);
+  await expect(toast).not.toContainText(oldHud);
   await toast.getByRole("button", { name: "Restart server" }).click();
-  // A later refusal keeps the HUD out of the toast.
-  await expect(toast).toContainText("Permission denied");
+  await expect(toast).toContainText("Restart: Permission denied (os error 13)");
+  await expect(toast).toContainText(oldServer);
+  await expect(toast).not.toContainText(oldHud);
   await toast.getByRole("button", { name: "Restart server" }).click();
   const restarting = tab.locator("[data-sonner-toast]").filter({ hasText: "Restarting the swarm ui server" });
   await expect(restarting).toBeVisible();
