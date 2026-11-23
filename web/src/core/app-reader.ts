@@ -19,6 +19,11 @@ export class AppReader {
 
   constructor(private readonly app: App) {}
 
+  /** The owner's Full chat detail, from `prefs.chatDetail`; absent is Compact. */
+  get fullDetail(): boolean {
+    return this.app.tree?.prefs?.chatDetail === "full";
+  }
+
   build(chat: Chat) {
     const display = chat.liveDisplay ?? null;
     const text = chat.liveShown === 0 ? null : display === null ? chat.live?.slice(0, chat.liveShown) ?? null : chat.live;
@@ -34,7 +39,7 @@ export class AppReader {
       noteBody([row], { [row.id]: tree ? "tree" : "plain" });
     }
     const rows = live.length || chat.queue.length ? [...chat.rows, ...live, ...chat.queue] : chat.rows;
-    return lines(rows, { folds: chat.folds, opened: chat.opened });
+    return lines(rows, { folds: chat.folds, opened: chat.opened, full: this.fullDetail });
   }
 
   // ---- chats ----
@@ -323,11 +328,11 @@ export class AppReader {
   reveal(chat: Chat, f: Find) {
     const m = f.matches[f.index];
     if (!m) return;
-    if (m.fold && !chat.folds.isOpen(m.fold)) chat.folds.set(m.fold, true);
+    if (m.fold && !chat.folds.isOpen(m.fold, this.fullDetail)) chat.folds.set(m.fold, true);
     chat.opened.set(m.id, true);
     chat.version++;
     chat.shift = false;
-    chat.built = { version: chat.version, lines: this.build(chat) };
+    chat.built = { version: chat.version, full: this.fullDetail, lines: this.build(chat) };
     if (this.findRequest?.chat === chat) this.findRequest.version = chat.version;
     this.app.findVersion = `${chat.id}:${chat.version}:${f.open}:${f.query}`;
     this.app.find = { ...f, seq: f.seq + 1 };

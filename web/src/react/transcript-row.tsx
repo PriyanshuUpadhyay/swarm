@@ -181,7 +181,7 @@ function RowBody(ctx: Ctx) {
       if (!row.text.trim()) return <div className="quiet">{LABEL.thought}</div>;
       return (
         <Disclosure app={app} line={line} title={LABEL.thought ?? row.kind}>
-          <pre className="plain">{row.text}</pre>
+          <div className="thought" data-testid="thought-text">{row.text}</div>
         </Disclosure>
       );
     case "diff":

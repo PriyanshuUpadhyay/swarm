@@ -244,26 +244,38 @@ export class FoldChoices {
     for (const step of fold.steps ?? []) this.map.set(step.id, { open, at });
   }
 
-  isOpen(fold: Row): boolean {
+  /** With `full` (the owner's Full chat detail), a fold the reader has not touched starts open. */
+  isOpen(fold: Row, full = false): boolean {
     let best: { open: boolean; at: number } | undefined;
     for (const step of fold.steps ?? []) {
       const c = this.map.get(step.id);
       if (c && (!best || c.at > best.at)) best = c;
     }
-    return best ? best.open : !!fold.default_open;
+    return best ? best.open : full || !!fold.default_open;
   }
 }
 
-/** One list line: a row, a fold, or a step of an open fold. `open` is the fold's or the card's state. */
-export type Line = { id: string; row: Row; fold: Row | null; open: boolean };
+/** One list line: a row, a fold, or a step of an open fold. `open` is the fold's or the card's state.
+ *  `preview` is the first output line that a closed tool card shows in Full chat detail. */
+export type Line = { id: string; row: Row; fold: Row | null; open: boolean; preview?: string };
 
-export type LineState = { folds: FoldChoices; opened: ReadonlyMap<string, boolean> };
+/** `full` is the owner's Full chat detail: folds and thinking start open, closed tool cards show a preview. */
+export type LineState = { folds: FoldChoices; opened: ReadonlyMap<string, boolean>; full?: boolean };
 
 /** The id of the live row of pi's streaming thinking. */
 export const LIVE_THOUGHT = "live-thought";
 
-/** A failed tool card and the streaming thinking start open; the reader's choice wins. */
-export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>) => opened.get(row.id) ?? (row.id === LIVE_THOUGHT || row.tool?.state === "failed" || showsDiff(row));
+/** A failed tool card and the streaming thinking start open, and in Full chat detail every thought;
+ *  the reader's choice wins. */
+export const cardOpen = (row: Row, opened: ReadonlyMap<string, boolean>, full = false) =>
+  opened.get(row.id) ?? (row.id === LIVE_THOUGHT || (full && row.kind === "thought") || row.tool?.state === "failed" || showsDiff(row));
+
+/** A line of the list, with the first non-blank output line of a closed tool card in Full chat detail. */
+function lineOf(row: Row, fold: Row | null, s: LineState): Line {
+  const open = cardOpen(row, s.opened, s.full);
+  const preview = s.full && !open ? row.tool?.output?.text.split("\n").find((l) => l.trim())?.trim() : undefined;
+  return preview ? { id: row.id, row, fold, open, preview } : { id: row.id, row, fold, open };
+}
 
 /** The `system_kind` of a record that no parser maps (ADR 0139). */
 export const UNMAPPED = "unmapped";
@@ -280,14 +292,14 @@ export function lines(rows: readonly Row[], s: LineState): Line[] {
       continue;
     }
     if (row.kind !== "fold") {
-      out.push({ id: row.id, row, fold: null, open: cardOpen(row, s.opened) });
+      out.push(lineOf(row, null, s));
       continue;
     }
     // The server nests a hidden record between two tool calls in the fold's steps.
     unmapped.push(...(row.steps ?? []).filter((step) => step.collapsed && step.system_kind === UNMAPPED));
-    const open = s.folds.isOpen(row);
+    const open = s.folds.isOpen(row, s.full);
     out.push({ id: row.id, row, fold: null, open });
-    for (const step of row.steps ?? []) if (!step.collapsed && (open || showsDiff(step))) out.push({ id: step.id, row: step, fold: row, open: cardOpen(step, s.opened) });
+    for (const step of row.steps ?? []) if (!step.collapsed && (open || showsDiff(step))) out.push(lineOf(step, row, s));
   }
 
   if (unmapped.length) {

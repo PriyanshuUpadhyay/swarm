@@ -165,6 +165,18 @@ function AppearancePage({ app }: { app: App }) {
         <div className="text-sm">Zoom</div>
         <div className="text-xs text-muted-foreground">In Swarm.app, use View › Zoom In, Zoom Out or Actual Size (⌘+, ⌘−, ⌘0). In a browser, use the browser's zoom.</div>
       </div>
+      <Row title="Chat detail" detail="Full opens tool groups and thinking, and shows the first output line of each closed tool.">
+        <Segmented
+          label="Chat detail"
+          testid="pref-chat-detail"
+          value={prefs.chatDetail === "full" ? "full" : "compact"}
+          options={[
+            ["compact", "Compact"],
+            ["full", "Full"],
+          ]}
+          onChange={(v) => void app.settings.setPref("chatDetail", v)}
+        />
+      </Row>
       <Row title="Send with" detail="The other key adds a new line.">
         <Segmented
           label="Send with"

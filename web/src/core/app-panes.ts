@@ -50,9 +50,10 @@ export class AppPanes {
   paneView(chat: Chat, sendKey: SendKey, hasLog = true): Pane {
     const finds = chat.id === (this.app.findId ?? this.app.openId);
     const find = finds ? this.app.find : NO_FIND;
-    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, sendKey, hasLog];
+    const full = this.app.reading.fullDetail;
+    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, sendKey, hasLog, full];
     if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
-    if (chat.built?.version !== chat.version) chat.built = { version: chat.version, lines: this.app.reading.build(chat) };
+    if (chat.built?.version !== chat.version || chat.built.full !== full) chat.built = { version: chat.version, full, lines: this.app.reading.build(chat) };
     const pane: Pane = {
       id: chat.id,
       // A child's column loads when it first shows; with no log yet it has nothing to load.

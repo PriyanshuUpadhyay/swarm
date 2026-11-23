@@ -75,6 +75,8 @@ export type Prefs = {
   terminalHost?: string;
   fontSans?: string;
   fontMono?: string;
+  /** How much of a chat shows without a click: `compact` (absent) or `full` (ADR 0047). */
+  chatDetail?: string;
   usageHUDAsked?: boolean;
   notices?: { post?: boolean; sound?: boolean; done?: boolean; badge?: boolean; mutedProjects?: string[] };
 };

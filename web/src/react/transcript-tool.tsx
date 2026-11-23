@@ -47,6 +47,11 @@ function ToolCard({ app, line, full }: Ctx) {
         )}
         {result && <span className={`num text-xs ${t.state === "failed" ? "text-failed" : "text-muted-foreground"}`}>{result}</span>}
       </button>
+      {line.preview && (
+        <div className="card-preview card-indent" data-testid="tool-preview">
+          {line.preview}
+        </div>
+      )}
       {t.skill_body && (
         <details className="card-indent text-xs">
           <summary className="cursor-default text-muted-foreground">Body</summary>

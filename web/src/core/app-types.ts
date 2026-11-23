@@ -33,7 +33,7 @@ export type Chat = {
   folds: FoldChoices;
   opened: Map<string, boolean>;
   full: Map<string, FullText>;
-  built: { version: number; lines: Line[] } | null;
+  built: { version: number; full: boolean; lines: Line[] } | null;
   usage: Usage;
   /** The queue that the agent's CLI shows, as rows after the log's rows. */
   queue: Row[];

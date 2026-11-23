@@ -55,3 +55,4 @@ with failures turns back into many rows.
   and Show Source build only what is on screen; the owner checks the window.
 
 - Amended 2026-11-10: the Rust transcript worker (`swarm _transcript-worker`, `src/view/transcript`) replaced the Zig tool; `libexec/transcript` is no longer shipped.
+- Amended 2026-11-23: the owner pref `chatDetail` (Settings › Appearance › Chat detail) picks Compact, the rule above, or Full. In Full, a fold and a thought start open, and a closed tool card shows its first output line; the owner's choice on a row still wins. Owner request 2026-11-23: thinking and commands stay visible without a click.
