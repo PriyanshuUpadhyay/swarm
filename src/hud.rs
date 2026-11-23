@@ -154,10 +154,7 @@ pub fn others(pgrep: &str, job: Option<u32>) -> Vec<u32> {
         .collect()
 }
 
-unsafe extern "C" {
-    pub(crate) fn getuid() -> u32;
-    fn kill(pid: i32, signal: i32) -> i32;
-}
+pub(crate) use libc::getuid;
 
 fn strays(job: Option<u32>) -> Vec<u32> {
     // SAFETY: getuid has no preconditions and cannot fail.
@@ -172,7 +169,7 @@ fn strays(job: Option<u32>) -> Vec<u32> {
 fn stop(pids: &[u32]) {
     for &pid in pids {
         // SAFETY: kill only sends a signal; a pid that is gone returns an error we ignore.
-        unsafe { kill(pid as i32, 15) };
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
     }
 }
 
