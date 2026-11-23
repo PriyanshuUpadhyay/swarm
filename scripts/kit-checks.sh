@@ -32,22 +32,18 @@ checks = [
     "skills/kit/skills/code-review/scripts/test_validate_citations.py",
     "skills/kit/skills/implement/scripts/test_land.py",
     "skills/kit/blocks/web-search/scripts/test_reach.py",
+    "skills/kit/blocks/comment-round/scripts/test_comment_round.py",
+    "scripts/test_stamp_kit.py",
     "scripts/test_owner_scripts.py",
 ]
-# These suites import their sibling modules through PYTHONPATH, which -I ignores.
-sibling_imports = {"test_review_walk", "test_validate_citations", "test_land"}
 failed = False
 for check in checks:
     name = Path(check).stem
     command = [sys.executable, "-I", check]
-    check_env = env.copy()
-    if name in sibling_imports:
-        command = [sys.executable, check]
-        check_env["PYTHONPATH"] = str(Path(check).parent)
     log = logs / f"{name}.log"
     with log.open("wb") as output:
         try:
-            result = subprocess.run(command, cwd=root, env=check_env, stdout=output, stderr=subprocess.STDOUT)
+            result = subprocess.run(command, cwd=root, env=env, stdout=output, stderr=subprocess.STDOUT)
             code = result.returncode
         except OSError as error:
             output.write(f"Cannot run {check}: {error}\n".encode())

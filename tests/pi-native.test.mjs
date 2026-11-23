@@ -1,4 +1,5 @@
 // Run after cargo build --locked --bin swarm. Set PI_SDK_DIR to the installed 1.5.x package.
+// Nothing in CI runs it; the Pi SDK is not installed there.
 // The `pi` fixture uses Pi's real SDK and RPC mode with a deterministic provider; no paid turns.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

@@ -7,7 +7,9 @@ citations as failures on a PR with three same-named `index.ts` files.
 """
 import sys
 import traceback
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from validate_citations import match_file, parse_diff, overlaps, looks_like_path
 
 THREE_INDEX = [
