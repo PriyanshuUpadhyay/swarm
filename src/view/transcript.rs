@@ -217,50 +217,6 @@ impl Row {
             RowKind::Subagent => "Subagent".into(),
         }
     }
-    pub fn search_text(&self) -> String {
-        if self.system_kind.as_deref() == Some("swarm_ring") {
-            return "New swarm message".into();
-        }
-        let mut parts = vec![self.text.as_str()];
-        parts.extend(self.todo.iter().map(|item| item.text.as_str()));
-        if let Some(detail) = &self.detail {
-            parts.push(detail);
-        }
-        if let Some(tool) = &self.tool {
-            if let Some(command) = &tool.command {
-                parts.push(command);
-            }
-            if let Some(output) = &tool.output {
-                parts.push(&output.text);
-            }
-            if let Some(path) = &tool.path {
-                parts.push(path);
-            }
-            for diff in &tool.diffs {
-                parts.push(&diff.path);
-                parts.push(&diff.patch);
-            }
-            if let Some(body) = &tool.skill_body {
-                parts.push(&body.text);
-            }
-        }
-        if let Some(run) = &self.subagent {
-            parts.push(&run.agent_type);
-            parts.push(&run.description);
-            if let Some(result) = &run.result {
-                parts.push(&result.text);
-            }
-        }
-        if let Some(command) = &self.command {
-            if let Some(output) = &command.output {
-                parts.push(&output.text);
-            }
-            if let Some(body) = &command.skill_body {
-                parts.push(&body.text);
-            }
-        }
-        parts.join("\n")
-    }
 }
 /// A log record for an ignored or unknown line, or bookkeeping that the view reads elsewhere.
 /// The server keeps its collapsed row; the web skips it in the transcript and search (ADR 0099).

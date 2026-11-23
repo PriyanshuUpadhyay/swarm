@@ -115,15 +115,6 @@ fn deepest_project_and_shared_path_ids() {
     let mut owner = owner();
     owner.project_paths.extend(["/repo".into(), "/work".into()]);
     let tree = tree::build(&snap, &owner);
-    assert_eq!(
-        tree.project_containing("/repo/wt/main/src").unwrap().id,
-        "repository:/repo/.bare"
-    );
-    assert_eq!(
-        tree.project_containing("/work/notes").unwrap().id,
-        "folder:/work"
-    );
-    assert!(tree.project_containing("/elsewhere").is_none());
     let sections = tree::sections(
         &tree,
         &owner,

@@ -225,11 +225,6 @@ impl Tree {
             .filter(|(_, w)| contains(path, &w.path))
             .max_by_key(|(_, w)| w.path.len())
     }
-    pub fn project_containing(&self, path: &str) -> Option<&Project> {
-        self.workspace_containing(path)
-            .map(|(p, _)| p)
-            .or_else(|| self.projects.iter().find(|p| p.path == path))
-    }
 }
 
 pub fn basename(path: &str) -> String {
