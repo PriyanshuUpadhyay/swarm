@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Api, Row, RowPage, Snapshot } from "./api";
 import { App, paneId } from "./app";
 import { chair, session } from "./chat-fixtures";
@@ -11,6 +11,37 @@ const URL_TAIL = 130;
 const WRAP_AT = 75;
 
 describe("pull-back through the app", () => {
+  it("clears the Already sent caption on each chat's own timer", async () => {
+    const api = {
+      rows: async (): Promise<RowPage> => ({ page: { start_offset: 0, end_offset: 10 }, rows: [queued("q-1", "fix the typo")], usage: null }),
+      post: async () => ({ outcome: "alreadySent", text: null }),
+    } as unknown as Api;
+    const app = new App(api);
+    (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
+      version: 1, sessions: [session(), session({ id: "other" })], agents: { chat: [chair({ state: "working" })], other: [chair({ state: "working" })] },
+    });
+    app.openChat("chat");
+    await settle();
+    app.openChat("other");
+    await settle();
+
+    vi.useFakeTimers();
+    try {
+      await app.pullBack("chat");
+      expect(app.composing.input("chat").alreadySent).toBe(true);
+      vi.advanceTimersByTime(1000);
+      await app.pullBack("other");
+      expect(app.composing.input("other").alreadySent).toBe(true);
+      vi.advanceTimersByTime(1000);
+      expect(app.composing.input("chat").alreadySent).toBe(false);
+      expect(app.composing.input("other").alreadySent).toBe(true);
+      vi.advanceTimersByTime(1000);
+      expect(app.composing.input("other").alreadySent).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("asks the server to pull back and puts the returned text before what was typed", async () => {
     const posts: { path: string; body: Record<string, unknown> }[] = [];
     let outcome: { outcome: string; text: string | null } = { outcome: "pulled", text: "fix the typo" };

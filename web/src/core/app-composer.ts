@@ -18,6 +18,8 @@ import {
 import type { App } from "./app";
 
 export class AppComposer {
+  private captionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
   constructor(private readonly app: App) {}
 
   composerView(chat: Chat): Composer {
@@ -288,9 +290,12 @@ export class AppComposer {
     if (result.pulled === null) {
       if (this.input(sessionId).banner) return;
       // Only the caption waits, so Send works again at once. A newer caption keeps its own timer.
-      const seq = ++this.app.alreadySentSeq;
+      clearTimeout(this.captionTimers.get(sessionId));
+      this.captionTimers.set(sessionId, setTimeout(() => {
+        this.captionTimers.delete(sessionId);
+        this.update(sessionId, { alreadySent: false });
+      }, 2000));
       this.update(sessionId, { alreadySent: true });
-      setTimeout(() => seq === this.app.alreadySentSeq && this.update(sessionId, { alreadySent: false }), 2000);
       return;
     }
     if (chair.provider === "pi") return this.restoreTyped(sessionId, typed, result.held ?? "", queued);

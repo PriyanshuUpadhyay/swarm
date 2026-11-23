@@ -101,7 +101,6 @@ export class App {
   picks = new Map<string, SkillPick[]>();
   histories = new Map<string, HistoryEntry[]>();
   stashes = new Map<string, string>();
-  alreadySentSeq = 0;
   inputRev = 0;
   pane = { focused: null as string | null, zoomed: null as string | null, reveal: null as string | null, revealSeq: 0 };
   /** Chat ids of the child columns on screen. Only these follow their logs. */
