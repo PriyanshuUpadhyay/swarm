@@ -449,7 +449,7 @@ fn a_headless_host_takes_its_first_live_pane_as_chair_after_a_failed_spawn() {
         "the chair",
     );
     // The host looks for its chair every 200 ms, and a real chair runs far longer.
-    std::thread::sleep(Duration::from_secs(1));
+    std::thread::sleep(Duration::from_millis(500));
     ask(&socket, serde_json::json!({"op": "close", "n": n}));
     wait_for(
         || host.0.try_wait().unwrap().is_some(),
