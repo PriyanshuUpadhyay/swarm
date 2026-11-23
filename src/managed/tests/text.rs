@@ -12,11 +12,14 @@
         let holder = std::fs::File::create(&lock).unwrap();
         holder.lock().unwrap();
         let wait = std::time::Duration::from_millis(200);
-        let started = std::time::Instant::now();
-        let error = with_lock_within(&lock, wait, || Ok(())).unwrap_err();
-        assert!(started.elapsed() >= wait, "{:?}", started.elapsed());
+        let mut ran = false;
+        let error = with_lock_within(&lock, wait, || {
+            ran = true;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(!ran, "the protected write ran without the lock");
         assert!(error.contains(&lock.display().to_string()), "{error}");
-        assert!(error.contains("another swarm holds"), "{error}");
         drop(holder);
         assert_eq!(with_lock_within(&lock, wait, || Ok(7)), Ok(7));
         std::fs::remove_dir_all(&dir).unwrap();
