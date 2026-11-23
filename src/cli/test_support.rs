@@ -15,6 +15,12 @@ mod fixtures {
         RING_DEADLINE.set(std::time::Duration::from_secs(30));
     }
 
+    /// Give this thread's rings a short deadline, for a test that waits the deadline out and
+    /// asserts the outcome of the ring, not how long it took.
+    pub(crate) fn short_rings() {
+        RING_DEADLINE.set(std::time::Duration::from_millis(800));
+    }
+
     /// A session whose coder pane `%2` shows the file `<root>/screen`, which the fake adapter's
     /// `capture` reads; `verbs` adds the `ring` verb and any other, with `{screen}` for that path.
     pub(crate) fn ring_session(

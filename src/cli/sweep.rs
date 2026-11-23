@@ -337,6 +337,7 @@ mod tests {
     /// one for the same stall (ADR 0041).
     #[test]
     fn sweep_reports_each_stall_to_the_chair_once() {
+        short_rings();
         let (root, mut connection, session) = ring_session(
             "stall",
             None,
