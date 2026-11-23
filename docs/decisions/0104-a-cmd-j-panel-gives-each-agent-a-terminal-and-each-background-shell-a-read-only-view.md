@@ -72,7 +72,12 @@ line of text, not a terminal, so ADR 0099 holds; the output stays in the panel. 
   log, because the task's `.log` file is under AGY's own folder and the panel's read-only view opens
   only a file under `/tmp/claude-<uid>/`. The record shape was read from real AGY logs on
   2026-10-23, so a change to that wording hides the rows. This replaces the AGY part of "Codex and AGY background work, a plain workspace shell, and other chats' tasks are out of v1" above.
-- pi draws nothing: 212 local pi sessions use only `bash`, `read`, `edit`, and `write`, so its log
-  holds no background record, and its core has no background command or agent.
+- Pi background processes are now listed. Since 2026-11-19 swarm installs `@aliou/pi-processes`,
+  whose `process` tool runs commands in the background. Before, the chat had no running line for
+  them, and only the end notice showed. The reader takes a process from the `process start` tool
+  result and ends it on an `ad-process:notification` lifecycle notice or a `process list` result
+  that shows it ended. A success with `onSuccess: "ignore"` writes no notice, so such a process
+  shows running until the agent lists it. The row has no log, because the output file lies outside
+  `/tmp/claude-<uid>/`. This replaces the earlier "pi draws nothing" line.
 - There is no Stop button. Claude stops a task only through `/tasks`, and Codex has only a stop-all
   API, so the contract has no per-task stop.

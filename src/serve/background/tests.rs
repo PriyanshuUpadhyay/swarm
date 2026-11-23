@@ -192,3 +192,76 @@ fn an_agy_log_names_a_running_background_task_until_its_system_message() {
         ]
     );
 }
+
+#[test]
+fn a_pi_log_names_a_running_process_until_its_end_notice() {
+    let result = |at: &str, details: Value| {
+        line(json!({
+            "type": "message", "timestamp": at,
+            "message": {"role": "toolResult", "toolName": "process", "details": details},
+        }))
+    };
+    let process = |id: &str, name: &str, status: &str, success: Value| json!({"id": id, "name": name, "command": "cargo test", "status": status, "success": success});
+    let start = |at: &str, id: &str, name: &str| {
+        result(
+            at,
+            json!({"action": "start", "process": process(id, name, "running", Value::Null)}),
+        )
+    };
+    let notice = |id: &str, kind: &str| {
+        line(json!({
+            "type": "custom_message", "customType": "ad-process:notification",
+            "details": {"kind": kind, "processId": id, "status": "exited"},
+        }))
+    };
+
+    let log = [
+        start("2026-11-23T20:43:18Z", "proc_1", "all-cargo-test"),
+        start("2026-11-23T20:44:06Z", "proc_2", "dev-server"),
+        start("2026-11-23T20:45:32Z", "proc_3", "all-serve-test"),
+        start("2026-11-23T20:46:00Z", "proc_4", "quiet-build"),
+        notice("proc_1", "crash"),
+        // A log match does not end the process.
+        notice("proc_2", "log_match"),
+        notice("proc_3", "success"),
+        // A success with onSuccess "ignore" has no notice; a later list shows the end.
+        result(
+            "2026-11-23T20:47:12Z",
+            json!({"action": "list", "processes": [
+                process("proc_2", "dev-server", "running", Value::Null),
+                process("proc_4", "quiet-build", "exited", json!(true)),
+            ]}),
+        ),
+    ]
+    .concat();
+
+    assert_eq!(
+        brief(&pi_tasks("chair", &log)),
+        [
+            (
+                "proc_1",
+                "all-cargo-test",
+                "failed",
+                Some("2026-11-23T20:43:18Z")
+            ),
+            (
+                "proc_2",
+                "dev-server",
+                "running",
+                Some("2026-11-23T20:44:06Z")
+            ),
+            (
+                "proc_3",
+                "all-serve-test",
+                "completed",
+                Some("2026-11-23T20:45:32Z")
+            ),
+            (
+                "proc_4",
+                "quiet-build",
+                "completed",
+                Some("2026-11-23T20:46:00Z")
+            ),
+        ]
+    );
+}
