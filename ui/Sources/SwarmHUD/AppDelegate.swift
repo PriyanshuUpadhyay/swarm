@@ -105,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         panel.isFloatingPanel = true
+        // A click does not make the panel key; only the hot key does (`toggleFromKeyboard`). Else
+        // a click that closes the card finds it key, and `setOpen(false)` orders it out and back
+        // in before the close draws, so the open card flashes back for a frame, then closes.
+        panel.becomesKeyOnlyIfNeeded = true
         panel.level = .mainMenu + 3
         panel.collectionBehavior = collectionBehavior
         panel.hidesOnDeactivate = false
