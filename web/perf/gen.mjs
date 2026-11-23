@@ -105,13 +105,17 @@ function setup() {
   }
 
   const rows = [];
+  let giantChat;
   const now = Math.floor(Date.now() / 1000);
   for (let i = 0; i < sessions; i++) {
     const sid = `00000000-0000-7000-8000-${String(i).padStart(12, "0")}`;
     const log = path.join(home, "logs", `chair-${i}.jsonl`);
     const count = i === 0 ? big : history;
     writeLines(log, count, `s${i}`);
-    if (i === 1) giantToolLine(log, `s${i}`, giant);
+    if (i === 1) {
+      giantToolLine(log, `s${i}`, giant);
+      giantChat = sid;
+    }
     const cwd = workspaces[i % workspaces.length];
     // adapter stays NULL, so the coordinator lists no panes for synthetic sessions.
     rows.push(`INSERT INTO session (id, talk_mode, cwd, created_at, chair_log, chair_provider, chair_id) VALUES (${sql(sid)}, 'lane', ${sql(cwd)}, ${now - i}, ${sql(log)}, 'claude', ${sql("chair-" + i)});`);
@@ -128,7 +132,7 @@ function setup() {
     rows.push(`INSERT INTO agent (id, session_id, role, provider, created_at, log, pane_id) VALUES (${sql("pane-" + k)}, ${sql(panes.id)}, 'code.small', 'claude', ${now + k}, ${sql(log)}, ${sql("perf-pane-" + k)});`);
   }
   execFileSync("sqlite3", [db], { input: "BEGIN;\n" + rows.join("\n") + "\nCOMMIT;\n" });
-  const manifest = { home, db, panes, sessions: Array.from({ length: sessions }, (_, i) => ({ id: `00000000-0000-7000-8000-${String(i).padStart(12, "0")}`, log: path.join(home, "logs", `chair-${i}.jsonl`) })) };
+  const manifest = { home, db, panes, giantChat, sessions: Array.from({ length: sessions }, (_, i) => ({ id: `00000000-0000-7000-8000-${String(i).padStart(12, "0")}`, log: path.join(home, "logs", `chair-${i}.jsonl`) })) };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   console.log(JSON.stringify({ db, sessions, big, giant, history }));
 }
