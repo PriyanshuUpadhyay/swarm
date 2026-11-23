@@ -19,11 +19,11 @@ mod tests {
         assert!(launch_refusal(Some("coder"), None).is_some());
         assert!(launch_refusal(None, Some("1")).is_some());
 
-        assert!(fable_refusal("coder", "code.complex", Some("claude-fable-5-1")).is_some());
-        assert!(fable_refusal("seat", "council.claude", Some("claude-fable-5-1")).is_none());
-        assert!(fable_refusal("seat", "review.pr", Some("Claude-FABLE")).is_none());
-        assert!(fable_refusal("orchestrator", "code.complex", Some("claude-fable-5-1")).is_none());
-        assert!(fable_refusal("coder", "code.complex", Some("claude-opus-5-5")).is_none());
+        assert!(fable_refusal("coder", "code.complex", "claude-fable-5-1").is_some());
+        assert!(fable_refusal("seat", "council.claude", "claude-fable-5-1").is_none());
+        assert!(fable_refusal("seat", "review.pr", "Claude-FABLE").is_none());
+        assert!(fable_refusal("orchestrator", "code.complex", "claude-fable-5-1").is_none());
+        assert!(fable_refusal("coder", "code.complex", "claude-opus-5-5").is_none());
     }
 
     #[test]

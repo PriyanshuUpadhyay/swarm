@@ -221,7 +221,7 @@ pub fn argv(
             if model != "default" {
                 args.extend(["--model".into(), model.into()]);
             }
-            if agy_takes_effort(Some(model)) {
+            if agy_takes_effort(model) {
                 args.extend(["--effort".into(), effort.into()]);
             }
             if let Some(permission) = &resolved.permission {
@@ -254,13 +254,11 @@ pub fn argv(
 /// effort, and AGY refuses `--effort` for it and for a Claude model such as `claude-sonnet-4-6`
 /// (probe 2026-10-21).
 // ponytail: a name rule from `agy models`; read AGY's own per-model flag if it gets one.
-pub fn agy_takes_effort(model: Option<&str>) -> bool {
-    !model.is_some_and(|model| {
-        model.starts_with("claude-")
-            || ["-low", "-medium", "-high"]
-                .iter()
-                .any(|level| model.ends_with(level))
-    })
+pub fn agy_takes_effort(model: &str) -> bool {
+    !(model.starts_with("claude-")
+        || ["-low", "-medium", "-high"]
+            .iter()
+            .any(|level| model.ends_with(level)))
 }
 
 /// The model a provider command line names with `--model` or `-m`, without a `[1m]` suffix.

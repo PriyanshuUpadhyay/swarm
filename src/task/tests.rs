@@ -250,6 +250,7 @@ fn a_model_name_becomes_a_safe_branch_and_none_falls_back_to_the_words() {
 fn a_record_answers_only_for_its_own_branch() {
     let root = std::env::temp_dir().join(format!("swarm-task-key-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
+
     let task = Task {
         branch: "swarm/a/b".into(),
         path: "/x".into(),
@@ -259,10 +260,13 @@ fn a_record_answers_only_for_its_own_branch() {
         agent: None,
         created_unix_s: 0,
     };
+
     write_json(&record_path(&root, "/repo", "swarm/a/b"), &task).unwrap();
     assert_eq!(read_record(&root, "/repo", "swarm/a/b"), Some(task));
+
     // `swarm/a-b` shares the file name of `swarm/a/b` and must not read its record.
     assert_eq!(read_record(&root, "/repo", "swarm/a-b"), None);
+
     assert_eq!(task_name("swarm/swarm/x"), "swarm/x");
     std::fs::remove_dir_all(&root).unwrap();
 }

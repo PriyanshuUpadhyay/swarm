@@ -172,10 +172,14 @@ pub(crate) fn commands_session(
     if let [cmd, rest @ ..] = args
         && cmd == "messages"
     {
-        if !matches!(rest, [json] if json == "--json") {
-            return Err(USAGE.into());
-        }
-        let messages = swarm::store::messages(connection, &session_id()?, -1)?
+        let after = match rest {
+            [json] if json == "--json" => -1,
+            [json, flag, seq] if json == "--json" && flag == "--after" => {
+                seq.parse().map_err(|_| format!("swarm: bad seq {seq}"))?
+            }
+            _ => return Err(USAGE.into()),
+        };
+        let messages = swarm::store::messages(connection, &session_id()?, after)?
             .into_iter()
             .map(|row| swarm::bus::Message {
                 seq: row.seq,

@@ -144,7 +144,7 @@ pub(crate) fn commands_launch(
             runner.effort = effort.into();
         }
         let account_deadline = probe.deadline;
-        if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, Some(&runner.model)) {
+        if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, &runner.model) {
             return Err(reason.into());
         }
         let mut command = swarm::bus::argv(agent_id, role, &runner, &swarm::paths::home()?, &cwd)?;
