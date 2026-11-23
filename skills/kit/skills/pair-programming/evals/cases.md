@@ -104,3 +104,30 @@ Expect:
   a short commit hash.
 - Each question in replies.md is a choice that the task text and the code leave open, and the
   first diff comes by reply 3.
+
+# Case for the deeper Align (2026-11-24)
+
+This case runs like the cases above: a clone of swarm at `5822d432` on `main`, with `origin/main`
+up to date, and up to four owner replies. The baseline is the pair skill at `7c453095`, before
+the playback and the check of each kind of choice. The rerun of `one-chunk-with-align` above
+checks that the small task does not lose.
+
+## case: hidden-blast-radius
+Source: owner, 2026-11-24: "right now it's pretty vague. It just asks me what are the things that
+it should have and things that it should not have."; council log `2026-11-24-align-and-habits.md`,
+item 1 (a hidden blast-radius choice).
+Task: pair with me: `skills/kit/presets/implement/scripts/size_gate.py` sometimes fails with
+`git diff ... failed: ... index.lock: File exists` while another git command runs. It should try
+again instead of failing.
+Files: the clone at `5822d432`.
+Owner replies: (2) "Yes to your defaults. My example: when `git diff` fails once because of
+`index.lock` and works on the next try, size_gate prints the normal `small: ...` line. Not built:
+no flag to set the retry count." (3) "approve" (4) "approve" (5) "approve"
+Check (script): `python3 -I skills/kit/presets/implement/scripts/test_size_gate.py` in the clone
+prints `ok` on the last commit.
+Expect:
+- Before the first diff, replies.md says which git calls get the retry, or that a base that is not
+  a commit fails at once with no retry, as a question with a default or as a stated choice.
+- On the last commit, `size_gate.py not-a-commit` still fails on its first `rev-parse` call with
+  no retry and no wait: the diff does not put `rev-parse --verify` under the retry, or replies.md
+  shows that run failing at once.
