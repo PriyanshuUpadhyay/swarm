@@ -87,3 +87,26 @@ side was scripted, so the eval does not show whether the questions fit real task
 start a review seat, so the review itself was not run; the shrink step was not run. Checker notes
 still open: no expectation tests the write-failure path of `open-choices`, and the third expectation
 of `verify-then-done` holds two facts.
+
+Eval 2026-11-24 of the deeper Align (playback and the check of each kind of choice), council log
+`2026-11-24-align-and-habits.md`, item 1. The skill is `08a53f7f`; the baseline is the skill at
+`7c453095`. Cases: `hidden-blast-radius` (new) and `one-chunk-with-align`. Runners: Sonnet 5.5 and
+GPT-6.1-sol, medium, through Pi; each pair's blind checker ran on the other provider. The script
+check printed `ok` on the last commit of all 10 runs, each run made one commit with a clean tree,
+and all 4 `hidden-blast-radius` runs failed a bad base at once (exit 1, 0.1 s or less).
+
+| date | skill commit | baseline | case | provider | result | grader note |
+|---|---|---|---|---|---|---|
+| 2026-11-24 | 08a53f7f | 7c453095 | hidden-blast-radius | codex | win | 2/2 vs 1/2; the baseline asked only the retry count and never said which git calls retry |
+| 2026-11-24 | 08a53f7f | 7c453095 | hidden-blast-radius | claude | win (narrow) | 1/2 each; both stated the retry scope; the skill side's test proves the owner's example |
+| 2026-11-24 | 08a53f7f | 7c453095 | one-chunk-with-align | codex | win (narrow) | 3/3 each; both "Align: no open choice"; the baseline's diff header named a scratch path |
+| 2026-11-24 | 08a53f7f | 7c453095 | one-chunk-with-align | claude | loss | 2/3 vs 3/3; the skill side asked to approve the behavior list before the first diff, a step both versions have |
+| 2026-11-24 | 08a53f7f | 7c453095 | one-chunk-with-align | claude | loss (narrow) | rerun; 3/3 each; the skill side's docstring said "any line limit", which overstates the code |
+
+Limits: one run per side (two for the Claude small case); a scripted owner; the graders named the
+second `hidden-blast-radius` expectation too strict (a lock-only retry keeps a bad base fast even
+inside the shared helper) and the small-case expectations unable to tell an approval gate from a
+question. Neither Claude small-case loss is on an Align expectation.
+
+Verdict: 3 wins, 2 losses, so the rule says fix. The owner merged it on 2026-11-24, because neither
+loss is on an Align expectation. `08a53f7f` landed as `0f984e72` after a rebase, with the same skill text.
