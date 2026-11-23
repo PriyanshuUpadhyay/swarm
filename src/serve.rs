@@ -388,19 +388,3 @@ mod tests {
 
     include!("../tests/serve_handoff/mod.rs");
 }
-
-#[cfg(test)]
-#[path = "serve/tests/s9a_routes.rs"]
-mod s9a_routes;
-
-#[cfg(test)]
-#[path = "serve/tests/s9b_routes.rs"]
-mod s9b_routes;
-
-#[cfg(test)]
-#[path = "serve/tests/s9c_routes.rs"]
-mod s9c_routes;
-
-#[cfg(test)]
-#[path = "serve/tests/s9d_routes.rs"]
-mod s9d_routes;

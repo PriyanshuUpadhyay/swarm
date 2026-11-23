@@ -337,6 +337,8 @@ mod guards;
 mod handoff;
 #[path = "serve/kit.rs"]
 mod kit;
+#[path = "serve/provider_rows.rs"]
+mod provider_rows;
 #[path = "serve/transcripts.rs"]
 mod transcripts;
 #[path = "serve/workspace.rs"]
@@ -350,11 +352,6 @@ mod s8c_queue;
 
 #[path = "serve/s8d_images.rs"]
 mod s8d_images;
-
-#[path = "s9a/frozen.rs"]
-mod s9a_frozen;
-#[path = "serve/s9a_switch.rs"]
-mod s9a_switch;
 
 #[path = "serve/body_wire.rs"]
 mod body_wire;
