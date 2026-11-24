@@ -62,7 +62,7 @@ test("a text note from the row menu goes to the agent as one message with its qu
 /** A reply with a heading, a list of choices and a closing line, as the server renders it. */
 async function mockChoices(tab: Page) {
   const text = "Which design goes to the build?\n\n- A · Notes tray\n- B · Quote into the composer\n- C · Margin notes\n\nReply with A, B, or C.";
-  const page = rows([row("a1", text)]);
+  const page = rows([row("a1", text)], 0, {}, { a1: [{ f: "text" }] });
   const p = (value: string) => ({ type: "paragraph" as const, value: [{ type: "text" as const, value }] });
   page.display = { a1: { blocks: [
     p("Which design goes to the build?"),
@@ -162,6 +162,29 @@ test("a quote holds only reply text: list numbers from the list's start, no card
   expect(selected).toHaveLength(2);
   for (const q of selected) expect(q).toMatch(/^zero[^]*two\s*$/);
   for (const q of selected) expect(q).not.toMatch(/On item|0\. zero/);
+});
+
+test("Find's current match stays on reply text, not on a card or the Whole reply handle", async ({ page: tab }) => {
+  await mockChoices(tab);
+  await open(tab);
+  await tab.keyboard.press("Meta+Shift+A");
+  await tab.locator('[data-testid="row"] li').filter({ hasText: "A · Notes tray" }).click();
+  await expect(tab.locator(".note-under .ncard")).toHaveCount(1);
+  // The text of the block that holds the current match.
+  const current = () => tab.evaluate(() => {
+    const range = [...(CSS.highlights.get("find-current") ?? [])][0] as Range | undefined;
+    return range?.startContainer.parentElement?.closest(".ncard, [data-note-reply], li, p")?.textContent ?? null;
+  });
+
+  await tab.keyboard.press("Escape");
+  await tab.keyboard.press("Meta+f");
+  await tab.getByTestId("find-input").fill("notes");
+  // Find starts at the newest match, the last one in the reply.
+  await expect(tab.getByTestId("find-count")).toHaveText("1 of 2");
+  await expect.poll(current).toBe("C · Margin notes");
+  await tab.getByTestId("find-input").fill("reply");
+  await expect(tab.getByTestId("find-count")).toHaveText("1 of 1");
+  await expect.poll(current).toBe("Reply with A, B, or C.");
 });
 
 test("a reload brings the cards back with their unfinished note text", async ({ page: tab }) => {

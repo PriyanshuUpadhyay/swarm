@@ -1,4 +1,6 @@
-const SKIP = '[aria-hidden="true"],.ln,[data-gutter],script,style';
+/** Text that Find never matches. Note cards and the Whole reply handle sit in a row (ADR 0161),
+ *  but the server, which counts the matches, does not see them. */
+const SKIP = '[aria-hidden="true"],.ln,[data-gutter],script,style,.ncard,[data-note-reply]';
 
 /** The text nodes under `root` in reading order, inside open shadow roots too, such as a Pierre patch. */
 function textNodes(root: Node, nodes: Text[]) {
