@@ -410,7 +410,9 @@ pub(crate) fn spawn_agent(
         line,
     )?;
     if let Some(text) = ring {
-        adapter.run("ring", &[("pane", &pane), ("text", &text)])?;
+        // The leading space keeps the line out of the pane shell's history when the shell ignores
+        // such lines (zsh `hist_ignore_space`, bash `ignorespace`, fish by default).
+        adapter.run("ring", &[("pane", &pane), ("text", &format!(" {text}"))])?;
     }
     println!("{pane}");
     if let Some(account) = account {

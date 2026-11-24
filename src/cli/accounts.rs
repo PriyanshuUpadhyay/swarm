@@ -355,7 +355,8 @@ pub(crate) fn account_login(args: &[String]) -> Result<(), Box<dyn std::error::E
             .map(|arg| arg.to_string()),
     );
     // Keep a failed login and its error text visible; a successful login closes the shell.
-    let text = format!("{} && exit", swarm::adapter::shell_line(&command));
+    // The leading space keeps the line out of the shell's history, as the spawn line does.
+    let text = format!(" {} && exit", swarm::adapter::shell_line(&command));
     if adapter
         .run("ring", &[("pane", &pane), ("text", &text)])
         .is_err()

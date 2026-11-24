@@ -373,6 +373,7 @@ fn a_run_verb_gets_the_launch_line_and_nothing_is_rung() {
     let rings = std::fs::read_to_string(home.join("rings")).unwrap();
     assert_eq!(rings.lines().count(), 1, "{rings}");
     assert!(rings.ends_with("'exited'\n"), "{rings}");
+    assert!(rings.starts_with(" . '"), "{rings}");
 }
 
 /// With a `run` verb the agent can end before swarm stores its pane. `exited` runs inside that
