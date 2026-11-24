@@ -45,7 +45,7 @@ function voiceFilePath(kit: string): string | undefined {
 	}
 }
 
-function names(text: string): string[] {
+function pathsIn(text: string): string[] {
 	const home = homedir();
 	return text.split(/[\s'"`;|&<>()]+/).map((t) => resolve(t.replace(/^~(?=\/)/, home)));
 }
@@ -69,14 +69,14 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("tool_call", async (event) => {
 		if (event.toolName === "read") {
-			const [path] = names(String(event.input.path ?? ""));
+			const [path] = pathsIn(String(event.input.path ?? ""));
 			if (isVoice(path)) voiceRead = true;
 			return;
 		}
 		if (!isToolCallEventType("bash", event)) return;
 
 		const command = event.input.command;
-		if (/\b(cat|bat|head|sed|less)\b/.test(command) && names(command).some(isVoice)) voiceRead = true;
+		if (/\b(cat|bat|head|sed|less)\b/.test(command) && pathsIn(command).some(isVoice)) voiceRead = true;
 		if (voiceRead) return;
 		if (postsHumanText(command)) return { block: true, reason };
 	});

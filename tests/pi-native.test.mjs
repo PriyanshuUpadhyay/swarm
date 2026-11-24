@@ -81,6 +81,7 @@ async function fixture(t, scenario, options = {}) {
   const live = join(cwd, "fixture.live");
   const guards = join(cwd, "guards.json");
   mkdirSync(parentDir);
+
   writeFileSync(guards, JSON.stringify({ rules: [{ name: "fixture", event: "PreToolUse", tools: ["bash"],
     command: ["/bin/sh", "-c", "printf fixture-denied >&2; exit 2"] }] }));
   const path = process.env.PATH;
@@ -91,10 +92,12 @@ async function fixture(t, scenario, options = {}) {
   for (const [key, value] of Object.entries(vars)) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
+
   t.after(() => { for (const [k, v] of prior) if (v === undefined) delete process.env[k]; else process.env[k] = v; });
   const script = fileURLToPath(import.meta.url);
   const quote = (p) => "'" + p.replaceAll("'", "'\\''") + "'";
   writeFileSync(join(cwd, "pi"), `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(script)} --child "$@"\n`, { mode: 0o700 });
+
   // Ask the actual builder to install Swarm's Pi extension, without starting the probe slot.
   const probe = join(cwd, "probe.jsonl");
   writeFileSync(probe, "{}\n");
@@ -106,6 +109,7 @@ async function fixture(t, scenario, options = {}) {
   const childArgs = JSON.parse(childArgv);
   const loaded = childArgs.flatMap((arg, i) => (childArgs[i - 1] === "--extension" ? [arg] : []));
   assert.deepEqual(loaded, ["builtin:mcp", "builtin:codemode", join(swarm, ".swarm/pi/swarm-live.ts")], "a native child is a leaf");
+
   const argv = ["--extension", join(swarm, ".swarm/pi/swarm-live.ts"), "--swarm-bin", bin, "--swarm-live", live];
   const { runtime: host, faux } = await runtime({ dir: parentDir, cwd, argv, ...options });
   t.after(() => host.dispose());

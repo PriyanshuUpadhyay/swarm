@@ -11,7 +11,13 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
     let pi_dir = home.join("pi config");
     let bridge = pi_dir.join("npm/node_modules/pi-claude-bridge/src/index.ts");
     let guard = pi_dir.join("extensions/command-guard.ts");
-    for path in [&bridge, &guard, &pi_dir.join("extensions/unrelated.ts")] {
+    let hint = pi_dir.join("extensions/composio-hint.ts");
+    for path in [
+        &bridge,
+        &guard,
+        &hint,
+        &pi_dir.join("extensions/unrelated.ts"),
+    ] {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, "").unwrap();
     }
@@ -57,6 +63,7 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
     let script =
         std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/orchestrator.sh")))
             .unwrap();
+
     let id = format!("{session}-orchestrator");
     assert!(
         script.contains(&format!(
@@ -68,16 +75,18 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
     assert!(script.contains("run-workers/SKILL.md"), "{script}");
     assert!(script.contains("'--no-extensions'"), "{script}");
     assert!(!script.contains("'--no-skills'"), "{script}");
+
     let own = home.join(".swarm/pi");
     let voice_gate = own.join("swarm-voice-gate.ts");
     let reminder = own.join("swarm-parallel-reminder.ts");
-    for path in [&bridge, &guard, &voice_gate, &reminder] {
+    for path in [&bridge, &guard, &hint, &voice_gate, &reminder] {
         assert!(
             script.contains(&format!("'--extension' '{}'", path.display())),
             "{script}"
         );
     }
     assert!(script.contains("'--swarm-live'"), "{script}");
+
     for name in ["builtin:mcp", "builtin:codemode"] {
         assert!(
             script.contains(&format!("'--extension' '{name}'")),
@@ -89,7 +98,8 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
         2,
         "{script}"
     );
-    assert_eq!(script.matches("'--extension'").count(), 7, "{script}");
+    assert_eq!(script.matches("'--extension'").count(), 8, "{script}");
+
     // This adapter's spawn line names no `$SWARM_FEED`, so pi runs bare.
     assert!(!script.contains("'pty'"), "{script}");
 

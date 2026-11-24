@@ -200,7 +200,7 @@ enum PiLoad {
     PaneOnly,
 }
 
-/// The subagents file loads through the live bridge.
+/// Every Pi extension file that a launch writes, with when a Pi loads it.
 const PI_EXTENSIONS: [(&str, &str, PiLoad); 4] = [
     (
         "swarm-subagents.ts",
