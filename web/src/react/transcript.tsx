@@ -10,9 +10,8 @@ import { BackgroundLine } from "./background-line";
 import { ChatInput } from "./chat-input";
 import { copyText } from "./copy";
 import { focusInputOf } from "../core/focus";
-import { SourcePopover, TranscriptMenu, type NoteSpot, type Source } from "./transcript-overlays";
-import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes } from "./notes-margin";
-import type { Note } from "../core/notes";
+import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
+import { useTranscriptNotes } from "./transcript-notes";
 import { setSplit } from "./transcript-output";
 import { setWrap } from "./patch-body";
 import { findLine } from "./patch-find";
@@ -55,58 +54,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const [source, setSource] = useState<Source | null>(null);
   const { lines, id: openId, chatState, find } = view;
   const current = find.open ? find.matches[find.index]?.id : undefined;
-  const { notes } = app;
-  // Snapshots, not reads in render: the React compiler keeps a render's result while its props stay the same.
-  const readList = () => notes.list(openId);
-  const readSending = () => notes.isSending(openId);
-  const noteList = useSyncExternalStore(notes.subscribe, readList, readList);
-  const noteSending = useSyncExternalStore(notes.subscribe, readSending, readSending);
-  const readMode = () => notes.annotating();
-  const annotating = useSyncExternalStore(notes.subscribe, readMode, readMode);
-  // Each card shows its number in the chat's send order.
-  const byRow = new Map<string, { note: Note; n: number }[]>();
-  noteList.forEach((note, i) => byRow.set(note.rowId, [...(byRow.get(note.rowId) ?? []), { note, n: i + 1 }]));
-  /** Adds a text note per spot; returns the last card's id, whose box takes the caret. */
-  const addNotes = (spots: NoteSpot[]) => {
-    let last: number | null = null;
-    for (const spot of spots) last = notes.add(openId, { kind: "text", ...spot })?.id ?? last;
-    return last;
-  };
-  /** Annotate mode: a note on the item under `target`, or on the whole reply from its handle. */
-  const annotate = (target: Element) => {
-    const whole = target.closest("[data-note-reply]");
-    const rowEl = target.closest<HTMLElement>('[data-testid="row"]');
-    const row = rowEl && lines.find((l) => l.id === rowEl.dataset.id)?.row;
-    if (whole && row) return !!notes.add(openId, { kind: "reply", rowId: row.id, quote: row.text });
-    const item = itemAt(target);
-    if (!item || !row || window.getSelection()?.isCollapsed === false) return false;
-    return !!notes.add(openId, { kind: "item", rowId: row.id, quote: itemQuote(item) });
-  };
-
-  // Marks follow the rows, which remount as the list scrolls.
-  useLayoutEffect(() => {
-    const list = scrollRef.current;
-    if (!list || chatState !== "ready") return;
-    const paint = () => paintNotes(list, noteList, annotating);
-    paint();
-    const watch = new MutationObserver(paint);
-    watch.observe(list, { childList: true, subtree: true });
-    return () => watch.disconnect();
-  }, [noteList, annotating, chatState, lines]);
-
-  // Esc leaves annotate mode first, also from the composer, whose own Esc would put its draft
-  // away. An open find bar, dialog, popover or menu keeps its own Esc.
-  useEffect(() => {
-    if (!annotating) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || find.open || document.querySelector('[role="dialog"], [role="menu"]')) return;
-      e.preventDefault();
-      e.stopPropagation();
-      notes.setMode(false);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [annotating, find.open, notes]);
+  const notes = useTranscriptNotes(app, view, scrollRef);
 
   // A new chat, or its first page: start at the newest row.
   useLayoutEffect(() => {
@@ -203,7 +151,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
 
   // Copy buttons in code blocks and tables share one listener for the whole list.
   const onClick = (e: React.MouseEvent) => {
-    if (annotating && annotate(e.target as Element)) return;
+    if (notes.annotate(e.target as Element)) return;
     const layout = (e.target as Element).closest<HTMLElement>("[data-diff-layout]");
     if (layout) return setSplit(layout.dataset.diffLayout === "1");
     if ((e.target as Element).closest("[data-wrap-toggle]")) return setWrap(document.documentElement.dataset.diffWrap !== "1");
@@ -220,16 +168,14 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            className={`transcript flex-1${annotating ? " annotating" : ""}`}
+            className={`transcript flex-1${notes.className}`}
             ref={scrollRef}
             tabIndex={-1}
             data-testid={testid}
             data-chat={openId}
             data-state={chatState}
             onClick={onClick}
-            onKeyDown={(e) => {
-              if (annotating && (e.key === "Enter" || e.key === " ") && e.target instanceof HTMLElement && e.target.tabIndex === 0 && itemAt(e.target) === e.target && annotate(e.target)) e.preventDefault();
-            }}
+            onKeyDown={notes.onKeyDown}
           >
             {chatState === "none" &&
               (empty ? (
@@ -271,7 +217,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
-                      cards={byRow.get(line.id)?.map(({ note, n }) => <NoteCard key={note.id} notes={notes} chat={openId} note={note} n={n} />)}
+                      cards={notes.cardsFor(line.id)}
                     />
                   )}
                 </Virtualizer>
@@ -279,7 +225,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
             )}
           </div>
         </ContextMenuTrigger>
-        <TranscriptMenu lines={lines} listRef={scrollRef} onSource={setSource} onNote={addNotes} />
+        <TranscriptMenu lines={lines} listRef={scrollRef} onSource={setSource} onNote={notes.addNotes} />
       </ContextMenu>
       {source && <SourcePopover source={source} listRef={scrollRef} onClose={() => setSource(null)} />}
       {away && chatState === "ready" && (
@@ -287,12 +233,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
           <ArrowDownIcon className="size-3.5" /> Jump to latest
         </button>
       )}
-      {chatState === "ready" && (
-        <button type="button" className="annotate-pill" data-testid="annotate-mode" aria-pressed={annotating} title="Annotate Chat (⇧⌘A)" onClick={() => notes.toggleMode()}>
-          {annotating ? "Annotate · Esc" : "Annotate"}
-        </button>
-      )}
-      {chatState === "ready" && <NotesBar notes={notes} chat={openId} list={noteList} sending={noteSending} blocked={view.composer ? view.composer.agent.disabled : "This chat takes no messages."} />}
+      {notes.overlay}
     </div>
   );
 }

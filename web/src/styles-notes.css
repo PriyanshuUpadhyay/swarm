@@ -190,3 +190,43 @@
   right: auto;
   left: -9px;
 }
+
+/* Narrow: a card sits right under the block it marks, or after the reply when no block shows. */
+.note-under .ncard,
+.note-end .ncard {
+  font-family: var(--ui-font);
+  font-weight: normal;
+  font-style: normal;
+}
+.note-end:empty {
+  display: none;
+}
+/* Wide (list ≥1172px, with notes): the column grows to 1124px and each row gets a 280px gutter
+   on the right, where paintNotes sets each card's top to its block's top. */
+.transcript.wide-notes > div {
+  max-width: 1124px;
+}
+.wide-notes .line {
+  display: grid;
+  grid-template-columns: minmax(0, 820px) 280px;
+  column-gap: 24px;
+}
+.wide-notes .line > * {
+  grid-column: 1;
+}
+.wide-notes .line > .msg {
+  position: relative;
+}
+.wide-notes .line > .msg > .copy-msg,
+.wide-notes .line > .msg > .whole-reply {
+  top: 0;
+}
+.wide-notes .line > .note-gutter {
+  grid-column: 2;
+  grid-row: 1 / span 9;
+  min-width: 0;
+}
+.note-gutter .ncard {
+  max-width: none;
+  margin: 0;
+}

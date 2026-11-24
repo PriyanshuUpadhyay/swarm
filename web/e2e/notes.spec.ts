@@ -129,3 +129,54 @@ test("a reload brings the cards back with their unfinished note text", async ({ 
   await expect(tab.locator('[data-testid="row"] li[data-inote="1"]')).toHaveText("B · Quote into the composer");
   await expect(tab.getByTestId("notes-bar")).toContainText("1 note on this chat");
 });
+
+/** The worst-case drafts of 04-impact, saved before the page loads: an item note with no text,
+ *  a text note on one 300-char URL, and a whole-reply note on a 12k-char reply. */
+async function mockWorstCase(tab: Page) {
+  const choices = "Which design goes to the build?\n\n- A · Notes tray\n- B · Quote into the composer\n- C · Margin notes";
+  const url = `https://example.com/${"a1b2c3d4e5".repeat(28)}`;
+  const filler = "The cache keeps each page for ten minutes, so an edit shows late. ".repeat(180);
+  const long = `${filler}\n\n\`\`\`\nconst ttl = 600;\n\`\`\`\n\n| Key | TTL |\n| --- | --- |\n| page | 600 |`;
+  const page = rows([row("a3", choices), row("a2", `See ${url} for the trace.`), row("a1", long)]);
+  const t = (value: string) => [{ type: "text" as const, value }];
+  page.display = {
+    a3: { blocks: [
+      { type: "paragraph", value: t("Which design goes to the build?") },
+      { type: "list", value: { ordered: false, start: null, tight: true, items: ["A · Notes tray", "B · Quote into the composer", "C · Margin notes"].map((v) => [{ type: "paragraph" as const, value: t(v) }]) } },
+    ] },
+    a1: { blocks: [
+      { type: "paragraph", value: t(filler) },
+      { type: "code", value: { label: null, text: "const ttl = 600;" } },
+      { type: "table", value: { source: "| Key | TTL |", align: ["none", "none"], head: [t("Key"), t("TTL")], rows: [[t("page"), t("600")]] } },
+    ] },
+  };
+  page.body = { a3: "tree", a1: "tree" };
+  await tab.route("**/api/rows?*", (route) => route.fulfill({ json: page }));
+  const note = (id: number, kind: string, rowId: string, quote: string, text: string) => ({ id, kind, rowId, quote, text, at: id });
+  const chats = [[process.env.SWARM_E2E_LIVE!, [
+    note(1, "item", "a3", "C · Margin notes", ""),
+    note(2, "text", "a2", url, "This link is the trace."),
+    note(3, "reply", "a1", long, "Zażółć gęślą jaźń 👍"),
+  ]]];
+  await tab.addInitScript((value) => localStorage.setItem("swarm.notes.v1", value), JSON.stringify({ v: 1, chats }));
+}
+
+const box = (tab: Page, selector: string) => tab.locator(selector).first().evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
+
+test("wide, cards sit in a gutter beside their block; narrow, under it, with no sideways scroll", async ({ page: tab }) => {
+  await mockWorstCase(tab);
+  await tab.setViewportSize({ width: 1440, height: 900 });
+  await open(tab);
+  await expect(tab.getByTestId("note-card")).toHaveCount(3);
+  await expect(tab.getByTestId("transcript")).toHaveClass(/wide-notes/);
+  const item = await box(tab, '[data-testid="row"] li[data-inote="1"]');
+  const card = await box(tab, '.note-gutter [data-note="1"]');
+  expect(card.left).toBeGreaterThanOrEqual(item.right);
+  expect(Math.abs(card.top - item.top)).toBeLessThan(2);
+
+  await tab.setViewportSize({ width: 375, height: 800 });
+  await expect(tab.getByTestId("transcript")).not.toHaveClass(/wide-notes/);
+  await expect(tab.locator('[data-testid="row"] li[data-inote="1"] + .note-under [data-note="1"]')).toBeVisible();
+  const sideways = () => tab.evaluate(() => [document.documentElement, document.querySelector('[data-testid="transcript"]')!].map((el) => el.scrollWidth - el.clientWidth));
+  expect(await sideways()).toEqual([0, 0]);
+});
