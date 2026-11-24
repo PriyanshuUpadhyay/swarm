@@ -48,9 +48,21 @@ def test_each_description_is_short_and_says_when():
     assert not bad, "\n".join(bad)
 
 
+def test_the_two_public_safety_copies_match():
+    # CI runs only the repo copy, so a drift in the kit copy stays unseen.
+    repo_copy = KIT.parents[1] / "scripts" / "public-safety.sh"
+    kit_copy = KIT / "scripts" / "public-safety.sh"
+    if not repo_copy.exists():
+        return  # An installed kit has no repo scripts/ folder, so there is nothing to compare.
+    assert repo_copy.read_bytes() == kit_copy.read_bytes(), (
+        f"{kit_copy} differs from {repo_copy}; copy {repo_copy} over {kit_copy} (or edit both)"
+    )
+
+
 if __name__ == "__main__":
     test_plugin_ships_the_workflow_verbs()
     test_each_skill_name_is_its_folder_name()
     test_background_skills_stay_available_to_the_model_and_out_of_the_menu()
     test_each_description_is_short_and_says_when()
+    test_the_two_public_safety_copies_match()
     print("ok")
