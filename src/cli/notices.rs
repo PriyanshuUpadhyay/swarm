@@ -263,7 +263,59 @@ pub(crate) fn health() -> serde_json::Value {
     let status = swarm::process::bounded_output(command, std::time::Duration::from_secs(5))
         .and_then(|out| serde_json::from_str::<serde_json::Value>(&out).ok())
         .ok_or_else(|| "Could not read the notice permission from the notice helper".to_string());
-    judge(status, || last_notice_held("1h"))
+    judge(status, newest_notice_held)
+}
+
+/// A saved scan is used only for a notice this old, because NotificationCenter logs a Focus hold
+/// just after the post.
+const SETTLED_SECONDS: i64 = 30;
+
+/// `last_notice_held("1h")` without its scan of the unified log (1 to 3 s) when it cannot change:
+/// with no swarm notice posted in the hour there is nothing to judge, and the hold of a posted
+/// notice stays as it was, so the answer is saved with the newest notice's id. A store read that
+/// fails scans as before.
+fn newest_notice_held() -> Result<Option<bool>, String> {
+    let newest = swarm::paths::sqlite_db().ok().and_then(|db| {
+        let connection = swarm::store::open(&db).ok()?;
+        connection
+            .query_row(
+                "SELECT id, unixepoch() - posted_at FROM notice
+                 WHERE posted_at >= unixepoch() - 3600 ORDER BY posted_at DESC, id DESC LIMIT 1",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .map(Some)
+            .or_else(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                error => Err(error),
+            })
+            .ok()
+    });
+    let Some(newest) = newest else {
+        return last_notice_held("1h");
+    };
+    let Some((id, age)) = newest else {
+        return Ok(None);
+    };
+    let saved_path = swarm::paths::root_dir()
+        .ok()
+        .map(|root| root.join("notice-held.json"));
+    let saved = saved_path
+        .as_ref()
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|text| serde_json::from_slice::<serde_json::Value>(&text).ok())
+        .filter(|saved| saved["id"] == id);
+    if let Some(saved) = saved {
+        return Ok(saved["held"].as_bool());
+    }
+    let held = last_notice_held("1h")?;
+    if age >= SETTLED_SECONDS
+        && let Some(path) = saved_path
+    {
+        let text = serde_json::json!({"id": id, "held": held}).to_string();
+        let _ = swarm::store::write_atomic(&path, &text);
+    }
+    Ok(held)
 }
 
 /// The rule, apart from macOS: the helper's `--status` answer (or why it is missing), then whether
