@@ -18,7 +18,7 @@ The following scopes use these paths, including when invoked from a repository.
 |---|---|---|
 | research | `<reports>/<YYYY-MM-DD>-<slug>/` | `<reports>/<YYYY-MM-DD>-<slug>.md` |
 | web-search | `<reports>/<YYYY-MM-DD>-<slug>-seats/`; launch scratch at `<repo-root>/tmp/web-search/<run>/`, or `~/.swarm/ws/<run>` when the run starts outside a repository | `<reports>/<YYYY-MM-DD>-<slug>-web.md`, with seat reports in the run folder |
-| council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `/tmp/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
+| council | `<log>/<YYYY-MM-DD>-<slug>/` beside the log file; temporary input at `$TMPDIR/councils/<run-id>/` | caller-pinned external log path, or `~/dotfiles/docs/council/<YYYY-MM-DD>-<slug>.md` |
 | build piece | `<piece>/ink/` | source and export stay in `<piece>/` |
 | plan | the verb's run state folder above, or `<repo-root>/tmp/plan/<YYYY-MM-DD>-<slug>/` for a verb with no row | `plan.md` and `plan.html` in that folder |
 

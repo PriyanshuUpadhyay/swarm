@@ -73,9 +73,9 @@ Use the temporary council-input path in `references/run-folder.md`:
 
 ```sh
 COUNCIL_RUN_ID="${CODEX_THREAD_ID:-${CLAUDE_CODE_SESSION_ID:-council-$(date +%s)}}"
-COUNCIL_DIR="/tmp/councils/${COUNCIL_RUN_ID}"
+COUNCIL_DIR="${TMPDIR:-/tmp}/councils/${COUNCIL_RUN_ID}"
 COUNCIL_WORKSPACE="$(pwd -P)"
-mkdir -p "$COUNCIL_DIR"
+mkdir -p -m 700 "$COUNCIL_DIR"
 ~/.claude/scripts/ensure-council-access.py \
   --council-dir "$COUNCIL_DIR" --workspace "$COUNCIL_WORKSPACE"
 ```
