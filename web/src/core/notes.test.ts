@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { harness, settle } from "./composer-harness";
 import { noteMessage, type Note } from "./notes";
 
@@ -56,5 +56,36 @@ describe("Notes.send", () => {
     expect(posts[1].body.text).toBe("Notes on your reply (1):\n\n1. > C · Margin notes");
     expect(app.notes.list("chat")).toEqual([]);
     expect(sent).toEqual(["Sent 1 note to the agent."]);
+  });
+});
+
+describe("saved notes", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const store = (value: string) => {
+    const saved = new Map([["swarm.notes.v1", value]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => saved.get(key) ?? null,
+      setItem: (key: string, v: string) => saved.set(key, v),
+      removeItem: (key: string) => saved.delete(key),
+    });
+  };
+
+  it("opens a chat with no drafts when the saved value has another shape", () => {
+    const noQuote = { id: 1, kind: "item", rowId: "a1", text: "", at: 1 };
+    for (const bad of ["not json", '{"v":2}', JSON.stringify({ v: 1, chats: [["chat", [noQuote]]] }), '{"v":1,"chats":{"chat":[]}}']) {
+      store(bad);
+      expect(harness().app.notes.list("chat"), bad).toEqual([]);
+    }
+  });
+
+  it("refuses the 201st note of a chat with a notice", () => {
+    store("");
+    const { app } = harness();
+    const said: string[] = [];
+    app.notice = (text) => said.push(text);
+    for (let i = 0; i < 200; i++) expect(app.notes.add("chat", { kind: "text", rowId: "a1", quote: `quote ${i}` })).not.toBeNull();
+    expect(app.notes.add("chat", { kind: "text", rowId: "a1", quote: "one more" })).toBeNull();
+    expect(app.notes.list("chat")).toHaveLength(200);
+    expect(said).toHaveLength(1);
   });
 });

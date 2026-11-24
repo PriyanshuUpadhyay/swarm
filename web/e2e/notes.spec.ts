@@ -114,3 +114,18 @@ test("annotate mode takes an item and a whole reply; ⇧⌘A, the palette and Es
     ...reply.split("\n").map((l) => (l ? `   > ${l}` : "   >")),
   ].join("\n"));
 });
+
+test("a reload brings the cards back with their unfinished note text", async ({ page: tab }) => {
+  await mockChoices(tab);
+  await open(tab);
+  await tab.keyboard.press("Meta+Shift+A");
+  await tab.locator('[data-testid="row"] li').filter({ hasText: "B · Quote into the composer" }).click();
+  await tab.keyboard.type("Half a thou");
+  await tab.reload();
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await expect(tab.getByTestId("note-card")).toHaveCount(1);
+  await expect(tab.getByTestId("note-card")).toContainText("B · Quote into the composer");
+  await expect(tab.getByTestId("note-input")).toHaveValue("Half a thou");
+  await expect(tab.locator('[data-testid="row"] li[data-inote="1"]')).toHaveText("B · Quote into the composer");
+  await expect(tab.getByTestId("notes-bar")).toContainText("1 note on this chat");
+});

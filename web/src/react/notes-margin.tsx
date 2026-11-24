@@ -87,9 +87,10 @@ export function itemAt(el: Element): HTMLElement | null {
   return outer && body.contains(outer) ? outer : block;
 }
 
-/** An item's quote: its shown text; an item of an ordered list keeps its number. */
+/** An item's quote: its text; an item of an ordered list keeps its number. Not innerText, which is
+ *  empty while the list keeps a new row hidden to measure it. */
 export function itemQuote(item: HTMLElement): string {
-  const text = item.innerText.trim();
+  const text = (item.textContent ?? "").trim();
   const list = item.parentElement;
   if (item.tagName !== "LI" || list?.tagName !== "OL") return text;
   const start = Number((list as HTMLOListElement).start) || 1;

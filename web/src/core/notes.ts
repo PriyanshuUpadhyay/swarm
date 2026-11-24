@@ -9,6 +9,8 @@ export type NoteKind = "text" | "item" | "reply";
 export type Note = { id: number; kind: NoteKind; rowId: string; quote: string; text: string; at: number };
 
 const STORE_KEY = "swarm.notes.v1";
+/** Notes per chat; a chosen limit that keeps the saved value and the message small. */
+const CAP = 200;
 const KINDS: readonly string[] = ["text", "item", "reply"] satisfies NoteKind[];
 
 const isNote = (n: unknown): n is Note => {
@@ -105,6 +107,10 @@ export class Notes {
 
   add(chat: string, note: Pick<Note, "kind" | "rowId" | "quote">): Note | null {
     if (!note.quote.trim()) return null;
+    if (this.list(chat).length >= CAP) {
+      this.app.notice(`This chat has ${CAP} notes, the most it keeps. Send or remove some first.`, true);
+      return null;
+    }
     const added: Note = { ...note, id: ++this.seq, text: "", at: Date.now() };
     this.chats.set(chat, [...this.list(chat), added]);
     this.focusId = added.id;
