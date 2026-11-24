@@ -189,23 +189,27 @@ pub fn pi_child_dir(
     )
 }
 
+/// Swarm's Pi extensions as (file name, content, passed with `--extension`), the live bridge
+/// first of the loaded files; the subagents file loads through the live bridge.
+const PI_EXTENSIONS: [(&str, &str, bool); 4] = [
+    ("swarm-subagents.ts", include_str!("bus/pi_subagents.ts"), false),
+    ("swarm-live.ts", PI_LIVE_EXTENSION, true),
+    ("swarm-voice-gate.ts", include_str!("bus/pi_voice_gate.ts"), true),
+    (
+        "swarm-parallel-reminder.ts",
+        include_str!("bus/pi_parallel_reminder.ts"),
+        true,
+    ),
+];
+
 /// Atomic replacement keeps a Pi from reading half an extension during its startup.
-/// Returns the files a Pi must load, the live bridge first; the subagents file loads through it.
+/// Returns the files a Pi must load, in `PI_EXTENSIONS` order.
 pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<Vec<std::path::PathBuf>> {
     let folder = root.join("pi");
     std::fs::create_dir_all(&folder)?;
 
     let mut load = Vec::new();
-    for (name, content, loaded) in [
-        ("swarm-subagents.ts", include_str!("bus/pi_subagents.ts"), false),
-        ("swarm-live.ts", PI_LIVE_EXTENSION, true),
-        ("swarm-voice-gate.ts", include_str!("bus/pi_voice_gate.ts"), true),
-        (
-            "swarm-parallel-reminder.ts",
-            include_str!("bus/pi_parallel_reminder.ts"),
-            true,
-        ),
-    ] {
+    for (name, content, loaded) in PI_EXTENSIONS {
         let path = folder.join(name);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(content) {
             let temp = path.with_extension(format!("{}.tmp", std::process::id()));
