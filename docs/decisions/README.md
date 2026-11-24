@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0161 | Chat notes are browser drafts sent as one typed message | 2 | accepted | 2026-11-24 | →0130 →0029 |
 | 0159 | Every agent question is answered in the chat; the pane is for debugging | 2 | accepted | 2026-11-24 | ↑0029 ↑0154 →0121 |
 | 0158 | Apple's on-device model names a chat's branch from its first prompt | 2 | accepted | 2026-11-23 | ↑0146 ↑0149 →0134 |
 | 0157 | Tool groups follow each agent CLI | 2 | accepted | 2026-11-23 | ↑0047 →0134 →0139 |
