@@ -172,7 +172,7 @@ test("a quote holds only reply text: list numbers from the list's start, no card
   for (const q of selected) expect(q).not.toMatch(/On item|0\. zero/);
 });
 
-test("in annotate mode a click on a link in an item only adds a note", async ({ page: tab }) => {
+test("in annotate mode a click on a link in an item only adds a note, also when the add is refused", async ({ page: tab }) => {
   const url = "https://example.com/trace";
   const page = rows([row("a1", `- See [the trace](${url})`)]);
   const link = { type: "link" as const, value: { url, title: null, children: [{ type: "text" as const, value: "the trace" }] } };
@@ -180,14 +180,25 @@ test("in annotate mode a click on a link in an item only adds a note", async ({ 
   page.body = { a1: "tree" };
   await tab.route("**/api/rows?*", (route) => route.fulfill({ json: page }));
   await tab.context().route(`${url}*`, (route) => route.fulfill({ body: "trace" }));
+  // 199 saved notes on a row not on screen, so the first click adds the 200th and the second hits the cap.
+  const saved = Array.from({ length: 199 }, (_, i): Note => ({ id: i + 1, kind: "item", rowId: "gone", quote: "Q", text: "", at: i }));
+  await tab.addInitScript(([key, value]) => localStorage.setItem(key, value), [STORE_KEY, savedNotes([[process.env.SWARM_E2E_LIVE!, saved]])]);
   await open(tab);
   await tab.keyboard.press("Meta+Shift+A");
+  // A popup shows within milliseconds, so half a second is enough to see none.
+  const noPopup = async () => expect(await tab.context().waitForEvent("page", { timeout: 500 }).then(() => true, () => false)).toBe(false);
 
-  const opened = tab.context().waitForEvent("page", { timeout: 2000 }).then(() => true, () => false);
+  const opened = noPopup();
   await tab.getByRole("link", { name: "the trace" }).click();
   await expect(tab.getByTestId("note-card")).toHaveCount(1);
   await expect(tab.getByTestId("note-card")).toContainText("See the trace");
-  expect(await opened).toBe(false);
+  await opened;
+
+  const refused = noPopup();
+  await tab.getByRole("link", { name: "the trace" }).click();
+  await expect(tab.getByText("This chat has 200 notes, the most it keeps.")).toBeVisible();
+  await expect(tab.getByTestId("note-card")).toHaveCount(1);
+  await refused;
 });
 
 test("Find's current match stays on reply text, not on a card or the Whole reply handle", async ({ page: tab }) => {

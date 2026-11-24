@@ -36,16 +36,22 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     return last;
   };
 
-  /** Annotate mode: a note on the item under `target`, or on the whole reply from its handle. */
+  /** Annotate mode: a note on the item under `target`, or on the whole reply from its handle.
+   *  True when the mode takes the click, also when add refuses the note (the cap, or an item with
+   *  no text), so the item's own link or button never runs. */
   const annotate = (target: Element) => {
     if (!annotating) return false;
     const whole = target.closest("[data-note-reply]");
     const rowEl = target.closest<HTMLElement>('[data-testid="row"]');
     const row = rowEl && lines.find((l) => l.id === rowEl.dataset.id)?.row;
-    if (whole && row) return !!notes.add(openId, { kind: "reply", rowId: row.id, quote: row.text });
+    if (whole && row) {
+      notes.add(openId, { kind: "reply", rowId: row.id, quote: row.text });
+      return true;
+    }
     const item = itemAt(target);
     if (!item || !row || window.getSelection()?.isCollapsed === false) return false;
-    return !!notes.add(openId, { kind: "item", rowId: row.id, quote: itemQuote(item) });
+    notes.add(openId, { kind: "item", rowId: row.id, quote: itemQuote(item) });
+    return true;
   };
 
   // Before the item's own handlers: in annotate mode a click on an item, also on a link or a
