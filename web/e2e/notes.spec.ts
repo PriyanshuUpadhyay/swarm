@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { Block } from "../src/core/api";
+import { savedNotes, STORE_KEY, type Note } from "../src/core/notes";
 import { mockRows, open, row, rows } from "./ux-helpers";
 
 // Chat notes (ADR 0161): the owner marks agent reply text, writes a note in a numbered card, and
@@ -7,10 +8,10 @@ import { mockRows, open, row, rows } from "./ux-helpers";
 
 const REPLY = "The page cache keeps each rendered page for 10 minutes, so an edit shows late.\n\nReply with A, B, or C.";
 
-/** The texts that the composer's send posts, answered as sent. */
-function captureSends(tab: Page) {
+/** The bodies that the composer's send posts, answered as sent. */
+async function captureSends(tab: Page) {
   const sent: Record<string, unknown>[] = [];
-  void tab.route("**/api/chat/send", (route) => {
+  await tab.route("**/api/chat/send", (route) => {
     sent.push(route.request().postDataJSON());
     return route.fulfill({ json: { ok: true } });
   });
@@ -24,6 +25,7 @@ async function select(tab: Page, selector: string, text: string) {
     for (let node = walk.nextNode(); node; node = walk.nextNode()) {
       const at = (node as Text).data.indexOf(text);
       if (at < 0) continue;
+
       const range = document.createRange();
       range.setStart(node, at);
       range.setEnd(node, at + text.length);
@@ -38,7 +40,7 @@ async function select(tab: Page, selector: string, text: string) {
 
 test("a text note from the row menu goes to the agent as one message with its quote", async ({ page: tab }) => {
   await mockRows(tab, [row("a1", REPLY)]);
-  const sent = captureSends(tab);
+  const sent = await captureSends(tab);
   await open(tab);
   const reply = '[data-testid="row"][data-id="a1"] .md p';
   await select(tab, reply, "10 minutes");
@@ -59,16 +61,20 @@ test("a text note from the row menu goes to the agent as one message with its qu
   await expect(tab.getByTestId("notes-bar")).toBeHidden();
 });
 
+const para = (value: string) => ({ type: "paragraph" as const, value: [{ type: "text" as const, value }] });
+const list = (ordered: boolean, start: number | null, items: Block[][]): Block => ({ type: "list", value: { ordered, start, tight: true, items } });
+const CHOICES = ["A · Notes tray", "B · Quote into the composer", "C · Margin notes"];
+/** The heading and the list of choices of a choice reply, as text and as the server renders it. */
+const choices = {
+  text: `Which design goes to the build?\n\n${CHOICES.map((c) => `- ${c}`).join("\n")}`,
+  blocks: [para("Which design goes to the build?"), list(false, null, CHOICES.map((c) => [para(c)]))],
+};
+
 /** A reply with a heading, a list of choices and a closing line, as the server renders it. */
 async function mockChoices(tab: Page) {
-  const text = "Which design goes to the build?\n\n- A · Notes tray\n- B · Quote into the composer\n- C · Margin notes\n\nReply with A, B, or C.";
+  const text = `${choices.text}\n\nReply with A, B, or C.`;
   const page = rows([row("a1", text)], 0, {}, { a1: [{ f: "text" }] });
-  const p = (value: string) => ({ type: "paragraph" as const, value: [{ type: "text" as const, value }] });
-  page.display = { a1: { blocks: [
-    p("Which design goes to the build?"),
-    { type: "list", value: { ordered: false, start: null, tight: true, items: [[p("A · Notes tray")], [p("B · Quote into the composer")], [p("C · Margin notes")]] } },
-    p("Reply with A, B, or C."),
-  ] } };
+  page.display = { a1: { blocks: [...choices.blocks, para("Reply with A, B, or C.")] } };
   page.body = { a1: "tree" };
   await tab.route("**/api/rows?*", (route) => route.fulfill({ json: page }));
   return text;
@@ -78,7 +84,7 @@ const rowTops = (tab: Page) => tab.locator('[data-testid="row"]').evaluateAll((e
 
 test("annotate mode takes an item and a whole reply; ⇧⌘A, the palette and Esc switch it; rows stay put", async ({ page: tab }) => {
   const reply = await mockChoices(tab);
-  const sent = captureSends(tab);
+  const sent = await captureSends(tab);
   await open(tab);
   const mode = tab.getByTestId("annotate-mode");
   await expect(mode).toHaveAttribute("aria-pressed", "false");
@@ -116,9 +122,6 @@ test("annotate mode takes an item and a whole reply; ⇧⌘A, the palette and Es
   ].join("\n"));
 });
 
-const para = (value: string) => ({ type: "paragraph" as const, value: [{ type: "text" as const, value }] });
-const list = (ordered: boolean, start: number | null, items: Block[][]): Block => ({ type: "list", value: { ordered, start, tight: true, items } });
-
 test("a quote holds only reply text: list numbers from the list's start, no card text", async ({ page: tab }) => {
   const page = rows([row("a1", "0. zero\n1. one\n   - inner\n2. two"), row("a2", "Next reply.")]);
   page.display = { a1: { blocks: [list(true, 0, [[para("zero")], [para("one"), list(false, null, [[para("inner")]])], [para("two")]])] } };
@@ -134,12 +137,14 @@ test("a quote holds only reply text: list numbers from the list's start, no card
   await item("one");
   await item("two");
   await tab.keyboard.press("Escape");
+
   // From "zero" to the end of `last` (in this reply, or in the next one), then Add note.
   const selectFromZero = async (last: string) => {
     await tab.getByTestId("transcript").evaluate((root, last) => {
       const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
       const texts: Text[] = [];
       for (let node = walk.nextNode(); node; node = walk.nextNode()) if (!node.parentElement!.closest(".ncard")) texts.push(node as Text);
+
       const range = document.createRange();
       range.setStart(texts.find((t) => t.data === "zero")!, 0);
       const end = texts.filter((t) => t.data.endsWith(last)).pop()!;
@@ -150,6 +155,7 @@ test("a quote holds only reply text: list numbers from the list's start, no card
     await tab.locator('[data-testid="row"] .md li').filter({ hasText: /^two/ }).click({ button: "right", position: { x: 2, y: 4 } });
     await tab.getByRole("menuitem", { name: "Add note" }).click();
   };
+
   await selectFromZero("two");
   await selectFromZero("Next reply.");
 
@@ -220,35 +226,33 @@ test("a reload brings the cards back with their unfinished note text", async ({ 
   await expect(tab.getByTestId("notes-bar")).toContainText("1 note on this chat");
 });
 
-/** The worst-case drafts of 04-impact, saved before the page loads: an item note with no text,
- *  a text note on one 300-char URL, and a whole-reply note on a 12k-char reply. */
+/** The worst-case drafts, saved before the page loads: an item note with no text, a text note on
+ *  one 300-char URL, and a whole-reply note on a 12k-char reply. */
 async function mockWorstCase(tab: Page) {
-  const choices = "Which design goes to the build?\n\n- A · Notes tray\n- B · Quote into the composer\n- C · Margin notes";
   const url = `https://example.com/${"a1b2c3d4e5".repeat(28)}`;
   const filler = "The cache keeps each page for ten minutes, so an edit shows late. ".repeat(180);
   const long = `${filler}\n\n\`\`\`\nconst ttl = 600;\n\`\`\`\n\n| Key | TTL |\n| --- | --- |\n| page | 600 |`;
-  const page = rows([row("a3", choices), row("a2", `See ${url} for the trace.`), row("a1", long)]);
+
+  const page = rows([row("a3", choices.text), row("a2", `See ${url} for the trace.`), row("a1", long)]);
   const t = (value: string) => [{ type: "text" as const, value }];
   page.display = {
-    a3: { blocks: [
-      { type: "paragraph", value: t("Which design goes to the build?") },
-      { type: "list", value: { ordered: false, start: null, tight: true, items: ["A · Notes tray", "B · Quote into the composer", "C · Margin notes"].map((v) => [{ type: "paragraph" as const, value: t(v) }]) } },
-    ] },
+    a3: { blocks: choices.blocks },
     a1: { blocks: [
-      { type: "paragraph", value: t(filler) },
+      para(filler),
       { type: "code", value: { label: null, text: "const ttl = 600;" } },
       { type: "table", value: { source: "| Key | TTL |", align: ["none", "none"], head: [t("Key"), t("TTL")], rows: [[t("page"), t("600")]] } },
     ] },
   };
   page.body = { a3: "tree", a1: "tree" };
   await tab.route("**/api/rows?*", (route) => route.fulfill({ json: page }));
-  const note = (id: number, kind: string, rowId: string, quote: string, text: string) => ({ id, kind, rowId, quote, text, at: id });
-  const chats = [[process.env.SWARM_E2E_LIVE!, [
+
+  const note = (id: number, kind: Note["kind"], rowId: string, quote: string, text: string): Note => ({ id, kind, rowId, quote, text, at: id });
+  const chats: [string, Note[]][] = [[process.env.SWARM_E2E_LIVE!, [
     note(1, "item", "a3", "C · Margin notes", ""),
     note(2, "text", "a2", url, "This link is the trace."),
     note(3, "reply", "a1", long, "Zażółć gęślą jaźń 👍"),
   ]]];
-  await tab.addInitScript((value) => localStorage.setItem("swarm.notes.v1", value), JSON.stringify({ v: 1, chats }));
+  await tab.addInitScript(([key, value]) => localStorage.setItem(key, value), [STORE_KEY, savedNotes(chats)]);
 }
 
 const box = (tab: Page, selector: string) => tab.locator(selector).first().evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);

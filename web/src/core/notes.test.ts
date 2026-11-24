@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { harness, settle } from "./composer-harness";
-import { noteMessage, type Note } from "./notes";
+import { noteMessage, STORE_KEY, type Note } from "./notes";
 
 afterEach(() => vi.unstubAllGlobals());
 const store = (value: string) => {
-  const saved = new Map([["swarm.notes.v1", value]]);
+  const saved = new Map([[STORE_KEY, value]]);
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => saved.get(key) ?? null,
     setItem: (key: string, v: string) => saved.set(key, v),
@@ -20,14 +20,17 @@ describe("noteMessage", () => {
       note({ kind: "reply", rowId: "row-9", quote: "reply line 1\n\nreply line 3", text: "Zażółć gęślą jaźń 👍\nsecond line" }),
       note({ kind: "item", quote: "C · Margin notes", text: "" }),
     ]);
+
     expect(text).toBe(
       [
         "Notes on your reply (3):",
         "",
+
         "1. > first quote line",
         "   > second quote line",
         "   Why 10 minutes?",
         "",
+
         "2. > [whole reply]",
         "   > reply line 1",
         "   >",
@@ -35,6 +38,7 @@ describe("noteMessage", () => {
         "   Zażółć gęślą jaźń 👍",
         "   second line",
         "",
+
         "3. > C · Margin notes",
       ].join("\n"),
     );
@@ -95,7 +99,9 @@ describe("Notes.send", () => {
 describe("saved notes", () => {
   it("opens a chat with no drafts when the saved value has another shape", () => {
     const noQuote = { id: 1, kind: "item", rowId: "a1", text: "", at: 1 };
-    for (const bad of ["not json", '{"v":2}', JSON.stringify({ v: 1, chats: [["chat", [noQuote]]] }), '{"v":1,"chats":{"chat":[]}}']) {
+    // A valid note under another version, so only the version check refuses it.
+    const otherVersion = JSON.stringify({ v: 2, chats: [["chat", [note({ kind: "item", quote: "Q", text: "" })]]] });
+    for (const bad of ["not json", otherVersion, JSON.stringify({ v: 1, chats: [["chat", [noQuote]]] }), '{"v":1,"chats":{"chat":[]}}']) {
       store(bad);
       expect(harness().app.notes.list("chat"), bad).toEqual([]);
     }

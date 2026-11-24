@@ -18,6 +18,7 @@ type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; compo
 /** `cards` are the row's note cards (ADR 0161), under the reply. */
 function LineView({ app, line, index, full, match, composerId, branches, cards }: Ctx & { index: number; match?: string; cards?: React.ReactNode }) {
   const { row } = line;
+
   return (
     <div
       data-testid="row"

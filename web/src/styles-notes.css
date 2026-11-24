@@ -215,15 +215,28 @@
   -webkit-user-select: text;
   user-select: text;
 }
-/* Wide (list ≥1172px, with notes): the column grows to 1124px and each row gets a 280px gutter
-   on the right, where paintNotes sets each card's top to its block's top. */
+/* Wide (list at least --wide-notes, with notes): the 820px rows keep their width, and each row gets
+   a gutter on the right, where paintNotes sets each card's top to its block's top. The 48px is the
+   list's side padding (styles-transcript.css). transcript-notes.tsx reads --wide-notes, which
+   @property makes a computed length. */
+@property --wide-notes {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.transcript {
+  --notes-row: 820px;
+  --notes-gap: 24px;
+  --notes-gutter: 280px;
+  --wide-notes: calc(var(--notes-row) + var(--notes-gap) + var(--notes-gutter) + 48px);
+}
 .transcript.wide-notes > div {
-  max-width: 1124px;
+  max-width: calc(var(--notes-row) + var(--notes-gap) + var(--notes-gutter));
 }
 .wide-notes .line {
   display: grid;
-  grid-template-columns: minmax(0, 820px) 280px;
-  column-gap: 24px;
+  grid-template-columns: minmax(0, var(--notes-row)) var(--notes-gutter);
+  column-gap: var(--notes-gap);
 }
 .wide-notes .line > * {
   grid-column: 1;

@@ -4,6 +4,7 @@
 import { BracesIcon, CopyIcon, MessageSquarePlusIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Row } from "../core/api";
+import type { Note } from "../core/notes";
 import type { Line } from "../core/transcript";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { copyText } from "./copy";
@@ -13,7 +14,7 @@ const ROW = '[data-testid="row"]';
 export const REPLY_BODY = '[data-kind="assistant"] .msg .md, [data-kind="assistant"] .msg > .whitespace-pre-wrap';
 
 /** A note's anchor: the row, and the text the owner selected in it. */
-export type NoteSpot = { rowId: string; quote: string };
+export type NoteSpot = Pick<Note, "rowId" | "quote">;
 
 /** The selected text per agent reply, when both ends of the selection sit in agent replies. A
  *  selection over 2 replies gives 2 spots; rows between them that are not replies give none.
@@ -28,12 +29,14 @@ function selectedSpots(list: HTMLElement): NoteSpot[] {
     return !!el?.closest(REPLY_BODY) && !el.closest(".ncard");
   };
   if (!inReply(sel.anchorNode) || !inReply(sel.focusNode)) return [];
+
   const range = sel.getRangeAt(0);
   const bodies = [...list.querySelectorAll<HTMLElement>(REPLY_BODY)].filter((b) => range.intersectsNode(b));
   if (bodies.length === 1) {
     const rowId = bodies[0].closest<HTMLElement>(ROW)?.dataset.id;
     return rowId ? [{ rowId, quote: sel.toString() }] : [];
   }
+
   return bodies.flatMap((body) => {
     const rowId = body.closest<HTMLElement>(ROW)?.dataset.id;
     const part = document.createRange();

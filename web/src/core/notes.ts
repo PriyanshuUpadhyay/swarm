@@ -3,21 +3,23 @@
 
 import { readStore, writeStore, type Input } from "./app-types";
 import type { App } from "./app";
+import { plural } from "./lifecycle-state";
 
-export type NoteKind = "text" | "item" | "reply";
+const KINDS = ["text", "item", "reply"] as const;
 /** `rowId` only finds the row on screen; the agent never sees it. `quote` is the full text. */
-export type Note = { id: number; kind: NoteKind; rowId: string; quote: string; text: string; at: number };
+export type Note = { id: number; kind: (typeof KINDS)[number]; rowId: string; quote: string; text: string; at: number };
 
-const STORE_KEY = "swarm.notes.v1";
+/** The saved drafts: this key holds `savedNotes` of every chat with notes. */
+export const STORE_KEY = "swarm.notes.v1";
+export const savedNotes = (chats: [string, readonly Note[]][]) => JSON.stringify({ v: 1, chats });
 /** Notes per chat, a chosen limit. It counts notes, not bytes: a quote is never cut, so long
  *  quotes can still fill the browser's storage, and then a notice says the save failed. */
 const CAP = 200;
-const KINDS: readonly string[] = ["text", "item", "reply"] satisfies NoteKind[];
 
 const isNote = (n: unknown): n is Note => {
   if (typeof n !== "object" || n === null) return false;
   const r = n as Record<string, unknown>;
-  return typeof r.id === "number" && typeof r.kind === "string" && KINDS.includes(r.kind) && typeof r.rowId === "string"
+  return typeof r.id === "number" && (KINDS as readonly unknown[]).includes(r.kind) && typeof r.rowId === "string"
     && typeof r.quote === "string" && typeof r.text === "string" && typeof r.at === "number";
 };
 
@@ -91,7 +93,7 @@ export class Notes {
     if (notes.length) saved.set(chat, [...notes]);
     else saved.delete(chat);
     const chats = [...saved];
-    const ok = writeStore(STORE_KEY, chats.length ? JSON.stringify({ v: 1, chats }) : "");
+    const ok = writeStore(STORE_KEY, chats.length ? savedNotes(chats) : "");
     if (!ok && !this.saveRefused) this.app.notice("The browser did not save the notes, maybe because its storage is full. They stay in this tab until it closes.", true);
     this.saveRefused = !ok;
   }
@@ -170,7 +172,7 @@ export class Notes {
       this.failed.delete(chat);
       this.chats.set(chat, this.list(chat).filter((n) => !ids.has(n.id)));
       this.changed(chat);
-      this.app.notice(`Sent ${notes.length === 1 ? "1 note" : `${notes.length} notes`} to the agent.`);
+      this.app.notice(`Sent ${plural(notes.length, "note")} to the agent.`);
     };
 
     this.failed.delete(chat);

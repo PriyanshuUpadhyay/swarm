@@ -7,8 +7,8 @@ import { notesHeld, type Note } from "../core/notes";
 import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes } from "./notes-margin";
 import type { NoteSpot } from "./transcript-overlays";
 
-/** A list at least this wide shows cards in a gutter right of the 820px rows: 820 + 24 + 280 + 48 padding. */
-const WIDE_NOTES = 1172;
+/** A list at least this wide shows cards in a gutter right of the rows; styles-notes.css owns it. */
+const wideAt = (list: HTMLElement) => parseFloat(getComputedStyle(list).getPropertyValue("--wide-notes"));
 
 /** The notes of the open chat for one transcript list. */
 export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<HTMLDivElement | null>) {
@@ -24,6 +24,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
   const annotating = useSyncExternalStore(notes.subscribe, readMode, readMode);
   const failed = useSyncExternalStore(notes.subscribe, readFailed, readFailed);
   const held = notesHeld(sending, failed, view.composer?.state);
+
   // Each card shows its number in the chat's send order.
   const byRow = new Map<string, { note: Note; n: number }[]>();
   noteList.forEach((note, i) => byRow.set(note.rowId, [...(byRow.get(note.rowId) ?? []), { note, n: i + 1 }]));
@@ -34,6 +35,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     for (const spot of spots) last = notes.add(openId, { kind: "text", ...spot })?.id ?? last;
     return last;
   };
+
   /** Annotate mode: a note on the item under `target`, or on the whole reply from its handle. */
   const annotate = (target: Element) => {
     if (!annotating) return false;
@@ -45,6 +47,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     if (!item || !row || window.getSelection()?.isCollapsed === false) return false;
     return !!notes.add(openId, { kind: "item", rowId: row.id, quote: itemQuote(item) });
   };
+
   // Before the item's own handlers: in annotate mode a click on an item, also on a link or a
   // button in it, only adds a note.
   const onClickCapture = (e: React.MouseEvent) => {
@@ -61,7 +64,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list || chatState !== "ready") return;
-    const watch = new ResizeObserver(() => setWideList(list.clientWidth >= WIDE_NOTES));
+    const watch = new ResizeObserver(() => setWideList(list.clientWidth >= wideAt(list)));
     watch.observe(list);
     return () => watch.disconnect();
   }, [chatState, listRef]);
@@ -75,6 +78,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list || chatState !== "ready") return;
+
     const paint = () => {
       const next = paintNotes(list, noteList, annotating, wide);
       const was = slotsRef.current;
@@ -83,6 +87,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
       setSlots(next);
     };
     paint();
+
     if (noteList.length === 0 && !annotating) return;
     const watch = new MutationObserver(paint);
     watch.observe(list, { childList: true, subtree: true });
@@ -110,6 +115,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     if (!own) return null;
     return <div className={wide ? "note-gutter" : "note-end"}>{own.filter(({ note }) => wide || slots.get(note.id) === null).map(({ note, n }) => card(note, n))}</div>;
   };
+
   const overlay = chatState === "ready" && (
     <>
       <button type="button" className="annotate-pill" data-testid="annotate-mode" aria-pressed={annotating} title="Annotate Chat (⇧⌘A)" onClick={() => notes.toggleMode()}>
@@ -123,6 +129,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
       <NotesBar notes={notes} chat={openId} list={noteList} sending={sending} blocked={view.composer ? view.composer.agent.disabled : "This chat takes no messages."} />
     </>
   );
+
   const className = `${annotating ? " annotating" : ""}${wide ? " wide-notes" : ""}`;
   return { addNotes, onClickCapture, onKeyDown, cardsFor, overlay, className };
 }
