@@ -49,6 +49,7 @@ The goal is a change that stays correct under real load, real failures, and real
 
 - `L-14` A new or changed test that the same diff adds next to a code change → revert that code change in a scratch copy, run the test, and quote the result. When the diff has more than one code change, revert each one alone, because a test that fails only when all are reverted does not guard each one. A test that passes with and without the change proves nothing, so it is a `fix`. Reading the code is not proof; when the test cannot run, write a `limit`. A diff that only adds or tightens a check, with no code change under it, is out of scope for this rule.
 - `L-15` A change that states a guarantee in its commit message, a new comment, or a doc line ("at most 64 KiB", "never empty") → try inputs past the happy path. When one input breaks the guarantee, the change made a false claim, so it is a `fix`, even when the gap is older than the change.
+- `L-16` A new stored value (a column, a struct field, a file, a cache, a counter, a copied or generated file) that existing data can compute → compute it on read. If the copy must stay, name its source and the check that compares the two: a write-time constraint, a hash stamp, or a test that runs the generator again and diffs the output. Source: https://www.seas.upenn.edu/~zives/03f/cis550/codd.pdf (Codd 1970, §2.2–2.3: a stored relation that others can derive is "strongly redundant", and its consistency is checked on each write or in a batch)
 
 ## Language lenses
 

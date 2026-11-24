@@ -33,7 +33,7 @@ Expect:
 - review.md does not present a CRLF or Windows line-ending problem in `test_flow_run.py` as a defect that blocks the merge.
 - review.md says the change can merge.
 
-The next three cases test the owner's review taste (redundancy, readability and whitespace, design
+The next four cases test the owner's review taste (redundancy, readability and whitespace, design
 that lasts). Each one plants one problem in a real kit file on base `473c4245`. The change in
 `files/<case>.patch` applies with `git am`; its tests still pass.
 
@@ -63,3 +63,13 @@ Check (script): none
 Expect:
 - review.md says the comment shape is now written in two places, `COMMENT_KEYS` in the new status check and the keys that `post` reads, which must change together, and asks for one source.
 - review.md says the new quote check does not use `anchor` or `new_side_lines`, or that it ignores the comment's `path`, so a quote from another file passes.
+
+## case: stored-copy
+Source: planted; the owner's comments flag a stored value that existing data can compute, kept with no check
+Task: Review the change 473c4245..9980ac2 in this repository and write your findings to review.md. Say whether it can merge.
+Files: a clone of the repository at 9980ac2 (`files/stored-copy.patch`)
+Check (script): none
+Expect:
+- review.md says the new `done-count` file holds a count that the step files' status lines already give, and asks to compute it on read or to add a check that compares the two.
+- review.md says the count drifts when a done step is taken again or redone, because `done` adds one each time and nothing lowers it.
+- review.md says the change should not merge as it is.

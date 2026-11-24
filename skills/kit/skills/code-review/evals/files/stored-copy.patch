@@ -1,0 +1,36 @@
+From 9980ac2204d45cc38229f1797822965aa0cae8e5 Mon Sep 17 00:00:00 2001
+From: eval <eval@example.invalid>
+Date: Fri, 6 Nov 2026 00:00:00 +0000
+Subject: [PATCH] step-run: keep a done count beside the step files
+
+---
+ skills/kit/references/step_run.py | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/skills/kit/references/step_run.py b/skills/kit/references/step_run.py
+index ede8f588..46060c3e 100644
+--- a/skills/kit/references/step_run.py
++++ b/skills/kit/references/step_run.py
+@@ -176,6 +176,9 @@ def status(folder, need_of=None, rev=revision):
+         note = (f"  (stale: {', '.join(old)})" if old
+                 else "  (ready)" if s == "open" and ready(folder, step, need_of and need_of.get(step), rev) else "")
+         print(f"{step}: {s}{note}")
++    count = Path(folder) / "done-count"
++    if count.exists():
++        print(f"done: {count.read_text(encoding='utf-8').strip()} of {len(steps(folder))} steps")
+ 
+ 
+ @contextmanager
+@@ -271,6 +274,9 @@ def done(folder, step, claim, rev=None, ends=(RESULT_HEAD,), rev_of=revision):
+         refuse_stale_chain(folder, step, rev_of)  # again, as for the direct inputs: a step further back can change too
+         rev = rev or revision(folder, step)
+         write_step(file, f"Status: done {rev}\n" + text.split("\n", 1)[1])
++        count = Path(folder) / "done-count"
++        done_steps = int(count.read_text(encoding="utf-8")) if count.exists() else 0
++        count.write_text(f"{done_steps + 1}\n", encoding="utf-8")
+     log(folder, step, f"done {rev}")
+     print(f"{step}: done {rev}")
+ 
+-- 
+2.54.0 (Apple Git-157)
+
