@@ -127,6 +127,8 @@ test("a quote holds only reply text: list numbers from the list's start, no card
   page.display = { a1: { blocks: [list(true, 0, [[para("zero")], [para("one"), list(false, null, [[para("inner")]])], [para("two")]])] } };
   page.body = { a1: "tree" };
   await tab.route("**/api/rows?*", (route) => route.fulfill({ json: page }));
+  // Tall enough that the second reply stays mounted below the first one's 5 cards.
+  await tab.setViewportSize({ width: 1280, height: 1600 });
   await open(tab);
   await tab.keyboard.press("Meta+Shift+A");
   // A click near an item's top left lands on its own first line, not on a nested list.
