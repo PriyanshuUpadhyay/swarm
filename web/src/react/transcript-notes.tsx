@@ -45,6 +45,13 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     if (!item || !row || window.getSelection()?.isCollapsed === false) return false;
     return !!notes.add(openId, { kind: "item", rowId: row.id, quote: itemQuote(item) });
   };
+  // Before the item's own handlers: in annotate mode a click on an item, also on a link or a
+  // button in it, only adds a note.
+  const onClickCapture = (e: React.MouseEvent) => {
+    if (!annotate(e.target as Element)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
   const onKeyDown = (e: React.KeyboardEvent) => {
     const el = e.target;
     if ((e.key === "Enter" || e.key === " ") && el instanceof HTMLElement && el.tabIndex === 0 && itemAt(el) === el && annotate(el)) e.preventDefault();
@@ -117,5 +124,5 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     </>
   );
   const className = `${annotating ? " annotating" : ""}${wide ? " wide-notes" : ""}`;
-  return { addNotes, annotate, onKeyDown, cardsFor, overlay, className };
+  return { addNotes, onClickCapture, onKeyDown, cardsFor, overlay, className };
 }

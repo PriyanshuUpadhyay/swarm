@@ -151,7 +151,6 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
 
   // Copy buttons in code blocks and tables share one listener for the whole list.
   const onClick = (e: React.MouseEvent) => {
-    if (notes.annotate(e.target as Element)) return;
     const layout = (e.target as Element).closest<HTMLElement>("[data-diff-layout]");
     if (layout) return setSplit(layout.dataset.diffLayout === "1");
     if ((e.target as Element).closest("[data-wrap-toggle]")) return setWrap(document.documentElement.dataset.diffWrap !== "1");
@@ -174,6 +173,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
             data-testid={testid}
             data-chat={openId}
             data-state={chatState}
+            onClickCapture={notes.onClickCapture}
             onClick={onClick}
             onKeyDown={notes.onKeyDown}
           >

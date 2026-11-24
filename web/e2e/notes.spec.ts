@@ -164,6 +164,24 @@ test("a quote holds only reply text: list numbers from the list's start, no card
   for (const q of selected) expect(q).not.toMatch(/On item|0\. zero/);
 });
 
+test("in annotate mode a click on a link in an item only adds a note", async ({ page: tab }) => {
+  const url = "https://example.com/trace";
+  const page = rows([row("a1", `- See [the trace](${url})`)]);
+  const link = { type: "link" as const, value: { url, title: null, children: [{ type: "text" as const, value: "the trace" }] } };
+  page.display = { a1: { blocks: [list(false, null, [[{ type: "paragraph", value: [{ type: "text", value: "See " }, link] }]])] } };
+  page.body = { a1: "tree" };
+  await tab.route("**/api/rows?*", (route) => route.fulfill({ json: page }));
+  await tab.context().route(`${url}*`, (route) => route.fulfill({ body: "trace" }));
+  await open(tab);
+  await tab.keyboard.press("Meta+Shift+A");
+
+  const opened = tab.context().waitForEvent("page", { timeout: 2000 }).then(() => true, () => false);
+  await tab.getByRole("link", { name: "the trace" }).click();
+  await expect(tab.getByTestId("note-card")).toHaveCount(1);
+  await expect(tab.getByTestId("note-card")).toContainText("See the trace");
+  expect(await opened).toBe(false);
+});
+
 test("Find's current match stays on reply text, not on a card or the Whole reply handle", async ({ page: tab }) => {
   await mockChoices(tab);
   await open(tab);
