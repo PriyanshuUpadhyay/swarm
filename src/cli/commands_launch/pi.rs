@@ -47,7 +47,8 @@ fn extension_args(
     let installed = [
         Some(pi_dir.join("npm/node_modules/pi-claude-bridge/src/index.ts")),
         Some(pi_dir.join("extensions/command-guard.ts")),
-        Some(pi_dir.join("extensions/composio-hint.ts")),
+        // A native child is a leaf; the hint tests SWARM_AGENT_ID, which the child lacks.
+        pane.then(|| pi_dir.join("extensions/composio-hint.ts")),
         picked_codex_account.then(|| pi_dir.join("extensions/codex-profile.ts")),
         (pane && adapter_name() == "herdr").then(|| pi_dir.join("extensions/herdr-agent-state.ts")),
     ];
@@ -67,17 +68,14 @@ fn extension_args(
         );
     }
 
-    let extension = swarm::bus::write_pi_extension(root)?;
-    // The voice gate and the parallel reminder skip worker seats themselves.
-    for name in ["swarm-voice-gate.ts", "swarm-parallel-reminder.ts"] {
-        args.extend([
-            "--extension".into(),
-            extension.with_file_name(name).display().to_string(),
-        ]);
+    // The first file is the live bridge. A native child is a leaf and has no SWARM_AGENT_ID, so
+    // the voice gate and the parallel reminder, which skip workers by that id, load only in a pane.
+    let files = swarm::bus::write_pi_extension(root)?;
+    let loaded = if pane { &files[..] } else { &files[..1] };
+    for path in loaded {
+        args.extend(["--extension".into(), path.display().to_string()]);
     }
     args.extend([
-        "--extension".into(),
-        extension.display().to_string(),
         "--swarm-bin".into(),
         std::env::current_exe()?.display().to_string(),
     ]);
@@ -152,25 +150,4 @@ pub(crate) fn child_argv(args: &[String]) -> Result<(), Box<dyn std::error::Erro
     ]);
     println!("{}", serde_json::to_string(&argv)?);
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn launch_loads_the_voice_gate_and_the_parallel_reminder() {
-        let root = std::env::temp_dir().join(format!("swarm-pi-ext-{}", std::process::id()));
-        let args = extension_args(&root, &root.join("pi-agent"), false, true).unwrap();
-        for name in ["swarm-voice-gate.ts", "swarm-parallel-reminder.ts"] {
-            let path = root.join("pi").join(name).display().to_string();
-            assert!(
-                args.windows(2)
-                    .any(|pair| pair[0] == "--extension" && pair[1] == path),
-                "{name}"
-            );
-            assert!(std::path::Path::new(&path).is_file(), "{name}");
-        }
-        std::fs::remove_dir_all(&root).unwrap();
-    }
 }

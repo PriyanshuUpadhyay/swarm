@@ -98,7 +98,8 @@ async function fixture(t, scenario, options = {}) {
   // Ask the actual builder to install Swarm's Pi extension, without starting the probe slot.
   const probe = join(cwd, "probe.jsonl");
   writeFileSync(probe, "{}\n");
-  execFileSync(bin, ["_pi-child-argv", "faux", "fixture-haiku", probe, "probe", "1"], { cwd, stdio: "pipe" });
+  const childArgv = execFileSync(bin, ["_pi-child-argv", "faux", "fixture-haiku", probe, "probe", "1"], { cwd, stdio: "pipe" }).toString();
+  assert(!/voice-gate|parallel-reminder|composio-hint/.test(childArgv), "a native child is a leaf");
   const argv = ["--extension", join(swarm, ".swarm/pi/swarm-live.ts"), "--swarm-bin", bin, "--swarm-live", live];
   const { runtime: host, faux } = await runtime({ dir: parentDir, cwd, argv, ...options });
   t.after(() => host.dispose());

@@ -190,16 +190,20 @@ pub fn pi_child_dir(
 }
 
 /// Atomic replacement keeps a Pi from reading half an extension during its startup.
-pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+/// Returns the files a Pi must load, the live bridge first; the subagents file loads through it.
+pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<Vec<std::path::PathBuf>> {
     let folder = root.join("pi");
     std::fs::create_dir_all(&folder)?;
-    for (name, content) in [
-        ("swarm-subagents.ts", include_str!("bus/pi_subagents.ts")),
-        ("swarm-live.ts", PI_LIVE_EXTENSION),
-        ("swarm-voice-gate.ts", include_str!("bus/pi_voice_gate.ts")),
+
+    let mut load = Vec::new();
+    for (name, content, loaded) in [
+        ("swarm-subagents.ts", include_str!("bus/pi_subagents.ts"), false),
+        ("swarm-live.ts", PI_LIVE_EXTENSION, true),
+        ("swarm-voice-gate.ts", include_str!("bus/pi_voice_gate.ts"), true),
         (
             "swarm-parallel-reminder.ts",
             include_str!("bus/pi_parallel_reminder.ts"),
+            true,
         ),
     ] {
         let path = folder.join(name);
@@ -208,8 +212,12 @@ pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<std::path::
             std::fs::write(&temp, content)?;
             std::fs::rename(&temp, &path)?;
         }
+
+        if loaded {
+            load.push(path);
+        }
     }
-    Ok(folder.join("swarm-live.ts"))
+    Ok(load)
 }
 
 /// A Codex `config.toml` as text and as TOML.

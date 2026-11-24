@@ -1,6 +1,7 @@
 // The owner keeps asking for parallel workers. Remind the
 // model once per session, at the moment it commits to work: an approved plan or the first edit/write.
 // The message is hidden from the TUI. Worker seats are leaves and skip it.
+// A native Pi child has no seat id; `swarm` leaves this file out of its extension list.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const REMINDER =
@@ -22,7 +23,6 @@ export default function (pi: ExtensionAPI) {
 	});
 	pi.on("tool_result", (event) => {
 		if (event.toolName !== "approve_plan" || event.isError) return;
-		const text = event.content.map((part) => (part.type === "text" ? part.text : "")).join(" ");
-		if (/\bapproved\b/i.test(text) && !/\bnot approved\b/i.test(text)) remind();
+		if ((event.details as { approved?: boolean } | undefined)?.approved === true) remind();
 	});
 }

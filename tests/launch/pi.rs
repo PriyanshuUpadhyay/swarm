@@ -68,7 +68,10 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
     assert!(script.contains("run-workers/SKILL.md"), "{script}");
     assert!(script.contains("'--no-extensions'"), "{script}");
     assert!(!script.contains("'--no-skills'"), "{script}");
-    for path in [&bridge, &guard] {
+    let own = home.join(".swarm/pi");
+    let voice_gate = own.join("swarm-voice-gate.ts");
+    let reminder = own.join("swarm-parallel-reminder.ts");
+    for path in [&bridge, &guard, &voice_gate, &reminder] {
         assert!(
             script.contains(&format!("'--extension' '{}'", path.display())),
             "{script}"
@@ -86,7 +89,7 @@ fn a_pi_chair_is_named_at_launch_and_gets_the_host_contract() {
         2,
         "{script}"
     );
-    assert_eq!(script.matches("'--extension'").count(), 5, "{script}");
+    assert_eq!(script.matches("'--extension'").count(), 7, "{script}");
     // This adapter's spawn line names no `$SWARM_FEED`, so pi runs bare.
     assert!(!script.contains("'pty'"), "{script}");
 
