@@ -93,6 +93,8 @@ elif name == 'brew':
         if a[0] == 'list': print('swarm ' + s.get('tag', 'v0.0.20')[1:] + ('' if s.get('installed_release') else '.local.abcdef01'))
         if a[0] == 'reinstall': s['installed_release'] = True; save()
 elif name == 'cargo':
+    host = {k: v for k, v in os.environ.items() if k.startswith(('SWARM_', 'HERDR_', 'TMUX'))}
+    (root / 'cargo-env').write_text(json.dumps(host))
     if scenario == 'cargo-error': fail()
 elif name == 'uname': print('Darwin' if a == ['-s'] else 'arm64')
 elif name == 'node': print('v22.0.0')
@@ -292,6 +294,14 @@ class OwnerScripts(unittest.TestCase):
                 result = self.run_script('install-local.sh', ('HEAD',), scenario=scenario)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(self.git('-C', str(self.root / 'tap'), 'status', '--porcelain'), '')
+
+    def test_dev_check_runs_a_step_without_host_variables(self):
+        result = self.run_script('dev.sh', ('check', 'fmt'), SWARM_SESSION_ID='live-session',
+                                 SWARM_HOME=str(self.root / 'home'), TMUX='/tmp/tmux-501/default,1,0')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('cargo fmt --check', self.calls())
+        self.assertEqual(json.loads((self.root / 'cargo-env').read_text()), {})
+        self.assertTrue((self.root / 'tmp/dev/fmt.log').is_file())
 
 
 if __name__ == '__main__':
