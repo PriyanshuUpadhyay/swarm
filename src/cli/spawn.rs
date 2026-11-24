@@ -182,7 +182,6 @@ pub(crate) fn trust_target(
     );
     let swarm_home = swarm::paths::home().map_err(|error| error.to_string())?;
     let scratch_roots: Vec<_> = [
-        std::path::PathBuf::from("/private/tmp/councils"),
         std::path::PathBuf::from(format!("/private/tmp/claude-{uid}")),
         std::path::Path::new(&swarm_home).join(".swarm/ws"),
         user_home.join("swarm/workspaces.noindex"),
