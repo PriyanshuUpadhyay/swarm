@@ -67,6 +67,8 @@ export type Banner = { text: string; retry: () => void; onSent?: () => void };
 /** One chat's composer actions in flight. It outlives the chat's rows in the LRU. */
 export type Input = {
   sending: boolean;
+  /** The `onSent` of the send in flight, so its caller knows when its own Retry runs. */
+  sendingFor: (() => void) | null;
   stopping: boolean;
   pulling: boolean;
   /** `choice` is -1 while typed text is sent. */

@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { Pane, Reader } from "../core/app";
-import { notesHeld, type Note } from "../core/notes";
+import { heldNotes, type Note } from "../core/notes";
 import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes } from "./notes-margin";
 import type { NoteSpot } from "./transcript-overlays";
 
@@ -16,14 +16,14 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
   const { notes } = app;
   // Snapshots, not reads in render: the React compiler keeps a render's result while its props stay the same.
   const readList = () => notes.list(openId);
-  const readSending = () => notes.isSending(openId);
+  const readSending = () => notes.sendingNotes(openId);
   const readMode = () => notes.annotating();
   const readFailed = () => notes.failedSend(openId);
   const noteList = useSyncExternalStore(notes.subscribe, readList, readList);
   const sending = useSyncExternalStore(notes.subscribe, readSending, readSending);
   const annotating = useSyncExternalStore(notes.subscribe, readMode, readMode);
   const failed = useSyncExternalStore(notes.subscribe, readFailed, readFailed);
-  const held = notesHeld(sending, failed, view.composer?.state);
+  const held = heldNotes(sending, failed, view.composer?.state);
 
   // Each card shows its number in the chat's send order.
   const byRow = new Map<string, { note: Note; n: number }[]>();
@@ -108,7 +108,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     return () => window.removeEventListener("keydown", onKey, true);
   }, [annotating, find.open, notes]);
 
-  const card = (note: Note, n: number) => <NoteCard key={note.id} notes={notes} chat={openId} note={note} n={n} held={held} />;
+  const card = (note: Note, n: number) => <NoteCard key={note.id} notes={notes} chat={openId} note={note} n={n} held={held.has(note.id)} />;
   /** A row's cards that are not in a slot: all of them in the gutter, else those with no shown block. */
   const cardsFor = (rowId: string): ReactNode => {
     const own = byRow.get(rowId);
@@ -116,6 +116,9 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     return <div className={wide ? "note-gutter" : "note-end"}>{own.filter(({ note }) => wide || slots.get(note.id) === null).map(({ note, n }) => card(note, n))}</div>;
   };
 
+  // Notes.send refuses while a send of this chat runs, also a Retry.
+  const composer = view.composer;
+  const sendBlocked = !composer ? "This chat takes no messages." : composer.state.sending ? "A send to this chat is on its way." : composer.agent.disabled;
   const overlay = chatState === "ready" && (
     <>
       <button type="button" className="annotate-pill" data-testid="annotate-mode" aria-pressed={annotating} title="Annotate Chat (⇧⌘A)" onClick={() => notes.toggleMode()}>
@@ -126,7 +129,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
           const i = noteList.findIndex((note) => note.id === id);
           return !slot || i < 0 ? null : createPortal(card(noteList[i], i + 1), slot, String(id));
         })}
-      <NotesBar notes={notes} chat={openId} list={noteList} sending={sending} blocked={view.composer ? view.composer.agent.disabled : "This chat takes no messages."} />
+      <NotesBar notes={notes} chat={openId} list={noteList} sending={!!sending} blocked={sendBlocked} />
     </>
   );
 

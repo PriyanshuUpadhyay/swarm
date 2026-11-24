@@ -49,19 +49,28 @@ export function noteMessage(notes: readonly Note[]): string {
   return [`Notes on your reply (${notes.length}):`, ...parts].join("\n\n");
 }
 
-/** True while a chat's notes stay as sent: their send runs, or the banner still offers its
- *  Retry. So a Retry never sends text other than the drafts that it clears. */
-export const notesHeld = (sending: boolean, failed: (() => void) | null, input: Input | undefined) =>
-  sending || (!!failed && !!input && (input.sending || input.banner?.onSent === failed));
+/** A send of a chat's notes: the ids it clears once it goes. */
+export type NoteSend = { onSent: () => void; ids: ReadonlySet<number> };
+const NONE: ReadonlySet<number> = new Set();
+
+/** The ids of the notes that stay as sent: their send runs, or its banner offers or runs its
+ *  Retry. So a Retry never sends text other than the drafts that it clears; a note added later,
+ *  or any note once Dismiss takes the banner away, stays open. */
+export const heldNotes = (sending: NoteSend | null, failed: NoteSend | null, input: Input | undefined): ReadonlySet<number> => {
+  if (sending) return sending.ids;
+  const retried = !!failed && !!input && (input.banner?.onSent === failed.onSent || input.sendingFor === failed.onSent);
+  return retried ? failed.ids : NONE;
+};
 
 const NO_NOTES: readonly Note[] = [];
 
 export class Notes {
   private chats: Map<string, Note[]>;
   private seq: number;
-  private sending = new Set<string>();
-  /** Per chat, the callback of its failed send, which the banner's Retry still holds. */
-  private failed = new Map<string, () => void>();
+  /** Per chat, the send that this class runs. */
+  private sending = new Map<string, NoteSend>();
+  /** Per chat, the last failed send whose banner showed; heldNotes checks that it still does. */
+  private failed = new Map<string, NoteSend>();
   private saveRefused = false;
   private listeners = new Set<() => void>();
   /** The card whose note box takes the caret once it shows. */
@@ -116,16 +125,16 @@ export class Notes {
     this.setMode(!this.mode);
   }
 
-  isSending(chat: string): boolean {
-    return this.sending.has(chat);
+  sendingNotes(chat: string): NoteSend | null {
+    return this.sending.get(chat) ?? null;
   }
 
-  failedSend(chat: string): (() => void) | null {
+  failedSend(chat: string): NoteSend | null {
     return this.failed.get(chat) ?? null;
   }
 
-  held(chat: string): boolean {
-    return notesHeld(this.sending.has(chat), this.failedSend(chat), this.app.composing.input(chat));
+  private held(chat: string, id: number): boolean {
+    return heldNotes(this.sendingNotes(chat), this.failedSend(chat), this.app.composing.input(chat)).has(id);
   }
 
   /** True once for a new card, so only it takes the caret. */
@@ -149,22 +158,23 @@ export class Notes {
   }
 
   setText(chat: string, id: number, text: string) {
-    if (this.held(chat)) return;
+    if (this.held(chat, id)) return;
     this.chats.set(chat, this.list(chat).map((n) => (n.id === id ? { ...n, text } : n)));
     this.changed(chat);
   }
 
   remove(chat: string, id: number) {
-    if (this.held(chat)) return;
+    if (this.held(chat, id)) return;
     this.chats.set(chat, this.list(chat).filter((n) => n.id !== id));
     this.changed(chat);
   }
 
   /** Sends every note of the chat as one message. A failed send keeps them, held as sent while
-   *  the composer's banner offers Retry; the notes clear once, when a send goes. */
+   *  the composer's banner offers Retry; the notes clear once, when a send goes. While a send of
+   *  the chat runs, also a Retry, this refuses, so the held notes stay those of that send. */
   async send(chat: string): Promise<boolean> {
     const notes = this.list(chat);
-    if (!notes.length || this.sending.has(chat)) return false;
+    if (!notes.length || this.sending.has(chat) || this.app.composing.input(chat).sending) return false;
 
     const text = noteMessage(notes);
     const ids = new Set(notes.map((n) => n.id));
@@ -175,12 +185,13 @@ export class Notes {
       this.app.notice(`Sent ${plural(notes.length, "note")} to the agent.`);
     };
 
-    this.failed.delete(chat);
-    this.sending.add(chat);
+    const sent = { onSent, ids };
+    this.sending.set(chat, sent);
     this.changed();
     try {
       const ok = await this.app.send(chat, text, text, false, onSent);
-      if (!ok) this.failed.set(chat, onSent);
+      // A send that the composer refused before it ran shows no banner and leaves `failed` as it was.
+      if (!ok && this.app.composing.input(chat).banner?.onSent === onSent) this.failed.set(chat, sent);
       return ok;
     } finally {
       this.sending.delete(chat);

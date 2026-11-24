@@ -13,7 +13,7 @@ const SOURCE: Record<Note["kind"], string> = { text: "On selected text", item: "
 const LONG_QUOTE = 240;
 
 /** One card: its number, the quote it marks, and the note box, which saves on each change. While
- *  `held`, the note stays as sent: a failed send waits for Retry or Dismiss. */
+ *  `held`, the note stays as sent: its send runs, or a failed send waits for Retry or Dismiss. */
 export function NoteCard({ notes, chat, note, n, held }: { notes: Notes; chat: string; note: Note; n: number; held: boolean }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const [all, setAll] = useState(false);
@@ -48,7 +48,7 @@ export function NoteCard({ notes, chat, note, n, held }: { notes: Notes; chat: s
         rows={lines}
         value={note.text}
         readOnly={held}
-        title={held ? "Sent as it is. Retry or Dismiss the failed send to change it." : undefined}
+        title={held ? "Kept as sent while its send runs or waits for Retry." : undefined}
         onChange={(e) => notes.setText(chat, note.id, e.target.value)}
       />
     </article>

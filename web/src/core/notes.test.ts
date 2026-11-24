@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "./api";
 import { harness, settle } from "./composer-harness";
 import { noteMessage, STORE_KEY, type Note } from "./notes";
 
@@ -72,7 +73,7 @@ describe("Notes.send", () => {
     expect(sent).toEqual(["Sent 1 note to the agent."]);
   });
 
-  it("keeps the notes as sent while a failed send can still be retried, and frees them on Dismiss", async () => {
+  it("keeps the sent notes as sent while a failed send can still be retried, and frees them on Dismiss", async () => {
     store("");
     const { app, snapshot } = harness(() => "send failed");
     snapshot();
@@ -89,10 +90,43 @@ describe("Notes.send", () => {
     await settle();
     app.notes.setText("chat", added.id, "edited");
     expect(app.notes.list("chat")).toBe(sent);
+    // A note added after the send is not in its text, so it stays open.
+    const later = app.notes.add("chat", { kind: "item", rowId: "a1", quote: "R" })!;
+    app.notes.setText("chat", later.id, "open");
+    expect(app.notes.list("chat")[1].text).toBe("open");
 
     app.dismissBanner("chat");
     app.notes.setText("chat", added.id, "edited");
     expect(app.notes.list("chat")[0].text).toBe("edited");
+    // After Dismiss, a typed send of the chat holds no note.
+    const typed = app.send("chat", "typed");
+    app.notes.setText("chat", added.id, "while typed");
+    await typed;
+    expect(app.notes.list("chat")[0].text).toBe("while typed");
+  });
+
+  it("keeps the notes held while Retry runs: a Send N notes meanwhile is refused", async () => {
+    store("");
+    let fail: (() => void) | null = null;
+    const { app, posts, snapshot } = harness(
+      () => (posts.length === 1 ? "send failed" : null),
+      () => new Promise((_, reject) => (fail = () => reject(new ApiError(409, "send failed")))),
+    );
+    snapshot();
+    app.openChat("chat");
+    await settle();
+    const added = app.notes.add("chat", { kind: "item", rowId: "a1", quote: "Q" })!;
+    app.notes.setText("chat", added.id, "first");
+    await app.notes.send("chat");
+
+    app.view.composer!.state.banner!.retry();
+    expect(await app.notes.send("chat")).toBe(false);
+    fail!();
+    await settle();
+
+    expect(posts).toHaveLength(2);
+    app.notes.setText("chat", added.id, "edited");
+    expect(app.notes.list("chat")[0].text).toBe("first");
   });
 });
 

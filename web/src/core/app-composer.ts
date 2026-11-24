@@ -57,7 +57,7 @@ export class AppComposer {
   input(id: string): Input {
     let input = this.app.inputs.get(id);
     if (!input) {
-      input = { sending: false, stopping: false, pulling: false, answering: null, alreadySent: false, banner: null, draftRev: 0 };
+      input = { sending: false, sendingFor: null, stopping: false, pulling: false, answering: null, alreadySent: false, banner: null, draftRev: 0 };
       this.app.inputs.set(id, input);
     }
     return input;
@@ -186,8 +186,8 @@ export class AppComposer {
     const chat = this.app.chats.get(sessionId);
     const ok = await this.act(
       sessionId,
-      { sending: true },
-      { sending: false },
+      { sending: true, sendingFor: onSent ?? null },
+      { sending: false, sendingFor: null },
       () => this.app.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
       () => void this.send(sessionId, text, draftText, owner, onSent),
       onSent,
