@@ -201,6 +201,15 @@
 .note-end:empty {
   display: none;
 }
+/* A selection over reply text skips the cards in it, so a quote holds no card text. */
+.note-under {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.note-under textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
 /* Wide (list ≥1172px, with notes): the column grows to 1124px and each row gets a 280px gutter
    on the right, where paintNotes sets each card's top to its block's top. */
 .transcript.wide-notes > div {

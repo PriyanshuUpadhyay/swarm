@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { Block } from "../src/core/api";
 import { mockRows, open, row, rows } from "./ux-helpers";
 
 // Chat notes (ADR 0161): the owner marks agent reply text, writes a note in a numbered card, and
@@ -113,6 +114,54 @@ test("annotate mode takes an item and a whole reply; ⇧⌘A, the palette and Es
     "2. > [whole reply]",
     ...reply.split("\n").map((l) => (l ? `   > ${l}` : "   >")),
   ].join("\n"));
+});
+
+const para = (value: string) => ({ type: "paragraph" as const, value: [{ type: "text" as const, value }] });
+const list = (ordered: boolean, start: number | null, items: Block[][]): Block => ({ type: "list", value: { ordered, start, tight: true, items } });
+
+test("a quote holds only reply text: list numbers from the list's start, no card text", async ({ page: tab }) => {
+  const page = rows([row("a1", "0. zero\n1. one\n   - inner\n2. two"), row("a2", "Next reply.")]);
+  page.display = { a1: { blocks: [list(true, 0, [[para("zero")], [para("one"), list(false, null, [[para("inner")]])], [para("two")]])] } };
+  page.body = { a1: "tree" };
+  await tab.route("**/api/rows?*", (route) => route.fulfill({ json: page }));
+  await open(tab);
+  await tab.keyboard.press("Meta+Shift+A");
+  // A click near an item's top left lands on its own first line, not on a nested list.
+  const item = (text: string) => tab.locator('[data-testid="row"] .md li').filter({ hasText: new RegExp(`^${text}`) }).click({ position: { x: 2, y: 4 } });
+
+  await item("zero");
+  await item("inner");
+  await item("one");
+  await item("two");
+  await tab.keyboard.press("Escape");
+  // From "zero" to the end of `last` (in this reply, or in the next one), then Add note.
+  const selectFromZero = async (last: string) => {
+    await tab.getByTestId("transcript").evaluate((root, last) => {
+      const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const texts: Text[] = [];
+      for (let node = walk.nextNode(); node; node = walk.nextNode()) if (!node.parentElement!.closest(".ncard")) texts.push(node as Text);
+      const range = document.createRange();
+      range.setStart(texts.find((t) => t.data === "zero")!, 0);
+      const end = texts.filter((t) => t.data.endsWith(last)).pop()!;
+      range.setEnd(end, end.data.length);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+    }, last);
+    await tab.locator('[data-testid="row"] .md li').filter({ hasText: /^two/ }).click({ button: "right", position: { x: 2, y: 4 } });
+    await tab.getByRole("menuitem", { name: "Add note" }).click();
+  };
+  await selectFromZero("two");
+  await selectFromZero("Next reply.");
+
+  const quotes = tab.locator(".ncard .nquote");
+  await expect(quotes).toHaveCount(7);
+  const all = await quotes.allTextContents();
+  const items = ["0. zero", "1. one\ninner", "2. two", "Next reply.", "inner"];
+  expect(all.filter((q) => items.includes(q)).sort()).toEqual(items);
+  const selected = all.filter((q) => !items.includes(q));
+  expect(selected).toHaveLength(2);
+  for (const q of selected) expect(q).toMatch(/^zero[^]*two\s*$/);
+  for (const q of selected) expect(q).not.toMatch(/On item|0\. zero/);
 });
 
 test("a reload brings the cards back with their unfinished note text", async ({ page: tab }) => {

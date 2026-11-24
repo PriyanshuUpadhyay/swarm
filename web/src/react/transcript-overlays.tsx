@@ -16,7 +16,10 @@ export const REPLY_BODY = '[data-kind="assistant"] .msg .md, [data-kind="assista
 export type NoteSpot = { rowId: string; quote: string };
 
 /** The selected text per agent reply, when both ends of the selection sit in agent replies. A
- *  selection over 2 replies gives 2 spots; rows between them that are not replies give none. */
+ *  selection over 2 replies gives 2 spots; rows between them that are not replies give none.
+ *  A note card under a block sits inside the reply's markup but is not reply text: the
+ *  selection's own text skips it, because its slot takes no selection (styles-notes.css), and a
+ *  part of a range drops its slots. */
 function selectedSpots(list: HTMLElement): NoteSpot[] {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) return [];
@@ -37,7 +40,9 @@ function selectedSpots(list: HTMLElement): NoteSpot[] {
     part.selectNodeContents(body);
     if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
     if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
-    const quote = part.toString();
+    const text = part.cloneContents();
+    for (const slot of text.querySelectorAll(".note-under")) slot.remove();
+    const quote = text.textContent ?? "";
     return rowId && quote.trim() ? [{ rowId, quote }] : [];
   });
 }

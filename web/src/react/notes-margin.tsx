@@ -92,14 +92,23 @@ export function itemAt(el: Element): HTMLElement | null {
   return outer && body.contains(outer) ? outer : block;
 }
 
-/** An item's quote: its text; an item of an ordered list keeps its number. Not innerText, which is
- *  empty while the list keeps a new row hidden to measure it. */
+/** The reply text of `el`: a card's slot sits inside the reply's markup, but it is not reply text. */
+function replyText(el: HTMLElement): string {
+  if (!el.querySelector(".note-under")) return el.textContent ?? "";
+  const copy = el.cloneNode(true) as HTMLElement;
+  for (const slot of copy.querySelectorAll(".note-under")) slot.remove();
+  return copy.textContent ?? "";
+}
+
+/** An item's quote: its text; an item of an ordered list keeps its number, counted from the list's
+ *  start over its items only. Not innerText, which is empty while the list keeps a new row hidden
+ *  to measure it. */
 export function itemQuote(item: HTMLElement): string {
-  const text = (item.textContent ?? "").trim();
+  const text = replyText(item).trim();
   const list = item.parentElement;
   if (item.tagName !== "LI" || list?.tagName !== "OL") return text;
-  const start = Number((list as HTMLOListElement).start) || 1;
-  return `${start + [...list.children].indexOf(item)}. ${text}`;
+  const n = [...list.children].filter((el) => el.tagName === "LI").indexOf(item);
+  return `${(list as HTMLOListElement).start + n}. ${text}`;
 }
 
 /** The block that a note marks in its row: the item, or the block where a text note's passage
@@ -109,7 +118,7 @@ function markedBlock(row: HTMLElement, note: Note): HTMLElement | null {
   if (note.kind === "item") return blocks.find((b) => itemQuote(b) === note.quote) ?? null;
   if (note.kind === "reply") return null;
   const start = note.quote.trim().split("\n", 1)[0].slice(0, 60);
-  return blocks.find((b) => (b.textContent ?? "").includes(start)) ?? null;
+  return blocks.find((b) => replyText(b).includes(start)) ?? null;
 }
 
 /** Marks the items and replies that have notes, and in annotate mode makes items take Tab.
