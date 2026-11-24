@@ -18,7 +18,7 @@ pub(in crate::serve) async fn new_chat_preview(
     }
 
     tokio::task::spawn_blocking(move || {
-        let target = chat_target(&app, &cwd)?;
+        let target = chat_target(&app, &cwd, false)?;
         let project = target.tree_project()?;
         let Some(common) = lifecycle::common(project) else {
             return Ok(Json(json!({"place": "folder"})));

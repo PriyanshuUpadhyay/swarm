@@ -28,7 +28,7 @@ pub(super) async fn panel_read(
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiError> {
     tokio::task::spawn_blocking(move || {
-        let (tree, _) = fresh_lifecycle_tree(&app)?;
+        let (tree, _) = fresh_lifecycle_tree(&app, false)?;
         let value = serde_json::to_value(query).unwrap();
         if uri.path() == "/api/issues" {
             let query: ProjectPath = serde_json::from_value(value)
@@ -111,7 +111,7 @@ pub(super) async fn workspace_fetch(
 ) -> Result<Json<Value>, ApiError> {
     let Json(query) = body.map_err(|e| error(StatusCode::BAD_REQUEST, &e.body_text()))?;
     tokio::task::spawn_blocking(move || {
-        let (tree, _) = fresh_lifecycle_tree(&app)?;
+        let (tree, _) = fresh_lifecycle_tree(&app, false)?;
         let project = lifecycle::project(&tree, &query.project).map_err(lifecycle_error)?;
         lifecycle::checked_path(&app.root, &query.project, true).map_err(lifecycle_error)?;
         let common = lifecycle::common(project)

@@ -219,7 +219,7 @@ if [ "$1" = type ]; then cat > "$SWARM_HOME/typed"; fi
     );
 
     // A start writes back only its worktree settings, so a setup script saved while it ran stays.
-    let (tree, saved) = fresh_lifecycle_tree(&fixture.app).unwrap();
+    let (tree, saved) = fresh_lifecycle_tree(&fixture.app, true).unwrap();
     choices_store::update(&fixture.app.root, None, |owner, _| {
         owner
             .project_defaults

@@ -73,14 +73,20 @@ pub(super) async fn lifecycle_write(
         .await
         .map(Json)
 }
+/// The tree from the store and the owner's choices. With `recheck_projects`, the git project
+/// catalog is read again (about 7 git runs, 110 ms here), as a write or a chat start needs; a read
+/// uses the catalog that `augment` renews every 10 s, when the folders change, and after a write.
 pub(super) fn fresh_lifecycle_tree(
     app: &App,
+    recheck_projects: bool,
 ) -> Result<(tree::Tree, choices_store::Saved), ApiError> {
     let saved = choices_store::load(&app.root, true).map_err(choice_error)?;
     let mut snapshot = snapshot_value(app)
         .map_err(|e| error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()))?;
     let mut discovery = app.tree_cache.lock().unwrap().discovery.clone();
-    discovery.forget_catalog();
+    if recheck_projects {
+        discovery.forget_catalog();
+    }
     discovery.augment(&mut snapshot, &saved.owner, discovery::now());
     let tree = tree::build(&snapshot, &saved.owner);
     let mut cache = app.tree_cache.lock().unwrap();
@@ -178,7 +184,7 @@ pub(super) async fn apply_lifecycle_action(
     action: LifecycleAction,
 ) -> Result<(Value, Option<String>), ApiError> {
     let cloned = app.clone();
-    let (tree, saved) = tokio::task::spawn_blocking(move || fresh_lifecycle_tree(&cloned))
+    let (tree, saved) = tokio::task::spawn_blocking(move || fresh_lifecycle_tree(&cloned, true))
         .await
         .map_err(|_| {
             error(

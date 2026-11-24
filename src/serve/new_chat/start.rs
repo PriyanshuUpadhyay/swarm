@@ -244,7 +244,7 @@ impl Start {
                 let app = self.app.clone();
 
                 tokio::task::spawn_blocking(move || {
-                    let target = chat_target(&app, &checkout)?;
+                    let target = chat_target(&app, &checkout, true)?;
                     let project = target.tree_project()?;
                     Ok::<_, ApiError>(
                         prompt_worktree(&app.root, &target, project, &checkout, &prompt).0,

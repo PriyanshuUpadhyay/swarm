@@ -356,7 +356,7 @@ esac
             .contains(&source)
     );
     // A choices failure removes the empty new folder before any Git init.
-    let (tree, saved) = fresh_lifecycle_tree(&fixture.app).unwrap();
+    let (tree, saved) = fresh_lifecycle_tree(&fixture.app, true).unwrap();
     let target = root.join("choices-failed").to_string_lossy().into_owned();
     let marker = fixture.app.root.join("swarm-home");
     std::fs::rename(&marker, fixture.app.root.join("marker.saved")).unwrap();

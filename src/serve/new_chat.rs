@@ -66,7 +66,7 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
     let allowed_cwd = body.cwd.clone();
 
     let project_of = tokio::task::spawn_blocking(move || {
-        let target = chat_target(&snapshot_app, &allowed_cwd)?;
+        let target = chat_target(&snapshot_app, &allowed_cwd, true)?;
 
         // With no place, a hub's main makes the chat's own worktree and any other folder starts
         // the chat in itself (ADR 0146); the composer's `new` makes one in any git project.
@@ -105,10 +105,10 @@ struct Target {
 }
 
 /// Checks that a new chat may start in `cwd`: a workspace or project of the tree, under the
-/// allowed roots, and not read-only. The tree is fresh, so its hub-main mark is the one the
-/// menu shows (ADR 0146).
-fn chat_target(app: &App, cwd: &str) -> Result<Target, ApiError> {
-    let (tree, saved) = fresh_lifecycle_tree(app)?;
+/// allowed roots, and not read-only. A start passes `recheck_projects`, so its hub-main mark is
+/// that of the git folders now (ADR 0146); a menu or a preview reads the catalog of the last 10 s.
+fn chat_target(app: &App, cwd: &str, recheck_projects: bool) -> Result<Target, ApiError> {
+    let (tree, saved) = fresh_lifecycle_tree(app, recheck_projects)?;
     let found = tree.workspace(cwd);
     let project = found
         .map(|(project, _)| project)
@@ -299,7 +299,7 @@ fn read_only_error(what: &str) -> ApiError {
 
 /// Refuses a new `what` (a chat, a shell) in an archived, missing, or removed workspace.
 pub(super) fn refuse_read_only_workspace(app: &App, cwd: &str, what: &str) -> Result<(), ApiError> {
-    let (tree, saved) = fresh_lifecycle_tree(app)?;
+    let (tree, saved) = fresh_lifecycle_tree(app, true)?;
     if is_read_only(&tree, &saved, cwd) {
         return Err(read_only_error(what));
     }
