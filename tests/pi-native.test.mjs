@@ -102,7 +102,10 @@ async function fixture(t, scenario, options = {}) {
   mkdirSync(join(cwd, "extensions"), { recursive: true });
   writeFileSync(join(cwd, "extensions", "composio-hint.ts"), "");
   const childArgv = execFileSync(bin, ["_pi-child-argv", "faux", "fixture-haiku", probe, "probe", "1"], { cwd, stdio: "pipe" }).toString();
-  assert(!/voice-gate|parallel-reminder|composio-hint/.test(childArgv), "a native child is a leaf");
+  // A native child is a leaf, so it loads the built-ins and the live bridge and nothing else.
+  const childArgs = JSON.parse(childArgv);
+  const loaded = childArgs.flatMap((arg, i) => (childArgs[i - 1] === "--extension" ? [arg] : []));
+  assert.deepEqual(loaded, ["builtin:mcp", "builtin:codemode", join(swarm, ".swarm/pi/swarm-live.ts")], "a native child is a leaf");
   const argv = ["--extension", join(swarm, ".swarm/pi/swarm-live.ts"), "--swarm-bin", bin, "--swarm-live", live];
   const { runtime: host, faux } = await runtime({ dir: parentDir, cwd, argv, ...options });
   t.after(() => host.dispose());

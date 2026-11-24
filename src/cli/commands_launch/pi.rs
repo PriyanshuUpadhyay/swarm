@@ -43,6 +43,7 @@ fn extension_args(
     for name in ["builtin:mcp", "builtin:codemode"] {
         args.extend(["--extension".into(), name.into()]);
     }
+
     // Load the installed bridge entry point, not an npm spec that Pi may install again.
     let installed = [
         Some(pi_dir.join("npm/node_modules/pi-claude-bridge/src/index.ts")),
@@ -52,6 +53,7 @@ fn extension_args(
         picked_codex_account.then(|| pi_dir.join("extensions/codex-profile.ts")),
         (pane && adapter_name() == "herdr").then(|| pi_dir.join("extensions/herdr-agent-state.ts")),
     ];
+
     for path in installed
         .into_iter()
         .flatten()
@@ -68,11 +70,7 @@ fn extension_args(
         );
     }
 
-    // The first file is the live bridge. A native child is a leaf and has no SWARM_AGENT_ID, so
-    // the voice gate and the parallel reminder, which skip workers by that id, load only in a pane.
-    let files = swarm::bus::write_pi_extension(root)?;
-    let loaded = if pane { &files[..] } else { &files[..1] };
-    for path in loaded {
+    for path in swarm::bus::write_pi_extension(root, pane)? {
         args.extend(["--extension".into(), path.display().to_string()]);
     }
     args.extend([

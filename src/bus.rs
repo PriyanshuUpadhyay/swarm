@@ -189,22 +189,43 @@ pub fn pi_child_dir(
     )
 }
 
-/// Swarm's Pi extensions as (file name, content, passed with `--extension`), the live bridge
-/// first of the loaded files; the subagents file loads through the live bridge.
-const PI_EXTENSIONS: [(&str, &str, bool); 4] = [
-    ("swarm-subagents.ts", include_str!("bus/pi_subagents.ts"), false),
-    ("swarm-live.ts", PI_LIVE_EXTENSION, true),
-    ("swarm-voice-gate.ts", include_str!("bus/pi_voice_gate.ts"), true),
+/// Which Pi launches pass a Swarm extension with `--extension`.
+#[derive(Clone, Copy, PartialEq)]
+enum PiLoad {
+    /// Loaded through another file, never passed itself.
+    Never,
+    Always,
+    /// A native child is a leaf and has no SWARM_AGENT_ID, so a file that skips workers by that
+    /// id loads only in a pane.
+    PaneOnly,
+}
+
+/// The subagents file loads through the live bridge.
+const PI_EXTENSIONS: [(&str, &str, PiLoad); 4] = [
+    (
+        "swarm-subagents.ts",
+        include_str!("bus/pi_subagents.ts"),
+        PiLoad::Never,
+    ),
+    ("swarm-live.ts", PI_LIVE_EXTENSION, PiLoad::Always),
+    (
+        "swarm-voice-gate.ts",
+        include_str!("bus/pi_voice_gate.ts"),
+        PiLoad::PaneOnly,
+    ),
     (
         "swarm-parallel-reminder.ts",
         include_str!("bus/pi_parallel_reminder.ts"),
-        true,
+        PiLoad::PaneOnly,
     ),
 ];
 
 /// Atomic replacement keeps a Pi from reading half an extension during its startup.
-/// Returns the files a Pi must load, in `PI_EXTENSIONS` order.
-pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<Vec<std::path::PathBuf>> {
+/// Returns the files that a pane Pi, or else a native child, must load.
+pub fn write_pi_extension(
+    root: &std::path::Path,
+    pane: bool,
+) -> std::io::Result<Vec<std::path::PathBuf>> {
     let folder = root.join("pi");
     std::fs::create_dir_all(&folder)?;
 
@@ -217,7 +238,7 @@ pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<Vec<std::pa
             std::fs::rename(&temp, &path)?;
         }
 
-        if loaded {
+        if loaded == PiLoad::Always || (pane && loaded == PiLoad::PaneOnly) {
             load.push(path);
         }
     }
