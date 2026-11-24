@@ -157,3 +157,17 @@ test("Home orders Recent work by activity while the sidebar keeps its dragged or
   await expect(page.getByTestId("recent-row").first()).toHaveAttribute("data-session", sessions[0]);
 });
 
+
+test("dragged Recent rows lose their hover fill when the pointer leaves", async ({ page }) => {
+  await load(page);
+  await page.keyboard.press("Alt+Meta+2");
+  const rows = page.locator('[data-testid="recent-row"]:not([aria-current])');
+  const [dragged, target, plain] = await Promise.all([0, 1, 2].map(async (i) => page.locator(`[data-testid="recent-row"][data-session="${await rows.nth(i).getAttribute("data-session")}"]`)));
+  const to = (await target.boundingBox())!;
+  // After an accepted drop WebKit keeps `:hover` on the row under the drop point, though the pointer has left.
+  await dragged.dragTo(target);
+  await page.mouse.move(to.x + to.width + 400, to.y + 10, { steps: 3 });
+  const fill = await plain.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await expect(dragged).toHaveCSS("background-color", fill);
+  await expect(target).toHaveCSS("background-color", fill);
+});

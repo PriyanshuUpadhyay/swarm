@@ -151,6 +151,13 @@ export function RowBar({ listRef, select, target }: { listRef: RefObject<HTMLDiv
     let picked = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let hovered: Element | null = null;
+    // Rows style hover from `data-hover`, not `:hover`: after a drag WebKit keeps `:hover` on the
+    // dropped row while the pointer events still report the leave.
+    const mark = (next: Element | null) => {
+      hovered?.removeAttribute("data-hover");
+      hovered = next;
+      hovered?.setAttribute("data-hover", "");
+    };
     const update = () => {
       setBar(held && ready && !picked && hovered ? { el: hovered, rect: hovered.getBoundingClientRect() } : null);
     };
@@ -175,12 +182,12 @@ export function RowBar({ listRef, select, target }: { listRef: RefObject<HTMLDiv
       const next = target.closest(select);
       const meta = e.metaKey || e.ctrlKey;
       if (next === hovered && meta === held) return;
-      hovered = next;
+      mark(next);
       hold(meta);
       update();
     };
     const onLeave = () => {
-      hovered = null;
+      mark(null);
       update();
     };
     const onKey = (e: KeyboardEvent) => {
