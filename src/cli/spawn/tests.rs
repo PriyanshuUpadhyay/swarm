@@ -293,4 +293,17 @@ mod cases {
                 .is_empty()
         );
     }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_mktemp_folder_is_a_scratch_dir_launch_may_trust() {
+        let home = std::path::PathBuf::from(std::env::var("HOME").unwrap());
+        let dir = user_temp_dir()
+            .unwrap()
+            .join(format!("swarm-temp-trust-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir(&dir).unwrap();
+        let dir = std::fs::canonicalize(&dir).unwrap();
+        assert_eq!(trust_target(&dir, &home), Ok(dir.clone()));
+        std::fs::remove_dir(&dir).unwrap();
+    }
 }

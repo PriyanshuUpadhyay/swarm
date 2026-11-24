@@ -150,14 +150,17 @@ fn an_agy_trust_write_that_fails_stops_the_launch() {
 }
 
 /// Standing consent covers only a folder that passes the trust check (ADR 0043), so a Claude
-/// seat in a plain folder gets no entry and asks in its pane.
+/// seat in a folder another account can write gets no entry and asks in its pane.
 #[test]
 fn a_claude_seat_in_a_folder_that_fails_the_trust_check_gets_no_entry() {
+    use std::os::unix::fs::PermissionsExt;
     let home = scratch("seat-loose");
     let env = trust_session(&home);
     std::fs::write(home.join(".swarm/consent.json"), r#"{"trust": "standing"}"#).unwrap();
+    // The test home sits in the temp dir, a scratch root on macOS, so only the open mode fails it.
     let loose = home.join("loose");
     std::fs::create_dir_all(&loose).unwrap();
+    std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o777)).unwrap();
 
     let err = stderr(&launch_in(&home, &env, "seat", "chair", &loose));
     assert!(

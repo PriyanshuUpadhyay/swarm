@@ -109,7 +109,7 @@ pub fn write_trust(
 
 /// The directory `swarm launch` may mark trusted for Codex and AGY: the git root when `cwd` is in a
 /// repository, since Codex keys trust on it, or else `cwd` itself when it sits inside one of the
-/// scratch roots swarm and the council write. $HOME and `/` are too broad, and every dir from `cwd`
+/// scratch roots swarm, the council, and `mktemp -d` write. $HOME and `/` are too broad, and every dir from `cwd`
 /// up to that root must belong to the user and be closed to group and world writes, so another
 /// account cannot plant files in a place the agents then trust.
 pub fn trust_target(
@@ -127,7 +127,8 @@ pub fn trust_target(
                 .find(|root| cwd.starts_with(root) && cwd != root.as_path())
                 .ok_or_else(|| {
                     format!(
-                        "{} is not in a git repository or a scratch dir",
+                        "{} is not in a git repository or a scratch dir; launch from <repo>/tmp/ \
+                         or a `mktemp -d` folder",
                         cwd.display()
                     )
                 })?;

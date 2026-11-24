@@ -187,7 +187,8 @@ pub(crate) fn trust_target(
         std::path::Path::new(&swarm_home).join(".swarm/ws"),
         user_home.join("swarm/workspaces.noindex"),
     ]
-    .iter()
+    .into_iter()
+    .chain(user_temp_dir())
     .filter_map(|root| std::fs::canonicalize(root).ok())
     .collect();
     swarm::bus::trust_target(
@@ -196,6 +197,27 @@ pub(crate) fn trust_target(
         &std::fs::canonicalize(user_home).map_err(|error| error.to_string())?,
         &scratch_roots,
     )
+}
+
+/// The private temp folder macOS gives this account, where `$TMPDIR` and `mktemp -d` point. It is
+/// read from the OS, not from `TMPDIR`, so a pane cannot widen the scratch root by setting it.
+#[cfg(target_os = "macos")]
+fn user_temp_dir() -> Option<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut buf = [0 as libc::c_char; libc::PATH_MAX as usize];
+    // SAFETY: confstr writes at most buf.len() bytes, NUL included, and returns the needed size.
+    let len = unsafe { libc::confstr(libc::_CS_DARWIN_USER_TEMP_DIR, buf.as_mut_ptr(), buf.len()) };
+    if len == 0 || len > buf.len() {
+        return None;
+    }
+    // SAFETY: a nonzero len that fits means confstr wrote a NUL-terminated string.
+    let path = unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) };
+    Some(std::ffi::OsStr::from_bytes(path.to_bytes()).into())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn user_temp_dir() -> Option<std::path::PathBuf> {
+    None
 }
 
 pub(crate) fn spawn_agent(
