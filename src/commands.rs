@@ -4,7 +4,7 @@
 //! menu did (`58beca2a^:ui/Sources/SwarmCore/Composer/ComposerCommands.swift`).
 
 use crate::providers::Provider;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Write};
@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::channel;
 use std::time::Instant;
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Row {
     pub name: String,
     /// The exact text a pick puts in the draft, such as `/clear`, `$ponytail:ponytail` or
@@ -26,7 +26,7 @@ pub struct Row {
     pub source: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     Builtin,
@@ -35,7 +35,7 @@ pub enum Kind {
 }
 
 /// The rows, and a note when the CLI's own list could not be read and only built-ins show.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct List {
     pub commands: Vec<Row>,
     pub note: Option<String>,
@@ -44,6 +44,20 @@ pub struct List {
 /// Lists what `provider` offers in `cwd`, run with `env` (the chat's account variables, with every
 /// key of `Provider::account_env_keys` cleared first). A failed probe keeps the built-ins.
 pub fn list(
+    provider: Provider,
+    env: &BTreeMap<String, String>,
+    cwd: &Path,
+    deadline: Instant,
+) -> List {
+    if let Some(saved) = saved::load(provider, env, cwd) {
+        return saved;
+    }
+    let list = probe(provider, env, cwd, deadline);
+    saved::save(provider, env, cwd, &list);
+    list
+}
+
+fn probe(
     provider: Provider,
     env: &BTreeMap<String, String>,
     cwd: &Path,
@@ -94,6 +108,7 @@ fn finish(provider: Provider, mut rows: Vec<Row>) -> Vec<Row> {
 
 mod catalog;
 mod probes;
+mod saved;
 
 use catalog::builtins;
 use probes::{agy, claude, codex, pi};
