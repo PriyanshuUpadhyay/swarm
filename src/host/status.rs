@@ -179,8 +179,8 @@ pub fn program_status_report(provider: &str, state: &HookState) -> Option<String
     Some(format!("{body}:app={provider}"))
 }
 
-/// Standard base64 with optional padding, decoded as UTF-8.
-fn base64_text(text: &str) -> Option<String> {
+/// Standard or URL-safe base64 with optional padding, decoded as UTF-8.
+pub(crate) fn base64_text(text: &str) -> Option<String> {
     let text = text.trim_end_matches('=');
     if text.len() % 4 == 1 {
         return None;
@@ -192,8 +192,8 @@ fn base64_text(text: &str) -> Option<String> {
             b'A'..=b'Z' => c - b'A',
             b'a'..=b'z' => c - b'a' + 26,
             b'0'..=b'9' => c - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
             _ => return None,
         };
         bits = (bits << 6) | u32::from(value);

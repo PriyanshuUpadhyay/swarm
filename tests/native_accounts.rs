@@ -101,6 +101,21 @@ fn an_unavailable_auth_read_is_not_signed_out() {
 }
 
 #[test]
+fn a_codex_sign_in_is_read_from_auth_json_without_starting_codex() {
+    let home = fixture("codex-file");
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    // The ID token's payload is URL-safe base64 of {"email":"file@example.test","sub":"x>?~"}.
+    let payload = "eyJlbWFpbCI6ICJmaWxlQGV4YW1wbGUudGVzdCIsICJzdWIiOiAieD4_fiJ9";
+    let auth = serde_json::json!({"auth_mode":"chatgpt","tokens":{
+        "id_token":format!("e30.{payload}.sig"),"account_id":"w1"}});
+    std::fs::write(home.join(".codex/auth.json"), auth.to_string()).unwrap();
+    tool(&home, "codex", "exit 1");
+    let list = accounts(&home, "codex", &[]);
+    assert_eq!(list["accounts"][0]["auth_state"], "signed_in");
+    assert_eq!(list["accounts"][0]["email"], "file@example.test");
+}
+
+#[test]
 fn agy_has_the_contract_no_source_shape() {
     let home = fixture("spare");
     let mut list = accounts(&home, "agy", &[]);

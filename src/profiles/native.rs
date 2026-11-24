@@ -294,25 +294,28 @@ fn load_inner(
             .map(|(name, path)| {
                 let identity_env = provider.identity_env(name, path);
                 scope.spawn(move || match provider {
-                    Provider::Codex => AppServer::start(&identity_env, deadline)
-                        .and_then(|mut server| {
-                            server.request(2, "account/read", json!({"refreshToken":false}))
-                        })
-                        .and_then(|result| {
-                            let api_key = result["account"]["type"] == "apiKey";
-                            // account/read names no workspace, so the login's workspace id comes
-                            // from the home's auth.json. A login kept in the keychain has none
-                            // and is never taken as a copy.
-                            let login = std::fs::read(Path::new(path).join("auth.json"))
-                                .ok()
-                                .and_then(|auth| serde_json::from_slice::<Value>(&auth).ok())
-                                .and_then(|auth| {
-                                    auth["tokens"]["account_id"].as_str().map(str::to_string)
-                                });
-                            codex_identity(&result)
-                                .map(|(state, email)| (state, email, api_key, login))
-                                .map_err(NativeReadError::from)
-                        }),
+                    Provider::Codex => match codex_file_identity(Path::new(path)) {
+                        Some(identity) => Ok(identity),
+                        None => AppServer::start(&identity_env, deadline)
+                            .and_then(|mut server| {
+                                server.request(2, "account/read", json!({"refreshToken":false}))
+                            })
+                            .and_then(|result| {
+                                let api_key = result["account"]["type"] == "apiKey";
+                                // account/read names no workspace, so the login's workspace id comes
+                                // from the home's auth.json. A login kept in the keychain has none
+                                // and is never taken as a copy.
+                                let login = std::fs::read(Path::new(path).join("auth.json"))
+                                    .ok()
+                                    .and_then(|auth| serde_json::from_slice::<Value>(&auth).ok())
+                                    .and_then(|auth| {
+                                        auth["tokens"]["account_id"].as_str().map(str::to_string)
+                                    });
+                                codex_identity(&result)
+                                    .map(|(state, email)| (state, email, api_key, login))
+                                    .map_err(NativeReadError::from)
+                            }),
+                    },
                     _ => claude_identity(&identity_env, deadline)
                         .map(|(state, email, org)| (state, email, false, org)),
                 })
@@ -431,6 +434,31 @@ fn load_inner(
         )?;
     }
     Ok(list)
+}
+
+/// The sign-in that Codex's `account/read` reports, read from the home's `auth.json` in well under
+/// a millisecond instead of a Codex start of about a second. `account/read` with
+/// `refreshToken: false` names the same type, email and plan as the file's ID token claims.
+/// None when the file is missing, as with a keychain login, or has another shape; the caller then
+/// asks Codex, so a file read never yields a signed-out answer of its own.
+fn codex_file_identity(home: &Path) -> Option<(AuthState, Option<String>, bool, Option<String>)> {
+    let auth: Value = serde_json::from_slice(&std::fs::read(home.join("auth.json")).ok()?).ok()?;
+    let tokens = &auth["tokens"];
+    match auth["auth_mode"].as_str() {
+        Some("chatgpt") => {
+            let payload = tokens["id_token"].as_str()?.split('.').nth(1)?;
+            let claims: Value = serde_json::from_str(&crate::host::base64_text(payload)?).ok()?;
+            let email = claims["email"]
+                .as_str()
+                .or(claims["https://api.openai.com/profile"]["email"].as_str())?;
+            let login = tokens["account_id"].as_str().map(str::to_string);
+            Some((AuthState::SignedIn, Some(email.into()), false, login))
+        }
+        Some("apikey") if auth["OPENAI_API_KEY"].is_string() => {
+            Some((AuthState::SignedIn, None, true, None))
+        }
+        _ => None,
+    }
 }
 
 fn codex_identity(result: &Value) -> Result<(AuthState, Option<String>), String> {

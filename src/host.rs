@@ -82,6 +82,7 @@ mod status;
 mod usage;
 
 pub use context::{adapter, contain_worker_history, context, in_rex, is_worker, render, run_by_pi};
+pub(crate) use status::base64_text;
 pub use status::{
     HookState, StatusScanner, hook_state, host_record, program_status, program_status_report,
 };
