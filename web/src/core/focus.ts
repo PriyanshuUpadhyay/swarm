@@ -49,6 +49,21 @@ export function focusOpenedChat(session: string, byKey: boolean, current: () => 
   );
 }
 
+/** A typed character with no text field focused goes to the input of its pane, or else of the open
+ *  tab's chat page. Space keeps its scroll and button press; the sidebar keeps its own keys. */
+function typeIntoInput(e: KeyboardEvent) {
+  if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1 || e.key === " ") return;
+  const from = e.target instanceof Element ? e.target : document.body;
+  if (from.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"], [popover]') || from.closest(SIDEBAR)) return;
+  if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+  const scope = from.closest('[data-testid="pane"]') ?? from.closest(CHAT) ?? (from === document.body || from.closest('[data-testid="tab-strip"]') ? document.querySelector(CHAT) : null);
+  const input = scope && inputOf(scope);
+  // A question card's own text field, if it has one; a transcript takes no text.
+  const field = input?.matches("input, textarea") ? input : input?.querySelector<HTMLElement>("input:not(:disabled), textarea:not(:disabled)");
+  // Focus moves before the key's default action, so the browser types the character into it.
+  field?.focus();
+}
+
 /** A click or key in a chat page, a pane, or an overlay that leaves the keyboard on nothing (its
  *  control unmounted or went disabled) gives it back to that pane's input. Body keys stay for the
  *  sidebar's j and k, and the sidebar refocuses its own rows. */
@@ -66,8 +81,12 @@ export function keepFocus(): () => void {
   };
   document.addEventListener("click", after, true);
   document.addEventListener("keydown", after, true);
+  // Bubble phase on window, added after installKeys, so a control's own key or an app command
+  // that marked the event handled runs first.
+  addEventListener("keydown", typeIntoInput);
   return () => {
     document.removeEventListener("click", after, true);
     document.removeEventListener("keydown", after, true);
+    removeEventListener("keydown", typeIntoInput);
   };
 }

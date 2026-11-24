@@ -120,3 +120,16 @@ test("a copy, a find close, and a send leave the keyboard in the composer", asyn
   await expect(end).toBeInViewport();
   await expect(composer(tab)).toBeFocused();
 });
+
+test("typing with no text field focused types into the open chat's composer", async ({ page: tab }) => {
+  await load(tab);
+  const git = process.env.SWARM_E2E_GIT!;
+  await row(tab, git).click();
+  await expect(ready(tab, git)).toBeVisible();
+  await composer(tab).fill("");
+  await composer(tab).evaluate((el) => el.blur());
+  await tab.keyboard.type("hi");
+  await expect(composer(tab)).toBeFocused();
+  await expect(composer(tab)).toHaveValue("hi");
+  await composer(tab).fill("");
+});
