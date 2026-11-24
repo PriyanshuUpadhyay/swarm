@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { Pane, Reader } from "../core/app";
-import type { Note } from "../core/notes";
+import { notesHeld, type Note } from "../core/notes";
 import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes } from "./notes-margin";
 import type { NoteSpot } from "./transcript-overlays";
 
@@ -18,9 +18,12 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
   const readList = () => notes.list(openId);
   const readSending = () => notes.isSending(openId);
   const readMode = () => notes.annotating();
+  const readFailed = () => notes.failedSend(openId);
   const noteList = useSyncExternalStore(notes.subscribe, readList, readList);
   const sending = useSyncExternalStore(notes.subscribe, readSending, readSending);
   const annotating = useSyncExternalStore(notes.subscribe, readMode, readMode);
+  const failed = useSyncExternalStore(notes.subscribe, readFailed, readFailed);
+  const held = notesHeld(sending, failed, view.composer?.state);
   // Each card shows its number in the chat's send order.
   const byRow = new Map<string, { note: Note; n: number }[]>();
   noteList.forEach((note, i) => byRow.set(note.rowId, [...(byRow.get(note.rowId) ?? []), { note, n: i + 1 }]));
@@ -93,7 +96,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     return () => window.removeEventListener("keydown", onKey, true);
   }, [annotating, find.open, notes]);
 
-  const card = (note: Note, n: number) => <NoteCard key={note.id} notes={notes} chat={openId} note={note} n={n} />;
+  const card = (note: Note, n: number) => <NoteCard key={note.id} notes={notes} chat={openId} note={note} n={n} held={held} />;
   /** A row's cards that are not in a slot: all of them in the gutter, else those with no shown block. */
   const cardsFor = (rowId: string): ReactNode => {
     const own = byRow.get(rowId);

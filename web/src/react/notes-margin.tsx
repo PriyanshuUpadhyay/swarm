@@ -11,8 +11,9 @@ const SOURCE: Record<Note["kind"], string> = { text: "On selected text", item: "
 const LONG_QUOTE = 240;
 const plural = (n: number) => (n === 1 ? "1 note" : `${n} notes`);
 
-/** One card: its number, the quote it marks, and the note box, which saves on each change. */
-export function NoteCard({ notes, chat, note, n }: { notes: Notes; chat: string; note: Note; n: number }) {
+/** One card: its number, the quote it marks, and the note box, which saves on each change. While
+ *  `held`, the note stays as sent: a failed send waits for Retry or Dismiss. */
+export function NoteCard({ notes, chat, note, n, held }: { notes: Notes; chat: string; note: Note; n: number; held: boolean }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const long = note.quote.length > LONG_QUOTE || note.quote.split("\n").length > 3;
   const [all, setAll] = useState(false);
@@ -25,7 +26,7 @@ export function NoteCard({ notes, chat, note, n }: { notes: Notes; chat: string;
       <div className="ncard-head">
         <span className="nbadge num">{n}</span>
         <span className="src">{SOURCE[note.kind]}</span>
-        <button type="button" className="icon-btn" aria-label={`Remove note ${n}`} title="Remove note" data-testid="note-remove" onClick={() => notes.remove(chat, note.id)}>
+        <button type="button" className="icon-btn" aria-label={`Remove note ${n}`} title="Remove note" data-testid="note-remove" disabled={held} onClick={() => notes.remove(chat, note.id)}>
           <XIcon />
         </button>
       </div>
@@ -42,6 +43,8 @@ export function NoteCard({ notes, chat, note, n }: { notes: Notes; chat: string;
         placeholder="Write a note…"
         rows={lines}
         value={note.text}
+        readOnly={held}
+        title={held ? "Sent as it is. Retry or Dismiss the failed send to change it." : undefined}
         onChange={(e) => notes.setText(chat, note.id, e.target.value)}
       />
     </article>

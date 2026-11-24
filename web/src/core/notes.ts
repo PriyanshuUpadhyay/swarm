@@ -1,7 +1,7 @@
 // Chat notes (ADR 0161): the owner marks agent reply text, one item, or a whole reply, and writes a
 // note on it. The notes are browser drafts per chat; one send types them into the agent.
 
-import { readStore, writeStore } from "./app-types";
+import { readStore, writeStore, type Input } from "./app-types";
 import type { App } from "./app";
 
 export type NoteKind = "text" | "item" | "reply";
@@ -9,7 +9,8 @@ export type NoteKind = "text" | "item" | "reply";
 export type Note = { id: number; kind: NoteKind; rowId: string; quote: string; text: string; at: number };
 
 const STORE_KEY = "swarm.notes.v1";
-/** Notes per chat; a chosen limit that keeps the saved value and the message small. */
+/** Notes per chat, a chosen limit. It counts notes, not bytes: a quote is never cut, so long
+ *  quotes can still fill the browser's storage, and then a notice says the save failed. */
 const CAP = 200;
 const KINDS: readonly string[] = ["text", "item", "reply"] satisfies NoteKind[];
 
@@ -46,12 +47,20 @@ export function noteMessage(notes: readonly Note[]): string {
   return [`Notes on your reply (${notes.length}):`, ...parts].join("\n\n");
 }
 
+/** True while a chat's notes stay as sent: their send runs, or the banner still offers its
+ *  Retry. So a Retry never sends text other than the drafts that it clears. */
+export const notesHeld = (sending: boolean, failed: (() => void) | null, input: Input | undefined) =>
+  sending || (!!failed && !!input && (input.sending || input.banner?.onSent === failed));
+
 const NO_NOTES: readonly Note[] = [];
 
 export class Notes {
   private chats: Map<string, Note[]>;
   private seq: number;
   private sending = new Set<string>();
+  /** Per chat, the callback of its failed send, which the banner's Retry still holds. */
+  private failed = new Map<string, () => void>();
+  private saveRefused = false;
   private listeners = new Set<() => void>();
   /** The card whose note box takes the caret once it shows. */
   private focusId: number | null = null;
@@ -68,12 +77,23 @@ export class Notes {
     return () => this.listeners.delete(fn);
   };
 
-  private changed(save = true) {
-    if (save) {
-      const chats = [...this.chats].filter(([, notes]) => notes.length);
-      writeStore(STORE_KEY, chats.length ? JSON.stringify({ v: 1, chats }) : "");
-    }
+  /** Tells the views; with `chat`, also saves the notes of that chat. */
+  private changed(chat?: string) {
+    if (chat !== undefined) this.save(chat);
     for (const fn of this.listeners) fn();
+  }
+
+  /** Writes one chat's notes over the saved value, read again first: another tab can have saved
+   *  its own chats since this one read it. */
+  private save(chat: string) {
+    const saved = readNotes();
+    const notes = this.list(chat);
+    if (notes.length) saved.set(chat, [...notes]);
+    else saved.delete(chat);
+    const chats = [...saved];
+    const ok = writeStore(STORE_KEY, chats.length ? JSON.stringify({ v: 1, chats }) : "");
+    if (!ok && !this.saveRefused) this.app.notice("The browser did not save the notes, maybe because its storage is full. They stay in this tab until it closes.", true);
+    this.saveRefused = !ok;
   }
 
   list(chat: string): readonly Note[] {
@@ -87,7 +107,7 @@ export class Notes {
   setMode(on: boolean) {
     if (this.mode === on) return;
     this.mode = on;
-    this.changed(false);
+    this.changed();
   }
 
   toggleMode() {
@@ -96,6 +116,14 @@ export class Notes {
 
   isSending(chat: string): boolean {
     return this.sending.has(chat);
+  }
+
+  failedSend(chat: string): (() => void) | null {
+    return this.failed.get(chat) ?? null;
+  }
+
+  held(chat: string): boolean {
+    return notesHeld(this.sending.has(chat), this.failedSend(chat), this.app.composing.input(chat));
   }
 
   /** True once for a new card, so only it takes the caret. */
@@ -114,39 +142,47 @@ export class Notes {
     const added: Note = { ...note, id: ++this.seq, text: "", at: Date.now() };
     this.chats.set(chat, [...this.list(chat), added]);
     this.focusId = added.id;
-    this.changed();
+    this.changed(chat);
     return added;
   }
 
   setText(chat: string, id: number, text: string) {
+    if (this.held(chat)) return;
     this.chats.set(chat, this.list(chat).map((n) => (n.id === id ? { ...n, text } : n)));
-    this.changed();
+    this.changed(chat);
   }
 
   remove(chat: string, id: number) {
+    if (this.held(chat)) return;
     this.chats.set(chat, this.list(chat).filter((n) => n.id !== id));
-    this.changed();
+    this.changed(chat);
   }
 
-  /** Sends every note of the chat as one message. A failed send keeps them; the composer's banner
-   *  offers Retry, and the notes clear once, when a send goes. */
+  /** Sends every note of the chat as one message. A failed send keeps them, held as sent while
+   *  the composer's banner offers Retry; the notes clear once, when a send goes. */
   async send(chat: string): Promise<boolean> {
     const notes = this.list(chat);
     if (!notes.length || this.sending.has(chat)) return false;
+
     const text = noteMessage(notes);
     const ids = new Set(notes.map((n) => n.id));
     const onSent = () => {
+      this.failed.delete(chat);
       this.chats.set(chat, this.list(chat).filter((n) => !ids.has(n.id)));
-      this.changed();
+      this.changed(chat);
       this.app.notice(`Sent ${notes.length === 1 ? "1 note" : `${notes.length} notes`} to the agent.`);
     };
+
+    this.failed.delete(chat);
     this.sending.add(chat);
-    this.changed(false);
+    this.changed();
     try {
-      return await this.app.send(chat, text, text, false, onSent);
+      const ok = await this.app.send(chat, text, text, false, onSent);
+      if (!ok) this.failed.set(chat, onSent);
+      return ok;
     } finally {
       this.sending.delete(chat);
-      this.changed(false);
+      this.changed();
     }
   }
 }

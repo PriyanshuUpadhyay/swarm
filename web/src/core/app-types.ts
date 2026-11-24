@@ -61,7 +61,8 @@ export type Chat = {
 };
 
 /** A failed chat action: the server's error text, and the same action again. */
-export type Banner = { text: string; retry: () => void };
+/** `onSent` is the failed send's callback, so its caller knows its own Retry. */
+export type Banner = { text: string; retry: () => void; onSent?: () => void };
 
 /** One chat's composer actions in flight. It outlives the chat's rows in the LRU. */
 export type Input = {
@@ -221,11 +222,14 @@ export const readStore = (key: string): string | null => {
     return null;
   }
 };
-export const writeStore = (key: string, value: string) => {
+/** False when the browser refused the write, such as when its storage is full. */
+export const writeStore = (key: string, value: string): boolean => {
   try {
     if (value) localStorage.setItem(key, value);
     else localStorage.removeItem(key);
+    return true;
   } catch {
     // Keep working without persistence.
+    return false;
   }
 };

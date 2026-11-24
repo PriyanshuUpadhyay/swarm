@@ -2,6 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { harness, settle } from "./composer-harness";
 import { noteMessage, type Note } from "./notes";
 
+afterEach(() => vi.unstubAllGlobals());
+const store = (value: string) => {
+  const saved = new Map([["swarm.notes.v1", value]]);
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => saved.get(key) ?? null,
+    setItem: (key: string, v: string) => saved.set(key, v),
+    removeItem: (key: string) => saved.delete(key),
+  });
+};
 const note = (n: Partial<Note> & Pick<Note, "kind" | "quote" | "text">): Note => ({ id: 1, rowId: "row-1", at: 1, ...n });
 
 describe("noteMessage", () => {
@@ -35,6 +44,7 @@ describe("noteMessage", () => {
 
 describe("Notes.send", () => {
   it("keeps the drafts after a failed send and clears them once, when Retry goes", async () => {
+    store("");
     let refuse = true;
     const { app, posts, snapshot } = harness(() => (refuse ? "send failed" : null));
     snapshot();
@@ -57,25 +67,66 @@ describe("Notes.send", () => {
     expect(app.notes.list("chat")).toEqual([]);
     expect(sent).toEqual(["Sent 1 note to the agent."]);
   });
+
+  it("keeps the notes as sent while a failed send can still be retried, and frees them on Dismiss", async () => {
+    store("");
+    const { app, snapshot } = harness(() => "send failed");
+    snapshot();
+    app.openChat("chat");
+    await settle();
+    const added = app.notes.add("chat", { kind: "item", rowId: "a1", quote: "Q" })!;
+    app.notes.setText("chat", added.id, "first");
+    const sent = app.notes.list("chat");
+
+    await app.notes.send("chat");
+    app.notes.setText("chat", added.id, "edited");
+    app.notes.remove("chat", added.id);
+    app.view.composer!.state.banner!.retry();
+    await settle();
+    app.notes.setText("chat", added.id, "edited");
+    expect(app.notes.list("chat")).toBe(sent);
+
+    app.dismissBanner("chat");
+    app.notes.setText("chat", added.id, "edited");
+    expect(app.notes.list("chat")[0].text).toBe("edited");
+  });
 });
 
 describe("saved notes", () => {
-  afterEach(() => vi.unstubAllGlobals());
-  const store = (value: string) => {
-    const saved = new Map([["swarm.notes.v1", value]]);
-    vi.stubGlobal("localStorage", {
-      getItem: (key: string) => saved.get(key) ?? null,
-      setItem: (key: string, v: string) => saved.set(key, v),
-      removeItem: (key: string) => saved.delete(key),
-    });
-  };
-
   it("opens a chat with no drafts when the saved value has another shape", () => {
     const noQuote = { id: 1, kind: "item", rowId: "a1", text: "", at: 1 };
     for (const bad of ["not json", '{"v":2}', JSON.stringify({ v: 1, chats: [["chat", [noQuote]]] }), '{"v":1,"chats":{"chat":[]}}']) {
       store(bad);
       expect(harness().app.notes.list("chat"), bad).toEqual([]);
     }
+  });
+
+  it("keeps another tab's drafts of other chats when it saves", () => {
+    store("");
+    const tabA = harness().app;
+    const tabB = harness().app;
+    tabA.notes.add("chat-x", { kind: "text", rowId: "a1", quote: "from A" });
+    tabB.notes.add("chat-y", { kind: "text", rowId: "a1", quote: "from B" });
+
+    const later = harness().app.notes;
+    expect([later.list("chat-x").length, later.list("chat-y").length]).toEqual([1, 1]);
+  });
+
+  it("says once when the browser refuses to save the notes", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => {
+        throw new DOMException("full", "QuotaExceededError");
+      },
+      removeItem: () => {},
+    });
+    const { app } = harness();
+    const said: string[] = [];
+    app.notice = (text) => said.push(text);
+
+    app.notes.add("chat", { kind: "text", rowId: "a1", quote: "one" });
+    app.notes.add("chat", { kind: "text", rowId: "a1", quote: "two" });
+    expect(said).toHaveLength(1);
   });
 
   it("refuses the 201st note of a chat with a notice", () => {

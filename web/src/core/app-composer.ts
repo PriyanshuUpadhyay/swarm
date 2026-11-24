@@ -161,14 +161,14 @@ export class AppComposer {
   }
 
   /** Runs one chat action. A failure shows the server's text in the banner; only Retry runs it again. */
-  async act(sessionId: string, busy: Partial<Input>, idle: Partial<Input>, run: () => Promise<void>, retry: () => void): Promise<boolean> {
+  async act(sessionId: string, busy: Partial<Input>, idle: Partial<Input>, run: () => Promise<void>, retry: () => void, onSent?: () => void): Promise<boolean> {
     this.update(sessionId, { ...busy, banner: null });
     try {
       await run();
       this.update(sessionId, idle);
       return true;
     } catch (err) {
-      this.update(sessionId, { ...idle, banner: { text: message(err), retry } });
+      this.update(sessionId, { ...idle, banner: { text: message(err), retry, onSent } });
       return false;
     }
   }
@@ -190,6 +190,7 @@ export class AppComposer {
       { sending: false },
       () => this.app.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
       () => void this.send(sessionId, text, draftText, owner, onSent),
+      onSent,
     );
     if (!ok) return false;
     onSent?.();
