@@ -1,5 +1,5 @@
-//! A saved `/` menu list for Claude and Codex, kept while the files they load it from are unchanged.
-//! The probe asks the CLI (0.25 to 0.5 s), so a new chat, a new server, or another chat in the same
+//! A saved `/` menu list for Claude, Codex, and pi, kept while the files they load it from are
+//! unchanged. The probe asks the CLI (0.25 to 1.1 s), so a new chat, a new server, or another chat in the same
 //! folder would ask again; a stat walk of the same files takes a few ms. The CLI stays the owner of
 //! the loading rules: this module only notices that its inputs moved, and a list older than
 //! `MAX_AGE` is read again in case a moved input lies outside the walk.
@@ -54,6 +54,7 @@ fn slot(
     let (program, roots) = match provider {
         Provider::Claude => ("claude", claude_roots(env, &home, cwd)),
         Provider::Codex => ("codex", codex_roots(env, &home, cwd)),
+        Provider::Pi => ("pi", pi_roots(&home, cwd)),
         _ => return None,
     };
     walk.file(&executable(program, env)?);
@@ -130,6 +131,52 @@ fn codex_roots(env: &BTreeMap<String, String>, home: &Path, cwd: &Path) -> Vec<(
     ];
     for folder in project_folders(cwd) {
         roots.push((folder.join(".agents/skills"), 6));
+    }
+    roots
+}
+
+/// pi's agent folder with its settings, trust, skills, prompts, extensions, and installed packages,
+/// each local package folder, and `.pi` and `.agents/skills` from `cwd` up to the repository root
+/// (pi's docs/skills.md, extensions.md, packages.md). An npm package that pi updates at its start
+/// is caught by `MAX_AGE_SECONDS`.
+fn pi_roots(home: &Path, cwd: &Path) -> Vec<(PathBuf, usize)> {
+    let agent = std::env::var_os("PI_CODING_AGENT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".pi/agent"));
+    let mut roots = vec![
+        (agent.join("install/current-version"), 0),
+        (agent.join("settings.json"), 0),
+        (agent.join("trust.json"), 0),
+        (agent.join("skills"), 6),
+        (agent.join("prompts"), 2),
+        (agent.join("extensions"), 3),
+        (agent.join("npm/package.json"), 0),
+        (agent.join("npm/package-lock.json"), 0),
+        (home.join(".agents/skills"), 6),
+    ];
+    let settings = std::fs::read(agent.join("settings.json"))
+        .ok()
+        .and_then(|text| serde_json::from_slice::<Value>(&text).ok());
+    let packages = settings
+        .as_ref()
+        .and_then(|value| value["packages"].as_array());
+    for package in packages.into_iter().flatten() {
+        let source = package
+            .as_str()
+            .or(package["source"].as_str())
+            .unwrap_or("");
+        if source.starts_with(['.', '/']) {
+            roots.push((agent.join(source), 4));
+        }
+    }
+    for folder in project_folders(cwd) {
+        roots.extend([
+            (folder.join(".pi/settings.json"), 0),
+            (folder.join(".pi/skills"), 6),
+            (folder.join(".pi/prompts"), 2),
+            (folder.join(".pi/extensions"), 3),
+            (folder.join(".agents/skills"), 6),
+        ]);
     }
     roots
 }
