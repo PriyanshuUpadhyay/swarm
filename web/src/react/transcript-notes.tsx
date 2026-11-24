@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import { createPortal } from "react-dom";
 import type { Pane, Reader } from "../core/app";
 import { heldNotes, type Note } from "../core/notes";
+import { REPLY_HANDLE } from "./note-marks";
 import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes } from "./notes-margin";
 import type { NoteSpot } from "./transcript-overlays";
 
@@ -41,7 +42,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
    *  no text), so the item's own link or button never runs. */
   const annotate = (target: Element) => {
     if (!annotating) return false;
-    const whole = target.closest("[data-note-reply]");
+    const whole = target.closest(REPLY_HANDLE);
     const rowEl = target.closest<HTMLElement>('[data-testid="row"]');
     const row = rowEl && lines.find((l) => l.id === rowEl.dataset.id)?.row;
     if (whole && row) {

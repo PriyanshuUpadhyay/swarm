@@ -6,6 +6,7 @@ import { SENT } from "../core/app";
 import { plural } from "../core/lifecycle-state";
 import { noteMessage, type Note, type Notes } from "../core/notes";
 import { Button } from "../components/ui/button";
+import { NOTE_CARD, replyText } from "./note-marks";
 import { REPLY_BODY } from "./transcript-overlays";
 
 const SOURCE: Record<Note["kind"], string> = { text: "On selected text", item: "On item", reply: "On whole reply" };
@@ -91,20 +92,12 @@ const BLOCKS = "p, h1, h2, h3, h4, h5, h6, li, pre, blockquote, table";
 /** The item under `el` in an agent reply: the innermost list item or quote that holds the block. */
 export function itemAt(el: Element): HTMLElement | null {
   // A card under a block sits inside the reply's markup, but it is not reply text.
-  if (el.closest(".ncard")) return null;
+  if (el.closest(NOTE_CARD)) return null;
   const block = el.closest<HTMLElement>(BLOCKS);
   const body = block?.closest(REPLY_BODY);
   if (!block || !body) return null;
   const outer = block.closest<HTMLElement>("li, blockquote");
   return outer && body.contains(outer) ? outer : block;
-}
-
-/** The reply text of `el`: a card's slot sits inside the reply's markup, but it is not reply text. */
-function replyText(el: HTMLElement): string {
-  if (!el.querySelector(".note-under")) return el.textContent ?? "";
-  const copy = el.cloneNode(true) as HTMLElement;
-  for (const slot of copy.querySelectorAll(".note-under")) slot.remove();
-  return copy.textContent ?? "";
 }
 
 /** An item's quote: its text; an item of an ordered list keeps its number, counted from the list's
@@ -176,7 +169,7 @@ export function paintNotes(list: HTMLElement, notes: readonly Note[], annotating
     for (const gutter of list.querySelectorAll<HTMLElement>(".note-gutter")) {
       let top = gutter.getBoundingClientRect().top;
       let gap = 0;
-      for (const card of gutter.querySelectorAll<HTMLElement>(".ncard")) {
+      for (const card of gutter.querySelectorAll<HTMLElement>(NOTE_CARD)) {
         const block = marked.get(Number(card.dataset.note));
         const want = Math.max(block ? block.getBoundingClientRect().top : top, top + gap);
         card.style.marginTop = `${want - top}px`;
@@ -184,6 +177,6 @@ export function paintNotes(list: HTMLElement, notes: readonly Note[], annotating
         gap = 8;
       }
     }
-  } else for (const card of list.querySelectorAll<HTMLElement>(".note-gutter .ncard")) card.style.marginTop = "";
+  } else for (const card of list.querySelectorAll<HTMLElement>(`.note-gutter ${NOTE_CARD}`)) card.style.marginTop = "";
   return slots;
 }

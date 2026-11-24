@@ -8,6 +8,7 @@ import type { Note } from "../core/notes";
 import type { Line } from "../core/transcript";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { copyText } from "./copy";
+import { NOTE_CARD, replyText } from "./note-marks";
 
 const ROW = '[data-testid="row"]';
 /** The text of an agent reply, without its buttons. */
@@ -26,7 +27,7 @@ function selectedSpots(list: HTMLElement): NoteSpot[] {
   if (!sel || sel.isCollapsed || !sel.rangeCount) return [];
   const inReply = (node: Node | null) => {
     const el = node && list.contains(node) ? (node instanceof Element ? node : node.parentElement) : null;
-    return !!el?.closest(REPLY_BODY) && !el.closest(".ncard");
+    return !!el?.closest(REPLY_BODY) && !el.closest(NOTE_CARD);
   };
   if (!inReply(sel.anchorNode) || !inReply(sel.focusNode)) return [];
 
@@ -43,9 +44,7 @@ function selectedSpots(list: HTMLElement): NoteSpot[] {
     part.selectNodeContents(body);
     if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
     if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
-    const text = part.cloneContents();
-    for (const slot of text.querySelectorAll(".note-under")) slot.remove();
-    const quote = text.textContent ?? "";
+    const quote = replyText(part.cloneContents());
     return rowId && quote.trim() ? [{ rowId, quote }] : [];
   });
 }
