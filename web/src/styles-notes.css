@@ -8,7 +8,7 @@
   padding: 0 4px;
   border-radius: 999px;
   background: var(--status-waiting);
-  color: #101010;
+  color: var(--background);
   font: 600 11px/1 var(--ui-font);
 }
 .ncard {
@@ -117,6 +117,11 @@
   border: 1px solid var(--border-strong);
   border-radius: 999px;
 }
+/* The find bar spans the top of the list; the pill gives way, so it never covers the bar's
+   buttons. ⇧⌘A, the palette and the ringed targets still show and switch the mode. */
+.find ~ .annotate-pill {
+  display: none;
+}
 .annotate-pill:hover {
   color: var(--foreground);
 }
@@ -181,7 +186,7 @@
   padding: 0 4px;
   border-radius: 999px;
   background: var(--status-waiting);
-  color: #101010;
+  color: var(--background);
   font: 600 11px/18px var(--ui-font);
   text-align: center;
   pointer-events: none;
