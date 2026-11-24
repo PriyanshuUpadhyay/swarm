@@ -60,8 +60,8 @@ export type Chat = {
   memo: { sig: unknown[]; pane: Pane } | null;
 };
 
-/** A failed chat action: the server's error text, and the same action again. */
-/** `onSent` is the failed send's callback, so its caller knows its own Retry. */
+/** A failed chat action: the server's error text, and the same action again. `onSent` is the
+ *  failed send's callback, so its caller knows its own Retry. */
 export type Banner = { text: string; retry: () => void; onSent?: () => void };
 
 /** One chat's composer actions in flight. It outlives the chat's rows in the LRU. */
