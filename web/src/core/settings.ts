@@ -147,7 +147,7 @@ export class Settings {
 
   // ---- usage ----
 
-  /** The cached meters; this makes no provider call. */
+  /** The cached meters. No usage call goes out, but the account list may ask `claude auth status`. */
   async loadUsage() {
     if (this.state.usage.state === "idle") this.set({ usage: { state: "loading" } });
     try {
