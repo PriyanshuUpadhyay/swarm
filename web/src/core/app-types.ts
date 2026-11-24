@@ -3,6 +3,7 @@ import { type AgentInput, type Usage } from "./composer";
 import { type PaneCell } from "./panes";
 import { FoldChoices, type Line, type Match } from "./transcript";
 import { type NavRow, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
+import { type Notes } from "./notes";
 
 export const TAIL = 200;
 export const LRU_SIZE = 4;
@@ -158,6 +159,8 @@ export type Reader = {
   reuse(composerId: string, text: string): void;
   /** Branch from here on a user row; only the open chat's chair transcript has it. */
   branch?(row: string): void;
+  /** The notes on agent replies, kept per chat id (ADR 0161). */
+  readonly notes: Notes;
 };
 
 /** A name the owner types: a rename. */

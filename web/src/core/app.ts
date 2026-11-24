@@ -14,6 +14,7 @@ import { type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
 import { Skills } from "./skills";
 import { Notices } from "./notices";
+import { Notes } from "./notes";
 import { NewChat } from "./new-chat";
 import { chatRows, type ChoiceOp, type NavRow, type PaletteItem, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
 import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS, SIDEBAR_VIEW_KEY, readStore } from "./app-types";
@@ -47,6 +48,8 @@ export class App {
   readonly newChat = new NewChat(this);
   /** Whether macOS lets swarm's notices through (ADR 0102). */
   readonly notices = new Notices(this);
+  /** Notes on agent replies, sent as one message (ADR 0161). */
+  readonly notes = new Notes(this);
   view: View;
   snapshot: Snapshot | null = null;
   tree: TreeView | null = null;
@@ -354,8 +357,8 @@ export class App {
     return this.composing.reuse(sessionId, text);
   }
 
-  send(sessionId: string, text: string, draftText = text, owner = true): Promise<boolean> {
-    return this.composing.send(sessionId, text, draftText, owner);
+  send(sessionId: string, text: string, draftText = text, owner = true, onSent?: () => void): Promise<boolean> {
+    return this.composing.send(sessionId, text, draftText, owner, onSent);
   }
 
   menuCommands(sessionId: string): Promise<CommandList> {

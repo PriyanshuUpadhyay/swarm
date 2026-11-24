@@ -10,7 +10,9 @@ import { BackgroundLine } from "./background-line";
 import { ChatInput } from "./chat-input";
 import { copyText } from "./copy";
 import { focusInputOf } from "../core/focus";
-import { SourcePopover, TranscriptMenu, type Source } from "./transcript-overlays";
+import { SourcePopover, TranscriptMenu, type NoteSpot, type Source } from "./transcript-overlays";
+import { NoteCard, NotesBar } from "./notes-margin";
+import type { Note } from "../core/notes";
 import { setSplit } from "./transcript-output";
 import { setWrap } from "./patch-body";
 import { findLine } from "./patch-find";
@@ -53,6 +55,21 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const [source, setSource] = useState<Source | null>(null);
   const { lines, id: openId, chatState, find } = view;
   const current = find.open ? find.matches[find.index]?.id : undefined;
+  const { notes } = app;
+  // Snapshots, not reads in render: the React compiler keeps a render's result while its props stay the same.
+  const readList = () => notes.list(openId);
+  const readSending = () => notes.isSending(openId);
+  const noteList = useSyncExternalStore(notes.subscribe, readList, readList);
+  const noteSending = useSyncExternalStore(notes.subscribe, readSending, readSending);
+  // Each card shows its number in the chat's send order.
+  const byRow = new Map<string, { note: Note; n: number }[]>();
+  noteList.forEach((note, i) => byRow.set(note.rowId, [...(byRow.get(note.rowId) ?? []), { note, n: i + 1 }]));
+  /** Adds a text note per spot; returns the last card's id, whose box takes the caret. */
+  const addNotes = (spots: NoteSpot[]) => {
+    let last: number | null = null;
+    for (const spot of spots) last = notes.add(openId, { kind: "text", ...spot })?.id ?? last;
+    return last;
+  };
 
   // A new chat, or its first page: start at the newest row.
   useLayoutEffect(() => {
@@ -213,6 +230,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
+                      cards={byRow.get(line.id)?.map(({ note, n }) => <NoteCard key={note.id} notes={notes} chat={openId} note={note} n={n} />)}
                     />
                   )}
                 </Virtualizer>
@@ -220,7 +238,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
             )}
           </div>
         </ContextMenuTrigger>
-        <TranscriptMenu lines={lines} listRef={scrollRef} onSource={setSource} />
+        <TranscriptMenu lines={lines} listRef={scrollRef} onSource={setSource} onNote={addNotes} />
       </ContextMenu>
       {source && <SourcePopover source={source} listRef={scrollRef} onClose={() => setSource(null)} />}
       {away && chatState === "ready" && (
@@ -228,6 +246,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
           <ArrowDownIcon className="size-3.5" /> Jump to latest
         </button>
       )}
+      {chatState === "ready" && <NotesBar notes={notes} chat={openId} list={noteList} sending={noteSending} blocked={view.composer ? view.composer.agent.disabled : "This chat takes no messages."} />}
     </div>
   );
 }

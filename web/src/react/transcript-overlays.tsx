@@ -1,7 +1,7 @@
 // One context menu and one source popover for the whole transcript list (decision 3). Rows stay
 // plain elements; the menu finds the row from the DOM event.
 
-import { BracesIcon, CopyIcon, XIcon } from "lucide-react";
+import { BracesIcon, CopyIcon, MessageSquarePlusIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Row } from "../core/api";
 import type { Line } from "../core/transcript";
@@ -9,13 +9,43 @@ import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSepar
 import { copyText } from "./copy";
 
 const ROW = '[data-testid="row"]';
+/** The text of an agent reply, without its buttons. */
+export const REPLY_BODY = '[data-kind="assistant"] .msg .md, [data-kind="assistant"] .msg > .whitespace-pre-wrap';
+
+/** A note's anchor: the row, and the text the owner selected in it. */
+export type NoteSpot = { rowId: string; quote: string };
+
+/** The selected text per agent reply, when both ends of the selection sit in agent replies. A
+ *  selection over 2 replies gives 2 spots; rows between them that are not replies give none. */
+function selectedSpots(list: HTMLElement): NoteSpot[] {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return [];
+  const inReply = (node: Node | null) => !!node && list.contains(node) && !!(node instanceof Element ? node : node.parentElement)?.closest(REPLY_BODY);
+  if (!inReply(sel.anchorNode) || !inReply(sel.focusNode)) return [];
+  const range = sel.getRangeAt(0);
+  const bodies = [...list.querySelectorAll<HTMLElement>(REPLY_BODY)].filter((b) => range.intersectsNode(b));
+  if (bodies.length === 1) {
+    const rowId = bodies[0].closest<HTMLElement>(ROW)?.dataset.id;
+    return rowId ? [{ rowId, quote: sel.toString() }] : [];
+  }
+  return bodies.flatMap((body) => {
+    const rowId = body.closest<HTMLElement>(ROW)?.dataset.id;
+    const part = document.createRange();
+    part.selectNodeContents(body);
+    if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
+    if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
+    const quote = part.toString();
+    return rowId && quote.trim() ? [{ rowId, quote }] : [];
+  });
+}
 
 export type Source = { row: Row; rect: DOMRect };
 
 
-/** Content for the list's one ContextMenu: Copy and Show source for the row under the click. */
-export function TranscriptMenu({ lines, listRef, onSource }: { lines: Line[]; listRef: RefObject<HTMLDivElement | null>; onSource: (s: Source) => void }) {
-  const [target, setTarget] = useState<{ row: Row; el: HTMLElement; selection: string } | null>(null);
+/** Content for the list's one ContextMenu: Copy, Add note on selected reply text, and Show source
+ *  for the row under the click. */
+export function TranscriptMenu({ lines, listRef, onSource, onNote }: { lines: Line[]; listRef: RefObject<HTMLDivElement | null>; onSource: (s: Source) => void; onNote: (spots: NoteSpot[]) => number | null }) {
+  const [target, setTarget] = useState<{ row: Row; el: HTMLElement; selection: string; spots: NoteSpot[] } | null>(null);
 
   useEffect(() => {
     const list = listRef.current;
@@ -32,22 +62,44 @@ export function TranscriptMenu({ lines, listRef, onSource }: { lines: Line[]; li
       list.querySelector('[data-menu="true"]')?.removeAttribute("data-menu");
       el.setAttribute("data-menu", "true");
       const sel = window.getSelection();
-      setTarget({ row: line.row, el, selection: sel && !sel.isCollapsed && el.contains(sel.anchorNode) ? sel.toString() : "" });
+      const inRow = !!sel && !sel.isCollapsed && el.contains(sel.anchorNode) && el.contains(sel.focusNode);
+      setTarget({ row: line.row, el, selection: inRow ? sel.toString() : "", spots: selectedSpots(list) });
     };
     list.addEventListener("contextmenu", onContextMenu);
     return () => list.removeEventListener("contextmenu", onContextMenu);
   }, [lines, listRef]);
 
   const onClose = () => listRef.current?.querySelector('[data-menu="true"]')?.removeAttribute("data-menu");
+  // A new note's box takes the caret once the menu has closed; its focus trap holds it until then.
+  const noted = useRef<number | null>(null);
 
   if (!target) return null;
   const { row } = target;
   return (
-    <ContextMenuContent onCloseAutoFocus={onClose} onEscapeKeyDown={onClose} onPointerDownOutside={onClose}>
+    <ContextMenuContent
+      onCloseAutoFocus={(e) => {
+        onClose();
+        if (noted.current === null) return;
+        e.preventDefault();
+        listRef.current?.querySelector<HTMLElement>(`[data-note="${noted.current}"] textarea`)?.focus({ preventScroll: true });
+        noted.current = null;
+      }}
+      onEscapeKeyDown={onClose}
+      onPointerDownOutside={onClose}
+    >
       <ContextMenuLabel className="max-w-[260px] truncate normal-case">{row.kind === "fold" ? row.fold?.text : row.text.split("\n", 1)[0]}</ContextMenuLabel>
       <ContextMenuItem onSelect={() => void copyText(target.selection || row.text, target.selection ? "selection" : "row")}>
         <CopyIcon /> Copy
       </ContextMenuItem>
+      {target.spots.length > 0 && (
+        <ContextMenuItem
+          onSelect={() => {
+            noted.current = onNote(target.spots);
+          }}
+        >
+          <MessageSquarePlusIcon /> Add note
+        </ContextMenuItem>
+      )}
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={() => onSource({ row, rect: target.el.getBoundingClientRect() })}>
         <BracesIcon /> Show source

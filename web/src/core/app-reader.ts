@@ -173,6 +173,7 @@ export class AppReader {
         stepFind: (dir) => this.stepFind(dir),
         closeFind: () => this.closeFind(),
         reuse: (composerId, text) => this.app.composing.reuse(composerId, text),
+        notes: this.app.notes,
       };
       this.app.readers.set(id, r);
     }

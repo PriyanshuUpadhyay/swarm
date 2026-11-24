@@ -15,7 +15,8 @@ import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
 type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean };
 
-function LineView({ app, line, index, full, match, composerId, branches }: Ctx & { index: number; match?: string }) {
+/** `cards` are the row's note cards (ADR 0161), under the reply. */
+function LineView({ app, line, index, full, match, composerId, branches, cards }: Ctx & { index: number; match?: string; cards?: React.ReactNode }) {
   const { row } = line;
   return (
     <div
@@ -29,6 +30,7 @@ function LineView({ app, line, index, full, match, composerId, branches }: Ctx &
       <ImageLoader.Provider value={app.imageUrl}>
         <RowBody app={app} line={line} full={full} composerId={composerId} branches={branches} />
       </ImageLoader.Provider>
+      {cards}
     </div>
   );
 }

@@ -174,8 +174,9 @@ export class AppComposer {
   }
 
   /** Types `text` into the chair. Clear only the source draft, which can differ after a skill moves.
-   *  `owner` is false for text that code composes, which stays out of the prompt history. */
-  async send(sessionId: string, text: string, draftText = text, owner = true): Promise<boolean> {
+   *  `owner` is false for text that code composes, which stays out of the prompt history.
+   *  `onSent` runs once, after the send that goes, also when that is a Retry. */
+  async send(sessionId: string, text: string, draftText = text, owner = true, onSent?: () => void): Promise<boolean> {
     const chair = this.chair(sessionId);
     const st = this.input(sessionId);
     const out = outgoing(text);
@@ -188,9 +189,10 @@ export class AppComposer {
       { sending: true },
       { sending: false },
       () => this.app.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
-      () => void this.send(sessionId, text, draftText, owner),
+      () => void this.send(sessionId, text, draftText, owner, onSent),
     );
     if (!ok) return false;
+    onSent?.();
     if (chat) chat.typed = [...chat.typed, { text: typed }].slice(-TYPED_CAP);
     // The owner's words, before a pi skill moved to the front.
     if (owner) this.recordHistory(sessionId, outgoing(draftText) ?? out);

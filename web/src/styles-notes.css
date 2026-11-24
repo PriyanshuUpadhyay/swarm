@@ -1,0 +1,103 @@
+/* Chat notes (ADR 0161): numbered cards on agent replies and the send bar above the composer.
+   Colours are the app's status tokens: waiting (amber) marks a note. */
+.nbadge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--status-waiting);
+  color: #101010;
+  font: 600 11px/1 var(--ui-font);
+}
+.ncard {
+  margin: 4px 0 12px;
+  max-width: 70ch;
+  padding: 8px 10px 10px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+.ncard:focus-within {
+  border-color: var(--status-waiting);
+}
+.ncard-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ncard-head .src {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.nquote {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nquote.folded {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ncard textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+.ncard textarea::placeholder {
+  color: var(--faint-foreground);
+}
+.ncard textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+}
+
+.notes-bar {
+  flex: none;
+  width: calc(100% - 48px);
+  max-width: 820px;
+  margin: 6px auto 0;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--status-waiting);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--status-waiting) 8%, var(--background));
+}
+.notes-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.notes-preview {
+  max-height: 36vh;
+  margin: 6px 0 2px;
+  padding: 8px 10px;
+  overflow: auto;
+  font: 12px/18px var(--code-font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
