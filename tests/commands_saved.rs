@@ -69,6 +69,7 @@ fn a_saved_list_is_used_until_a_skill_file_changes() {
         .unwrap();
         commands(&home, &project, provider);
         assert_eq!(count(), 2, "{provider}");
+        std::fs::remove_dir_all(&home).unwrap();
     }
 }
 
@@ -118,4 +119,5 @@ fn a_saved_pi_model_list_is_used_until_pi_s_models_file_changes() {
     std::fs::write(home.join(".pi/agent/models.json"), "{}").unwrap();
     models();
     assert_eq!(count(), 2);
+    std::fs::remove_dir_all(&home).unwrap();
 }
