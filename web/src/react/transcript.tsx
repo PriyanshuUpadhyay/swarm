@@ -11,7 +11,7 @@ import { ChatInput } from "./chat-input";
 import { copyText } from "./copy";
 import { focusInputOf } from "../core/focus";
 import { SourcePopover, TranscriptMenu, type NoteSpot, type Source } from "./transcript-overlays";
-import { NoteCard, NotesBar } from "./notes-margin";
+import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes } from "./notes-margin";
 import type { Note } from "../core/notes";
 import { setSplit } from "./transcript-output";
 import { setWrap } from "./patch-body";
@@ -61,6 +61,8 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const readSending = () => notes.isSending(openId);
   const noteList = useSyncExternalStore(notes.subscribe, readList, readList);
   const noteSending = useSyncExternalStore(notes.subscribe, readSending, readSending);
+  const readMode = () => notes.annotating();
+  const annotating = useSyncExternalStore(notes.subscribe, readMode, readMode);
   // Each card shows its number in the chat's send order.
   const byRow = new Map<string, { note: Note; n: number }[]>();
   noteList.forEach((note, i) => byRow.set(note.rowId, [...(byRow.get(note.rowId) ?? []), { note, n: i + 1 }]));
@@ -70,6 +72,41 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
     for (const spot of spots) last = notes.add(openId, { kind: "text", ...spot })?.id ?? last;
     return last;
   };
+  /** Annotate mode: a note on the item under `target`, or on the whole reply from its handle. */
+  const annotate = (target: Element) => {
+    const whole = target.closest("[data-note-reply]");
+    const rowEl = target.closest<HTMLElement>('[data-testid="row"]');
+    const row = rowEl && lines.find((l) => l.id === rowEl.dataset.id)?.row;
+    if (whole && row) return !!notes.add(openId, { kind: "reply", rowId: row.id, quote: row.text });
+    const item = itemAt(target);
+    if (!item || !row || window.getSelection()?.isCollapsed === false) return false;
+    return !!notes.add(openId, { kind: "item", rowId: row.id, quote: itemQuote(item) });
+  };
+
+  // Marks follow the rows, which remount as the list scrolls.
+  useLayoutEffect(() => {
+    const list = scrollRef.current;
+    if (!list || chatState !== "ready") return;
+    const paint = () => paintNotes(list, noteList, annotating);
+    paint();
+    const watch = new MutationObserver(paint);
+    watch.observe(list, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [noteList, annotating, chatState, lines]);
+
+  // Esc leaves annotate mode first, also from the composer, whose own Esc would put its draft
+  // away. An open find bar, dialog, popover or menu keeps its own Esc.
+  useEffect(() => {
+    if (!annotating) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || find.open || document.querySelector('[role="dialog"], [role="menu"]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      notes.setMode(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [annotating, find.open, notes]);
 
   // A new chat, or its first page: start at the newest row.
   useLayoutEffect(() => {
@@ -166,6 +203,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
 
   // Copy buttons in code blocks and tables share one listener for the whole list.
   const onClick = (e: React.MouseEvent) => {
+    if (annotating && annotate(e.target as Element)) return;
     const layout = (e.target as Element).closest<HTMLElement>("[data-diff-layout]");
     if (layout) return setSplit(layout.dataset.diffLayout === "1");
     if ((e.target as Element).closest("[data-wrap-toggle]")) return setWrap(document.documentElement.dataset.diffWrap !== "1");
@@ -182,13 +220,16 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
-            className="transcript flex-1"
+            className={`transcript flex-1${annotating ? " annotating" : ""}`}
             ref={scrollRef}
             tabIndex={-1}
             data-testid={testid}
             data-chat={openId}
             data-state={chatState}
             onClick={onClick}
+            onKeyDown={(e) => {
+              if (annotating && (e.key === "Enter" || e.key === " ") && e.target instanceof HTMLElement && e.target.tabIndex === 0 && itemAt(e.target) === e.target && annotate(e.target)) e.preventDefault();
+            }}
           >
             {chatState === "none" &&
               (empty ? (
@@ -244,6 +285,11 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
       {away && chatState === "ready" && (
         <button type="button" className="jump" data-testid="jump-latest" onClick={jump}>
           <ArrowDownIcon className="size-3.5" /> Jump to latest
+        </button>
+      )}
+      {chatState === "ready" && (
+        <button type="button" className="annotate-pill" data-testid="annotate-mode" aria-pressed={annotating} title="Annotate Chat (⇧⌘A)" onClick={() => notes.toggleMode()}>
+          {annotating ? "Annotate · Esc" : "Annotate"}
         </button>
       )}
       {chatState === "ready" && <NotesBar notes={notes} chat={openId} list={noteList} sending={noteSending} blocked={view.composer ? view.composer.agent.disabled : "This chat takes no messages."} />}

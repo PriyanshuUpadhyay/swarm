@@ -53,6 +53,8 @@ export class Notes {
   private listeners = new Set<() => void>();
   /** The card whose note box takes the caret once it shows. */
   private focusId: number | null = null;
+  /** Annotate mode: reply items and whole replies take a click. Not saved. */
+  private mode = false;
 
   constructor(private readonly app: App) {
     this.chats = readNotes();
@@ -74,6 +76,20 @@ export class Notes {
 
   list(chat: string): readonly Note[] {
     return this.chats.get(chat) ?? NO_NOTES;
+  }
+
+  annotating(): boolean {
+    return this.mode;
+  }
+
+  setMode(on: boolean) {
+    if (this.mode === on) return;
+    this.mode = on;
+    this.changed(false);
+  }
+
+  toggleMode() {
+    this.setMode(!this.mode);
   }
 
   isSending(chat: string): boolean {

@@ -220,6 +220,7 @@ export class AppActions {
       cmds.push({ id: `sidebar.view.${n}`, title: `Show ${SIDEBAR_VIEWS[n - 1]}`, chord: `Alt+Meta+${n}`, run: () => this.app.sidebar.setSidebarView(n) });
     cmds.push(
       { id: "find.open", title: "Find", chord: "Meta+F", when: chat, run: () => this.app.reading.openFind() },
+      { id: "chat.annotate", title: "Annotate Chat", chord: "Shift+Meta+A", when: chat, run: () => this.app.notes.toggleMode() },
       { id: "prompt.prev", title: "Previous Prompt", chord: "Ctrl+Alt+ArrowUp", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: -1 })) },
       { id: "prompt.next", title: "Next Prompt", chord: "Ctrl+Alt+ArrowDown", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: 1 })) },
       { id: "chat.blocked", title: "Next Blocked Chat", chord: "Ctrl+Meta+W", run: (e) => this.openBlocked(e) },

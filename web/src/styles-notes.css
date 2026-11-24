@@ -101,3 +101,92 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
+
+/* Annotate mode. The pill and the Whole reply handle float, and targets ring with an outline,
+   so turning the mode on or off never moves a row. */
+.annotate-pill {
+  position: absolute;
+  top: 6px;
+  right: 16px;
+  z-index: 3;
+  padding: 1px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  background: var(--background);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}
+.annotate-pill:hover {
+  color: var(--foreground);
+}
+.annotate-pill[aria-pressed="true"] {
+  color: var(--background);
+  background: var(--status-working);
+  border-color: var(--status-working);
+}
+.whole-reply {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 28px;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--muted-foreground);
+  background: var(--background);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}
+.annotating .whole-reply {
+  display: inline-block;
+}
+.whole-reply:hover {
+  color: var(--foreground);
+}
+.annotating [data-kind="assistant"] .md [tabindex="0"] {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.annotating [data-kind="assistant"] .md [tabindex="0"]:hover,
+.annotating [data-kind="assistant"] .md [tabindex="0"]:focus-visible,
+.annotating .line:has(.whole-reply:hover),
+.annotating .line:has(.whole-reply:focus-visible) {
+  outline: 2px solid var(--status-working);
+  outline-offset: 3px;
+}
+.annotating .line:has(.whole-reply:hover) .md [tabindex="0"] {
+  outline: 0;
+}
+/* An item or a reply with a note: a tint, or a dashed ring, and its number in a corner badge. */
+.md [data-inote] {
+  position: relative;
+  background: color-mix(in srgb, var(--status-waiting) 12%, transparent);
+  border-radius: var(--radius-sm);
+}
+.line[data-inote] {
+  outline: 1px dashed var(--status-waiting);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+.md [data-inote]::after,
+.line[data-inote]::after {
+  content: attr(data-inote);
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--status-waiting);
+  color: #101010;
+  font: 600 11px/18px var(--ui-font);
+  text-align: center;
+  pointer-events: none;
+}
+.line[data-inote]::after {
+  right: auto;
+  left: -9px;
+}

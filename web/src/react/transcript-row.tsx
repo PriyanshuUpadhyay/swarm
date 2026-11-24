@@ -173,6 +173,8 @@ function RowBody(ctx: Ctx) {
     return (
       <div className="msg">
         <CopyMessage row={row} />
+        {/* Shown only in annotate mode (ADR 0161); it floats, so the mode never moves a row. */}
+        <button type="button" className="whole-reply" data-note-reply aria-label="Add a note on the whole reply">Whole reply</button>
         <FoldableBody row={row} />
       </div>
     );

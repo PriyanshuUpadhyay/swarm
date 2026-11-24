@@ -72,3 +72,46 @@ export function NotesBar({ notes, chat, list, sending, blocked }: { notes: Notes
     </div>
   );
 }
+
+/** The blocks of a reply that annotate mode offers as one item each. */
+const BLOCKS = "p, h1, h2, h3, h4, h5, h6, li, pre, blockquote, table";
+/** The reply text, without its buttons. */
+const BODY = '[data-kind="assistant"] .msg .md';
+
+/** The item under `el` in an agent reply: the innermost list item or quote that holds the block. */
+export function itemAt(el: Element): HTMLElement | null {
+  const block = el.closest<HTMLElement>(BLOCKS);
+  const body = block?.closest(BODY);
+  if (!block || !body) return null;
+  const outer = block.closest<HTMLElement>("li, blockquote");
+  return outer && body.contains(outer) ? outer : block;
+}
+
+/** An item's quote: its shown text; an item of an ordered list keeps its number. */
+export function itemQuote(item: HTMLElement): string {
+  const text = item.innerText.trim();
+  const list = item.parentElement;
+  if (item.tagName !== "LI" || list?.tagName !== "OL") return text;
+  const start = Number((list as HTMLOListElement).start) || 1;
+  return `${start + [...list.children].indexOf(item)}. ${text}`;
+}
+
+/** Marks the items and replies that have notes, and in annotate mode makes items take Tab.
+ *  Rows remount as the list scrolls, so this runs again after each change of the list's rows. */
+export function paintNotes(list: HTMLElement, notes: readonly Note[], annotating: boolean) {
+  for (const el of list.querySelectorAll("[data-inote]")) el.removeAttribute("data-inote");
+  for (const el of list.querySelectorAll(BODY)) {
+    for (const block of el.querySelectorAll<HTMLElement>(BLOCKS)) {
+      if (annotating && itemAt(block) === block) block.tabIndex = 0;
+      else block.removeAttribute("tabindex");
+    }
+  }
+  notes.forEach((note, i) => {
+    const row = list.querySelector<HTMLElement>(`[data-testid="row"][data-id="${CSS.escape(note.rowId)}"]`);
+    if (!row) return;
+    if (note.kind === "reply") row.dataset.inote = String(i + 1);
+    if (note.kind !== "item") return;
+    const item = [...row.querySelectorAll<HTMLElement>(`.msg .md :is(${BLOCKS})`)].find((b) => itemAt(b) === b && itemQuote(b) === note.quote);
+    if (item) item.dataset.inote = String(i + 1);
+  });
+}
