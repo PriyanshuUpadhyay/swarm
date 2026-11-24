@@ -42,6 +42,19 @@ export function useSlashMenu({ text, provider, disabled, source, commands, files
     setList(null);
     setFileList(null);
   }, [source]);
+  // A focus with no list starts the CLI's slow first read (about 1 s for pi), so the first `/`
+  // finds it ready or under way.
+  useEffect(() => {
+    if (!focused || disabled || list) return;
+    let live = true;
+    read.current.commands().then(
+      (next) => live && setList((old) => old ?? next),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [focused, disabled, source, list === null]);
   // Each opening asks again; the server answers from its cache and refreshes a stale list.
   useEffect(() => {
     if (!menuKey) {

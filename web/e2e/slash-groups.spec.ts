@@ -24,3 +24,17 @@ test("the / menu lists the swarm skills under their own heading, above the built
   expect(await top(headings.nth(1))).toBeLessThan(await top(rows.filter({ hasText: "/clear" })));
   await tab.screenshot({ path: resolve(import.meta.dirname, "../../tmp/work/menu.png") });
 });
+
+test("a focus in the chat box reads the / menu list before any / is typed", async ({ page: tab }) => {
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  // Set before the page loads, because the app may open the last chat and focus its box at once.
+  const read = tab.waitForResponse((r) => new URL(r.url()).pathname === "/api/chat/commands");
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env.SWARM_E2E_LIVE}"]`).click();
+  const composer = tab.getByTestId("composer");
+  await expect(composer).toBeEnabled();
+  await composer.click();
+  expect((await read).ok()).toBe(true);
+  await expect(composer).toHaveValue("");
+});
