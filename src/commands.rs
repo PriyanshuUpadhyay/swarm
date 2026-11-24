@@ -49,11 +49,13 @@ pub fn list(
     cwd: &Path,
     deadline: Instant,
 ) -> List {
-    if let Some(saved) = saved::load(provider, env, cwd) {
+    if let Some(saved) = saved::load("commands", provider, env, cwd) {
         return saved;
     }
     let list = probe(provider, env, cwd, deadline);
-    saved::save(provider, env, cwd, &list);
+    if list.note.is_none() {
+        saved::save("commands", provider, env, cwd, &list);
+    }
     list
 }
 
@@ -108,7 +110,7 @@ fn finish(provider: Provider, mut rows: Vec<Row>) -> Vec<Row> {
 
 mod catalog;
 mod probes;
-mod saved;
+pub(crate) mod saved;
 
 use catalog::builtins;
 use probes::{agy, claude, codex, pi};

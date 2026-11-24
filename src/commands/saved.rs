@@ -1,4 +1,4 @@
-//! A saved `/` menu list for Claude, Codex, and pi, kept while the files they load it from are
+//! A saved `/` menu list for Claude, Codex, and pi, and pi's model list, kept while the files they load it from are
 //! unchanged. The probe asks the CLI (0.25 to 1.1 s), so a new chat, a new server, or another chat in the same
 //! folder would ask again; a stat walk of the same files takes a few ms. The CLI stays the owner of
 //! the loading rules: this module only notices that its inputs moved, and a list older than
@@ -11,25 +11,34 @@ const MAX_AGE_SECONDS: u64 = 3600;
 /// A walk that meets more entries than this gives no fingerprint, so the CLI is asked.
 const MAX_ENTRIES: usize = 20_000;
 
-/// The saved list for this read, or None when there is none or one of its inputs changed.
-pub(super) fn load(provider: Provider, env: &BTreeMap<String, String>, cwd: &Path) -> Option<List> {
-    let (path, fingerprint) = slot(provider, env, cwd)?;
+/// The value saved as `kind` for this read, or None when there is none or one of its inputs
+/// changed.
+pub(crate) fn load<T: serde::de::DeserializeOwned>(
+    kind: &str,
+    provider: Provider,
+    env: &BTreeMap<String, String>,
+    cwd: &Path,
+) -> Option<T> {
+    let (path, fingerprint) = slot(kind, provider, env, cwd)?;
     let saved: Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
     let fresh = now().saturating_sub(saved["at"].as_u64()?) < MAX_AGE_SECONDS;
     (fresh && saved["fingerprint"] == fingerprint.as_str())
-        .then(|| serde_json::from_value(saved["list"].clone()).ok())
+        .then(|| serde_json::from_value(saved["value"].clone()).ok())
         .flatten()
 }
 
-/// Saves a clean list; a list with a note is read again next time.
-pub(super) fn save(provider: Provider, env: &BTreeMap<String, String>, cwd: &Path, list: &List) {
-    if list.note.is_some() {
-        return;
-    }
-    let Some((path, fingerprint)) = slot(provider, env, cwd) else {
+/// Saves `value` as `kind`; the caller saves only a clean read.
+pub(crate) fn save<T: Serialize>(
+    kind: &str,
+    provider: Provider,
+    env: &BTreeMap<String, String>,
+    cwd: &Path,
+    value: &T,
+) {
+    let Some((path, fingerprint)) = slot(kind, provider, env, cwd) else {
         return;
     };
-    let text = json!({"fingerprint": fingerprint, "at": now(), "list": list}).to_string();
+    let text = json!({"fingerprint": fingerprint, "at": now(), "value": value}).to_string();
     if let Some(dir) = path.parent()
         && std::fs::create_dir_all(dir).is_ok()
     {
@@ -37,13 +46,14 @@ pub(super) fn save(provider: Provider, env: &BTreeMap<String, String>, cwd: &Pat
     }
 }
 
-/// The file for this provider, folder, and account, and the fingerprint of the list's inputs.
+/// The file for this kind, provider, folder, and account, and the fingerprint of the inputs.
 fn slot(
+    kind: &str,
     provider: Provider,
     env: &BTreeMap<String, String>,
     cwd: &Path,
 ) -> Option<(PathBuf, String)> {
-    let key = json!([provider.id(), cwd, env]).to_string();
+    let key = json!([kind, provider.id(), cwd, env]).to_string();
     let path = crate::paths::root_dir()
         .ok()?
         .join("commands-cache")
@@ -147,6 +157,9 @@ fn pi_roots(home: &Path, cwd: &Path) -> Vec<(PathBuf, usize)> {
         (agent.join("install/current-version"), 0),
         (agent.join("settings.json"), 0),
         (agent.join("trust.json"), 0),
+        (agent.join("auth.json"), 0),
+        (agent.join("models.json"), 0),
+        (agent.join("models-store.json"), 0),
         (agent.join("skills"), 6),
         (agent.join("prompts"), 2),
         (agent.join("extensions"), 3),

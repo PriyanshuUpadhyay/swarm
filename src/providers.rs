@@ -42,7 +42,7 @@ pub struct InfoList {
     pub providers: Vec<Info>,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Model {
     pub id: String,
     pub label: String,
@@ -238,7 +238,20 @@ impl Provider {
             Provider::Claude => Ok(claude_models()),
             Provider::Codex => codex_models(run("codex", &["debug", "models"])?.as_bytes()),
             Provider::Agy => Ok(agy_models(&run("agy", &["models"])?)),
-            Provider::Pi => Ok(pi_models(&run("pi", &["--list-models"])?)),
+            Provider::Pi => {
+                // `pi --list-models` is a full pi start (about 1 s); the list is kept while pi's
+                // settings, auth, models, and extension files are unchanged (commands::saved).
+                let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+                let env = BTreeMap::new();
+                if let Some(saved) = crate::commands::saved::load("models", self, &env, &cwd) {
+                    return Ok(saved);
+                }
+                let models = pi_models(&run("pi", &["--list-models"])?);
+                if !models.is_empty() {
+                    crate::commands::saved::save("models", self, &env, &cwd, &models);
+                }
+                Ok(models)
+            }
         }
     }
 
