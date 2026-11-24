@@ -35,6 +35,7 @@ checks = [
     "skills/kit/blocks/comment-round/scripts/test_comment_round.py",
     "scripts/test_stamp_kit.py",
     "scripts/test_owner_scripts.py",
+    "scripts/test_public_safety_copy.py",
 ]
 failed = False
 for check in checks:
