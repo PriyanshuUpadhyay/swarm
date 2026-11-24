@@ -196,6 +196,11 @@ pub fn write_pi_extension(root: &std::path::Path) -> std::io::Result<std::path::
     for (name, content) in [
         ("swarm-subagents.ts", include_str!("bus/pi_subagents.ts")),
         ("swarm-live.ts", PI_LIVE_EXTENSION),
+        ("swarm-voice-gate.ts", include_str!("bus/pi_voice_gate.ts")),
+        (
+            "swarm-parallel-reminder.ts",
+            include_str!("bus/pi_parallel_reminder.ts"),
+        ),
     ] {
         let path = folder.join(name);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(content) {
