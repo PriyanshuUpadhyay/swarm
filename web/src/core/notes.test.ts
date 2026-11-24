@@ -120,6 +120,8 @@ describe("Notes.send", () => {
     await app.notes.send("chat");
 
     app.view.composer!.state.banner!.retry();
+    app.notes.setText("chat", added.id, "during Retry");
+    expect(app.notes.list("chat")[0].text).toBe("first");
     expect(await app.notes.send("chat")).toBe(false);
     fail!();
     await settle();

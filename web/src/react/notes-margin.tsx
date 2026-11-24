@@ -6,7 +6,7 @@ import { SENT } from "../core/app";
 import { plural } from "../core/lifecycle-state";
 import { noteMessage, type Note, type Notes } from "../core/notes";
 import { Button } from "../components/ui/button";
-import { NOTE_CARD, replyText } from "./note-marks";
+import { NOTE_CARD, NOTE_SLOT, replyText } from "./note-marks";
 import { REPLY_BODY } from "./transcript-overlays";
 
 const SOURCE: Record<Note["kind"], string> = { text: "On selected text", item: "On item", reply: "On whole reply" };
@@ -151,11 +151,11 @@ export function paintNotes(list: HTMLElement, notes: readonly Note[], annotating
 
     // The slots of one block follow it in note order. A slot in place is not moved, so a repaint
     // makes no change for the list's observer to see.
-    const slot = list.querySelector<HTMLElement>(`.note-under[data-for="${note.id}"]`) ?? Object.assign(document.createElement("div"), { className: "note-under" });
+    const slot = list.querySelector<HTMLElement>(`.${NOTE_SLOT}[data-for="${note.id}"]`) ?? Object.assign(document.createElement("div"), { className: NOTE_SLOT });
     slot.dataset.for = String(note.id);
     let end: Element = block;
     let placed = false;
-    while (end.nextElementSibling?.classList.contains("note-under")) {
+    while (end.nextElementSibling?.classList.contains(NOTE_SLOT)) {
       end = end.nextElementSibling;
       placed ||= end === slot;
     }
@@ -163,7 +163,7 @@ export function paintNotes(list: HTMLElement, notes: readonly Note[], annotating
     slots.set(note.id, slot);
   });
 
-  for (const slot of list.querySelectorAll<HTMLElement>(".note-under")) if (!slots.get(Number(slot.dataset.for))) slot.remove();
+  for (const slot of list.querySelectorAll<HTMLElement>(`.${NOTE_SLOT}`)) if (!slots.get(Number(slot.dataset.for))) slot.remove();
 
   if (wide) {
     for (const gutter of list.querySelectorAll<HTMLElement>(".note-gutter")) {

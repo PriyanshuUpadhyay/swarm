@@ -50,7 +50,7 @@ export function noteMessage(notes: readonly Note[]): string {
 }
 
 /** A send of a chat's notes: the ids it clears once it goes. */
-export type NoteSend = { onSent: () => void; ids: ReadonlySet<number> };
+type NoteSend = { onSent: () => void; ids: ReadonlySet<number> };
 const NONE: ReadonlySet<number> = new Set();
 
 /** The ids of the notes that stay as sent: their send runs, or its banner offers or runs its
@@ -171,10 +171,10 @@ export class Notes {
 
   /** Sends every note of the chat as one message. A failed send keeps them, held as sent while
    *  the composer's banner offers Retry; the notes clear once, when a send goes. While a send of
-   *  the chat runs, also a Retry, this refuses, so the held notes stay those of that send. */
+   *  the chat runs, also a Retry, the composer refuses it, so the held notes stay those of that send. */
   async send(chat: string): Promise<boolean> {
     const notes = this.list(chat);
-    if (!notes.length || this.sending.has(chat) || this.app.composing.input(chat).sending) return false;
+    if (!notes.length || this.sending.has(chat)) return false;
 
     const text = noteMessage(notes);
     const ids = new Set(notes.map((n) => n.id));
