@@ -18,6 +18,7 @@ logs.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, TMPDIR=str(root / "tmp"))
 checks = [
     "skills/kit/scripts/test_block_refs.py",
+    "skills/kit/scripts/test_rule_owner.py",
     "skills/kit/scripts/test_plugin_skills.py",
     "skills/kit/skills/implement/scripts/test_implement_run.py",
     "skills/kit/references/test_step_run.py",
