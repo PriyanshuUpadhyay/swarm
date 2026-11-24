@@ -195,6 +195,7 @@ pub(super) fn router(app: App) -> Router {
         .route("/api/accounts/reset", post(owner_write))
         .route("/api/chat/continue", post(continue_chat))
         .route("/api/chat/branch", post(branch_chat))
+        .route("/api/chat/branch-messages", get(branch_messages))
         .route("/api/chat/continue/cancel", post(cancel_continue))
         .route("/api/chat/new-preview", get(new_chat_preview))
         .route("/api/chat/new-commands", get(new_chat_commands))

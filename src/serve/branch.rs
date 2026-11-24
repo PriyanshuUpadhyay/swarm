@@ -135,6 +135,28 @@ pub(super) struct BranchChat {
     row: String,
 }
 
+#[derive(Deserialize)]
+pub(super) struct BranchMessages {
+    session: String,
+}
+
+/// `GET /api/chat/branch-messages`: every user message of the chat's chair log, newest first,
+/// each with the row id that `branch_chat` takes. The page holds only the rows it loaded, so a
+/// list made from them misses the older messages.
+pub(super) async fn branch_messages(
+    State(app): State<App>,
+    Query(query): Query<BranchMessages>,
+) -> Result<Json<Value>, ApiError> {
+    let rows = handoff_rows(&app, &query.session).await?;
+    let messages: Vec<Value> = rows
+        .iter()
+        .rev()
+        .filter(|row| row.kind == view::RowKind::User && !row.anchor_source_id.is_empty())
+        .map(|row| json!({"row": format!("{}@{}", row.id, row.anchor_source_id), "text": row.text}))
+        .collect();
+    Ok(Json(json!({ "messages": messages })))
+}
+
 /// The byte offset of the log line that `source` (`raw-<offset>-<n>`) came from.
 fn line_offset(source: &str) -> Option<usize> {
     source.strip_prefix("raw-")?.split('-').next()?.parse().ok()

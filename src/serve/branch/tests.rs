@@ -176,6 +176,31 @@ esac
     }
 
     #[tokio::test]
+    async fn branch_messages_lists_every_user_message_newest_first() {
+        let fixture = action_fixture();
+        with_second_message(&fixture);
+        let query = BranchMessages {
+            session: fixture.session.clone(),
+        };
+        let Json(reply) = branch_messages(State(fixture.app.clone()), Query(query))
+            .await
+            .unwrap();
+        let rows = handoff_rows(&fixture.app, &fixture.session).await.unwrap();
+        let users: Vec<_> = rows
+            .iter()
+            .filter(|r| r.kind == view::RowKind::User)
+            .collect();
+        let newest_first: Vec<_> = users
+            .iter()
+            .rev()
+            .map(|r| json!({"row": format!("{}@{}", r.id, r.anchor_source_id), "text": r.text}))
+            .collect();
+        assert!(newest_first.len() >= 2);
+        assert_eq!(newest_first[0]["text"], "Now tidy the tests");
+        assert_eq!(reply["messages"], json!(newest_first));
+    }
+
+    #[tokio::test]
     async fn a_chat_with_no_adapter_still_reads_its_chair_to_branch() {
         let fixture = action_fixture();
         // An imported chat has no adapter until its first pane (new_chat.rs resume_chat).

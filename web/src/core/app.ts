@@ -1,6 +1,6 @@
 // Framework-free app state. Each view layer reads `view`, which is a new object after every change.
 
-import { Api, type Row, type RowFrame, type Snapshot } from "./api";
+import { Api, type RowFrame, type Snapshot } from "./api";
 import { installKeys, Registry } from "./commands";
 import { type AgentInput, type Answer, type Prompt } from "./composer";
 import { whenPainted } from "./perf";
@@ -418,27 +418,6 @@ export class App {
   /** The Esc Esc picker of the open chat's messages to branch from. */
   setBranchPicker(open: boolean) {
     return this.actions.setBranchPicker(open);
-  }
-
-  /** The open chat's loaded rows; the array is new whenever they change. */
-  openRows(): readonly Row[] | undefined {
-    return this.reading.chat()?.rows;
-  }
-
-  /** Loads the open chat's rows again, for a picker whose load failed. */
-  async reloadOpenRows() {
-    const chat = this.reading.chat();
-    if (!chat) return;
-    chat.state = "loading";
-    this.notify();
-    await this.reading.loadTail(chat);
-    this.streaming.syncSubscriptions();
-    this.notify();
-  }
-
-  /** The user rows of `rows` (the open chat's by default), newest first. */
-  branchRows(rows: readonly Row[] = this.openRows() ?? []): Row[] {
-    return rows.filter((r) => r.kind === "user").reverse();
   }
 
   setPalette(open: boolean) {
