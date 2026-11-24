@@ -119,11 +119,11 @@ fn one_setup_plan_holds_every_pending_write_with_a_diff_per_file() {
     let only: serde_json::Value = serde_json::from_slice(&only.stdout).unwrap();
     assert_eq!(only["files"], serde_json::json!([]));
     assert_eq!(only["skipped"][0]["group"], "trust");
+    // The test home sits in the temp dir, which is a scratch root on macOS, so there the home is
+    // refused as too broad.
+    let reason = only["skipped"][0]["reason"].as_str().unwrap();
     assert!(
-        only["skipped"][0]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("not in a git repository"),
+        reason.contains("not in a git repository") || reason.contains("too broad to trust"),
         "{only}"
     );
     let unknown = setup(&home, &["sound", "--plan"]);

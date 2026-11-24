@@ -26,6 +26,10 @@ Scratch, such as copies, builds, and launch folders, goes in the worktree's `tmp
 ignored, and `swarm task drop` deletes ignored files with the worktree, so no one must clean up
 after the run. `~/.swarm/ws/` and other folders outside the worktree stay until someone deletes them.
 
+Outside a repository, make scratch with `mktemp -d`. It lands in `$TMPDIR`, which only your
+account can open. Do not use a bare `/tmp/<name>`, because `swarm launch` cannot pre-trust a seat
+there, so each seat stops at its folder-trust question.
+
 For build, `<piece>` is the folder the owner names. When none is named, ask the owner at intake,
 and do not default to a product repo's root. Keep its source and export there, with the `ink/` progress folder inside it.
 
