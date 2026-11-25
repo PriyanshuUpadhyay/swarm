@@ -2,7 +2,6 @@
 status: accepted
 date: 2026-11-26
 deciders: [user]
-supersedes: "0136"
 related: ["0136"]
 informed-by:
   - 'owner, 2026-11-26: accepted "at most 160 characters, with the Use when part inside the first 120, enforced by a kit check script" with "Yes".'

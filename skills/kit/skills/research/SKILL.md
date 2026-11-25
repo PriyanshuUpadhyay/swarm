@@ -135,5 +135,5 @@ Send the reply by the loaded session reply rules. The kit's `blocks/report/SKILL
 ## Guards
 
 - Every claim cites the source that owns it, as `<kit root>/blocks/cite-sources/SKILL.md` says.
-- A research run, top-level session and seats alike, writes only its report and its own notes and edits no repository, because research reports and does not change code. Seats also follow `blocks/worker-brief/SKILL.md`.
+- A research run, top-level session and seats alike, edits no repository, because research reports and does not change code. Seats also follow `blocks/worker-brief/SKILL.md`.
 - The source blocks named here share the rules in their parent `<kit root>/blocks/sources/SKILL.md`.
