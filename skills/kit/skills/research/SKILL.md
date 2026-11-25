@@ -82,7 +82,7 @@ offered `tool-trial` block before `04-report`, so the candidates are tested hand
 
 ## 01-question
 
-Do Method step 1. Show the question and its decision and go on. If two readings of the question
+Do Method step 1 (show the question and its decision, then go on). If two readings of the question
 lead to different work, set the step to `waiting` with one question.
 
 ## 02-local
@@ -115,13 +115,9 @@ When the question has a body of papers or reports behind it, map it first by
 `blocks/literature-map/SKILL.md`, before the open search.
 
 When the question is about how or why a technique, protocol, or implementation works, also apply
-the kit block `blocks/primary-sources/SKILL.md`. Example. The question is about SQL databases.
-A blog is the lead, and the answer rests on the paper it names.
+the kit block `blocks/primary-sources/SKILL.md`.
 
-Every run also searches off the usual path, as `blocks/deep-search/SKILL.md` says. Example. The
-question is "which state library should this React app use". The usual answers are libraries. An
-off-path search also finds a team that removed its state library and kept the state in the URL, so
-every view can be shared and reloaded.
+Every run also searches off the usual path, as `blocks/deep-search/SKILL.md` says.
 
 For X, Reddit, and other pages that a plain fetch cannot open, use the browser rows of the Reach
 tools in `web-search`. They read the page in the user's own signed-in browser. Each claim cites its
@@ -139,5 +135,5 @@ Send the reply by the loaded session reply rules. The kit's `blocks/report/SKILL
 ## Guards
 
 - Every claim cites the source that owns it, as `<kit root>/blocks/cite-sources/SKILL.md` says.
-- Do not edit any repository. Write only the report and your own notes.
+- A research seat is report-only, as `blocks/worker-brief/SKILL.md` says: it writes the report and its own notes.
 - The source blocks named here share the rules in their parent `<kit root>/blocks/sources/SKILL.md`.

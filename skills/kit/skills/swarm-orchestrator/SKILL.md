@@ -71,8 +71,8 @@ sets. The kit root is two folders up from this skill's folder.
 
 Swarm notifies the owner when any agent waits on a permission or a question. When the run's work
 is done, or you need the owner for something else, run
-`swarm notify "swarm: <project> done" --body "<one line>"`. This is the only way to notify the
-owner, and only the orchestrator may run it. When your host contract says swarm notifies at your
+`swarm notify "swarm: <project> done" --body "<one line>"`. Only the orchestrator notifies the
+owner, as `blocks/worker-brief/SKILL.md` says for workers. When your host contract says swarm notifies at your
 turn end, that contract owns the done notice.
 
 ## Health and cleanup
