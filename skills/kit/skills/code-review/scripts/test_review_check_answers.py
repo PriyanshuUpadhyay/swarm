@@ -220,12 +220,12 @@ def test_defect_ask():
             code = rc.verdict(run.name)
             return code, (run / "03-verdict.md").read_text()
 
-        still_open = "Open: util.py `return 2`: a defect ask closes only with fix:, disproved: or limit:"
+        still_open = "Open: util.py `return 2`: a defect ask closes only with fix:, disproved: and a quoted line in backticks, or limit:"
         for problem, rule in (("potential issue, not confirmed: an old caller can throw", "-"),
                               ("older defects: two callers can throw", "-"),
                               ("potential issue, not confirmed: an old caller can throw", checks["rules"][0])):
             ask(problem, rule)
-            for text in ("A, accept as the chair recommends", "disproved: A"):
+            for text in ("A, accept as the chair recommends", "disproved: A", "disproved: ``"):
                 code, verdict = answer(text)
                 assert code == 0 and "0 fix, 1 ask, 0 note, 0 answered" in verdict and still_open in verdict, (problem, rule, text, verdict)
         ask("potential issue, not confirmed: an old caller can throw")
@@ -242,6 +242,18 @@ def test_defect_ask():
         ask("why 2 and not 3?")
         code, verdict = answer("limit: not now")
         assert "1 ask" in verdict and still_open not in verdict, "a plain question is not called a defect ask"
+
+    with scratch_repo("quote"):
+        base = commit({"note.py": 'label = "`a`: b"\n'}, "quote base")
+        head = commit({"note.py": 'label = "`a`: c"\n'}, "quote change")
+        rc.start(f"{base}..{head}")
+        run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
+        uid, checks = next(iter(load_checklist(run).items()))
+        rows(run, f"| {uid} | {', '.join(checks['rules']) or '-'} | x | `label =` | n/a | | the test code has no case these rules name |",
+             f"| {uid} | - | note.py:1 | `label =` | ask | potential issue, not confirmed: a reader can break | a reader of b |")
+        (run / "answers.md").write_text('- note.py `label = "`a`: c"`: A\n')
+        rc.verdict(run.name)
+        assert 'Open: note.py `label = "`a`: c"`: a defect ask' in (run / "03-verdict.md").read_text(), "a quote that holds `: is not cut"
 
 
 def test_refuted_fix():

@@ -34,7 +34,7 @@ def closes(kind, problem, answer):
     if not defect(problem):
         return not text.startswith("limit:")
     # check.md, Asks: `disproved:` needs the quoted code line or command, so a bare word cannot close a defect ask.
-    return text.startswith(PROOF) and (not text.startswith("disproved:") or "`" in text)
+    return text.startswith(PROOF) and (not text.startswith("disproved:") or bool(re.search(r"`[^`]+`", text)))
 
 
 def crashes(problem):
@@ -208,9 +208,12 @@ def verdict(name, only=None):
             open_defect = kind == "ask" and not matches and defect(problem)  # read before the rule ID goes in front
             problem = f"{rule}: {problem}" if ids else problem
             if kind == "ask" and not matches:
-                history += [f"Open: {alt[0]} `{alt[1]}`: a defect ask closes only with {', '.join(PROOF[:-1])} or {PROOF[-1]}"
-                            for alternatives in replied for alt in alternatives[:1]
-                            if open_defect and alt[0] == path and any(alt[1] == source.strip() for source in new_lines)]
+                # A source line may hold "`: " itself, so take the reading whose quote is a line of this unit.
+                history += [f"Open: {alt[0]} `{alt[1]}`: a defect ask closes only with fix:, disproved: and a quoted "
+                            "line in backticks, or limit:"
+                            for alternatives in replied if open_defect
+                            for alt in [a for a in alternatives if a[0] == path
+                                        and any(a[1] == source.strip() for source in new_lines)][:1]]
                 for alternatives in past:
                     match = next((alt for alt in alternatives if alt[0] == path
                                   and any(alt[1] == source.strip() for source in new_lines)), None)

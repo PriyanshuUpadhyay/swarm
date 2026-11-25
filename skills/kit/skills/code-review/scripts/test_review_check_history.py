@@ -54,6 +54,8 @@ def test_stale_verdict_guard():
             assert rc.verdict(run.name) == 0, "a run with no target.json still gets a verdict"
             (run / "target.json").write_text(target)
             sh("git", "checkout", "-q", "main")
+            assert rc.verdict(run.name) == 0 and "Verdict: STALE" in (run / "03-verdict.md").read_text(), \
+                "the next start must run after a stored STALE verdict"
 
             rc.start(f"{head}..{changed}")
             assert (Path("tmp/review-check") / f"range-{head[:7]}-{changed[:7]}-01").is_dir()
