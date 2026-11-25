@@ -44,9 +44,9 @@ metadata:
 - After the step table, add the blocks table with the header `| Block | Status | Why |`. It holds one `Chosen` row for each block, each with one reason, and one `Offered` row for each offered block that no step loads. `Chosen` is exactly the set of blocks that the steps load, after the parent and part expansion that `blocks/blocks.toml` sets. Sub-blocks are the parts of a parent block, as its `metadata.parts` names them. They have their own rows, and `plan-chart` shows them under their parent.
 - Two blocks that name each other in `conflicts` cannot both be in the plan. Keep one, and say why in its Why cell.
 - `Amend: <N>` on its own line after the step table lets a run add N steps that write `none` with `step_run.py amend`, with no new approval. In a research plan, amend refuses a step that loads `deep-search`, because its seed searches need the owner. Leave it out (N is 0) unless the owner sets it.
-- When no block fits a step, write the step with the nearest block and say what is missing in Why. Do not invent a block id.
+- When no block fits a step, write the step with the nearest block and say what is missing in Why. Use a registered block ID so the plan can load it.
 - Then run the `plan-chart` block, then the `plan-review` block. Work starts only after the owner approves.
-- The owner reads the plan on the page that `plan-chart` draws, with each skill block and its description. The reply that asks for approval says in two or three lines what the plan does. The owner changes the plan with "drop X", "add Y", or "add sub-block Z". Change the steps, the step table, and the blocks table to match, run `plan-chart` again, and show the new page. Never start work on a changed plan that the owner has not seen.
+- The owner reads the plan on the page that `plan-chart` draws, with each skill block and its description. The reply that asks for approval says in two or three lines what the plan does. The owner changes the plan with "drop X", "add Y", or "add sub-block Z". Change the steps, the step table, and the blocks table to match, run `plan-chart` again, and show the new page. Show the changed plan and get the owner's approval before work starts, so the approval covers the current plan.
 
 ## Example
 Initial state: the research verb sends "can a call show the user's own number as caller ID?" in a repo that calls Twilio.

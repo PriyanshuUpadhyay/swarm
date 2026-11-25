@@ -15,18 +15,18 @@ metadata:
 
 ## Rules
 Structure
-- Semantic HTML before ARIA. `<button>` for actions, `<a>` for navigation, never a `<div>` with a click handler.
+- Use native controls first: `<button>` for actions and `<a>` for navigation, so keyboard access comes with the control.
 - Headings go in order, `<h1>` to `<h6>`. Add a skip link to the main content. Heading anchors get `scroll-margin-top`.
 - Images need `alt` (`alt=""` if decorative) and explicit `width` and `height`. Decorative icons get `aria-hidden="true"`. Icon-only buttons get `aria-label`. For diagrams, apply `blocks/diagram/SKILL.md`.
 Focus
-- Every link and control takes focus with Tab and shows a ring. Use `:focus-visible`. Never `outline: none` without a replacement. A sticky header must not cover the focused element.
+- Every link and control takes focus with Tab and shows a ring. Use `:focus-visible`. Keep a visible outline or replacement, and keep the focused element clear of sticky headers.
 Contrast
 - Text meets WCAG AA: 4.5:1 for body, 3:1 for large text (24 px and up, or 18.7 px and up when bold). Text over an image, a video, or a 3D scene passes in the screenshot, not only in `DESIGN.md`.
 Layout
 - Check widths are 1440 px, 390 px, and 375 px.
 - No sideways scroll at any check width: `document.documentElement.scrollWidth <= innerWidth`.
 - Each multi-column layout declares its below-768 px fallback. Use CSS Grid, not flex percentage math. A stable full-height hero uses `min-height: 100svh`. UI that tracks the visible area uses `100dvh`.
-- Never disable zoom (`user-scalable=no`, `maximum-scale=1`). Set `color-scheme` and a `<meta name="theme-color">` that matches the background.
+- Keep user zoom available so people can enlarge the page. Set `color-scheme` and a `<meta name="theme-color">` that matches the background.
 Motion
 - UI timing, easing, and reduced motion follow the kit block `blocks/ui-motion/SKILL.md`, including its checks.
 - Every key fact shows in a settled state. Content that waits at opacity 0 is blank in full-page screenshots and skipped by checkers. Capture that state by `blocks/headless-shot/SKILL.md`.

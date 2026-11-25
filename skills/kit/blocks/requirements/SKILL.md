@@ -15,13 +15,13 @@ metadata:
 
 ## Rules
 - Each level answers one question. Level 1: what can someone now do or see (a behavior). Level 2: how does that work (one entrypoint, rule, or record). Level 3: where (`file:line`).
-- Split the top level by behavior. Never by file, layer, or order of work. Behavior is the one split the reader can judge without code.
+- Split the top level by behavior so the reader can judge it without code.
 - Every level-1 and level-2 claim is a sentence that can be true or false. 12 words at most. "A reader sees how the cache answers a request." Not "Cache section".
 - The level-1 claims are the summary. Read them aloud. They must tell the whole change. Write no TL;DR, no sections list, no steps list.
 - At most 5 children and 3 levels.
 - If the change has no visible behavior, level 1 states the guarantees: "Nothing a caller sees changes."
 - The frame step's file holds what its caller lists in its step table or its plan's Holds cell.
-- On the line `Task rules:`, quote word for word, one after another, each rule, limit, or definition that the task states. A claim, a done-when, and a fork default never narrow or widen a quoted rule. A reading that changes it may be a fork option, never the default. A task with no stated rule gets `Task rules: none`.
+- On the line `Task rules:`, quote word for word, one after another, each rule, limit, or definition that the task states. Keep each quoted rule intact in claims, done-whens, and fork defaults. Offer a different reading only as a fork option for the owner. A task with no stated rule gets `Task rules: none`.
 - Each done-when names the evidence that will prove it: a command, a screenshot, or a `file:line`.
 - For a change that ships, run a pre-mortem; skip it for a question with no release. Imagine the change ships in 14 days and fails. Ask what went wrong, what you missed, and what you were overconfident about.
 - Sort each failure as a Tiger (a real risk, with evidence), a Paper Tiger (a concern that is overblown), or an Elephant (a risk that nobody is discussing or checking). When you are not sure which kind a failure is, call it a Tiger.

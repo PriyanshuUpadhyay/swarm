@@ -38,7 +38,7 @@ Style frames and animatic
 - Build a grey-box page: every section as flat boxes with the real text sizes, the final scroll lengths, the loader, and the real transitions. Capture a scroll-through at both widths with `?shot=<section>&u=` frames, and check that each settled state reads.
 QA
 - The page meets the `web-ui-basics` block at each width.
-- The loader ends on the painted hero, never on a blank frame. Record the time to the first painted hero on a throttled connection.
+- End the loader when the hero is painted so the viewer sees the first frame. Record the time to the first painted hero on a throttled connection.
 
 ## Example
 Initial state: the user screen-records a product site with a yellow page, a 3D handheld console as the hero, an ink-splash loader, and a page transition that tears the screen, and asks for "a site like this for my coffee brand".

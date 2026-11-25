@@ -14,10 +14,10 @@ product's repository instead of here.
 |---|---|---|---|---|---|
 | A1 | JSON has no `Infinity` or `NaN` token. A quoted `"INFINITY"` is valid JSON but breaks a numeric field's type. | MUST | JSON payloads | judgment | RFC 8259 §6 |
 | A2 | A 401 from a bearer-protected resource must include a `WWW-Authenticate: Bearer` challenge. Use `error="invalid_token"` for an expired or invalid token. With no authentication information, normally omit the error code; `realm` is optional. A response body does not replace the challenge. | MUST | bearer-protected resource endpoints; preserve RFC SHOULD/MAY strength within the rule | judgment | [RFC 6750 §§3–3.1](https://datatracker.ietf.org/doc/html/rfc6750#section-3.1) |
-| A3 | Do not return a field whose value is computable from other fields in the same payload. | ADVICE | response bodies | judgment | Azure `rest-no-computable-fields` |
-| A4 | Treat an enum as extensible and document that new values may appear, unless the set can never change. | ADVICE | response enums | judgment | Azure `json-use-extensible-enums` |
+| A3 | When the payload already contains the inputs, let callers derive the value from them. | ADVICE | response bodies | judgment | Azure `rest-no-computable-fields` |
+| A4 | Treat an enum as extensible and document that new values may appear, unless the set is fixed by contract. | ADVICE | response enums | judgment | Azure `json-use-extensible-enums` |
 | A5 | `null` and an absent property must mean the same thing. One `null` cannot carry three meanings. | ADVICE | request and response bodies | judgment | Zalando 123 |
-| A6 | A boolean must not be null. If a third state is meaningful, use a named enum instead. | ADVICE | request and response bodies | judgment | Zalando 122 |
+| A6 | Use a non-null boolean for two states and a named enum if a third state is meaningful. | ADVICE | request and response bodies | judgment | Zalando 122 |
 | A7 | A quantity with a unit carries the unit as a field-name suffix. | ADVICE | numeric fields | judgment | AIP-141 |
 | A8 | A timestamp field is not named in the past tense, and an integer timestamp names its unit. `reset_time_millis`, not `resets_at`. | ADVICE | time fields | judgment | AIP-142 |
 | A9 | Model a variant as its own shape under `oneOf` with a `discriminator`, rather than as a sentinel inside a typed field. This is the answer to "should unlimited be -1 or null". | ADVICE | payloads with variant states | `vacuum lint` or `spectral lint` if installed | OpenAPI 3.1 |
@@ -42,10 +42,10 @@ A clean linter run does not prove normal form. Normalisation stays `judgment`.
 
 | # | Rule | Status | Scope | Check | Source |
 |---|---|---|---|---|---|
-| P1 | Quote a percentile, never a mean. A mean hides the tail, and a load generator that pauses during a stall under-reports it (coordinated omission). | ADVICE | any latency claim | judgment | Dean and Barroso, *The Tail at Scale* |
+| P1 | Quote a percentile to show latency at the tail. A mean hides the tail, and a load generator that pauses during a stall under-reports it (coordinated omission). | ADVICE | any latency claim | judgment | Dean and Barroso, *The Tail at Scale* |
 | P2 | Judge a scan by table size, rows needed, and measured cost against the workload's budget. A scan of a small table or most of its rows can be appropriate. Investigate costly scans before adding an index. | ADVICE | SQLite queries on hot paths with a known workload | judgment; inspect `EXPLAIN QUERY PLAN` and measure representative data; `SCAN` alone is not a failure | [SQLite query planning](https://www.sqlite.org/queryplanner.html) |
 
-A plan shows shape, never production cost, so P2 passing is not a benchmark.
+A plan shows query shape. Measure production cost separately; P2 passing is not a benchmark.
 
 ## 4. Reliability and failure policy
 

@@ -16,19 +16,17 @@ Get these inputs before you build:
 - the form, such as a still, a loop, a linear short, a journey, an interactive or scroll-driven
   piece, a reel background, or a website (see `blocks/build-site/SKILL.md`);
 - the aspect ratio, the duration, and the fps;
-- content limits, such as the subject, the words, brand assets, and things that must or must not
-  appear;
+- content limits, such as the subject, the words, brand assets, and required or excluded elements;
 - the delivery target when known, such as one HTML file, a source folder, frames, WebM, or MP4.
 
 Pixels carry a look that words cannot, such as a halftone or a line weight. That is why each shot
 needs its three frames.
 
 If the user gives no story ("make something cool"), propose a 3-5 beat story, one line per beat,
-and build that. Do not default to a pattern you used before.
+and build that. Choose its pattern to suit the brief.
 
 Fill low-risk gaps with defaults and record them. Use 1080x1920 for a vertical reel, 30 fps, 6-12 s
-for a loop, and 15-45 s for a short. Do not guess exact brand copy, logos, likenesses, or publishing
-destinations. Ask for them.
+for a loop, and 15-45 s for a short. Ask for exact brand copy, logos, likenesses, and publishing destinations when they matter, so the owner controls those choices.
 
 Record each reference in `ink/01-intake.md`. Find, inspect, and measure the references as `blocks/reference-analysis/SKILL.md` says. In build, the recipes in
 `blocks/build-canvas/references/mark-making.md` give starting numbers where a reference is too small to measure.
@@ -57,7 +55,7 @@ Motion grammar:
 Boil policy (rate, which layers boil):
 Story structure:
 Controlled irregularity:
-Do not drift into:
+Traits to avoid:
 Originality changes:
 ```
 

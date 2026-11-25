@@ -51,14 +51,13 @@ gates, such as drawing a zero or holding to shatter glass
 
 ## Transition catalogue
 
-Choose each transition for what the story does at that boundary. Do not use one transition for every
-boundary.
+Choose each transition for what the story does at that boundary, so each cut serves its beat.
 
 | Transition | Story meaning | Build |
 |---|---|---|
 | Cut | jump in time or place, energy | switch shot at a frame; pair with a visual or sound accent |
 | Match cut | two things are linked | end shot A and start shot B on the same shape, position, colour, or motion |
-| Crossfade | time passes, memory | draw both shots and blend over the window; it has no carrier, so do not use it for continuity |
+| Crossfade | time passes, memory | draw both shots and blend over the window; it has no carrier; use a match cut or another continuity transition when a carrier matters |
 | Wipe or iris | chapter change, playful | mask shot B with a moving shape over shot A |
 | Camera move (pan, push, pull) | same time and place, reveal | animate the camera in one scene, or lay two scenes side by side in world space |
 | Whip pan or blur cut | fast jump with energy | motion-blurred move out of A and into B, cut hidden at peak blur; the same peak blur on both sides, about 10 px on text and 18-20 px on a full frame |
@@ -74,7 +73,7 @@ wipe. A transformation gets a morph. Nesting gets a zoom-through.
 A cut feels like one continuous move when the exit of shot A sets the entry of shot B:
 
 - **Axis.** x stays x, y stays y, zoom stays zoom.
-- **Direction.** Never mirror. On the zoom axis the sign matters, so a push (growing) answers a
+- **Direction.** Keep the direction between shots. On the zoom axis the sign matters, so a push (growing) answers a
   push and a pull (shrinking) answers a pull. A pull answered by grow-from-small is the most common
   mistake, because grow-from-small is the default entrance.
 - **Speed.** Use mirrored easing, so the entry's first velocity is close to the exit's last.
@@ -143,7 +142,7 @@ Smooth 60 fps interpolation of everything reads as software, not as a drawn film
 - **On twos.** Character poses may hold for two frames (12 poses per second) while the camera moves
   on every frame.
 - **Move, then rest.** Put a motion in the first half of its period (about 55 %) and hold for the
-  rest. Motion that never settles reads as mechanical.
+  rest. Motion without rest reads as mechanical.
 - **Staged arrival.** Layers land one after another, not all at once. In one reel the three inks
   land at 0.3, 1.1, and 1.9 s, and the plate offset settles from 14 px to 4 px over 2.7 s.
 - **Draw-in.** Reveal a stroke with a length budget from 0 to 1 instead of a fade.

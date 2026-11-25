@@ -19,7 +19,7 @@ metadata:
 - The `auto` mode commit gate (`skills/implement/references/auto.md`) has one pipeline exception. After unit N passes its worker check, the chair checks its returned artifact and evidence. The worker may edit N+1 during that check, but N+1 cannot commit until the chair's check of N passes.
 - Make each unit a vertical slice through every layer that its behavior needs, not one layer for all behaviors.
 - Make a wide change in three stages: expand (add the new form next to the old), migrate the callers in checked batches, then contract (remove the old form).
-- Each unit is one bracket: a known-good state, one change, the check, then the next unit. Start from a clean base, so every check measures against the real baseline. Never save the checks for one final batch.
+- Each unit is one bracket: a known-good state, one change, the check, then the next unit. Start from a clean base, so every check measures against the real baseline. Run each check before starting the next unit so a failure points to one change.
 - Order the units so the stack proves itself. A reviewer reads the failing then passing evidence within each behavior, scaffold then feature, and each commit stands on its own.
 - Fix seats may build fix rows with declared, separate files at the same time, under the Parallel fix seats (opt-in) section of `auto` mode. Each fix still ends in its own check at its place in the stack.
 - When a data change can touch many records and the task allows a sample, the first unit runs it on one record and checks that record before the rest run.

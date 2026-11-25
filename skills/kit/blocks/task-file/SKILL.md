@@ -14,12 +14,12 @@ metadata:
 ---
 
 ## Rules
-- Keep one task file per task at `<repo-root>/tmp/<skill>/<YYYY-MM-DD>-<slug>.md`, as the kit's `references/run-folder.md` says. `tmp/` stays in `.git/info/exclude`, so git never tracks the file. Keep no second plan file.
+- Keep one task file per task at `<repo-root>/tmp/<skill>/<YYYY-MM-DD>-<slug>.md`, as the kit's `references/run-folder.md` says. Use that reference's local `tmp/` exclusion to keep the task file out of Git. Keep no second plan file.
 - The file holds the goal in one line, the steps or behaviors in order, the current one, one evidence line per finished one (the check that ran and its result, or the run that showed it on the real surface), the commit of each finished one, the checks to run, and the next step. The skill that uses this block names any extra field.
 - Update the file after every finished step.
 - Read the file first after a `/clear`, a `/compact`, or a resume. Make the first reply a status block: what is done with its commits, what is open, the current step, and the open decisions, then the next step. Redo nothing that is done. The file is the truth, not the chat.
 - The file is a log for a resume. Keep it to its fields, with no source survey and no essay. Apply the loaded agent instructions to user-facing output.
-- Give other agents the file's absolute path, never a summary of it.
+- Give other agents the file's absolute path, so they can read the current record.
 
 ## Example
 Initial state: an `auto` mode run has landed units 1-3, and the session is compacted.

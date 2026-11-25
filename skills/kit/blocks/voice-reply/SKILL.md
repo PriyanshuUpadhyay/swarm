@@ -16,7 +16,7 @@ metadata:
 ## Rules
 - Apply the owner's reply rules to the final answer.
 - When the session loaded no reply rules, say so in the reply, and write in plain words.
-- Take each result from its step file. Name each step that failed or was skipped, with its output. Never round a partial result up to done.
+- Take each result from its step file. Name each step that failed or was skipped, with its output. Report a partial result as partial.
 
 ## Example
 Initial state: the steps found that the theme lives in `src/theme.ts` and added dark tokens, and the 375 px screenshot shows a white header.

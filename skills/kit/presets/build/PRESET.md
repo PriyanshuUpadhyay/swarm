@@ -34,8 +34,8 @@ sunrise. A neon restyle changes only the look tokens.
 - `production`: the full look, texture, lettering, export, and handoff.
 - `analysis-only`: rules from references, with no build.
 
-Default to `prototype` for anything with more than one beat. A polished multi-scene piece is not a
-one-prompt task, so do not suggest it is.
+Default to `prototype` for anything with more than one beat. Set expectations for a polished
+multi-scene piece: it needs more than one prompt.
 
 ## Steps
 
@@ -129,5 +129,5 @@ output tokens. Tell the user the likely cost before production.
 
 ## Output
 
-Never return only a prompt. Return the build, the run command, the seed, and the step files. Say what
+Return the build, the run command, the seed, and the step files. Say what
 matched, what changed to stay original, and what was not verified.

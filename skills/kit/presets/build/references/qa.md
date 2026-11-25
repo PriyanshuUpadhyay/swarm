@@ -65,7 +65,7 @@ Run these when frames can be rendered by `?t=`; they catch what a few stills mis
 
 - **Seam (loops):** render `t=0` and `t=1` and compare, for example
   `magick compare -metric RMSE a.png b.png null:`. Near zero (about 1e-4) means an exact return.
-  `compare` exits 1 on any difference, so do not let `set -e` stop a script on it.
+  Handle exit 1 from `compare` as a difference so `set -e` lets the script finish the comparison.
 - **Pops:** compare every frame with the next. A step much larger than its neighbours (for example
   more than 1.25 times their mean) marks a jump, a reseed, or a skipped layer. Include the seam step.
   Run it with boil off (the `?boil=0` debug toggle). With boil on, it flagged every boil frame in a

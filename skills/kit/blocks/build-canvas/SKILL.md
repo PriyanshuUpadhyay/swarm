@@ -70,7 +70,7 @@ Determinism
 - Store one seed with the output.
 - Reset p5 `randomSeed()` and `noiseSeed()` predictably. Seed decor per entity or scene type, not per
   frame.
-- Never use wall-clock values for render state. Live playback only advances `t`.
+- Derive render state from `t` and the seed so the same inputs reproduce each frame. Live playback only advances `t`.
 - Accept `?t=` (or a frame number) so any single frame renders alone. Frame export and QA need this.
   A scroll or gate story has no single clock, so accept `?shot=<id>&u=` instead.
 - Expose `stateAt(t)` (or `stateAt(shot, u)`): the camera and each carrier's screen position. The
@@ -78,9 +78,9 @@ Determinism
 - A stateful simulation (particles with physics, reaction-diffusion, fluid) cannot jump to any `t`.
   Step it with a fixed time step from frame 0, export frames in order in one session, and keep
   checkpoints every N frames so `?t=` can resume from the nearest one.
-- On the GPU, `seek(t)` resolves only after the frame is on the canvas, so a screenshot never
-  catches a half frame. Render, then wait for `device.queue.onSubmittedWorkDone()` and two
-  animation frames. Do not await `renderer.renderAsync()`, because three.js deprecated it in r181.
+- On the GPU, resolve `seek(t)` after the complete frame is on the canvas so capture gets that frame.
+  Render, then wait for `device.queue.onSubmittedWorkDone()` and two animation frames. Use the
+  current render API, because three.js deprecated `renderer.renderAsync()` in r181.
   A 2026-09-30 three.js WebGPU trial captured full frames this way.
 
 Debug modes
@@ -95,9 +95,9 @@ Give toggles for:
 - a reference overlay when rights and source allow it.
 
 Performance
-Prototype at reduced resolution. Cache static textures. Do not redraw costly grain or thousands of
-hatch marks every frame unless they move. Profile before cutting visual detail. Export from a fixed
-timestep so slow rendering does not change the motion.
+Prototype at reduced resolution. Cache static textures, grain, and large sets of static hatch
+marks. Profile before cutting visual detail. Export from a fixed timestep so slow rendering does
+not change the motion.
 
 Toolbox
 Choose tools for the look and the story, not for a small build. Dependencies, a loading screen, 3D

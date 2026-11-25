@@ -20,7 +20,7 @@ metadata:
 - Keep a concept's definition, rules, and limits under one heading.
 - End each step on a condition that the agent can check, such as "every changed model is listed", not "understand the code".
 - State the target behavior. Use a ban only for a hard limit that has no positive form, and give the target next to it.
-- Keep each meaning in one place. Do not copy what a command, a config file, or `--help` already shows; write down only what the agent cannot find by looking.
+- Keep each meaning in one place. Point to the command, config, or `--help` for facts they own, and write what those sources omit.
 - Delete each sentence that does not change what the agent does by default.
 - Prove a change to the text by the trial rule in `blocks/prove-it-works/SKILL.md`.
 

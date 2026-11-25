@@ -37,7 +37,7 @@ Motion checks
 QA log
 - Keep the QA log as a table in the step's own file:
   `Artifact/version:`, `Reference set:`, `Render settings:`, then rows of `Frame or interval | Observed pixel/playback evidence | Severity | Fix | Rechecked`.
-- Do not say "visually verified" unless pixels or playback from the final delivered artifact were inspected after the last fix.
+- Say "visually verified" only after inspecting pixels or playback from the final artifact after the last fix.
 
 ## Example
 Initial state: a reel's export is done and its beat key frames are saved full size.

@@ -16,12 +16,12 @@ metadata:
 ## Rules
 - The kit root is two folders up from this file.
 - Map each value that the UI shows: field, source, type, limit, and optional or not. Include counts, timestamps, badge text, labels from data, avatars, and the list length. Find the limit in the schema, the database column, the API type, or the form `maxLength`. If you find no limit, write "unbounded", which is a finding.
-- Each worst-case value is one that a real user could make, or the real limit from the map. Never use random text such as `aaaa…`. Take values from `references/catalog.md` in this block's folder, and use `example.com` domains.
+- Each worst-case value is one that a real user could make, or the real limit from the map. For realistic fixtures, take values from `references/catalog.md` in this block's folder, and use `example.com` domains.
 - Change the data, not the component. The worst case enters at the same boundary as the demo data: the fixture, the mock, the props, or the API stub.
 - Put the different failures across the first rows of one fixture, as real data does. Also check Empty (no items), One (one item, and each count at exactly 1), and Huge (the real upper list length, 1,000 rows or more when the list has no pages).
-- A switch between the demo data and the worst case is for development only, and it never ships.
+- Keep the fixture switch in development builds so users get production data.
 - Look at each case at the component's real width, at 320 px, and at 200 % zoom. Shots follow `blocks/headless-shot/SKILL.md`.
-- For each long string, choose wrap, end cut, middle cut, or clamp for that field. Never cut a number, an amount, or a date.
+- For each long string, choose wrap, end cut, middle cut, or clamp for that field. Keep numbers, amounts, and dates intact so their values stay clear.
 - List each break with its field, its value, what happens, and a fix at `file:line`. Mark it Broken, Ugly, or Fragile. Fix only the breaks that the step or the owner names, then check all the cases again, the demo data too.
 
 ## Example

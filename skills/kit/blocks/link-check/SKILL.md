@@ -21,7 +21,7 @@ metadata:
 
 ## Example
 Initial state: a report cites six pages.
-Action: open each one. One returns 404. Another opens but never states the number the claim cites.
+Action: open each one. One returns 404. Another opens but lacks the cited number.
 Result: four links stay, one reads "(link dead)", the claim that rested only on the sixth page is dropped, and the step file says "6 checked, 1 dead, 1 unsupported".
 
 ## Check (script)

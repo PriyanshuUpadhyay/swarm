@@ -99,10 +99,10 @@ YouTube: yt-dlp --write-auto-sub --skip-download -o "/tmp/%(id)s" "<url>"
 Write `<kit root>` as the kit's real folder in the brief. The browser route (Reddit, X, Lobsters,
 and pages that block a reader) needs `playwriter` on the PATH, its extension on in the user's
 browser, and a seat that may reach local addresses. The Seat mechanics section names the launch
-flag for a Codex seat, whose sandbox blocks them. The routes only read, so a seat never signs in,
-posts, likes, follows, or types into a page there. The Reddit and X rows try the pinned last30days
-engine first (`~/.local/share/swarm-vendor/last30days-v3.31.0`, never edited) and use the browser
-when it gives nothing.
+flag for a Codex seat, whose sandbox blocks them. Use browser routes for reading only. Do not sign
+in, post, like, follow, or type into a page, because that could change the user's browser or account
+state. Reddit and X use the unmodified `~/.local/share/swarm-vendor/last30days-v3.31.0` first and
+use the browser when it gives nothing.
 
 **Depth, a hard rule.**
 
@@ -116,7 +116,7 @@ the `03-web` section of `skills/research/SKILL.md`.
 1. **Yield** — at least five findings that are not on the known list, each with evidence, one
    honest weakness, a source-agreement tag by `blocks/cite-sources/SKILL.md`, and one line on why
    it is under-discussed (new, niche, no marketing, non-English community). Attribute and count
-   sources by that same block. Fewer is a Coverage note that names the searches tried, never "nothing found".
+   sources by that same block. If there are fewer, name the searches tried in Coverage so the chair can assess the gap.
 2. **Floor** — say in Coverage how many threads or pages from the seat's own site set it read. A
    seat that read fewer than ten names why its site set ran dry.
 
@@ -128,7 +128,7 @@ section per seat, with these search-specific fields:
 1. the question, verbatim, and its sub-questions, split by the chair as `blocks/deep-search/SKILL.md`
    says;
 2. the site set for that seat;
-3. an "already cited, do not re-cite" list;
+3. a list of sources already cited, so the seat surfaces new evidence;
 4. **depth** — the deep-search block and the Yield and Floor rules above, given as the Depth rule
    says, with the known list and the seeds filled in;
 5. **method** — use your own native search and fetch tools and the Reach tools block; when a
@@ -152,7 +152,7 @@ Use a literal result path (`blocks/worker-brief/SKILL.md`) under the run directo
 
 **Chair synthesis.**
 
-Gate each seat's report when it arrives; do not wait for the other seats. Merge after the gate
+Gate each seat's report as it arrives so a resend can start before the others finish. Merge after the gate
 has handled all three reports.
 
 1. Apply the depth gate. Reject a report whose findings are all on the known list, that stops at
@@ -160,7 +160,7 @@ has handled all three reports.
    without a blocked log, or whose matrix leaves a sub-question with no sources and no gap note.
    Send that seat back at once, once only, with the depth rules quoted. Accept what it returns,
    and say so in the coverage table. Record `sent back: <seat> 1`
-   in `03-gate.md` and read that line before any resend, so a seat is never sent back twice.
+   in `03-gate.md` and read that line before any resend, to enforce the one-resend cap.
    Apply `blocks/cite-sources/SKILL.md` to each claim's evidence. Drop a finding that repeats the
    brief's seed words without a page that says them.
 2. Check every link as `blocks/link-check/SKILL.md` says.

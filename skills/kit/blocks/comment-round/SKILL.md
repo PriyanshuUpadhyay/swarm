@@ -16,9 +16,9 @@ metadata:
 ## Rules
 - The script is `<kit root>/blocks/comment-round/scripts/comment_round.py`.
 - Round N: run `python3 -I <script> run <dir> <file>...`. It opens the files as one review, waits for the owner, and writes `<dir>/<N>.json` with the decision and a hash of each file. It waits for a person, so start it where a tool time limit cannot stop it.
-- Exit 2 with `unavailable plannotator`: tell the owner and stop. Never skip the review.
-- Pass files only, never a URL. Plannotator sends a URL to an outside reader and shows it as Markdown.
-- Read `decision` from the round file, never the message text. `dismissed` means the page closed, and it is never an approval.
+- Exit 2 with `unavailable plannotator`: tell the owner and wait for the review gate.
+- Pass local files only, because Plannotator sends a URL to an outside reader and shows it as Markdown.
+- Use the round file's `decision` as the approval record. Treat `dismissed` as a closed page and wait for approval.
 - The page shows no replies. So write your answer to each note in `<dir>/<N>-answers.md`, below a quote of the note. The script refuses the next round, and the check refuses the approval, while a round with notes has no answers.
 - The script refuses round 4. Then ask the owner in chat which notes are still open.
 - `python3 -I <script> check <dir> <file>...` exits 0 only when the newest round approved these files and no file changed since. An edit after approval needs a new round.

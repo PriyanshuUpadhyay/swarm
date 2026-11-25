@@ -15,15 +15,15 @@ metadata:
 
 ## Rules
 - Before round 1, apply `Align in rounds` in `skills/pair-programming/SKILL.md` to the plan.
-- Run each round with the `comment-round` block on `<run>/plan.html` only, with `<run>/plan-review` as its folder. The page holds all of `plan.md`, and the page carries the hash of the `plan.md` it was drawn from, so `start_plan.py` refuses a `plan.md` edited after the round, so the owner never reads the same plan twice.
+- Run each round with the `comment-round` block on `<run>/plan.html` only, with `<run>/plan-review` as its folder. The page holds all of `plan.md`, and the page carries the hash of the `plan.md` it was drawn from, so `start_plan.py` refuses a `plan.md` edited after the round.
 - After each round, act on the decision:
   - `approved` with no notes: the plan is approved.
   - `approved` with notes, or `annotated`: change `plan.md` for each note, answer each note, run `plan-chart`, and start another round. Any change to the plan needs a new round, because the approval holds only for the files the owner saw.
   - `dismissed`: ask the owner in chat.
 - Start the work as step 4 of `skills/swarm/SKILL.md` says. `start_plan.py` owns the stop rule, and its docstring says when a plan needs this round.
-- When the owner approves in words instead of on the page, save their message to a file, add the line `Auto approval: "<their exact words>"` to `plan.md`, run `plan-chart`, then run `start_plan.py <run> --auto <file>`. The script refuses words that are not in the file and a page drawn from an older `plan.md`. Never write the words yourself.
-- An approved page or comment round elsewhere is never an approval of the plan.
-- When the owner asks for a design review, or the plan adds a public interface, run the vendor EGM plugin's `egm-review` (`/egm:egm-review` in Claude Code and AGY, the EGM skill in Codex) on `plan.md` before round 1. Its fresh reviewers read the plan with no history. Fix each finding the plan owns, and put the rest in the plan's open questions. EGM is installed from `google/elephant-goldfish-model` (Apache-2.0) and never edited. When it is not installed, say so and go on.
+- When the owner approves in words instead of on the page, save their message to a file, add the line `Auto approval: "<their exact words>"` to `plan.md`, run `plan-chart`, then run `start_plan.py <run> --auto <file>`. The script refuses words that are not in the file and a page drawn from an older `plan.md`. Use only the owner's saved words so the approval comes from them.
+- Accept approval only for this plan, so a decision on other work cannot start it.
+- When the owner asks for a design review, or the plan adds a public interface, run the vendor EGM plugin's `egm-review` (`/egm:egm-review` in Claude Code and AGY, the EGM skill in Codex) on `plan.md` before round 1. Its fresh reviewers read the plan with no history. Fix each finding the plan owns, and put the rest in the plan's open questions. Use the unmodified EGM plugin from `google/elephant-goldfish-model` (Apache-2.0). When it is not installed, say so and go on.
 
 ## Example
 Initial state: `plan.html` shows 03-tokens in stage 2.

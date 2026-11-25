@@ -57,8 +57,7 @@ than a table and one text diagram can hold. Examples are a table that needs sort
 than one linked diagram, a long timeline, or a before-and-after view. Put the page in the run
 folder, draw its diagrams by the page form above, and give its path in one line of the reply.
 
-The page is extra. Apply the session's agent instructions to the reply. The agent never publishes
-the page or opens it.
+The page is extra. Apply the session's agent instructions to the reply. Keep the page local and give the owner its path to open, so the owner controls its display and distribution.
 
 ## Not yet
 
