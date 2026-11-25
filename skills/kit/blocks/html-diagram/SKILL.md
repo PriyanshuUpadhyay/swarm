@@ -15,7 +15,7 @@ metadata:
 
 ## Rules
 - Use the check location that `blocks/web-ui/SKILL.md` sets.
-- For diagram form, apply `references/explain-formats.md` from the kit root. This block applies to pages the kit builds.
+- For diagram form, apply [`references/explain-formats.md`](../../references/explain-formats.md) from the kit root. This block applies to pages the kit builds.
 - Build each node as an HTML element with real text, laid out with CSS grid or flexbox. Use CSS borders, pseudo-elements, or text arrows (→ ↓) within the layout, so arrows move with the boxes.
 - At 600 px and below, switch the diagram to one column in reading order. Each arrow keeps its meaning, source to target: it points at the same box as on a wide screen, including in the stacked layout. Turn it to match the new layout (↓ when the target is now below, ↑ when it is above).
 - Wrap the diagram and its caption in `<figure>` and `<figcaption>`. Give the diagram a text description with `role="img"` and an `aria-label` that says what it shows, or use an `<ol>` when order is the point.

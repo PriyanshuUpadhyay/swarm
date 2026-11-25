@@ -16,7 +16,7 @@ metadata:
 ## Rules
 - The kit root is two folders up from this file.
 - Map each value that the UI shows: field, source, type, limit, and optional or not. Include counts, timestamps, badge text, labels from data, avatars, and the list length. Find the limit in the schema, the database column, the API type, or the form `maxLength`. If you find no limit, write "unbounded", which is a finding.
-- Each worst-case value is one that a real user could make, or the real limit from the map. For realistic fixtures, take values from `references/catalog.md` in this block's folder, and use `example.com` domains.
+- Each worst-case value is one that a real user could make, or the real limit from the map. For realistic fixtures, take values from [`references/catalog.md`](references/catalog.md) in this block's folder, and use `example.com` domains.
 - Change the data, not the component. The worst case enters at the same boundary as the demo data: the fixture, the mock, the props, or the API stub.
 - Put the different failures across the first rows of one fixture, as real data does. Also check Empty (no items), One (one item, and each count at exactly 1), and Huge (the real upper list length, 1,000 rows or more when the list has no pages).
 - Keep the fixture switch in development builds so users get production data.
@@ -25,9 +25,8 @@ metadata:
 - List each break with its field, its value, what happens, and a fix at `file:line`. Mark it Broken, Ugly, or Fragile. Fix only the breaks that the step or the owner names, then check all the cases again, the demo data too.
 
 ## Example
-Initial state: a member list shows a name, an email, and a count, with demo data "Jane Doe" and 12 members.
-Action: the map finds `name` limited to 255 at `schema.ts:14` and `email` unbounded. The fixture puts `Aleksandra Wiśniewska-Kowalczyk` in row 1, a 70-character email in row 2, and `Jo` in row 3, with a count of 1. The 320 px shot shows the ••• menu pushed off the row.
-Result: three breaks. The menu is Broken (fix: `min-width: 0` on the text column at `MemberRow.tsx:22`). "1 members" is Ugly. The email is Fragile because it has no limit.
+- Bad: check a member list with one short name and a normal count.
+- Good: put a realistic long name and email plus a count of 1 in the fixture. Check the menu and labels at 320 px and 200% zoom.
 
 ## Check (script)
 - none: the fixture, the shots, and the break list differ by repo, so the judge reads them.

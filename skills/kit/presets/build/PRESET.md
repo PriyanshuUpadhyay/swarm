@@ -48,7 +48,7 @@ multi-scene piece: it needs more than one prompt.
    and [story-and-motion.md](references/story-and-motion.md).
 4. **Style frames** with the real drawing code, one of them the signature shot, scored beside the
    reference as `blocks/look-check/SKILL.md` says, including its round rule. See
-   `blocks/build-canvas/references/mark-making.md` and [qa.md](references/qa.md).
+   [`blocks/build-canvas/references/mark-making.md`](../../blocks/build-canvas/references/mark-making.md) and [qa.md](references/qa.md).
 5. **Animatic.** Flat shapes, final timing, real transitions. See [build.md](references/build.md).
 6. **Detail passes** up to the style frames, with scenes in batches of about eight. Build with `blocks/build-canvas/SKILL.md` and its `references/mark-making.md`.
 7. **QA, export, and handoff.** See `blocks/visual-qa/SKILL.md`, [qa.md](references/qa.md),
@@ -63,7 +63,7 @@ pattern file when a build solves a new one.
 
 ## Progress
 
-Choose `<piece>`, the piece folder, by `references/run-folder.md`, so a new chat continues where
+Choose `<piece>`, the piece folder, by [`references/run-folder.md`](../../references/run-folder.md), so a new chat continues where
 the last one stopped.
 
 `start` binds `{{site}}` and `{{shots}}` as `blocks/blocks.toml` says.
@@ -72,7 +72,7 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 `04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
 `build continue ~/work/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
 
-A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
+A piece is a step run, so [`references/step-run.md`](../../references/step-run.md) owns the status line, ready and stale steps,
 pick-up, close, and when a step waits for the user. Run the front door in `skills/swarm/SKILL.md`
 with the preset below, and write `plan.md` in `<piece>/ink/`. The `Blocks` column makes `start`
 link each block's rules in its step file, and `take` prints them in full.

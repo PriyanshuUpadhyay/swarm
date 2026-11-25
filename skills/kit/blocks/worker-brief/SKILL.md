@@ -34,9 +34,8 @@ metadata:
 - A worker never reads `~/.claude/history.jsonl`, `~/.claude/sessions/`, `~/.claude/projects/`, `~/.claude-*`, `~/.codex-*`, or `~/.gemini`, because these paths contain private owner state.
 
 ## Example
-Initial state: a review seat must judge 6 units of a commit range.
-Action: the brief says: you may write only `tmp/review-check/range-a-b-01/02-review-lens.md`; check each unit-rule pair your seat owns in `checklist.json`, with a quote and a proof; leave REF rows to the refs seat; read only the run folder and the files it names; stop when every owned pair has a row, then send one summary.
-Result: the seat writes one file and one summary. `git status` in the repo shows no change that the seat made.
+- Bad: ask a review seat to check a diff and fix anything it finds.
+- Good: give it named rows, evidence, and a literal result path. The seat writes only that file and leaves fixes to the editor.
 
 ## Check (script)
 - none: the brief and the seat's result live in the chair's run folder, and the commit range cannot show who wrote a file.

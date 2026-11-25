@@ -20,7 +20,7 @@ metadata:
 - State the promise as an `INVARIANT`, or as a `PROPERTY` with fairness for "eventually". Run `everystate -json <Spec>.tla` at the head. When the change claims to fix an order, also model the merge base: base fails and head passes is the evidence for that claim.
 - Check every step of a failing trace against the code. When the model allows a step the code cannot take, fix the model and run it again; the first trace is not a finding.
 - For each model that passes, break it the way the code could break (remove the guard, split the atomic step), run it, and record that it fails. Require this failing run before citing the model as proof.
-- Put the model path, the exit code, and the trace as a short story in the code's words in the row's `proof` cell. A trace shows that the order is possible in the model, not that a caller takes it. So the row kind and the way an `ask` becomes a `fix` stay as `skills/code-review/references/check.md` sets them.
+- Put the model path, the exit code, and the trace as a short story in the code's words in the row's `proof` cell. A trace shows that the order is possible in the model, not that a caller takes it. So the row kind and the way an `ask` becomes a `fix` stay as [`skills/code-review/references/check.md`](../../skills/code-review/references/check.md) sets them.
 - Report what the model leaves out (the steps merged into one action, the bounds, the platform behavior assumed) in the seat's result.
 
 ## Example

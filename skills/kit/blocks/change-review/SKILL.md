@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- The kit root is two folders up from this file. Read `<kit root>/skills/code-review/references/check.md` and run it whole on `<base>..<head>`: the commit before the first build step, up to the last build commit. Inside a repo, this block adds no rule, lens, or verdict of its own.
+- The kit root is two folders up from this file. Read [commit review contract](../../skills/code-review/references/check.md) and run it whole on `<base>..<head>`: the commit before the first build step, up to the last build commit. Inside a repo, this block adds no rule, lens, or verdict of its own.
 - Have new seats fill the checklist, as that file says, so the review is independent. Start them with the `run-workers` block.
 - Inside a repo, pass on only the verdict line that `review_check.py verdict` printed. `INCOMPLETE` is not a pass.
 - On `REQUEST CHANGES`, fix each finding as its own unit by the `checked-units` block, then review the new range again.

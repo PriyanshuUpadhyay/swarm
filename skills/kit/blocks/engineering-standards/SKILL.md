@@ -35,7 +35,7 @@ known-bad case before trusting it; a green tool result does not prove a `judgmen
 
 1. Derive the intended behavior, failure cases, and applicable row IDs from the request and
    repository. Keep them in the existing plan or task record, not a second document.
-2. Read the sections of `references/standards.md` in this block's folder that contain those rows, and check their scope.
+2. Read the sections of [`references/standards.md`](references/standards.md) in this block's folder that contain those rows, and check their scope.
 3. Run each `Check` that fits the actual engine. Report what you could not run.
 4. When a `Scope` forks, two rows conflict, or the question is contested, stop and explain the
    trade-off as the kit block `blocks/decision-with-default/SKILL.md` says. Leave that trade-off to the owner.

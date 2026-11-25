@@ -24,11 +24,11 @@ Three visible seats search different parts of the web in parallel. The chair mer
   - this session's own fetches are blocked;
   - the local step or a first web pass returned only the answers the user already knew.
 
-**Start or continue.**
+### Start or continue
 
-A web search is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
+A web search is a step run, so the kit's [`references/step-run.md`](../../references/step-run.md) owns the status line, pick-up,
 close, and when a step waits for the user. Choose the web-search run and report paths by
-`references/run-folder.md`; the run folder also keeps the seat reports at the end.
+[`references/run-folder.md`](../../references/run-folder.md); the run folder also keeps the seat reports at the end.
 "web-search continue <folder>" picks it up. Make the folder with
 `python3 <kit root>/references/step_run.py start <folder> <kit root>/blocks/web-search/SKILL.md`, and close each step with `done`.
 
@@ -42,7 +42,7 @@ close, and when a step waits for the user. Choose the web-search run and report 
 
 For the default route, record `default taken` in `01-brief` and use `skip` on `02-seats` with that reason. Check this session's findings in `03-gate`, merge them in `04-merge`, and record that no seats or launch scratch were created in `05-close`.
 
-**Seat mechanics.**
+### Seat mechanics
 
 The chair runs the seats as the kit block `blocks/run-workers/SKILL.md` says, on the cheap
 `search.web` route, and every seat is a visible pane. Share one brief. Completion on swarm is the
@@ -60,7 +60,7 @@ The site-set seat names below describe search purposes, not provider identities.
   `swarm launch`, so its browser rows reach the local `playwriter` relay. No other Codex seat gets
   this flag.
 
-**Default site sets.**
+### Default site sets
 
 | Seat | Sites |
 |---|---|
@@ -72,7 +72,7 @@ The caller may replace any of these sets. Write the set each seat gets into that
 Every seat also gets one non-SEO index for the long tail: Marginalia Search, Kagi Small Web, or
 Exa "find similar" from a primary source, whichever its tools can reach.
 
-**Reach tools.**
+### Reach tools
 
 `scripts/reach.py` holds the known route for each site and its fallbacks, in a fixed order. It
 prints the first route that gives content, logs each route that failed, and ends with a `blocked:`
@@ -99,7 +99,7 @@ in, post, like, follow, or type into a page, because that could change the user'
 state. Reddit and X use the unmodified `~/.local/share/swarm-vendor/last30days-v3.31.0` first and
 use the browser when it gives nothing.
 
-**Depth, a hard rule.**
+### Depth gate
 
 Every brief gives the kit block
 `blocks/deep-search/SKILL.md` with the known list and the seeds filled in, and adds the two seat
@@ -115,7 +115,7 @@ the `03-web` section of `skills/research/SKILL.md`.
 2. **Floor** — say in Coverage how many threads or pages from the seat's own site set it read. A
    seat that read fewer than ten names why its site set ran dry.
 
-**The shared brief.**
+### Shared brief
 
 Apply `blocks/worker-brief/SKILL.md` for common fields and read/write limits. One brief has one
 section per seat, with these search-specific fields:
@@ -140,12 +140,12 @@ section per seat, with these search-specific fields:
    as `blocks/primary-sources/SKILL.md` says, `What is contested`, `Sources` newest first, under
    800 words, and a final `RESEARCH_DONE` line;
 8. **layout** — the seat's report follows the section order in
-   the kit's `references/plan-layout.md` where that file applies; quote the rule lines the seat
+   the kit's [`references/plan-layout.md`](../../references/plan-layout.md) where that file applies; quote the rule lines the seat
    needs, because Codex and AGY seats do not load it.
 
 Use a literal result path (`blocks/worker-brief/SKILL.md`) under the run directory.
 
-**Chair synthesis.**
+### Chair synthesis
 
 Gate each seat's report as it arrives so a resend can start before the others finish. Merge after the gate
 has handled all three reports.
@@ -166,23 +166,19 @@ has handled all three reports.
 5. Close out the seats by `blocks/run-workers/SKILL.md`.
 6. Remove the scratch run directory last.
 
-**Second round.**
+### Second round
 
 Run a second round only when the seats contradict each other on the answer, not to polish a report
 they agree on. Give each seat the other two seats' findings and ask for its answer in under 350
 words.
 
-**Guards.**
+### Guards
 
 - Use the report-only seat contract in `blocks/worker-brief/SKILL.md`.
 
 ## Example
-Initial state: a research question about practice, with three seats briefed.
-Action: the forums seat reads 19 Reddit threads, the code/long-form seat is blocked by Reddit
-with a 403 and reads 18 GitHub issues, and the independent communities seat reads 12 Hacker
-News and Lobsters threads. The chair applies
-`blocks/link-check/SKILL.md` to those links and puts the counts in the coverage table.
-Result: the merged report has three coverage rows, and the code/long-form row names Reddit as blocked with its blocked log.
+- Bad: write "blocked by Reddit" without showing the attempts.
+- Good: name the routes and their errors for Reddit, count the threads read, and put the gap in the coverage table.
 
 ## Check (script)
 - none: the seat reports and the merged report live in the run folder, which differs for each run.

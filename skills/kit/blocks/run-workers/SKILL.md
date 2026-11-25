@@ -26,12 +26,12 @@ metadata:
 - A search can run in the current agent without a worker pane. When a workflow requires workers, use the visibility and lifecycle rules of the active host and runtime contract.
 - Before a retry of a launch or a send that timed out, check whether the first one landed, with `swarm agents --json` for a launch and `swarm messages --json` for a send. Retry only when it did not, to avoid a duplicate seat or message.
 - If a visible seat cannot launch or stay interactive, retry it once. Then start a visible seat on the role's next declared fallback runner, and tell the user the run is degraded. With no fallback left, go on without that seat only when the skill allows it.
-- When a worker publishes `blocked: tried <the 3>`, the chair, as the senior, may take the task: it closes the blocked seat, to stay within the coding-seat cap in `references/fan-out.md`, then relaunches the task once on `code.complex`, with the worker's result as the new brief. The binary's claim and handoff refusals still apply. When the checker role declares a runner of another provider than the worker's, the chair may launch the checker on that runner.
+- When a worker publishes `blocked: tried <the 3>`, the chair may take the task as the senior. Close the blocked seat to stay within the coding-seat cap in [`references/fan-out.md`](../../references/fan-out.md). Relaunch the task once on `code.complex`, using the worker's result as the new brief. The binary's claim and handoff refusals still apply. When the checker role declares a runner of another provider than the worker's, the chair may launch the checker on that runner.
 - Send the briefs of one stage under one deadline. Sending returns when the worker took the task, not when it finished; the worker's finish rings the chair. The kit's `references/fan-out.md` owns what goes out in parallel and the chair's work while seats run.
 - Accept only a result that the host's durable channel confirms and that names its seat. Pass the skill's refusal or degraded state to the chair as the skill says.
 - At the end, close only the seats this run started, and check that they are gone.
 - Write every brief by `blocks/worker-brief/SKILL.md`. A worker session follows the worker rules of that block, not this one.
-- Under the swarm host, the host reference is `references/host-swarm.md` in this block's folder.
+- Under the swarm host, the host reference is [`references/host-swarm.md`](references/host-swarm.md) in this block's folder.
 - Each runtime adds its own lines; follow the one that the `[agent-runtime: ...]` line names:
   - claude: native background subagents are allowed unless the host contract or the workflow requires a visible pane. Each Workflow `agent()` call pins the model of its named seat role, or Sonnet when it names none. Workflow fan-out allows only Sonnet or Haiku. Refuse any other model and name the role.
   - codex: load the host skill that the `[agent-host: ...]` contract names. Collaboration workers (`spawn_agent`) run in-process as background workers; use them unless the host contract or the workflow requires a visible pane.
@@ -39,9 +39,8 @@ metadata:
   - agy: load the host skill that the `[agent-host: ...]` contract names. Native AGY subagents are allowed unless the host contract or the workflow requires a visible pane. Send the first task through the host only after it sees an input-ready AGY session.
 
 ## Example
-Initial state: a council needs three seats, `council.claude`, `council.gpt`, and `council.gemini`.
-Action: run `swarm roles get` for each role, launch three visible panes with unique names, send one brief to each in the same turn, and end the turn. The GPT pane fails to launch twice, so a visible pane on the role's fallback runner replaces it, and the chair tells the user.
-Result: three result files, each confirmed by an inbox message from its seat; at the end `swarm close` runs for the three names this run started, and `swarm agents` no longer lists them.
+- Bad: after two failed pane launches, pick a model outside the role's fallback list.
+- Good: launch the next declared fallback in a visible pane and report the degraded route. Check that the run's panes are gone after close.
 
 ## Check (script)
 - none: seats and their results live in the host's state and the chair's run folder, not in the commit range.
