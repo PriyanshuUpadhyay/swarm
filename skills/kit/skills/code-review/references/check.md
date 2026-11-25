@@ -212,7 +212,9 @@ again. A refuted `fix` becomes an `ask`, never a pass, so only the owner can clo
 ## Callers
 
 `implement` step 06 (both modes), the `change-review` block, and walk mode step 03 read line 3 of `03-verdict.md`. A caller treats
-`INCOMPLETE`, or a verdict file older than its range, as no review.
+`INCOMPLETE`, `STALE`, or a verdict file older than its range, as no review.
+`verdict` prints `STALE` in place of `APPROVE` when the checkout has a commit after the reviewed head,
+and lists each one as `- not reviewed: <hash> <subject>`. Run `start <reviewed head>..HEAD` for those commits.
 
 ## Output
 

@@ -80,7 +80,7 @@ def refuted(path):
 
 def verdict(name, only=None):
     """Gate the rows and write 03-verdict.md; with `only` (a seat file name), check only that file's rows and write nothing."""
-    from review_check import GENERIC, KINDS, answers, home, parse_diff, revision, rows, step_run, tree_digest
+    from review_check import GENERIC, KINDS, answers, git, home, parse_diff, revision, rows, step_run, tree_digest
     d = home() / name
     units = {u["id"]: u for u in json.loads((d / "units.json").read_text(encoding="utf-8"))}
     diff = parse_diff((d / "diff.patch").read_text(encoding="utf-8"))
@@ -270,11 +270,19 @@ def verdict(name, only=None):
     else:
         status = "done"
         word = "REQUEST CHANGES" if count["fix"] else "NEEDS DISCUSSION" if count["ask"] else "APPROVE"
+    # A commit after the reviewed head is code that no seat saw, so an APPROVE no longer holds (2026-11-25
+    # review-misses report: 13 outside findings were on fix commits pushed after the last run). Another branch
+    # in the checkout is not a later commit, so only a head that HEAD descends from counts.
+    later = []
+    if t["head"] and git("merge-base", t["head"], "HEAD", check=False).strip() == t["head"]:
+        later = git("log", "--reverse", "--format=%h %s", f"{t['head']}..HEAD").splitlines()
+    if later and word == "APPROVE":
+        word = "STALE"
     line3 = (f"Verdict: {word} ({len(seen)} of {len(units)} units, {checked} of {checks} checks; {count['fix']} fix, {count['ask']} ask, "
              f"{count['note']} note, {count['answered']} answered, {count['limit']} limit; rules: {'none' if rules == 'none' else Path(rules).name}; build: {built})")
     uses = ", ".join(f"{f.stem}@{revision(f)}" for f in [d / "01-units.md", *sorted(d.glob("02-review*.md")),
                                                           *[f for f in [d / "02-refute.md", d / "build.json", d / "answers.md"] if f.exists()]])
-    body = [line3, "", *(f"- {p}" for p in problems),
+    body = [line3, "", *(f"- {p}" for p in problems), *(f"- not reviewed: {c}" for c in later),
             *(f"- {k} `{loc}` {problem} ({'answer' if k == 'answered' else 'limit' if k == 'limit' else 'proof'}: {proof})"
               for _, loc, _, k, problem, proof in kept),
             *(f"Answered: {path} `{quote}` closes {n} {'fixes' if answer.strip().lower().startswith('limit:') else 'asks'}"

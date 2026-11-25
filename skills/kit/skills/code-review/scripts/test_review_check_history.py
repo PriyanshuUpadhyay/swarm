@@ -39,7 +39,9 @@ def test_stale_verdict_guard():
                         assert str(run.resolve()) in str(e) and filename in str(e), e
                     assert set(Path("tmp/review-check").iterdir()) == folders, "a stale verdict creates no folder"
                 assert rc.verdict(run.name) == 0
-                assert "Verdict: APPROVE" in (run / "03-verdict.md").read_text()
+                verdict = (run / "03-verdict.md").read_text()
+                assert "Verdict: STALE" in verdict, "a commit after the reviewed head must replace APPROVE"
+                assert f"- not reviewed: {changed[:7]} after stale change" in verdict, verdict
             rc.start(f"{head}..{changed}")
             assert (Path("tmp/review-check") / f"range-{head[:7]}-{changed[:7]}-01").is_dir()
         finally:

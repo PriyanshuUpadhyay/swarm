@@ -96,7 +96,7 @@ status line.
    In a new round, add `--patch <run>/since-view.patch`, which holds what changed since
    view and the whole diff of each file new to you. Follow check mode to its verdict. Line 3 of
    `03-check.md` is line 3 of its `03-verdict.md`, and line 4 is `Run: <its run folder>`, relative
-   to the repo root. An `INCOMPLETE` verdict keeps this step open. `status` prints a problem when
+   to the repo root. An `INCOMPLETE` or `STALE` verdict keeps this step open. `status` prints a problem when
    the map skips a file or names one twice, or when line 3 does not match a done check run
    of this head.
 4. **Comments.** Take the `fix`, `ask`, and `note` rows of the check run. Apply the kit block
