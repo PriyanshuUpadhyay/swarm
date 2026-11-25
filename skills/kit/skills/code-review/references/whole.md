@@ -5,10 +5,10 @@ answer one rule on one unit, so no one of them asks whether the change does what
 whether a value still holds after it leaves the file. This seat owns no rule ID. It runs on
 `review.deep`, in every check run, and writes `02-review-whole.md`.
 
-Example. A change stubs old tool results and stores a call ID in the stub. The seat writes
-`Intent: cut prompt size on a cold turn; a stubbed result is read back by its call ID`. Then it
-follows the call ID to the reader and finds that the reader loads only the messages after the
-summary, so an older call ID gets `not_found`. It writes that as an `ask` with the two lines.
+Example. A change moves old orders to an archive table and keeps the order ID in the invoice row.
+The seat writes `Intent: keep the orders table small; an archived order is still read by its ID`.
+Then it follows the order ID to the invoice page and finds that the page reads only the orders
+table, so an archived order shows as missing. It writes that as an `ask` with the two lines.
 
 ## Order of work
 
