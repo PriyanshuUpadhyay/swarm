@@ -12,7 +12,7 @@ has a `CI:` line and the repo's lint config runs that rule at error level, with 
 the unit's file. `build` records the CI result for the run's head, and `verdict` counts those IDs
 only from it.
 
-  start <local|base..head> [--parent-loop KEY] [--continue FILE] [--patch FILE]
+  start <local|base..head> [--parent-loop KEY] [--continue FILE] [--patch FILE] [--intent FILE]
                                             make <repo>/tmp/review-check/<run>/ with 01-units.md
   build <run> [--run]                        record CI for the head, or run its command in the verify worktree
   verdict <run>                              gate the rows of 02-review*.md and write 03-verdict.md

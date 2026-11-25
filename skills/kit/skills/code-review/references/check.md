@@ -45,6 +45,7 @@ For a gate to new seats and the `implement` handoff from a leaf, apply `blocks/w
 ```sh
 C=<kit root>/skills/code-review/scripts/review_check.py
 python3 $C start <base>..<head> --parent-loop <task-key> # or `local`; --patch FILE for a part
+python3 $C start <base>..<head> --intent <file>         # the PR title and body, for the `whole` seat
 python3 $C start <base>..<head> --parent-loop <task-key> --continue <user-file>
 python3 $C build <run>              # when 01-units.md has a Build line: the CI check for the head
 python3 $C build <run> --run        # or run the CI command in the frozen verify worktree
@@ -74,6 +75,7 @@ root is two folders up from the `code-review` skill's folder; a bare `references
 | `<git-common-dir>/review-check/<key-hash>.json` | script | shared round ledger for `review_check.py start` across linked worktrees |
 | `build.json` | script | the CI result for the head, or the `--run` result for the tree |
 | `02-review-<seat>.md` | seat | results for the unit-rule pairs it owns, checked by `verdict <run>` |
+| `intent.md` | script | the text of `--intent FILE` and the commit messages of the range, for the `whole` seat |
 | `answers.md` | chair or user | answers for this run, with a file and a whole trimmed source line |
 | `answers-before.md` | script | answers from a prior run, for history only |
 | `03-verdict.md` | script | line 3 is `Verdict: <word> (<n> of <m> units, <c> of <t> checks; <fix> fix, <ask> ask, <note> note, <answered> answered, <limit> limit; rules: <file>; build: pass\|fail\|none)`, then each gap or kept row |
@@ -185,6 +187,12 @@ only that file's rows (cells, IDs, quotes, and proofs), and fixes each row that 
 | lang | `review.check` | the IDs from `lens-<name>.md` | `02-review-lang.md` |
 | repo | `review.check` | the IDs from the repo's rules file | `02-review-repo.md` |
 | refs | `review.deep` | `REF`, and any finding it meets | `02-review-refs.md` |
+| whole | `review.deep` | none; rule `-` on any unit | `02-review-whole.md` |
+
+The `whole` seat follows [whole.md](whole.md). It reads `intent.md`, which `start` writes from
+`--intent FILE` and the commit messages, states what the change does and why, and then attacks
+that across files. Give it the PR title and body when a PR exists. `verdict` names the seat when
+its file has no `Intent:` line.
 
 REF stays on `review.deep`, because it judges a changed signature, return shape, or meaning at
 each caller, and it must search past the first 20 references on its own.

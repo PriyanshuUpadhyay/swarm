@@ -15,7 +15,7 @@
     "review.deep"
   ],
   "seat_template": {
-    "isolation": "one seat per checklist.json seat-map entry; each answers only its owned unit-rule pairs; review.check holds lens, lang, and repo shards; refs stays one review.deep seat; a seat never reviews a change its own session wrote",
+    "isolation": "one seat per checklist.json seat-map entry; each answers only its owned unit-rule pairs; review.check holds lens, lang, and repo shards; refs stays one review.deep seat; whole is one review.deep seat that owns no rule ID and follows references/whole.md; a seat never reviews a change its own session wrote",
     "visibility": "host-visible owned leaf",
     "permission": "reads the repository and the frozen run folder; writes only its own 02-review-<seat>.md; no repository edits, no commits",
     "artifact": "02-review-<seat>.md under <repo>/tmp/review-check/<run>/, with a result for every unit-rule pair whose owners entry names the seat",

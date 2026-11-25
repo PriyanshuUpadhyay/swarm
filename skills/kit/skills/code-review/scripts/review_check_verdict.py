@@ -251,6 +251,9 @@ def verdict(name, only=None):
         # A seat runs this as it writes, so a bad quote goes back to the same seat before the verdict.
         print(*(re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", p) for p in problems or [f"{only}: rows ok"]), sep="\n")
         return 1 if problems else 0
+    whole = d / "02-review-whole.md"
+    if "whole" in seats and not (whole.exists() and re.search(r"^Intent: \S", whole.read_text(encoding="utf-8"), re.M)):
+        problems.append("seat whole: 02-review-whole.md needs an `Intent:` line; see references/whole.md")
     missing = {uid: [r for r in checklist[uid]["rules"] if r not in done[uid]] for uid in units}
     if seats:
         for seat, plan in seats.items():

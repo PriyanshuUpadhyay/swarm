@@ -181,6 +181,7 @@ if __name__ == "__main__":
         test_test_gate_proof_guard()
         test_cli_encoding()
         test_superseded_run()
+        test_whole_seat()
         test_answers()
         test_defect_ask()
         test_refuted_fix()
