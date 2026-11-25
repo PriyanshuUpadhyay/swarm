@@ -147,10 +147,6 @@ The kit block `blocks/checked-units/SKILL.md` owns the unit order. The repo's de
 
 ## Trial log
 
-This preset is on trial. At the end of each step file, add two lines:
-
-- `Skills read: <paths>` (the script writes it when you `take` a step)
-- `Helped: yes | no, <one example>`
-
-Also add a line for each stall, wrong skill, or repeated manual step. These lines decide if the
-skill stays, changes, or is removed.
+This preset is on trial. The script writes `Skills read: <paths>` at the end of each step file when
+you `take` a step. Add a line for each stall, wrong skill, or repeated manual step. These lines
+decide if the skill stays, changes, or is removed.

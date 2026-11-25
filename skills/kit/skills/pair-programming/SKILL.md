@@ -72,14 +72,13 @@ partial success), blast radius (which other callers get the change), rollout ord
 callers, and an irreversible action. Ask each open one with its default. When an open choice
 depends on a project or code to copy and the repository has no precedent, ask for one.
 
-- Look up what the code or the task already answers, and ask only the rest. When the task text states a
-  value, record it as an A-line marked `typed` with the words `from the request` and go on. Stories behind these rules: `evals/results.md`.
-- Each number, size, or limit that the agent invents is a question, with the number as its default.
 - Before any question, here and under a diff, test it: does the request text, an A-line, or the
-  current code already answer it? If yes, state the fact with its source in one line instead,
-  such as "`*.lock` only, as the request says" or "extra arguments keep the usage error,
-  `size_gate.py:NN`". A question is for a choice whose answers lead to different code and that none
-  of the three sources settles.
+  current code already answer it? If yes, state the fact with its source in one line instead, such
+  as "`*.lock` only, as the request says" or "extra arguments keep the usage error,
+  `size_gate.py:NN`". When the task text states a value, record it as an A-line marked `typed` with
+  the words `from the request`. A question is for a choice whose answers lead to different code and
+  that none of the three sources settles. Stories behind this rule: `evals/results.md`.
+- Each number, size, or limit that the agent invents is a question, with the number as its default.
 - A behavior the code already has is not a question. When it matters, name it as kept behavior in
   the behavior list.
 - A task with no open choice gets no question round. See the small-task block below.

@@ -76,8 +76,8 @@ Expect:
 - <one fact a reader can see in the output>
 ```
 
-- Take each case from a real failure, in this order: a saved step line `Helped: no`, a wrong skill
-  or wrong route in a Trial log, a correction the owner made in chat, and last the skill's own
+- Take each case from a real failure, in this order: a stall or a wrong skill or
+  wrong route in a Trial log, a correction the owner made in chat, and last the skill's own
   example.
 - Write the task as a user would. Leave the skill name out and do not tell the agent to use it, because naming it would void the load test.
 - Give each expectation one fact that a wrong output cannot meet by chance. A script check
