@@ -104,7 +104,10 @@ status line.
    `comments.json` as a list of `{path, body, first, last}`, where `first` and `last` are exact
    quotes from the new side and a file-level comment has no `first`. A row that quotes a removed
    line becomes a file-level comment.
-   Line 3 of `04-comments.md` is the verdict line of `03-check.md`. Show the comments in chat,
+   Line 3 of `04-comments.md` is the verdict line of `03-check.md`. Below it, write one line for
+   each `fix` row: `` `<file:line>`: comment ``, `` `<file:line>`: commit <hash> `` when the change is
+   yours and you fixed it, or `` `<file:line>`: dropped: <the user's words> ``. `status` prints a
+   problem for each `fix` row that has no such line, so no `fix` row is lost. Show the comments in chat,
    grouped by the groups of step 02. Run `post` only after the user says yes.
 5. **Walk.** The user reads the PR on GitHub, edits or deletes drafts, adds their own comments,
    marks files viewed, and submits. Then run `viewed` and write in `05-walk.md` the count of viewed

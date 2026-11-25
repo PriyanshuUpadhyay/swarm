@@ -196,6 +196,11 @@ def checks(d, state):
             out.append("03-check: the review-check run is for another head")
         elif state["04-comments"].startswith("done") and text["04-comments"].splitlines()[2:3] != verdict[2:3]:
             out.append("04-comments: line 3 is not the review-check verdict")
+        elif state["04-comments"].startswith("done"):
+            # A fix row that reaches no comment is lost (2026-11-25 review-misses report: three seats flagged a
+            # removed log gate, the posted comments left it out, and a human reviewer raised it the next day).
+            out += [f"04-comments: fix `{loc}` has no comment, commit, or dropped line"
+                    for loc in re.findall(r"^- fix `([^`]+)`", "\n".join(verdict), re.M) if f"`{loc}`" not in text["04-comments"]]
     return out
 
 
