@@ -217,10 +217,10 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
-                      cards={notes.cardsFor(line.id)}
                     />
                   )}
                 </Virtualizer>
+                {notes.layer}
               </>
             )}
           </div>

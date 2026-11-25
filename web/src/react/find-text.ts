@@ -1,6 +1,6 @@
 import { NOTE_CARD, REPLY_HANDLE } from "./note-marks";
 
-/** Text that Find never matches. Note cards and the Whole reply handle sit in a row (ADR 0161),
+/** Text that Find never matches. Note cards and the Whole reply handle sit in the list (ADR 0162),
  *  but the server, which counts the matches, does not see them. */
 const SKIP = `[aria-hidden="true"],.ln,[data-gutter],script,style,${NOTE_CARD},${REPLY_HANDLE}`;
 

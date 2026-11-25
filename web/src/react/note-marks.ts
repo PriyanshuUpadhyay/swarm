@@ -1,17 +1,6 @@
-// What chat notes (ADR 0161) put into a reply's markup: none of it is reply text. This file
-// imports nothing, so notes-margin.tsx, transcript-overlays.tsx and find-text.ts can all use it.
+// Chat-note selectors (ADR 0162) that other modules skip: none of it is reply text. This file
+// imports nothing, so notes-margin.tsx and find-text.ts can both use it.
 
 /** A note card (notes-margin.tsx), and the Whole reply handle (transcript-row.tsx). */
 export const NOTE_CARD = ".ncard";
 export const REPLY_HANDLE = "[data-note-reply]";
-/** The class of the slot that holds a card under its block (notes-margin.tsx, styles-notes.css). */
-export const NOTE_SLOT = "note-under";
-
-/** The reply text of `node`, an element or a copied part of a range: a card's slot sits inside
- *  the reply's markup, but it is not reply text. */
-export function replyText(node: Element | DocumentFragment): string {
-  if (!node.querySelector(`.${NOTE_SLOT}`)) return node.textContent ?? "";
-  const copy = node.cloneNode(true) as Element | DocumentFragment;
-  for (const slot of copy.querySelectorAll(`.${NOTE_SLOT}`)) slot.remove();
-  return copy.textContent ?? "";
-}

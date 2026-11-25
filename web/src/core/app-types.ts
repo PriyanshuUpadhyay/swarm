@@ -101,7 +101,7 @@ export type Pane = {
   full: ReadonlyMap<string, FullText>;
   find: Find;
   composer: Composer | null;
-  /** The composer that the chat's notes go through: the chair's, also in a child's column (ADR 0161). */
+  /** The composer whose box takes the chat's notes: the chair's, also in a child's column (ADR 0162). */
   noteComposer: Composer | null;
 };
 
@@ -161,7 +161,7 @@ export type Reader = {
   reuse(composerId: string, text: string): void;
   /** Branch from here on a user row; only the open chat's chair transcript has it. */
   branch?(row: string): void;
-  /** The notes on agent replies, kept per chat id (ADR 0161). */
+  /** The notes on agent replies, kept per main chat (ADR 0162). */
   readonly notes: Notes;
 };
 

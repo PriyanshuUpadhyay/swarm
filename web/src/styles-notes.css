@@ -1,4 +1,4 @@
-/* Chat notes (ADR 0161): numbered cards on agent replies and the send bar above the composer.
+/* Chat notes (ADR 0162): numbered cards on agent replies and the notes bar above the composer.
    Colours are the app's status tokens: waiting (amber) marks a note. */
 .nbadge {
   display: inline-grid;
@@ -196,29 +196,40 @@
   left: -9px;
 }
 
-/* Narrow: a card sits right under the block it marks, or after the reply when no block shows. */
-.note-under .ncard,
-.note-end .ncard {
+/* The note layer (ADR 0162): one box in the scrolling list, outside the rows, so a card never
+   changes a row's height and the list never jumps. placeCards (notes-margin.tsx) sets each card's
+   top, and its right edge in a narrow list. The layer is 0px high; cards overflow it, and the list
+   scrolls to reach them. */
+.transcript {
+  position: relative;
+}
+.transcript > .note-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  pointer-events: none;
+}
+.note-layer .ncard {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
   font-family: var(--ui-font);
   font-weight: normal;
   font-style: normal;
+  pointer-events: auto;
 }
-.note-end:empty {
+.note-layer .ncard[hidden] {
   display: none;
 }
-/* A selection over reply text skips the cards in it, so a quote holds no card text. */
-.note-under {
-  -webkit-user-select: none;
-  user-select: none;
+.note-layer .nbadge {
+  border: 0;
+  cursor: pointer;
 }
-.note-under textarea {
-  -webkit-user-select: text;
-  user-select: text;
-}
-/* Wide (list at least --wide-notes, with notes): the 820px rows keep their width, and each row gets
-   a gutter on the right, where paintNotes sets each card's top to its block's top. The 48px is the
-   list's side padding (styles-transcript.css). transcript-notes.tsx reads --wide-notes, which
-   @property makes a computed length. */
+/* Wide (list at least --wide-notes, with notes): the rows keep their 820px on the left, and the
+   cards fill a gutter right of them. The 48px is the list's side padding (styles-transcript.css).
+   transcript-notes.tsx reads --wide-notes, which @property makes a computed length. */
 @property --wide-notes {
   syntax: "<length>";
   inherits: false;
@@ -234,26 +245,39 @@
   max-width: calc(var(--notes-row) + var(--notes-gap) + var(--notes-gutter));
 }
 .wide-notes .line {
-  display: grid;
-  grid-template-columns: minmax(0, var(--notes-row)) var(--notes-gutter);
-  column-gap: var(--notes-gap);
+  margin-right: calc(var(--notes-gap) + var(--notes-gutter));
 }
-.wide-notes .line > * {
-  grid-column: 1;
-}
-.wide-notes .line > .msg {
-  position: relative;
-}
-.wide-notes .line > .msg > .copy-msg,
-.wide-notes .line > .msg > .whole-reply {
-  top: 0;
-}
-.wide-notes .line > .note-gutter {
-  grid-column: 2;
-  grid-row: 1 / span 9;
-  min-width: 0;
-}
-.note-gutter .ncard {
+.note-layer.wide .ncard {
+  width: var(--notes-gutter);
   max-width: none;
+}
+/* Narrow: a card shows only its number on its block's right edge, in place of the block's corner
+   badge, and opens over the text while it holds the focus. */
+.transcript:not(.wide-notes) [data-inote]::after {
+  content: none;
+}
+.note-layer.narrow .ncard:not(:focus-within) {
+  padding: 0;
+  background: none;
+  border: 0;
+  transform: translate(9px, -9px);
+}
+.note-layer.narrow .ncard:not(:focus-within) .ncard-head {
   margin: 0;
+}
+.note-layer.narrow .ncard:not(:focus-within) .ncard-head > :not(.nbadge) {
+  display: none;
+}
+/* Clipped, not removed: the note box must still take the focus that opens the card. */
+.note-layer.narrow .ncard:not(:focus-within) > :not(.ncard-head) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.note-layer.narrow .ncard:focus-within {
+  z-index: 3;
+  width: min(320px, calc(100vw - 32px), 90%);
+  box-shadow: 0 6px 24px color-mix(in srgb, black 18%, transparent);
 }

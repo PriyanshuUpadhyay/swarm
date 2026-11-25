@@ -15,8 +15,7 @@ import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
 type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean };
 
-/** `cards` are the row's note cards (ADR 0161), under the reply. */
-function LineView({ app, line, index, full, match, composerId, branches, cards }: Ctx & { index: number; match?: string; cards?: React.ReactNode }) {
+function LineView({ app, line, index, full, match, composerId, branches }: Ctx & { index: number; match?: string }) {
   const { row } = line;
 
   return (
@@ -31,7 +30,6 @@ function LineView({ app, line, index, full, match, composerId, branches, cards }
       <ImageLoader.Provider value={app.imageUrl}>
         <RowBody app={app} line={line} full={full} composerId={composerId} branches={branches} />
       </ImageLoader.Provider>
-      {cards}
     </div>
   );
 }
@@ -174,7 +172,7 @@ function RowBody(ctx: Ctx) {
     return (
       <div className="msg">
         <CopyMessage row={row} />
-        {/* Shown only in annotate mode (ADR 0161); it floats, so the mode never moves a row. */}
+        {/* Shown only in annotate mode (ADR 0162); it floats, so the mode never moves a row. */}
         <button type="button" className="whole-reply" data-note-reply aria-label="Add a note on the whole reply">Whole reply</button>
         <FoldableBody row={row} />
       </div>

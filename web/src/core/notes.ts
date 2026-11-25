@@ -1,4 +1,4 @@
-// Chat notes (ADR 0161): the owner marks agent reply text, one item, or a whole reply, and writes a
+// Chat notes (ADR 0162): the owner marks agent reply text, one item, or a whole reply, and writes a
 // note on it. The notes are browser drafts per chat; one step puts them in the chat's message box.
 // A note on a child agent's column belongs to its main chat and names the agent.
 
@@ -132,7 +132,7 @@ export class Notes {
   add(chat: string, note: Pick<Note, "kind" | "rowId" | "quote" | "agent">): Note | null {
     if (!note.quote.trim()) return null;
     if (this.list(chat).length >= CAP) {
-      this.app.notice(`This chat has ${CAP} notes, the most it keeps. Send or remove some first.`, true);
+      this.app.notice(`This chat has ${CAP} notes, the most it keeps. Add them to the message or remove some first.`, true);
       return null;
     }
     const added: Note = { ...note, id: ++this.seq, text: "", at: Date.now() };

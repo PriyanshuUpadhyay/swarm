@@ -3,8 +3,8 @@ import type { Block } from "../src/core/api";
 import { savedNotes, STORE_KEY, type Note } from "../src/core/notes";
 import { mockRows, open, row, rows } from "./ux-helpers";
 
-// Chat notes (ADR 0161): the owner marks agent reply text, writes a note in a numbered card, and
-// the agent gets every note of the chat as one typed message.
+// Chat notes (ADR 0162): the owner marks agent reply text, writes a note in a numbered card, and
+// the bar puts every note of the chat in the main chat's message box as one message.
 
 const REPLY = "The page cache keeps each rendered page for 10 minutes, so an edit shows late.\n\nReply with A, B, or C.";
 
@@ -195,15 +195,17 @@ test("in annotate mode a click on a link in an item only adds a note, also when 
   const noPopup = async () => expect(await tab.context().waitForEvent("page", { timeout: 500 }).then(() => true, () => false)).toBe(false);
 
   const opened = noPopup();
+  // A card whose row never shows stays hidden.
+  const shown = tab.getByTestId("note-card").filter({ visible: true });
   await tab.getByRole("link", { name: "the trace" }).click();
-  await expect(tab.getByTestId("note-card")).toHaveCount(1);
-  await expect(tab.getByTestId("note-card")).toContainText("See the trace");
+  await expect(shown).toHaveCount(1);
+  await expect(shown).toContainText("See the trace");
   await opened;
 
   const refused = noPopup();
   await tab.getByRole("link", { name: "the trace" }).click();
   await expect(tab.getByText("This chat has 200 notes, the most it keeps.")).toBeVisible();
-  await expect(tab.getByTestId("note-card")).toHaveCount(1);
+  await expect(shown).toHaveCount(1);
   await refused;
 });
 
@@ -212,7 +214,7 @@ test("Find's current match stays on reply text, not on a card or the Whole reply
   await open(tab);
   await tab.keyboard.press("Meta+Shift+A");
   await tab.locator('[data-testid="row"] li').filter({ hasText: "A · Notes tray" }).click();
-  await expect(tab.locator(".note-under .ncard")).toHaveCount(1);
+  await expect(tab.getByTestId("note-card").filter({ visible: true })).toHaveCount(1);
   // The text of the block that holds the current match.
   const current = () => tab.evaluate(() => {
     const range = [...(CSS.highlights.get("find-current") ?? [])][0] as Range | undefined;
@@ -276,20 +278,39 @@ async function mockWorstCase(tab: Page) {
 
 const box = (tab: Page, selector: string) => tab.locator(selector).first().evaluate((el) => el.getBoundingClientRect().toJSON() as DOMRect);
 
-test("wide, cards sit in a gutter beside their block; narrow, under it, with no sideways scroll", async ({ page: tab }) => {
+test("cards float beside their block: wide in a gutter, narrow as a badge; typing in one moves no row", async ({ page: tab }) => {
   await mockWorstCase(tab);
   await tab.setViewportSize({ width: 1440, height: 900 });
   await open(tab);
-  await expect(tab.getByTestId("note-card")).toHaveCount(3);
+  await expect(tab.getByTestId("note-card").filter({ visible: true })).toHaveCount(3);
   await expect(tab.getByTestId("transcript")).toHaveClass(/wide-notes/);
+  // Card 2 sits at the top of its row (plain text, so no block); card 1 sits at its item's top or
+  // lower, clear of card 2, which is taller than its one-line row.
+  const row2 = await box(tab, '[data-testid="row"][data-id="a2"]');
+  const [card1, card2] = [await box(tab, '[data-note="1"]'), await box(tab, '[data-note="2"]')];
   const item = await box(tab, '[data-testid="row"] li[data-inote="1"]');
-  const card = await box(tab, '.note-gutter [data-note="1"]');
-  expect(card.left).toBeGreaterThanOrEqual(item.right);
-  expect(Math.abs(card.top - item.top)).toBeLessThan(2);
+  expect(card1.left).toBeGreaterThanOrEqual(item.right);
+  expect(Math.abs(card2.top - row2.top)).toBeLessThan(2);
+  expect(card1.top).toBeGreaterThanOrEqual(Math.max(item.top, card2.bottom + 8) - 1);
 
+  // The cards sit outside the rows, so a growing note box changes no row's height or place.
+  const before = await rowTops(tab);
+  await tab.locator('[data-note="1"] textarea').fill("one\ntwo\nthree\nfour\nfive\nsix");
+  await expect(tab.locator('[data-note="1"] textarea')).toHaveAttribute("rows", "6");
+  expect(await rowTops(tab)).toEqual(before);
+  await tab.locator('[data-note="1"] textarea').blur();
+
+  // Narrow, a card shows only its number on its block's corner, and opens while it holds the focus.
   await tab.setViewportSize({ width: 375, height: 800 });
   await expect(tab.getByTestId("transcript")).not.toHaveClass(/wide-notes/);
-  await expect(tab.locator('[data-testid="row"] li[data-inote="1"] + .note-under [data-note="1"]')).toBeVisible();
+  const block = await box(tab, '[data-testid="row"] li[data-inote="1"]');
+  const badge = await box(tab, '[data-note="1"] .nbadge');
+  expect(Math.abs(badge.top - (block.top - 9))).toBeLessThan(2);
+  expect(Math.abs(badge.right - (block.right + 9))).toBeLessThan(2);
+  expect((await box(tab, '[data-note="1"]')).width).toBeLessThan(40);
+  await tab.getByRole("button", { name: "Open note 1" }).click();
+  await expect(tab.locator('[data-note="1"] textarea')).toBeFocused();
+  await expect.poll(async () => (await box(tab, '[data-note="1"]')).width).toBeGreaterThan(200);
   const sideways = () => tab.evaluate(() => [document.documentElement, document.querySelector('[data-testid="transcript"]')!].map((el) => el.scrollWidth - el.clientWidth));
   expect(await sideways()).toEqual([0, 0]);
 });

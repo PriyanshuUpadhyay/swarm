@@ -1,12 +1,10 @@
-// Chat notes in the transcript (ADR 0161): annotate mode, the cards' places, and the send bar.
+// Chat notes in the transcript (ADR 0162): annotate mode, the note layer, and the notes bar.
 // A child's column shows its own notes, which live in the main chat and go to its chair.
 
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import type { Pane, Reader } from "../core/app";
-import type { Note } from "../core/notes";
 import { REPLY_HANDLE } from "./note-marks";
-import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes } from "./notes-margin";
+import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes, placeCards } from "./notes-margin";
 import type { NoteSpot } from "./transcript-overlays";
 
 /** A list at least this wide shows cards in a gutter right of the rows; styles-notes.css owns it. */
@@ -23,10 +21,8 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
   const noteList = useSyncExternalStore(notes.subscribe, readList, readList);
   const annotating = useSyncExternalStore(notes.subscribe, readMode, readMode);
 
-  // This column's notes; each card shows its number in the main chat's send order.
+  // This column's notes; each card shows its number in the main chat's order.
   const own = noteList.flatMap((note, i) => (note.agent === agent ? [{ note, n: i + 1 }] : []));
-  const byRow = new Map<string, { note: Note; n: number }[]>();
-  for (const mark of own) byRow.set(mark.note.rowId, [...(byRow.get(mark.note.rowId) ?? []), mark]);
 
   /** Adds a text note per spot; returns the last card's id, whose box takes the caret. */
   const addNotes = (spots: NoteSpot[]) => {
@@ -74,29 +70,32 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     return () => watch.disconnect();
   }, [chatState, listRef]);
   const wide = wideList && own.length > 0;
-  // Narrow, a card sits in a slot under its marked block; paintNotes makes the slots.
-  const [slots, setSlots] = useState<ReadonlyMap<number, HTMLElement | null>>(new Map());
-  const slotsRef = useRef(slots);
+  const layerRef = useRef<HTMLDivElement>(null);
 
-  // Marks follow the rows, which remount as the list scrolls. With no notes and the mode off,
-  // one paint clears what an earlier state left, and no observer runs.
+  // Marks follow the rows, which remount as the list scrolls, and cards follow their blocks, which
+  // move when a row above them changes height. With no notes and the mode off, one paint clears
+  // what an earlier state left, and no observer runs.
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list || chatState !== "ready") return;
 
     const paint = () => {
-      const next = paintNotes(list, own, annotating, wide);
-      const was = slotsRef.current;
-      if (was.size === next.size && [...next].every(([id, el]) => was.get(id) === el)) return;
-      slotsRef.current = next;
-      setSlots(next);
+      const anchors = paintNotes(list, own, annotating);
+      if (layerRef.current) placeCards(layerRef.current, anchors, wide);
     };
     paint();
 
     if (own.length === 0 && !annotating) return;
-    const watch = new MutationObserver(paint);
-    watch.observe(list, { childList: true, subtree: true });
-    return () => watch.disconnect();
+    const rows = new MutationObserver(paint);
+    rows.observe(list, { childList: true, subtree: true });
+    // Placing a card writes only its top, so a resize that it causes cannot ring again.
+    const sizes = new ResizeObserver(paint);
+    for (const el of list.children) if (el !== layerRef.current) sizes.observe(el);
+    for (const card of layerRef.current?.children ?? []) sizes.observe(card);
+    return () => {
+      rows.disconnect();
+      sizes.disconnect();
+    };
     // The React compiler keeps `own` while `noteList` and `agent` stay the same.
   }, [own, annotating, chatState, lines, wide, listRef]);
 
@@ -114,28 +113,22 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     return () => window.removeEventListener("keydown", onKey, true);
   }, [annotating, find.open, notes]);
 
-  const card = (note: Note, n: number) => <NoteCard key={note.id} notes={notes} chat={chat} note={note} n={n} />;
-  /** A row's cards that are not in a slot: all of them in the gutter, else those with no shown block. */
-  const cardsFor = (rowId: string): ReactNode => {
-    const own = byRow.get(rowId);
-    if (!own) return null;
-    return <div className={wide ? "note-gutter" : "note-end"}>{own.filter(({ note }) => wide || slots.get(note.id) === null).map(({ note, n }) => card(note, n))}</div>;
-  };
+  // One layer in the scrolling list holds every card of this column; placeCards sets each top.
+  const layer = own.length > 0 && (
+    <div ref={layerRef} className={`note-layer ${wide ? "wide" : "narrow"}`}>
+      {own.map(({ note, n }) => <NoteCard key={note.id} notes={notes} chat={chat} note={note} n={n} />)}
+    </div>
+  );
 
   const overlay = chatState === "ready" && (
     <>
       <button type="button" className="annotate-pill" data-testid="annotate-mode" aria-pressed={annotating} title="Annotate Chat (⇧⌘A)" onClick={() => notes.toggleMode()}>
         {annotating ? "Annotate · Esc" : "Annotate"}
       </button>
-      {!wide &&
-        [...slots].map(([id, slot]) => {
-          const mark = own.find(({ note }) => note.id === id);
-          return !slot || !mark ? null : createPortal(card(mark.note, mark.n), slot, String(id));
-        })}
       {(!agent || own.length > 0) && <NotesBar notes={notes} chat={chat} list={noteList} child={!!agent} blocked={view.noteComposer ? null : "This chat takes no messages."} />}
     </>
   );
 
   const className = `${annotating ? " annotating" : ""}${wide ? " wide-notes" : ""}`;
-  return { addNotes, onClickCapture, onKeyDown, cardsFor, overlay, className };
+  return { addNotes, onClickCapture, onKeyDown, layer, overlay, className };
 }

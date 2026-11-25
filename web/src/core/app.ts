@@ -48,7 +48,7 @@ export class App {
   readonly newChat = new NewChat(this);
   /** Whether macOS lets swarm's notices through (ADR 0102). */
   readonly notices = new Notices(this);
-  /** Notes on agent replies, put in the message box as one message (ADR 0161). */
+  /** Notes on agent replies, put in the message box as one message (ADR 0162). */
   readonly notes = new Notes(this);
   view: View;
   snapshot: Snapshot | null = null;

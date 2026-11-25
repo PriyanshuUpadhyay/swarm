@@ -8,7 +8,6 @@ import type { Note } from "../core/notes";
 import type { Line } from "../core/transcript";
 import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { copyText } from "./copy";
-import { NOTE_CARD, replyText } from "./note-marks";
 
 const ROW = '[data-testid="row"]';
 /** The text of an agent reply, without its buttons. */
@@ -18,16 +17,13 @@ export const REPLY_BODY = '[data-kind="assistant"] .msg .md, [data-kind="assista
 export type NoteSpot = Pick<Note, "rowId" | "quote">;
 
 /** The selected text per agent reply, when both ends of the selection sit in agent replies. A
- *  selection over 2 replies gives 2 spots; rows between them that are not replies give none.
- *  A note card under a block sits inside the reply's markup but is not reply text: the
- *  selection's own text skips it, because its slot takes no selection (styles-notes.css), and a
- *  part of a range drops its slots. */
+ *  selection over 2 replies gives 2 spots; rows between them that are not replies give none. */
 function selectedSpots(list: HTMLElement): NoteSpot[] {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) return [];
   const inReply = (node: Node | null) => {
     const el = node && list.contains(node) ? (node instanceof Element ? node : node.parentElement) : null;
-    return !!el?.closest(REPLY_BODY) && !el.closest(NOTE_CARD);
+    return !!el?.closest(REPLY_BODY);
   };
   if (!inReply(sel.anchorNode) || !inReply(sel.focusNode)) return [];
 
@@ -44,7 +40,7 @@ function selectedSpots(list: HTMLElement): NoteSpot[] {
     part.selectNodeContents(body);
     if (range.compareBoundaryPoints(Range.START_TO_START, part) > 0) part.setStart(range.startContainer, range.startOffset);
     if (range.compareBoundaryPoints(Range.END_TO_END, part) < 0) part.setEnd(range.endContainer, range.endOffset);
-    const quote = replyText(part.cloneContents());
+    const quote = part.cloneContents().textContent ?? "";
     return rowId && quote.trim() ? [{ rowId, quote }] : [];
   });
 }
