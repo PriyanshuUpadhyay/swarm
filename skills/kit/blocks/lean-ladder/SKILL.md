@@ -1,6 +1,6 @@
 ---
 name: lean-ladder
-description: "Before you write code, climb the ladder: need it at all, already in the repo, standard library, platform feature, installed dependency, one line, then the least code. Use when you write or review new code."
+description: "Check for the least code needed, starting with what already exists. Use when you write or review new code."
 license: MIT
 metadata:
   kind: rule

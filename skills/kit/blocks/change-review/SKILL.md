@@ -1,6 +1,6 @@
 ---
 name: change-review
-description: "Run the review check on the commits that a plan's build steps made, or review a piece's written files outside any repo, and pass on the verdict. Use when a plan wrote work that needs a review verdict."
+description: "Get a review verdict on plan-built commits or written files outside a repo. Use when a plan produced work that needs review."
 license: MIT
 metadata:
   kind: step

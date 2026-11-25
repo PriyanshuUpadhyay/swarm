@@ -1,6 +1,6 @@
 ---
 name: voice-review
-description: "Rewrite review findings as short PR comments in the reviewer's own voice, from their voice file. Use when review findings become comments that a person will post."
+description: "Rewrite review findings as short PR comments from the reviewer's voice file. Use when findings become comments that a person will post."
 license: MIT
 metadata:
   kind: rule

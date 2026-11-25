@@ -1,6 +1,6 @@
 ---
 name: build
-description: Make pictures, films, and sites where code (p5.js, three.js, shaders) draws every frame. Use when the user asks for a reel, loop, generative still, landing page, portfolio, "make this in code", or style rules from references only.
+description: "Make code-drawn visuals. Use when asked for a reel, loop, generative still, landing page, portfolio, “make this in code”, or style rules from references."
 ---
 
 # build

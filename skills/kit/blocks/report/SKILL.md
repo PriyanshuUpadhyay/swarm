@@ -1,6 +1,6 @@
 ---
 name: report
-description: "Write a research answer as a short plain report: the answer first, then evidence with links, what is contested, off-path ideas, and dated sources. Use when a question ends in a written report."
+description: "Write a research report with the answer, evidence, disputed points, off-path ideas, and dated sources. Use when a question ends in a written report."
 license: MIT
 metadata:
   kind: step

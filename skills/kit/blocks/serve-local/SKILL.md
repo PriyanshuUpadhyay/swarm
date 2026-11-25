@@ -1,6 +1,6 @@
 ---
 name: serve-local
-description: "Serve a project's build with its own dev or preview command on a loopback URL, and record its stop command. Use when a page needs a dev server, module scripts, storage, or its own files."
+description: "Run the project's dev or preview server on loopback and record its stop command. Use when a page needs a server, module scripts, storage, or files."
 license: MIT
 metadata:
   kind: step

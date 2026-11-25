@@ -1,6 +1,6 @@
 ---
 name: comment-round
-description: "Run one Plannotator round on a set of files, save the owner's decision with a hash of each file, and answer each note. Use when a plan or a page needs the owner's comments."
+description: "Run one Plannotator round, answer each note, and save the decision and file hashes. Use when a plan or page needs owner comments."
 license: MIT
 metadata:
   kind: rule

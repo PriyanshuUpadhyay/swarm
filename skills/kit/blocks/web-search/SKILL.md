@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: "Wide web search by three visible seats on separate sites, which dig past the known answers and report to files. Use when a research step needs forums or community views, or this session's fetches are blocked."
+description: "Run a wide web search in three visible seats. Use when research needs forums or community views, or this session's fetches are blocked."
 license: MIT
 metadata:
   kind: step

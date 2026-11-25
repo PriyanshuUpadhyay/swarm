@@ -1,6 +1,6 @@
 ---
 name: model-check
-description: "Model-check a race or retry finding with a small TLA+ model and everystate, and put the trace in the review row's proof. Use when a review row's proof is an order of steps across awaits, retries, callbacks, alarms, or locks."
+description: "Model a race or retry finding in TLA+ with everystate. Use when review proof needs step order across awaits, retries, callbacks, alarms, or locks."
 license: MIT
 metadata:
   kind: step

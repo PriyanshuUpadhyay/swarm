@@ -1,6 +1,6 @@
 ---
 name: plan-chart
-description: "Check a plan file, draw its step graph as a Mermaid flowchart in plan.md, and draw the whole plan as the page plan.html that the owner reviews. Use when a plan changes."
+description: "Check a plan and render its Mermaid step graph and plan.html. Use when a plan changes."
 license: MIT
 metadata:
   kind: step

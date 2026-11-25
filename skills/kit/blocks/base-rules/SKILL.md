@@ -1,6 +1,6 @@
 ---
 name: base-rules
-description: "Keep the rules every step keeps that no instruction file owns: repo-built page and doc facts only from the source of truth, and real over drawn. Use when any workflow step runs."
+description: "Apply the shared rules for workflow steps: use source facts, real evidence, and repo-built pages. Use when any workflow step runs."
 license: MIT
 metadata:
   kind: rule

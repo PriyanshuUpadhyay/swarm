@@ -1,6 +1,6 @@
 ---
 name: lean-review
-description: "List only code to cut in a diff or repo, one tagged line per finding, plus the ledger of marked shortcuts. Use when asked what to delete, for an over-engineering review, or a repo audit."
+description: "List code to cut and mark shortcuts. Use when asked what to delete, to review over-engineering, or to audit a repo for cleanup."
 license: MIT
 metadata:
   kind: step

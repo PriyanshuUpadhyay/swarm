@@ -1,6 +1,6 @@
 ---
 name: worker-brief
-description: "Write a worker's brief so it knows what it may change, what to check, where its result goes, and when to stop, and keep report-only seats from editing. Use when you send work to a seat or worker."
+description: "Write a worker brief with its scope, checks, result path, and stop rule. Use when you send work to a seat or worker."
 license: MIT
 metadata:
   kind: rule

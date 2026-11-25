@@ -1,6 +1,6 @@
 ---
 name: run-workers
-description: "Start, brief, collect, and close worker seats on the host the session runs in, and stop when the host cannot do it safely. Use when a skill asks for seats, a council, a review, or a parallel search."
+description: "Start, brief, collect, and close worker seats through the host. Use when a skill asks for seats, a council, a review, or a parallel search."
 license: MIT
 metadata:
   kind: rule

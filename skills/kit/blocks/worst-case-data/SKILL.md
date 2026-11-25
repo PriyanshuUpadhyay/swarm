@@ -1,6 +1,6 @@
 ---
 name: worst-case-data
-description: "Test a UI with real worst-case data from schema limits, fed at the data boundary, with Empty, One, and Huge cases at real width, 320 px, and 200 % zoom. Use when a UI shows user or backend data."
+description: "Test Empty, One, and Huge data at real width, 320 px, and 200% zoom. Use when a UI shows user or backend data."
 license: MIT
 metadata:
   kind: pack

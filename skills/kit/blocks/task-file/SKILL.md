@@ -1,6 +1,6 @@
 ---
 name: task-file
-description: "Keep one small task file per task, so work survives a /clear, a compact, or a resume, and start the first reply after one with a status block. Use when a skill runs a task over many turns."
+description: "Keep one task file across /clear, compaction, and resume, then report status. Use when a skill runs a task over many turns."
 license: MIT
 metadata:
   kind: rule

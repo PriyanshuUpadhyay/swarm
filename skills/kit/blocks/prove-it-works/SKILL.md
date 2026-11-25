@@ -1,6 +1,6 @@
 ---
 name: prove-it-works
-description: "Prove a change works on the real thing: a check that fails before the change and passes after, with its command and output. Use when you test a change, judge a worker's result, or say done."
+description: "Prove a change on the real thing with a check, its command, and output. Use when you test a change, judge a worker's result, or say done."
 license: MIT
 metadata:
   kind: rule

@@ -1,6 +1,6 @@
 ---
 name: local-research
-description: "Answer a question from local sources first, the repo, its docs, prior reports, and council logs, with paths, contrary evidence, and named gaps. Use when a question may already be answered on this machine."
+description: "Answer from local sources first, with paths, contrary evidence, and gaps. Use when a question may already be answered on this machine."
 license: MIT
 metadata:
   kind: step

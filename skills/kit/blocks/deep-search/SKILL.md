@@ -1,6 +1,6 @@
 ---
 name: deep-search
-description: "Search past the famous answers: list them as a baseline, seed lesser-known options, split the question, dig deep, search a recent window, and seek the opposite view. Use when a search must find what the user does not know."
+description: "Search beyond known answers for novel leads and contrary evidence. Use when a search must find what the user does not know."
 license: MIT
 metadata:
   kind: rule

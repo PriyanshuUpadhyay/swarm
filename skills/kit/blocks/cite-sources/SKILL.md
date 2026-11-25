@@ -1,6 +1,6 @@
 ---
 name: cite-sources
-description: "Tie each claim to the source that owns it, quote only text you read, count repeated sources once, and mark weak or snippet-only sources. Use when you write a finding or a report that cites evidence."
+description: "Tie each claim to its source, count copies once, and mark weak evidence. Use when a finding or report cites sources."
 license: MIT
 metadata:
   kind: rule

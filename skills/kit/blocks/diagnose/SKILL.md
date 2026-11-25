@@ -1,6 +1,6 @@
 ---
 name: diagnose
-description: "Find a hard bug's cause: one command that goes red on it, a smaller case, one cause tested at a time, then the fix. Use when a bug, failure, or slowdown has no known cause."
+description: "Find a hard bug's cause with a failing command, smaller case, and one cause tested at a time. Use when a failure or slowdown has no known cause."
 license: MIT
 metadata:
   kind: step

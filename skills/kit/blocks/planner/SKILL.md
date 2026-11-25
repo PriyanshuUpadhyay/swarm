@@ -1,6 +1,6 @@
 ---
 name: planner
-description: "Turn a task into a plan file: a done-when line and a step table that names one or more blocks per step, what each step needs, and why. Use when any task starts, before work."
+description: "Write a plan with a done-when and a step table that names the blocks, needs, and reason for each step. Use when any task starts."
 license: MIT
 metadata:
   kind: step

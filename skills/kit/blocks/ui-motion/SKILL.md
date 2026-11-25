@@ -1,6 +1,6 @@
 ---
 name: ui-motion
-description: "Pick one timing owner for an interface's durations and curves, and set its animated properties and reduced-motion form. Use when the states of a page or app animate."
+description: "Set one owner for timing, curves, and reduced-motion behavior. Use when the states of a page or app animate."
 license: MIT
 metadata:
   kind: rule

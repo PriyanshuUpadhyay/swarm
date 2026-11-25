@@ -1,6 +1,6 @@
 ---
 name: voice
-description: "Keep the reply-rule pointer that the voice blocks share with each selected voice part. Use when a step writes a reply, an explanation, PR text, or review comments."
+description: "Keep the shared reply-rule pointer for voice blocks. Use when a step writes a reply, explanation, PR text, or review comments."
 license: MIT
 metadata:
   kind: parent

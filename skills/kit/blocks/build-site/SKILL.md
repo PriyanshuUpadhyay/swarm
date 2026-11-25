@@ -1,6 +1,6 @@
 ---
 name: build-site
-description: "Build a website as one form of a story piece, where sections replace shots and the loader, scroll, and page transitions carry the story. Use when the piece is a landing page, portfolio, or product site."
+description: "Build a story site with sections, a loader, and scroll and page transitions. Use when the piece is a landing page, portfolio, or product site."
 license: MIT
 metadata:
   kind: step

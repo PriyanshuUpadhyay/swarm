@@ -1,6 +1,6 @@
 ---
 name: plan-review
-description: "Show the plan chart to the owner in Plannotator, change the plan for each note, repeat until they approve, then start the steps. Use when a plan is checked and before any step starts."
+description: "Review the plan chart with the owner in Plannotator and resolve notes before work. Use when a checked plan needs approval before steps start."
 license: MIT
 metadata:
   kind: step

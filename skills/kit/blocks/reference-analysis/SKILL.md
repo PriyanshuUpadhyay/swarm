@@ -1,6 +1,6 @@
 ---
 name: reference-analysis
-description: "Find, inspect, and measure every reference in five passes, with an evidence label on each fact, so the look and story rest on pixels. Use when work starts from visual references."
+description: "Find, inspect, and measure references with an evidence label on each fact. Use when work starts from visual references."
 license: MIT
 metadata:
   kind: step

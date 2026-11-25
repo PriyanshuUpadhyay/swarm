@@ -1,6 +1,6 @@
 ---
 name: requirements
-description: "State the requirements as short true-or-false claims about what someone can now do or see, with done-when evidence and the main risks. Use when a task starts, before design or build."
+description: "State testable needs, done-when evidence, and main risks. Use when a task starts, before design or build."
 license: MIT
 metadata:
   kind: rule

@@ -1,6 +1,6 @@
 ---
 name: checked-units
-description: "Split multi-step work into small units that each end in a passing check before the next unit starts. Use when you plan a sweep, a migration, a run of similar edits, or a stack of commits."
+description: "Split work into small units that each end in a passing check. Use when you plan a sweep, migration, series of edits, or stack of commits."
 license: MIT
 metadata:
   kind: rule

@@ -1,6 +1,6 @@
 ---
 name: voice-teach
-description: "Explain a subject in learning order: start from a term the owner already used, then add one new idea at a time, each tied to the last. Use when the owner asks to understand something."
+description: "Explain from a term the owner knows, adding one idea at a time. Use when the owner asks to understand something."
 license: MIT
 metadata:
   kind: rule

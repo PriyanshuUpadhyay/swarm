@@ -1,6 +1,6 @@
 ---
 name: drive-app
-description: "Drive the real app or browser one action at a time: expected result, fresh snapshot, one action, readback. Use when a proof or task needs real clicks, typing, or a native window."
+description: "Use one real app action at a time, with a fresh snapshot and readback. Use when a task or proof needs real clicks, typing, or a native window."
 license: MIT
 metadata:
   kind: step

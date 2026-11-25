@@ -1,6 +1,6 @@
 ---
 name: voice-reply
-description: "Write the final answer to the owner by the reply rules of the session's agent instructions, with every failed or skipped step named. Use when the last step of a plan writes to the owner."
+description: "Write the final answer to the owner by the session's reply rules. Name failed or skipped steps. Use when the last step writes to the owner."
 license: MIT
 metadata:
   kind: rule

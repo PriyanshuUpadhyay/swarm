@@ -1,6 +1,6 @@
 ---
 name: agent-doc
-description: "Write text that an agent reads, such as a skill, block, or AGENTS.md: trigger words first, detail only where needed, checkable step ends, targets over bans. Use when you write or change agent instructions."
+description: "Write agent instructions with clear triggers, scoped rules, and checkable steps. Use when you write or edit a skill, block, or AGENTS.md."
 license: MIT
 metadata:
   kind: rule

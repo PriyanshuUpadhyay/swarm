@@ -1,6 +1,6 @@
 ---
 name: sources
-description: "Keep the lead-versus-evidence rule that the source blocks share with each selected source part. Use when a step searches, reads an origin, cites a claim, or checks links."
+description: "Keep the shared lead-versus-evidence rule for source blocks. Use when a step searches, reads an origin, cites a claim, or checks links."
 license: MIT
 metadata:
   kind: parent
