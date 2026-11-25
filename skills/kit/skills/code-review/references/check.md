@@ -140,7 +140,8 @@ line in `<run>/answers.md` with this shape:
 
 The user closes an `ask`. The chair may close one only by citing a record the user approved,
 such as the frame's done-when, contracts, an ADR, or an earlier user answer.
-A defect ask is an `ask` whose problem starts with `potential issue, not confirmed:` or `older defect`.
+A defect ask is an `ask` whose problem starts with `potential issue, not confirmed:` or names older
+code in its opening, such as `older defect` or `not from this change`.
 It closes only with an answer that starts with `fix:` and a failing test, `disproved:` and the quoted
 code line or command that shows it cannot happen, or `limit:` and the user's own sentence. `verdict`
 keeps it open on any other answer. The chair shows it with the seat's proof and gives no

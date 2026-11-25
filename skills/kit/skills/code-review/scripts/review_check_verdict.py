@@ -17,16 +17,21 @@ OLDER = re.compile(r"[`*_\s]*((follow-up|potential issue, not confirmed):[`*_\s]
 
 
 # A defect ask closes only with proof (2026-11-25 review-misses report: 14 outside findings were asks or notes
-# that a short owner answer or a comment edit closed). Any answer still closes a plain question.
-DEFECT = re.compile(r"[`*_\s]*(potential issue, not confirmed:|older defect\b)", re.I)
+# that a short owner answer or a comment edit closed). A plain question closes with any answer but `limit:`.
+# OLDER owns the openings that name older code, so the two patterns cannot disagree.
+UNCONFIRMED = re.compile(r"[`*_\s]*potential issue, not confirmed:", re.I)
 PROOF = ("fix:", "disproved:", "limit:")
+
+
+def defect(problem):
+    return bool(UNCONFIRMED.match(problem.strip()) or OLDER.match(problem.strip()))
 
 
 def closes(kind, problem, answer):
     text = answer.strip().lower()
     if kind == "fix":
         return text.startswith("limit:")
-    return text.startswith(PROOF) if DEFECT.match(problem.strip()) else not text.startswith("limit:")
+    return text.startswith(PROOF) if defect(problem) else not text.startswith("limit:")
 
 
 def crashes(problem):
@@ -199,9 +204,9 @@ def verdict(name, only=None):
         if kind in ("fix", "ask", "note"):
             problem = f"{rule}: {problem}" if ids else problem
             if kind == "ask" and not matches:
-                history += [f"Open: {alt[0]} `{alt[1]}`: a defect ask closes only with fix:, disproved: or limit:"
+                history += [f"Open: {alt[0]} `{alt[1]}`: a defect ask closes only with {', '.join(PROOF[:-1])} or {PROOF[-1]}"
                             for alternatives in replied for alt in alternatives[:1]
-                            if alt[0] == path and any(alt[1] == source.strip() for source in new_lines)]
+                            if defect(problem) and alt[0] == path and any(alt[1] == source.strip() for source in new_lines)]
                 for alternatives in past:
                     match = next((alt for alt in alternatives if alt[0] == path
                                   and any(alt[1] == source.strip() for source in new_lines)), None)
@@ -242,7 +247,7 @@ def verdict(name, only=None):
     for alternatives, match, n in zip(replied, selected, closed):
         path, quote, answer = match if n else min(alternatives, key=lambda alt: len(alt[2]))
         text = answer.strip()
-        body = re.sub(r"^(?:fix|limit):\s*", "", text, flags=re.I)
+        body = re.sub(rf"^(?:{'|'.join(PROOF)})\s*", "", text, flags=re.I)
         if body.lower().strip(". ") in GENERIC:
             problems.append(f"answers.md {path} `{quote}`: an answer needs a record the user approved or a failing test")
     if only:
