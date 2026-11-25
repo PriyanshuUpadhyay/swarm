@@ -24,6 +24,6 @@ Every `SKILL.md` and `PRESET.md` description in the kit has at most 160 characte
 ## Confirmation
 
 `skills/kit/scripts/test_plugin_skills.py` (`test_each_description_is_short_and_says_when`) owns
-the limit; `test_kit_block_frontmatter` checks only that a block description says "Use when".
+the limit and the "Use when" check; `test_kit_block_frontmatter` no longer checks the description.
 
 Supersedes ADR 0136 only where its Confirmation names the 40-word check.
