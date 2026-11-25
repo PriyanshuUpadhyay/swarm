@@ -193,7 +193,8 @@ only that file's rows (cells, IDs, quotes, and proofs), and fixes each row that 
 The `whole` seat follows [whole.md](whole.md). It reads `intent.md`, which `start` writes from
 `--intent FILE` and the commit messages, states what the change does and why, and then attacks
 that across files. Give it the PR title and body when a PR exists. `verdict` names the seat when
-its file has no `Intent:` line.
+its file has no `Intent:` line. Start it after `refs` reports, because a run has one live deep
+review seat at a time.
 
 REF stays on `review.deep`, because it judges a changed signature, return shape, or meaning at
 each caller, and it must search past the first 20 references on its own.

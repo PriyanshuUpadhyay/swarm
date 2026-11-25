@@ -23,7 +23,7 @@ the step's verdict needs all of them.
 - A step that reads another step's result.
 - Landing and integration.
 - Verification of a stack position.
-- Deep review seats; each run has only one.
+- Deep review seats; a run has only one at a time.
 - More seats than the caps allow.
 
 ## Caps
@@ -33,7 +33,7 @@ These trial limits apply to each run, as set on 2026-10-09.
 - 8 live child seats per run, including fix seats.
 - 2 coding seats.
 - 3 shards per cheap review aspect.
-- 1 deep review seat.
+- 1 live deep review seat.
 
 ## Liveness
 

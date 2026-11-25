@@ -27,7 +27,7 @@ Action: run the check on that range. The verdict prints `REQUEST CHANGES` with `
 Result: the second verdict prints `APPROVE`, and the step quotes that line and its range. For a loop outside any repo, two seats write full `file-review.md` rows for `index.html`, `loop.mp4`, and each claim, and one `consistency` row for `notes.md`; `file_review.py <run> --close` writes `Verdict: APPROVE`.
 
 ## Check (script)
-- `sed -n 3p <repo-root>/tmp/review-check/<review-run>/03-verdict.md` starts with `Verdict: APPROVE`: the newest review approved the range.
+- `python3 <kit root>/skills/code-review/scripts/review_check.py verdict <review-run> >/dev/null; sed -n 3p <repo-root>/tmp/review-check/<review-run>/03-verdict.md`, run from the repo root, starts with `Verdict: APPROVE`: the newest review approved the range, and no commit came after its head. A stored verdict keeps its old line, so `verdict` runs again first.
 - `git -C <repo-root> rev-parse --is-inside-work-tree >/dev/null 2>&1 || python3 -I <kit root>/blocks/change-review/scripts/file_review.py <run>` exits 0: outside any repo, the file review approved the written files within the round cap, with no open `fix` row.
 
 ## Check (judge)
