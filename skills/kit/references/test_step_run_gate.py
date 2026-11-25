@@ -114,9 +114,12 @@ def test_kit_check_lines(tmp):
         assert run("done", folder, "01-ask", take(folder, "01-ask")).returncode == 0
         out = run("done", folder, "02-work", take(folder, "02-work"))
         assert out.returncode == 0, (block, out.stderr)
-    review = gate_run(tmp, "kit-review", ["block change-review script: `sed -n 3p <repo-root>/tmp/review-check/"
-                                          "<review-run>/03-verdict.md` starts with `Verdict: APPROVE`: the newest "
-                                          "review approved the range."])
+    review = gate_run(tmp, "kit-review", ["block change-review script: `python3 <kit root>/skills/code-review/scripts/"
+                                          "review_check.py verdict <review-run> >/dev/null; sed -n 3p <repo-root>/tmp/"
+                                          "review-check/<review-run>/03-verdict.md` starts with `Verdict: APPROVE`: the "
+                                          "newest review approved the range, and no commit came after its head. A stored "
+                                          "verdict keeps its old line, so `verdict` runs again first. The check runs at "
+                                          "the repo root."])
     assert run("done", review, "01-ask", take(review, "01-ask")).returncode == 0
     out = run("done", review, "02-work", take(review, "02-work"))
     assert out.returncode == 0, out
