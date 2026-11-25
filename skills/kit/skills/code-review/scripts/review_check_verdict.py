@@ -31,7 +31,10 @@ def closes(kind, problem, answer):
     text = answer.strip().lower()
     if kind == "fix":
         return text.startswith("limit:")
-    return text.startswith(PROOF) if defect(problem) else not text.startswith("limit:")
+    if not defect(problem):
+        return not text.startswith("limit:")
+    # check.md, Asks: `disproved:` needs the quoted code line or command, so a bare word cannot close a defect ask.
+    return text.startswith(PROOF) and (not text.startswith("disproved:") or "`" in text)
 
 
 def crashes(problem):
@@ -202,11 +205,12 @@ def verdict(name, only=None):
         seen.add(uid)
         done[uid] |= ids
         if kind in ("fix", "ask", "note"):
+            open_defect = kind == "ask" and not matches and defect(problem)  # read before the rule ID goes in front
             problem = f"{rule}: {problem}" if ids else problem
             if kind == "ask" and not matches:
                 history += [f"Open: {alt[0]} `{alt[1]}`: a defect ask closes only with {', '.join(PROOF[:-1])} or {PROOF[-1]}"
                             for alternatives in replied for alt in alternatives[:1]
-                            if defect(problem) and alt[0] == path and any(alt[1] == source.strip() for source in new_lines)]
+                            if open_defect and alt[0] == path and any(alt[1] == source.strip() for source in new_lines)]
                 for alternatives in past:
                     match = next((alt for alt in alternatives if alt[0] == path
                                   and any(alt[1] == source.strip() for source in new_lines)), None)

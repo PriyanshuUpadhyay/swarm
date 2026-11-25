@@ -210,10 +210,10 @@ def test_defect_ask():
         run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
         uid, checks = next(iter(load_checklist(run).items()))
 
-        def ask(problem):
-            rows(run, f"| {uid} | {', '.join(checks['rules']) or '-'} | x | `return 2` | n/a | | "
+        def ask(problem, rule="-"):
+            rows(run, f"| {uid} | {', '.join(r for r in checks['rules'] if r != rule) or '-'} | x | `return 2` | n/a | | "
                  "the test code has no case these rules name |",
-                 f"| {uid} | - | util.py:2 | `return 2` | ask | {problem} | a caller that expects 1 |")
+                 f"| {uid} | {rule} | util.py:2 | `return 2` | ask | {problem} | a caller that expects 1 |")
 
         def answer(text):
             (run / "answers.md").write_text(f"- util.py `return 2`: {text}\n")
@@ -221,10 +221,14 @@ def test_defect_ask():
             return code, (run / "03-verdict.md").read_text()
 
         still_open = "Open: util.py `return 2`: a defect ask closes only with fix:, disproved: or limit:"
-        for problem in ("potential issue, not confirmed: an old caller can throw", "older defects: two callers can throw"):
-            ask(problem)
-            code, verdict = answer("A, accept as the chair recommends")
-            assert code == 0 and "0 fix, 1 ask, 0 note, 0 answered" in verdict and still_open in verdict, (problem, verdict)
+        for problem, rule in (("potential issue, not confirmed: an old caller can throw", "-"),
+                              ("older defects: two callers can throw", "-"),
+                              ("potential issue, not confirmed: an old caller can throw", checks["rules"][0])):
+            ask(problem, rule)
+            for text in ("A, accept as the chair recommends", "disproved: A"):
+                code, verdict = answer(text)
+                assert code == 0 and "0 fix, 1 ask, 0 note, 0 answered" in verdict and still_open in verdict, (problem, rule, text, verdict)
+        ask("potential issue, not confirmed: an old caller can throw")
 
         code, verdict = answer("disproved: ok")
         assert code == 1 and "an answer needs a record the user approved or a failing test" in verdict, verdict

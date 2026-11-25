@@ -80,6 +80,7 @@ def start_locked(target, *opts, ledger_home, ledger_writable):
             patch = Path(options['--patch']).read_text(encoding="utf-8")
         except OSError as error:
             raise SystemExit(f"cannot read patch {options['--patch']}: {error.strerror}") from None
+
     stated = "none given; pass `--intent FILE` with the PR title and body\n"
     if "--intent" in options:
         try:
@@ -240,8 +241,8 @@ def start_locked(target, *opts, ledger_home, ledger_writable):
             ids.append("REF")
         checklist[u["id"]] = {"rules": ids, "tool": tool, "refs": refs}
     seats = seat_map(checklist, catalog)
-    if units:  # references/whole.md: one seat reads the change as a whole and owns no rule ID
-        seats["whole"] = {"units": [u["id"] for u in units], "checks": 0, "route": "review.deep"}
+    # references/whole.md: one seat reads the change as a whole and owns no rule ID
+    seats["whole"] = {"units": [u["id"] for u in units], "checks": 0, "route": "review.deep"}
     (d / "checklist.json").write_text(json.dumps(checklist | {"seats": seats}, indent=2) + "\n", encoding="utf-8")
     listed = {i for c in checklist.values() for i in c["rules"]}
     # Seats read rule text here, so they do not pay for the lens files' Source citations.

@@ -190,6 +190,7 @@ def checks(d, state):
         verdict = (rc / "03-verdict.md").read_text().splitlines() if rc and (rc / "03-verdict.md").exists() else []
         target = json.loads((rc / "target.json").read_text()) if rc and (rc / "target.json").exists() else {}
         head = json.loads((d / "target.json").read_text())["head"]
+
         if len(verdict) < 3 or not verdict[0].startswith("Status: done"):
             out.append("03-check: its `Run:` line names no done review-check verdict")
         elif text["03-check"].splitlines()[2:3] != verdict[2:3]:
