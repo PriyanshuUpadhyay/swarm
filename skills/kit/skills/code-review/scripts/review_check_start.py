@@ -45,14 +45,17 @@ def start(target, *opts):
 
 
 
+OPTIONS = {"--patch": "FILE", "--parent-loop": "KEY", "--continue": "FILE", "--intent": "FILE"}  # each at most once
+
+
 def start_locked(target, *opts, ledger_home, ledger_writable):
     from review_check import DEFINES, PLAIN, ROUND_CAP, ci_of, family, git, glob_match, home, lint_config, load_rules, local_patch, parse_diff, references, repo_name, revision, seat_map, stale_verdict, step_run, tool_owned, units_of
     options = {}
     while opts:
         if opts == ("--patch",):
             raise SystemExit("--patch needs a file")
-        if len(opts) < 2 or opts[0] not in ("--patch", "--parent-loop", "--continue", "--intent") or opts[0] in options:
-            raise SystemExit("start accepts --patch FILE, --parent-loop KEY, --continue FILE, and --intent FILE once each")
+        if len(opts) < 2 or opts[0] not in OPTIONS or opts[0] in options:
+            raise SystemExit(f"start accepts {', '.join(f'{name} {value}' for name, value in OPTIONS.items())}, once each")
         options[opts[0]], opts = opts[1], opts[2:]
     parent_loop = options.get("--parent-loop")
     if parent_loop is None:
@@ -77,6 +80,12 @@ def start_locked(target, *opts, ledger_home, ledger_writable):
             patch = Path(options['--patch']).read_text(encoding="utf-8")
         except OSError as error:
             raise SystemExit(f"cannot read patch {options['--patch']}: {error.strerror}") from None
+    stated = "none given; pass `--intent FILE` with the PR title and body\n"
+    if "--intent" in options:
+        try:
+            stated = Path(options["--intent"]).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            raise SystemExit(f"cannot read intent {options['--intent']}: {error}") from None
 
     d = home()
     prior = []
@@ -178,11 +187,11 @@ def start_locked(target, *opts, ledger_home, ledger_writable):
     if prior and (prior[0][0] / "answers.md").exists():
         shutil.copyfile(prior[0][0] / "answers.md", d / "answers-before.md")
     (d / "diff.patch").write_text(patch, encoding="utf-8")
-    stated = (Path(options["--intent"]).read_text(encoding="utf-8") if "--intent" in options
-              else "none given; pass `--intent FILE` with the PR title and body\n")
+
     commits = "" if head is None else git("log", "--reverse", "--format=- %h %s%n%w(0,2,2)%b", f"{base}..{head}")
     (d / "intent.md").write_text(f"# What the author says the change does\n\n## Stated\n\n{stated}\n## Commits\n\n{commits}",
                                  encoding="utf-8")
+
     units = []
     for path, info in parse_diff(patch).items():
         src = d / "head" / path  # seats read full functions here, never from a moving checkout
@@ -231,7 +240,7 @@ def start_locked(target, *opts, ledger_home, ledger_writable):
             ids.append("REF")
         checklist[u["id"]] = {"rules": ids, "tool": tool, "refs": refs}
     seats = seat_map(checklist, catalog)
-    if seats:  # references/whole.md: one seat reads the change as a whole and owns no rule ID
+    if units:  # references/whole.md: one seat reads the change as a whole and owns no rule ID
         seats["whole"] = {"units": [u["id"] for u in units], "checks": 0, "route": "review.deep"}
     (d / "checklist.json").write_text(json.dumps(checklist | {"seats": seats}, indent=2) + "\n", encoding="utf-8")
     listed = {i for c in checklist.values() for i in c["rules"]}

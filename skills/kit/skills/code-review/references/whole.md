@@ -32,5 +32,6 @@ table, so an archived order shows as missing. It writes that as an `ask` with th
 
 Write the rows as `check.md` says, with rule `-` and the unit that holds the line. Put the worst
 finding first. A defect you ran or traced to a failing input is a `fix`. A defect you could not
-confirm is an `ask` that starts with `potential issue, not confirmed:` and names the input. With no
-finding, the file holds the `Intent:` line, the parts, and no row.
+confirm is an `ask` that starts with `potential issue, not confirmed:` and names the input. A unit
+with no finding gets one `pass` row with rule `-`, whose proof names what you traced from it, so the
+file has a row for each unit and `lint` passes.

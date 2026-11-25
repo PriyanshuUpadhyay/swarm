@@ -106,23 +106,39 @@ def test_whole_seat():
         base = commit({"value.py": "value = 1\n"}, "base")
         head = commit({"value.py": "value = 2\n"}, "raise the value for the new plan")
         Path("pr.md").write_text("Raise value so the new plan fits.\n")
+        try:
+            rc.start(f"{base}..{head}", "--intent", "no-such-file.md")
+            raise AssertionError("start must refuse an intent file it cannot read")
+        except SystemExit as e:
+            assert "cannot read intent no-such-file.md" in str(e), e
+        assert not Path("tmp/review-check").exists(), "a refused start leaves no run folder"
+
         rc.start(f"{base}..{head}", "--intent", "pr.md")
         run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
         seats = json.loads((run / "checklist.json").read_text())["seats"]
         assert seats["whole"] == {"units": list(load_checklist(run)), "checks": 0, "route": "review.deep"}, seats
         intent = (run / "intent.md").read_text()
         assert "Raise value so the new plan fits." in intent and "raise the value for the new plan" in intent, intent
+
         uid, checks = next(iter(load_checklist(run).items()))
         rows(run, f"| {uid} | {', '.join(checks['rules'])} | x | `value = 2` | n/a | | the test code has no case these rules name |")
         (run / "02-review-whole.md").unlink()
         assert rc.verdict(run.name) == 1
         assert "seat whole: 02-review-whole.md needs an `Intent:` line" in (run / "03-verdict.md").read_text()
+
         (run / "02-review-whole.md").write_text(
             f"Status: done x\nUses: 01-units@x\n\nIntent: raise the value for the new plan\n\n"
             f"| {uid} | - | value.py:1 | `value = 2` | ask | potential issue, not confirmed: a reader of the old "
             "value | a caller that compares with 1 |\n")
         assert rc.verdict(run.name) == 0
         assert "Verdict: NEEDS DISCUSSION" in (run / "03-verdict.md").read_text()
+
+    with scratch_repo("docs-only"):
+        base = commit({"notes.md": "one line\n"}, "base")
+        head = commit({"notes.md": "two lines\n"}, "change a note")
+        rc.start(f"{base}..{head}")
+        run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
+        assert list(json.loads((run / "checklist.json").read_text())["seats"]) == ["whole"], "a change with no rule check still gets the whole seat"
 
 
 def test_seat_gaps():

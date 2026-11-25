@@ -31,7 +31,7 @@ def commit(files, msg):
 def rows(run, *lines):
     checklist = load_checklist(run)
     files = {"02-review.md": []}
-    if "whole" in json.loads((run / "checklist.json").read_text(encoding="utf-8")).get("seats", {}):
+    if "whole" in json.loads((run / "checklist.json").read_text(encoding="utf-8"))["seats"]:
         (run / "02-review-whole.md").write_text("Status: done x\nUses: 01-units@x\n\nIntent: a test change\n")
     for line in lines:
         cells = [cell.strip() for cell in line.split("|")[1:-1]]

@@ -160,6 +160,7 @@ def test_four_checks_on_main():
             unit = json.loads((review / "units.json").read_text())[0]
             (review / "02-review.md").write_text(
                 f"| {unit['id']} | - | value.py:2 | `return {n}` | pass | | the caller accepts this value |\n")
+            (review / "02-review-whole.md").write_text("Status: done x\nUses: 01-units@x\n\nIntent: change the value\n")
             with redirect_stdout(io.StringIO()):
                 assert rc.verdict(review.name) == 0
         assert sh("git", "branch", "--show-current") == "main"
