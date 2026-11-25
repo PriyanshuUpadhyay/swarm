@@ -33,6 +33,7 @@ def rows(run, *lines):
     files = {"02-review.md": []}
     if "whole" in json.loads((run / "checklist.json").read_text(encoding="utf-8"))["seats"]:
         (run / "02-review-whole.md").write_text("Status: done x\nUses: 01-units@x\n\nIntent: a test change\n")
+
     for line in lines:
         cells = [cell.strip() for cell in line.split("|")[1:-1]]
         uid, rules = cells[:2]
@@ -44,6 +45,7 @@ def rows(run, *lines):
             groups.setdefault(name, []).append(rule.strip())
         for name, ids in groups.items():
             files.setdefault(name, []).append("| " + " | ".join([uid, ", ".join(ids), *cells[2:]]) + " |")
+
     for name, values in files.items():
         (run / name).write_text("Status: done x\nUses: 01-units@x\n\n" + "".join(l + "\n" for l in values))
 

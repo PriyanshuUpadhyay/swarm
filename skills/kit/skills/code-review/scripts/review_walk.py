@@ -175,6 +175,7 @@ def checks(d, state):
     copied from a done review-check run of this head."""
     out = []
     text = {s: (d / f"{s}.md").read_text(encoding="utf-8") for s in STEPS}
+
     if state["02-map"].startswith("done"):
         files = re.findall(r"^\| `([^`]+)` \|", text["01-scope"], re.M)
         # A fenced diagram has three backticks, which would shift every inline pair after it.
@@ -182,6 +183,7 @@ def checks(d, state):
         missing, twice = [f for f in files if f not in mapped], [f for f in files if mapped.count(f) > 1]
         if missing or twice:
             out.append(f"02-map: not mapped {', '.join(missing) or 'none'}; mapped twice {', '.join(twice) or 'none'}")
+
     if state["03-check"].startswith("done"):
         run = re.search(r"^Run: (\S+)", text["03-check"], re.M)
         rc = home().parent.parent / run.group(1) if run else None
@@ -202,7 +204,8 @@ def checks(d, state):
             # A fix row that reaches no comment is lost (2026-11-25 review-misses report: three seats flagged a
             # removed log gate, the posted comments left it out, and a human reviewer raised it the next day).
             out += [f"04-comments: fix `{loc}` has no comment, commit, or dropped line"
-                    for loc in re.findall(r"^- fix `([^`]+)`", "\n".join(verdict), re.M) if f"`{loc}`" not in text["04-comments"]]
+                    # A seat may write the location in backticks, and verdict then prints two of them.
+                    for loc in re.findall(r"^- fix `+([^`]+)`", "\n".join(verdict), re.M) if f"`{loc}`" not in text["04-comments"]]
     return out
 
 
