@@ -76,9 +76,12 @@ COUNCIL_RUN_ID="${CODEX_THREAD_ID:-${CLAUDE_CODE_SESSION_ID:-council-$(date +%s)
 COUNCIL_DIR="${TMPDIR:-/tmp}/councils/${COUNCIL_RUN_ID}"
 COUNCIL_WORKSPACE="$(pwd -P)"
 mkdir -p -m 700 "$COUNCIL_DIR"
-~/.claude/scripts/ensure-council-access.py \
-  --council-dir "$COUNCIL_DIR" --workspace "$COUNCIL_WORKSPACE"
+access=~/.claude/scripts/ensure-council-access.py  # owner's machine only; not in the kit yet
+[ -x "$access" ] && "$access" --council-dir "$COUNCIL_DIR" --workspace "$COUNCIL_WORKSPACE"
 ```
+
+Without that script, each seat's CLI must be able to read and write `$COUNCIL_DIR`; the first seat
+that cannot write there names it in its reply.
 
 Persist the selected backend, every captured pane/surface/thread identifier, voice outputs, and one
 append-only `transcript.md`. Relay prompt-file paths and concise answers; do not copy raw tool

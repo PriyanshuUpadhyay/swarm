@@ -242,7 +242,7 @@ After the last behavior of a standalone run:
    (short hash), the action, and the observed output or screenshot path. When no tool can drive the
    product, say so and name the nearest check.
 2. Ask for one fresh review seat on `Base..HEAD`, one round, by the small route's review rule in
-   `skills/kit/skills/implement/references/small.md`, steps 4-5. Each fix is an approved chunk. A
+   `<kit root>/skills/implement/references/small.md`, steps 4-5. Each fix is an approved chunk. A
    second `REQUEST CHANGES` goes to the user. When the session cannot start a seat, say
    `needs review seat: <base>..<head>` and stop there.
 3. The user ships. `Status: active` stays until the user says so.

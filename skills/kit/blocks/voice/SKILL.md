@@ -15,7 +15,7 @@ metadata:
 ---
 
 ## Rules
-- The owner's reply rules live in the agent instructions that the session loaded (`AGENTS.md`, `CLAUDE.md`). They decide how a reply opens and how long it is. A voice block does not restate them.
+- The owner's reply rules live in the agent instructions that the session loaded (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`). They decide how a reply opens and how long it is. A voice block does not restate them.
 
 Each part keeps its own checks.
 
