@@ -52,6 +52,8 @@ export class AppPanes {
     const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, hasLog, full];
     if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
     if (chat.built?.version !== chat.version || chat.built.full !== full) chat.built = { version: chat.version, full, lines: this.app.reading.build(chat) };
+    const composer = this.app.composing.composerView(chat);
+    const main = this.app.chats.get(chat.sessionId);
     const pane: Pane = {
       id: chat.id,
       // A child's column loads when it first shows; with no log yet it has nothing to load.
@@ -63,7 +65,8 @@ export class AppPanes {
       shift: chat.shift,
       full: chat.full,
       find,
-      composer: this.app.composing.composerView(chat),
+      composer,
+      noteComposer: chat.agent === "chair" ? composer : main ? this.app.composing.composerView(main) : null,
     };
     chat.memo = { sig, pane };
     return pane;

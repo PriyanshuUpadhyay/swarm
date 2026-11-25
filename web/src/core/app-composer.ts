@@ -57,7 +57,7 @@ export class AppComposer {
   input(id: string): Input {
     let input = this.app.inputs.get(id);
     if (!input) {
-      input = { sending: false, sendingFor: null, stopping: false, pulling: false, answering: null, alreadySent: false, banner: null, draftRev: 0 };
+      input = { sending: false, stopping: false, pulling: false, answering: null, alreadySent: false, banner: null, draftRev: 0 };
       this.app.inputs.set(id, input);
     }
     return input;
@@ -161,22 +161,21 @@ export class AppComposer {
   }
 
   /** Runs one chat action. A failure shows the server's text in the banner; only Retry runs it again. */
-  async act(sessionId: string, busy: Partial<Input>, idle: Partial<Input>, run: () => Promise<void>, retry: () => void, onSent?: () => void): Promise<boolean> {
+  async act(sessionId: string, busy: Partial<Input>, idle: Partial<Input>, run: () => Promise<void>, retry: () => void): Promise<boolean> {
     this.update(sessionId, { ...busy, banner: null });
     try {
       await run();
       this.update(sessionId, idle);
       return true;
     } catch (err) {
-      this.update(sessionId, { ...idle, banner: { text: message(err), retry, onSent } });
+      this.update(sessionId, { ...idle, banner: { text: message(err), retry } });
       return false;
     }
   }
 
   /** Types `text` into the chair. Clear only the source draft, which can differ after a skill moves.
-   *  `owner` is false for text that code composes, which stays out of the prompt history.
-   *  `onSent` runs once, after the send that goes, also when that is a Retry. */
-  async send(sessionId: string, text: string, draftText = text, owner = true, onSent?: () => void): Promise<boolean> {
+   *  `owner` is false for text that code composes, which stays out of the prompt history. */
+  async send(sessionId: string, text: string, draftText = text, owner = true): Promise<boolean> {
     const chair = this.chair(sessionId);
     const st = this.input(sessionId);
     const out = outgoing(text);
@@ -186,14 +185,12 @@ export class AppComposer {
     const chat = this.app.chats.get(sessionId);
     const ok = await this.act(
       sessionId,
-      { sending: true, sendingFor: onSent ?? null },
-      { sending: false, sendingFor: null },
+      { sending: true },
+      { sending: false },
       () => this.app.api.action("/api/chat/send", { ...this.target(sessionId), text: typed }),
-      () => void this.send(sessionId, text, draftText, owner, onSent),
-      onSent,
+      () => void this.send(sessionId, text, draftText, owner),
     );
     if (!ok) return false;
-    onSent?.();
     if (chat) chat.typed = [...chat.typed, { text: typed }].slice(-TYPED_CAP);
     // The owner's words, before a pi skill moved to the front.
     if (owner) this.recordHistory(sessionId, outgoing(draftText) ?? out);

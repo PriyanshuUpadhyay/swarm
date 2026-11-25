@@ -1,13 +1,14 @@
 // Chat notes (ADR 0161): the owner marks agent reply text, one item, or a whole reply, and writes a
-// note on it. The notes are browser drafts per chat; one send types them into the agent.
+// note on it. The notes are browser drafts per chat; one step puts them in the chat's message box.
+// A note on a child agent's column belongs to its main chat and names the agent.
 
-import { readStore, writeStore, type Input } from "./app-types";
+import { readStore, writeStore } from "./app-types";
 import type { App } from "./app";
-import { plural } from "./lifecycle-state";
 
 const KINDS = ["text", "item", "reply"] as const;
-/** `rowId` only finds the row on screen; the agent never sees it. `quote` is the full text. */
-export type Note = { id: number; kind: (typeof KINDS)[number]; rowId: string; quote: string; text: string; at: number };
+/** `rowId` only finds the row on screen; the agent never sees it. `quote` is the full text.
+ *  `agent` is the child agent whose reply the note marks; absent, the chair's own reply. */
+export type Note = { id: number; kind: (typeof KINDS)[number]; rowId: string; quote: string; text: string; at: number; agent?: string };
 
 /** The saved drafts: this key holds `savedNotes` of every chat with notes. */
 export const STORE_KEY = "swarm.notes.v1";
@@ -20,7 +21,8 @@ const isNote = (n: unknown): n is Note => {
   if (typeof n !== "object" || n === null) return false;
   const r = n as Record<string, unknown>;
   return typeof r.id === "number" && (KINDS as readonly unknown[]).includes(r.kind) && typeof r.rowId === "string"
-    && typeof r.quote === "string" && typeof r.text === "string" && typeof r.at === "number";
+    && typeof r.quote === "string" && typeof r.text === "string" && typeof r.at === "number"
+    && (r.agent === undefined || typeof r.agent === "string");
 };
 
 /** The saved drafts; a value of any other shape gives none. */
@@ -37,40 +39,28 @@ function readNotes(): Map<string, Note[]> {
   }
 }
 
-/** The one message the agent gets: each note numbered under its full quote. */
+/** The one message the chair gets: each note numbered under its full quote; a note on a child's
+ *  reply starts with the agent's name, as `1. [reviewer] > quote`. */
 export function noteMessage(notes: readonly Note[]): string {
   const parts = notes.map((n, i) => {
     const head = `${i + 1}. `;
     const pad = " ".repeat(head.length);
     const quote = (n.kind === "reply" ? ["[whole reply]", ...n.quote.split("\n")] : n.quote.split("\n")).map((l) => (l ? `> ${l}` : ">"));
+    if (n.agent) quote[0] = `[${n.agent}] ${quote[0]}`;
     const text = n.text.trim() ? n.text.trim().split("\n") : [];
     return [...quote, ...text].map((l, j) => (j === 0 ? head : pad) + l).join("\n");
   });
-  return [`Notes on your reply (${notes.length}):`, ...parts].join("\n\n");
+  const head = notes.some((n) => n.agent)
+    ? `Notes on replies (${notes.length}); [name] marks a child agent's reply, no name marks yours:`
+    : `Notes on your reply (${notes.length}):`;
+  return [head, ...parts].join("\n\n");
 }
-
-/** A send of a chat's notes: the ids it clears once it goes. */
-type NoteSend = { onSent: () => void; ids: ReadonlySet<number> };
-const NONE: ReadonlySet<number> = new Set();
-
-/** The ids of the notes that stay as sent: their send runs, or its banner offers or runs its
- *  Retry. So a Retry never sends text other than the drafts that it clears; a note added later,
- *  or any note once Dismiss takes the banner away, stays open. */
-export const heldNotes = (sending: NoteSend | null, failed: NoteSend | null, input: Input | undefined): ReadonlySet<number> => {
-  if (sending) return sending.ids;
-  const retried = !!failed && !!input && (input.banner?.onSent === failed.onSent || input.sendingFor === failed.onSent);
-  return retried ? failed.ids : NONE;
-};
 
 const NO_NOTES: readonly Note[] = [];
 
 export class Notes {
   private chats: Map<string, Note[]>;
   private seq: number;
-  /** Per chat, the send that this class runs. */
-  private sending = new Map<string, NoteSend>();
-  /** Per chat, the last failed send whose banner showed; heldNotes checks that it still does. */
-  private failed = new Map<string, NoteSend>();
   private saveRefused = false;
   private listeners = new Set<() => void>();
   /** The card whose note box takes the caret once it shows. */
@@ -107,6 +97,13 @@ export class Notes {
     this.saveRefused = !ok;
   }
 
+  /** Where the notes of chat `id` live: a child's column keeps them in its main chat, under
+   *  the child's name. */
+  home(id: string): { chat: string; agent?: string } {
+    const { session, agent } = this.app.composing.target(id);
+    return agent === "chair" ? { chat: session } : { chat: session, agent };
+  }
+
   list(chat: string): readonly Note[] {
     return this.chats.get(chat) ?? NO_NOTES;
   }
@@ -125,18 +122,6 @@ export class Notes {
     this.setMode(!this.mode);
   }
 
-  sendingNotes(chat: string): NoteSend | null {
-    return this.sending.get(chat) ?? null;
-  }
-
-  failedSend(chat: string): NoteSend | null {
-    return this.failed.get(chat) ?? null;
-  }
-
-  private held(chat: string, id: number): boolean {
-    return heldNotes(this.sendingNotes(chat), this.failedSend(chat), this.app.composing.input(chat)).has(id);
-  }
-
   /** True once for a new card, so only it takes the caret. */
   takeFocus(id: number): boolean {
     if (this.focusId !== id) return false;
@@ -144,7 +129,7 @@ export class Notes {
     return true;
   }
 
-  add(chat: string, note: Pick<Note, "kind" | "rowId" | "quote">): Note | null {
+  add(chat: string, note: Pick<Note, "kind" | "rowId" | "quote" | "agent">): Note | null {
     if (!note.quote.trim()) return null;
     if (this.list(chat).length >= CAP) {
       this.app.notice(`This chat has ${CAP} notes, the most it keeps. Send or remove some first.`, true);
@@ -158,44 +143,37 @@ export class Notes {
   }
 
   setText(chat: string, id: number, text: string) {
-    if (this.held(chat, id)) return;
     this.chats.set(chat, this.list(chat).map((n) => (n.id === id ? { ...n, text } : n)));
     this.changed(chat);
   }
 
   remove(chat: string, id: number) {
-    if (this.held(chat, id)) return;
     this.chats.set(chat, this.list(chat).filter((n) => n.id !== id));
     this.changed(chat);
   }
 
-  /** Sends every note of the chat as one message. A failed send keeps them, held as sent while
-   *  the composer's banner offers Retry; the notes clear once, when a send goes. While a send of
-   *  the chat runs, also a Retry, the composer refuses it, so the held notes stay those of that send. */
-  async send(chat: string): Promise<boolean> {
+  /** True when the chat's message box holds text, so a move of the notes asks first. */
+  boxHasText(chat: string): boolean {
+    return this.app.draft(chat).trim() !== "";
+  }
+
+  /** Puts every note of the chat in its message box as one message, and ends annotate mode. The
+   *  owner reads and sends it. `replace` moves the box's text to its stash, as Reuse does; `append` adds the notes under it. */
+  toBox(chat: string, how: "replace" | "append") {
     const notes = this.list(chat);
-    if (!notes.length || this.sending.has(chat)) return false;
-
+    if (!notes.length) return;
     const text = noteMessage(notes);
-    const ids = new Set(notes.map((n) => n.id));
-    const onSent = () => {
-      this.failed.delete(chat);
-      this.chats.set(chat, this.list(chat).filter((n) => !ids.has(n.id)));
-      this.changed(chat);
-      this.app.notice(`Sent ${plural(notes.length, "note")} to the agent.`);
-    };
+    const draft = this.app.draft(chat);
+    if (how === "append" && draft.trim()) this.app.composing.replaceDraft(chat, `${draft.trimEnd()}\n\n${text}`);
+    else this.app.composing.reuse(chat, text);
+    this.app.panes.revealChat();
+    this.dismiss(chat);
+  }
 
-    const sent = { onSent, ids };
-    this.sending.set(chat, sent);
-    this.changed();
-    try {
-      const ok = await this.app.send(chat, text, text, false, onSent);
-      // A send that the composer refused before it ran shows no banner and leaves `failed` as it was.
-      if (!ok && this.app.composing.input(chat).banner?.onSent === onSent) this.failed.set(chat, sent);
-      return ok;
-    } finally {
-      this.sending.delete(chat);
-      this.changed();
-    }
+  /** Removes every note of the chat and ends annotate mode. */
+  dismiss(chat: string) {
+    this.chats.set(chat, []);
+    this.mode = false;
+    this.changed(chat);
   }
 }

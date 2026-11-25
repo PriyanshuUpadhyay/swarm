@@ -60,15 +60,12 @@ export type Chat = {
   memo: { sig: unknown[]; pane: Pane } | null;
 };
 
-/** A failed chat action: the server's error text, and the same action again. `onSent` is the
- *  failed send's callback, so its caller knows its own Retry. */
-export type Banner = { text: string; retry: () => void; onSent?: () => void };
+/** A failed chat action: the server's error text, and the same action again. */
+export type Banner = { text: string; retry: () => void };
 
 /** One chat's composer actions in flight. It outlives the chat's rows in the LRU. */
 export type Input = {
   sending: boolean;
-  /** The `onSent` of the send in flight, so its caller knows when its own Retry runs. */
-  sendingFor: (() => void) | null;
   stopping: boolean;
   pulling: boolean;
   /** `choice` is -1 while typed text is sent. */
@@ -104,6 +101,8 @@ export type Pane = {
   full: ReadonlyMap<string, FullText>;
   find: Find;
   composer: Composer | null;
+  /** The composer that the chat's notes go through: the chair's, also in a child's column (ADR 0161). */
+  noteComposer: Composer | null;
 };
 
 /** The open chat's child agents beside it (ADR 0030). `focused`, `zoomed` and `reveal` are agent ids. */
@@ -205,6 +204,7 @@ export const NO_PANE: Pane = {
   full: NO_FULL,
   find: NO_FIND,
   composer: null,
+  noteComposer: null,
 };
 export const NO_CELLS: PaneCell[] = [];
 /** The first line of `text`, cut to `chars` characters as a reader counts them, so an emoji at

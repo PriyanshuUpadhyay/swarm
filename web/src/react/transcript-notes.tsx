@@ -1,9 +1,10 @@
 // Chat notes in the transcript (ADR 0161): annotate mode, the cards' places, and the send bar.
+// A child's column shows its own notes, which live in the main chat and go to its chair.
 
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { Pane, Reader } from "../core/app";
-import { heldNotes, type Note } from "../core/notes";
+import type { Note } from "../core/notes";
 import { REPLY_HANDLE } from "./note-marks";
 import { itemAt, itemQuote, NoteCard, NotesBar, paintNotes } from "./notes-margin";
 import type { NoteSpot } from "./transcript-overlays";
@@ -15,25 +16,22 @@ const wideAt = (list: HTMLElement) => parseFloat(getComputedStyle(list).getPrope
 export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<HTMLDivElement | null>) {
   const { lines, id: openId, chatState, find } = view;
   const { notes } = app;
+  const { chat, agent } = notes.home(openId);
   // Snapshots, not reads in render: the React compiler keeps a render's result while its props stay the same.
-  const readList = () => notes.list(openId);
-  const readSending = () => notes.sendingNotes(openId);
+  const readList = () => notes.list(chat);
   const readMode = () => notes.annotating();
-  const readFailed = () => notes.failedSend(openId);
   const noteList = useSyncExternalStore(notes.subscribe, readList, readList);
-  const sending = useSyncExternalStore(notes.subscribe, readSending, readSending);
   const annotating = useSyncExternalStore(notes.subscribe, readMode, readMode);
-  const failed = useSyncExternalStore(notes.subscribe, readFailed, readFailed);
-  const held = heldNotes(sending, failed, view.composer?.state);
 
-  // Each card shows its number in the chat's send order.
+  // This column's notes; each card shows its number in the main chat's send order.
+  const own = noteList.flatMap((note, i) => (note.agent === agent ? [{ note, n: i + 1 }] : []));
   const byRow = new Map<string, { note: Note; n: number }[]>();
-  noteList.forEach((note, i) => byRow.set(note.rowId, [...(byRow.get(note.rowId) ?? []), { note, n: i + 1 }]));
+  for (const mark of own) byRow.set(mark.note.rowId, [...(byRow.get(mark.note.rowId) ?? []), mark]);
 
   /** Adds a text note per spot; returns the last card's id, whose box takes the caret. */
   const addNotes = (spots: NoteSpot[]) => {
     let last: number | null = null;
-    for (const spot of spots) last = notes.add(openId, { kind: "text", ...spot })?.id ?? last;
+    for (const spot of spots) last = notes.add(chat, { kind: "text", ...spot, agent })?.id ?? last;
     return last;
   };
 
@@ -46,12 +44,12 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     const rowEl = target.closest<HTMLElement>('[data-testid="row"]');
     const row = rowEl && lines.find((l) => l.id === rowEl.dataset.id)?.row;
     if (whole && row) {
-      notes.add(openId, { kind: "reply", rowId: row.id, quote: row.text });
+      notes.add(chat, { kind: "reply", rowId: row.id, quote: row.text, agent });
       return true;
     }
     const item = itemAt(target);
     if (!item || !row || window.getSelection()?.isCollapsed === false) return false;
-    notes.add(openId, { kind: "item", rowId: row.id, quote: itemQuote(item) });
+    notes.add(chat, { kind: "item", rowId: row.id, quote: itemQuote(item), agent });
     return true;
   };
 
@@ -75,7 +73,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     watch.observe(list);
     return () => watch.disconnect();
   }, [chatState, listRef]);
-  const wide = wideList && noteList.length > 0;
+  const wide = wideList && own.length > 0;
   // Narrow, a card sits in a slot under its marked block; paintNotes makes the slots.
   const [slots, setSlots] = useState<ReadonlyMap<number, HTMLElement | null>>(new Map());
   const slotsRef = useRef(slots);
@@ -87,7 +85,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     if (!list || chatState !== "ready") return;
 
     const paint = () => {
-      const next = paintNotes(list, noteList, annotating, wide);
+      const next = paintNotes(list, own, annotating, wide);
       const was = slotsRef.current;
       if (was.size === next.size && [...next].every(([id, el]) => was.get(id) === el)) return;
       slotsRef.current = next;
@@ -95,11 +93,12 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     };
     paint();
 
-    if (noteList.length === 0 && !annotating) return;
+    if (own.length === 0 && !annotating) return;
     const watch = new MutationObserver(paint);
     watch.observe(list, { childList: true, subtree: true });
     return () => watch.disconnect();
-  }, [noteList, annotating, chatState, lines, wide, listRef]);
+    // The React compiler keeps `own` while `noteList` and `agent` stay the same.
+  }, [own, annotating, chatState, lines, wide, listRef]);
 
   // Esc leaves annotate mode first, also from the composer, whose own Esc would put its draft
   // away. An open find bar, dialog, popover or menu keeps its own Esc.
@@ -115,7 +114,7 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     return () => window.removeEventListener("keydown", onKey, true);
   }, [annotating, find.open, notes]);
 
-  const card = (note: Note, n: number) => <NoteCard key={note.id} notes={notes} chat={openId} note={note} n={n} held={held.has(note.id)} />;
+  const card = (note: Note, n: number) => <NoteCard key={note.id} notes={notes} chat={chat} note={note} n={n} />;
   /** A row's cards that are not in a slot: all of them in the gutter, else those with no shown block. */
   const cardsFor = (rowId: string): ReactNode => {
     const own = byRow.get(rowId);
@@ -123,9 +122,6 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
     return <div className={wide ? "note-gutter" : "note-end"}>{own.filter(({ note }) => wide || slots.get(note.id) === null).map(({ note, n }) => card(note, n))}</div>;
   };
 
-  // Notes.send refuses while a send of this chat runs, also a Retry.
-  const composer = view.composer;
-  const sendBlocked = !composer ? "This chat takes no messages." : composer.state.sending ? "A send to this chat is on its way." : composer.agent.disabled;
   const overlay = chatState === "ready" && (
     <>
       <button type="button" className="annotate-pill" data-testid="annotate-mode" aria-pressed={annotating} title="Annotate Chat (⇧⌘A)" onClick={() => notes.toggleMode()}>
@@ -133,10 +129,10 @@ export function useTranscriptNotes(app: Reader, view: Pane, listRef: RefObject<H
       </button>
       {!wide &&
         [...slots].map(([id, slot]) => {
-          const i = noteList.findIndex((note) => note.id === id);
-          return !slot || i < 0 ? null : createPortal(card(noteList[i], i + 1), slot, String(id));
+          const mark = own.find(({ note }) => note.id === id);
+          return !slot || !mark ? null : createPortal(card(mark.note, mark.n), slot, String(id));
         })}
-      <NotesBar notes={notes} chat={openId} list={noteList} sending={!!sending} blocked={sendBlocked} />
+      {(!agent || own.length > 0) && <NotesBar notes={notes} chat={chat} list={noteList} child={!!agent} blocked={view.noteComposer ? null : "This chat takes no messages."} />}
     </>
   );
 

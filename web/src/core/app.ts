@@ -48,7 +48,7 @@ export class App {
   readonly newChat = new NewChat(this);
   /** Whether macOS lets swarm's notices through (ADR 0102). */
   readonly notices = new Notices(this);
-  /** Notes on agent replies, sent as one message (ADR 0161). */
+  /** Notes on agent replies, put in the message box as one message (ADR 0161). */
   readonly notes = new Notes(this);
   view: View;
   snapshot: Snapshot | null = null;
@@ -357,8 +357,8 @@ export class App {
     return this.composing.reuse(sessionId, text);
   }
 
-  send(sessionId: string, text: string, draftText = text, owner = true, onSent?: () => void): Promise<boolean> {
-    return this.composing.send(sessionId, text, draftText, owner, onSent);
+  send(sessionId: string, text: string, draftText = text, owner = true): Promise<boolean> {
+    return this.composing.send(sessionId, text, draftText, owner);
   }
 
   menuCommands(sessionId: string): Promise<CommandList> {

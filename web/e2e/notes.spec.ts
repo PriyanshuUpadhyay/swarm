@@ -38,10 +38,11 @@ async function select(tab: Page, selector: string, text: string) {
   }, text);
 }
 
-test("a text note from the row menu goes to the agent as one message with its quote", async ({ page: tab }) => {
+test("a text note from the row menu goes under the box's text as one message with its quote", async ({ page: tab }) => {
   await mockRows(tab, [row("a1", REPLY)]);
   const sent = await captureSends(tab);
   await open(tab);
+  await tab.getByTestId("composer").fill("My own words.");
   const reply = '[data-testid="row"][data-id="a1"] .md p';
   await select(tab, reply, "10 minutes");
   await tab.locator(reply).first().click({ button: "right" });
@@ -54,9 +55,12 @@ test("a text note from the row menu goes to the agent as one message with its qu
   await tab.keyboard.type("Why 10 minutes?");
   await expect(tab.getByTestId("notes-bar")).toContainText("1 note on this chat");
 
-  await tab.getByRole("button", { name: "Send 1 note" }).click();
-  await expect.poll(() => sent.length).toBe(1);
-  expect(sent[0].text).toBe("Notes on your reply (1):\n\n1. > 10 minutes\n   Why 10 minutes?");
+  // The box holds text, so the move asks first.
+  await tab.getByRole("button", { name: "Add 1 note to message" }).click();
+  await tab.getByTestId("notes-confirm").getByRole("button", { name: "Append" }).click();
+  await expect(tab.getByTestId("composer")).toHaveValue("My own words.\n\nNotes on your reply (1):\n\n1. > 10 minutes\n   Why 10 minutes?");
+  await expect(tab.getByTestId("composer")).toBeFocused();
+  expect(sent).toHaveLength(0);
   await expect(card).toHaveCount(0);
   await expect(tab.getByTestId("notes-bar")).toBeHidden();
 });
@@ -109,9 +113,11 @@ test("annotate mode takes an item and a whole reply; ⇧⌘A, the palette and Es
   await expect(tab.getByTestId("note-card")).toHaveCount(2);
   await expect(mode).toHaveAttribute("aria-pressed", "true");
 
-  await tab.getByRole("button", { name: "Send 2 notes" }).click();
-  await expect.poll(() => sent.length).toBe(1);
-  expect(sent[0].text).toBe([
+  // An empty box takes the notes with no question, and annotate mode ends.
+  await tab.getByRole("button", { name: "Add 2 notes to message" }).click();
+  await expect(mode).toHaveAttribute("aria-pressed", "false");
+  expect(sent).toHaveLength(0);
+  await expect(tab.getByTestId("composer")).toHaveValue([
     "Notes on your reply (2):",
     "",
     "1. > C · Margin notes",
@@ -286,4 +292,29 @@ test("wide, cards sit in a gutter beside their block; narrow, under it, with no 
   await expect(tab.locator('[data-testid="row"] li[data-inote="1"] + .note-under [data-note="1"]')).toBeVisible();
   const sideways = () => tab.evaluate(() => [document.documentElement, document.querySelector('[data-testid="transcript"]')!].map((el) => el.scrollWidth - el.clientWidth));
   expect(await sideways()).toEqual([0, 0]);
+});
+
+test("a note in a child agent's column goes to the main chat's box and names the agent", async ({ page: tab }, info) => {
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  await tab.goto(`${url.origin}/${url.hash}`);
+  await tab.waitForFunction(() => window.__swarmReady === true);
+  await tab.setViewportSize({ width: 1600, height: 900 });
+  await tab.locator(`[data-testid="tree-row"][data-session="${process.env[`SWARM_E2E_PANES_${info.project.name}`]}"]`).click();
+  const reviewer = tab.locator('[data-testid="pane"][data-pane="reviewer"]');
+  const list = reviewer.locator('[data-testid="pane-transcript"][data-state="ready"]');
+  await expect(list.getByTestId("row").first()).toBeVisible();
+
+  await reviewer.getByTestId("annotate-mode").click();
+  await list.locator('[data-kind="assistant"] [data-note-reply]').first().click();
+  await reviewer.getByTestId("note-input").fill("Why first?");
+  // The card shows in the child's column only; the main chat's bar counts it too.
+  await expect(tab.locator('[data-testid="transcript"] [data-testid="note-card"]')).toHaveCount(0);
+  await expect(tab.locator('.strip-chat [data-testid="notes-bar"]')).toContainText("1 note on this chat");
+  await expect(reviewer.getByTestId("notes-bar")).toContainText("1 note for the main chat");
+
+  await reviewer.getByTestId("notes-send").click();
+  await expect(tab.locator('.strip-chat [data-testid="composer"]')).toHaveValue(
+    "Notes on replies (1); [name] marks a child agent's reply, no name marks yours:\n\n1. [reviewer] > [whole reply]\n   > I will look at the build first.\n   Why first?",
+  );
+  await expect(reviewer.getByTestId("note-card")).toHaveCount(0);
 });

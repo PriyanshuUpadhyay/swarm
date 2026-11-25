@@ -1,11 +1,12 @@
 // Chat notes (ADR 0161): the numbered cards of one reply, and the send bar above the composer.
 
-import { SendIcon, XIcon } from "lucide-react";
+import { TextCursorInputIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { SENT } from "../core/app";
 import { plural } from "../core/lifecycle-state";
 import { noteMessage, type Note, type Notes } from "../core/notes";
 import { Button } from "../components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
+import { copyText } from "./copy";
 import { NOTE_CARD, NOTE_SLOT, replyText } from "./note-marks";
 import { REPLY_BODY } from "./transcript-overlays";
 
@@ -13,9 +14,8 @@ const SOURCE: Record<Note["kind"], string> = { text: "On selected text", item: "
 /** A quote longer than this folds to 3 lines with Show all. */
 const LONG_QUOTE = 240;
 
-/** One card: its number, the quote it marks, and the note box, which saves on each change. While
- *  `held`, the note stays as sent: its send runs, or a failed send waits for Retry or Dismiss. */
-export function NoteCard({ notes, chat, note, n, held }: { notes: Notes; chat: string; note: Note; n: number; held: boolean }) {
+/** One card: its number, the quote it marks, and the note box, which saves on each change. */
+export function NoteCard({ notes, chat, note, n }: { notes: Notes; chat: string; note: Note; n: number }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const [all, setAll] = useState(false);
   useEffect(() => {
@@ -29,7 +29,7 @@ export function NoteCard({ notes, chat, note, n, held }: { notes: Notes; chat: s
       <div className="ncard-head">
         <span className="nbadge num">{n}</span>
         <span className="src">{SOURCE[note.kind]}</span>
-        <button type="button" className="icon-btn" aria-label={`Remove note ${n}`} title="Remove note" data-testid="note-remove" disabled={held} onClick={() => notes.remove(chat, note.id)}>
+        <button type="button" className="icon-btn" aria-label={`Remove note ${n}`} title="Remove note" data-testid="note-remove" onClick={() => notes.remove(chat, note.id)}>
           <XIcon />
         </button>
       </div>
@@ -48,40 +48,69 @@ export function NoteCard({ notes, chat, note, n, held }: { notes: Notes; chat: s
         placeholder="Write a note…"
         rows={lines}
         value={note.text}
-        readOnly={held}
-        title={held ? "Kept as sent while its send runs or waits for Retry." : undefined}
         onChange={(e) => notes.setText(chat, note.id, e.target.value)}
       />
     </article>
   );
 }
 
-/** "N notes on this chat", the exact text the agent gets, and Send. */
-export function NotesBar({ notes, chat, list, sending, blocked }: { notes: Notes; chat: string; list: readonly Note[]; sending: boolean; blocked: string | null }) {
+/** "N notes on this chat", the exact text the chair gets, and the move of all notes into the main
+ *  chat's message box. `chat` is the main chat; in a child's column (`child`), the bar still counts
+ *  and moves every note of the main chat. A box that holds text asks first. */
+export function NotesBar({ notes, chat, list, child, blocked }: { notes: Notes; chat: string; list: readonly Note[]; child: boolean; blocked: string | null }) {
   const [preview, setPreview] = useState(false);
+  const [asking, setAsking] = useState(false);
   if (!list.length) return null;
 
-  const send = () => {
-    // The transcript follows the sent message, as after a typed send.
-    window.dispatchEvent(new CustomEvent(SENT, { detail: chat }));
-    // Fire-and-forget is safe: Notes.send does not reject, because App.send turns a failed post
-    // into the composer's banner, whose Retry sends it again.
-    void notes.send(chat);
+  const count = plural(list.length, "note");
+  const move = (how: "replace" | "append") => {
+    setAsking(false);
+    notes.toBox(chat, how);
+    // The chat's box is the first composer on the page, as ⌘L finds it.
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="composer"]')?.focus());
   };
 
   return (
     <div className="notes-bar" data-testid="notes-bar">
       <div className="notes-bar-row">
-        <span className="font-medium">{plural(list.length, "note")} on this chat</span>
+        <span className="font-medium">{count} {child ? "for the main chat" : "on this chat"}</span>
         <span className="flex-1" />
         <button type="button" className="t-link" aria-expanded={preview} onClick={() => setPreview(!preview)}>
           {preview ? "Hide what the agent gets" : "Show what the agent gets"}
         </button>
-        <Button size="sm" data-testid="notes-send" disabled={sending || blocked !== null} title={blocked ?? "Send every note to the chat's agent as one message"} onClick={send}>
-          <SendIcon /> {sending ? "Sending…" : `Send ${plural(list.length, "note")}`}
+        <Button
+          size="sm"
+          data-testid="notes-send"
+          disabled={blocked !== null}
+          title={blocked ?? "Put every note of the chat, also those on its agents' columns, in the chat's message box"}
+          onClick={() => (notes.boxHasText(chat) ? setAsking(true) : move("replace"))}
+        >
+          <TextCursorInputIcon /> Add {count} to message
         </Button>
       </div>
       {preview && <pre className="notes-preview" data-testid="notes-preview">{noteMessage(list)}</pre>}
+      <Dialog open={asking} onOpenChange={setAsking}>
+        <DialogContent className="top-1/3 grid w-[min(460px,calc(100vw-32px))] gap-3 p-5" data-testid="notes-confirm">
+          <DialogTitle>The message box has text</DialogTitle>
+          <DialogDescription>Add the {count} under that text, or replace it. Replace keeps the old text in the box's stash, as Reuse does.</DialogDescription>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setAsking(false)}>Cancel</Button>
+            <Button
+              variant="outline"
+              title="Copy the notes as one message and remove them"
+              onClick={() => {
+                void copyText(noteMessage(list), "notes");
+                setAsking(false);
+                notes.dismiss(chat);
+              }}
+            >
+              Copy and Dismiss
+            </Button>
+            <Button variant="outline" onClick={() => move("replace")}>Replace Text</Button>
+            <Button autoFocus onClick={() => move("append")}>Append</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -127,7 +156,7 @@ function markedBlock(row: HTMLElement, note: Note): HTMLElement | null {
  *  A card shows only once it is in the map, so it mounts once, in its place, and keeps its focus. Wide: the cards sit in the row's gutter,
  *  each at its block's top, pushed down to clear the card above.
  *  Rows remount as the list scrolls, so this runs again after each change of the list's rows. */
-export function paintNotes(list: HTMLElement, notes: readonly Note[], annotating: boolean, wide: boolean): Map<number, HTMLElement | null> {
+export function paintNotes(list: HTMLElement, marks: readonly { note: Note; n: number }[], annotating: boolean, wide: boolean): Map<number, HTMLElement | null> {
   for (const el of list.querySelectorAll("[data-inote]")) el.removeAttribute("data-inote");
   for (const el of list.querySelectorAll(REPLY_BODY)) {
     for (const block of el.querySelectorAll<HTMLElement>(BLOCKS)) {
@@ -138,14 +167,14 @@ export function paintNotes(list: HTMLElement, notes: readonly Note[], annotating
 
   const slots = new Map<number, HTMLElement | null>();
   const marked = new Map<number, HTMLElement>();
-  notes.forEach((note, i) => {
+  marks.forEach(({ note, n }) => {
     const row = list.querySelector<HTMLElement>(`[data-testid="row"][data-id="${CSS.escape(note.rowId)}"]`);
     if (!row) return;
-    if (note.kind === "reply") row.dataset.inote = String(i + 1);
+    if (note.kind === "reply") row.dataset.inote = String(n);
     const block = markedBlock(row, note);
     slots.set(note.id, null);
     if (!block) return;
-    if (note.kind === "item") block.dataset.inote = String(i + 1);
+    if (note.kind === "item") block.dataset.inote = String(n);
     marked.set(note.id, block);
     if (wide) return;
 

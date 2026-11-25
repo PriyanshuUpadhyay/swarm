@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "./api";
-import { harness, settle } from "./composer-harness";
+import { harness } from "./composer-harness";
 import { noteMessage, STORE_KEY, type Note } from "./notes";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -45,90 +44,40 @@ describe("noteMessage", () => {
     );
     expect(text).not.toContain("row-");
   });
+
+  it("names the child agent of a note made in its column", () => {
+    const text = noteMessage([
+      note({ kind: "reply", quote: "I will look at the build first.", text: "Why first?", agent: "reviewer" }),
+      note({ kind: "item", quote: "Both are fixed now.", text: "" }),
+    ]);
+
+    expect(text).toBe(
+      [
+        "Notes on replies (2); [name] marks a child agent's reply, no name marks yours:",
+        "",
+        "1. [reviewer] > [whole reply]",
+        "   > I will look at the build first.",
+        "   Why first?",
+        "",
+        "2. > Both are fixed now.",
+      ].join("\n"),
+    );
+  });
 });
 
-describe("Notes.send", () => {
-  it("keeps the drafts after a failed send and clears them once, when Retry goes", async () => {
+describe("Notes.toBox", () => {
+  it("puts the notes under the box's text, removes them and ends annotate mode", () => {
     store("");
-    let refuse = true;
-    const { app, posts, snapshot } = harness(() => (refuse ? "send failed" : null));
-    snapshot();
-    app.openChat("chat");
-    await settle();
-    const sent: string[] = [];
-    app.notice = (text) => sent.push(text);
-    app.notes.add("chat", { kind: "item", rowId: "a1", quote: "C · Margin notes" });
+    const { app } = harness();
+    app.setDraft("chat", "my own words");
+    app.notes.setMode(true);
+    const added = app.notes.add("chat", { kind: "item", rowId: "a1", quote: "C · Margin notes" })!;
+    app.notes.setText("chat", added.id, "Pick C");
 
-    expect(await app.notes.send("chat")).toBe(false);
-    expect(app.notes.list("chat")).toHaveLength(1);
-    await settle();
-    expect(posts).toHaveLength(1);
-
-    refuse = false;
-    app.view.composer!.state.banner!.retry();
-    await settle();
-    expect(posts).toHaveLength(2);
-    expect(posts[1].body.text).toBe("Notes on your reply (1):\n\n1. > C · Margin notes");
+    app.notes.toBox("chat", "append");
+    expect(app.draft("chat")).toBe("my own words\n\nNotes on your reply (1):\n\n1. > C · Margin notes\n   Pick C");
     expect(app.notes.list("chat")).toEqual([]);
-    expect(sent).toEqual(["Sent 1 note to the agent."]);
-  });
-
-  it("keeps the sent notes as sent while a failed send can still be retried, and frees them on Dismiss", async () => {
-    store("");
-    const { app, snapshot } = harness(() => "send failed");
-    snapshot();
-    app.openChat("chat");
-    await settle();
-    const added = app.notes.add("chat", { kind: "item", rowId: "a1", quote: "Q" })!;
-    app.notes.setText("chat", added.id, "first");
-    const sent = app.notes.list("chat");
-
-    await app.notes.send("chat");
-    app.notes.setText("chat", added.id, "edited");
-    app.notes.remove("chat", added.id);
-    app.view.composer!.state.banner!.retry();
-    await settle();
-    app.notes.setText("chat", added.id, "edited");
-    expect(app.notes.list("chat")).toBe(sent);
-    // A note added after the send is not in its text, so it stays open.
-    const later = app.notes.add("chat", { kind: "item", rowId: "a1", quote: "R" })!;
-    app.notes.setText("chat", later.id, "open");
-    expect(app.notes.list("chat")[1].text).toBe("open");
-
-    app.dismissBanner("chat");
-    app.notes.setText("chat", added.id, "edited");
-    expect(app.notes.list("chat")[0].text).toBe("edited");
-    // After Dismiss, a typed send of the chat holds no note.
-    const typed = app.send("chat", "typed");
-    app.notes.setText("chat", added.id, "while typed");
-    await typed;
-    expect(app.notes.list("chat")[0].text).toBe("while typed");
-  });
-
-  it("keeps the notes held while Retry runs: a Send N notes meanwhile is refused", async () => {
-    store("");
-    let fail: (() => void) | null = null;
-    const { app, posts, snapshot } = harness(
-      () => (posts.length === 1 ? "send failed" : null),
-      () => new Promise((_, reject) => (fail = () => reject(new ApiError(409, "send failed")))),
-    );
-    snapshot();
-    app.openChat("chat");
-    await settle();
-    const added = app.notes.add("chat", { kind: "item", rowId: "a1", quote: "Q" })!;
-    app.notes.setText("chat", added.id, "first");
-    await app.notes.send("chat");
-
-    app.view.composer!.state.banner!.retry();
-    app.notes.setText("chat", added.id, "during Retry");
-    expect(app.notes.list("chat")[0].text).toBe("first");
-    expect(await app.notes.send("chat")).toBe(false);
-    fail!();
-    await settle();
-
-    expect(posts).toHaveLength(2);
-    app.notes.setText("chat", added.id, "edited");
-    expect(app.notes.list("chat")[0].text).toBe("first");
+    expect(app.notes.annotating()).toBe(false);
   });
 });
 
