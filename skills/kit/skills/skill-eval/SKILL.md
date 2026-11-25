@@ -6,16 +6,29 @@ description: "Test whether a skill helps. Check that cold models understand its 
 # Skill eval
 
 Example. Initial state: the owner wants a new skill `pair-programming`.
-Action: three cold models explain the name, then two real tasks run in four panes, each task once
-with the skill and once without it, and a blind grader compares each pair.
-Result: the name passes, the skill wins one task and ties the other on both providers, so it is
-kept, and one row per task goes into `evals/results.md`.
+Action: three cold models, one per family, explain the name. Then two real tasks run on the Claude,
+GPT, and Gemini families, with the skill, without it, and with a same-length filler text, three
+runs each, and a blind grader compares each pair.
+Result: the name passes, the skill wins one task and ties the other on all three families, so it
+is kept, and one row per task and family goes into `evals/results.md`.
 
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's
 folder. This skill's own `references/` folder holds the grader prompts.
 
 A skill earns its place only when runs with it beat runs without it. Before you build or change a
 skill, check that the same failure happened in at least two real runs.
+
+## Families
+
+The kit must work on each model family the owner uses, so every step runs on all three. Resolve each
+role with `swarm roles get <role>` and record the routed model and effort; when a role resolves to
+another family, use its next fallback of the right family or tell the owner.
+
+| Family | Role |
+|---|---|
+| Claude | `code.routine` |
+| GPT | `code.complex` |
+| Gemini | `council.gemini` |
 
 ## Inputs
 
@@ -37,8 +50,7 @@ result after unblinding.
 
 ### 1. Name check
 
-Open three panes in one empty folder with no skill or repository files. Use role `chat` with
-`--provider claude`, role `chat` with `--provider codex`, and role `council.gemini`. Send each the
+Open one pane per family in one empty folder with no skill or repository files. Send each the
 same ask, with the skill name and any names you compare it with:
 
 > Answer from your own knowledge only. Do not read files, search, or load any skill. A
@@ -74,18 +86,31 @@ Expect:
 
 ### 3. Runs
 
-For each case, run the skill side and the baseline side on two providers, `code.routine` with
-`--provider claude` and with `--provider codex`. Tell the owner the pane count (cases × 2 × 2)
-before launch, then launch all panes of a case at once. Follow `<kit root>/blocks/run-workers/SKILL.md`.
+For each case, run three arms on each family, three runs per arm: the skill, the baseline, and a
+placebo. Effects differ between runs and between model families, so one run per cell cannot show a
+win. Tell the owner the pane count (cases × 3 arms × 3 families × 3 runs) before launch, and launch
+in waves within the seat caps of `<kit root>/references/fan-out.md`. Follow
+`<kit root>/blocks/run-workers/SKILL.md`.
 
-Both sides get the same brief except for one line:
+All arms get the same brief except for one line:
 
-- Skill side: "Before you start, read `<path>/SKILL.md` and follow it."
+- Skill: "Before you start, read `<path>/SKILL.md` and follow it."
 - Baseline, new skill: "Do not load or read the skill `<name>`."
 - Baseline, changed skill: "Before you start, read `<snapshot>/SKILL.md` and follow it."
+- Placebo: "Before you start, read `<placebo>/SKILL.md` and follow it." The placebo has about the
+  same length as the skill and neutral advice that does not touch the task, so a win over it comes
+  from the skill's content, not from its length.
 
 Each pane works in its own folder and writes `notes.md` there with the steps it took and the files
 it read.
+
+### 3b. Trigger
+
+A skill that never loads helps no one, and loading fails apart from following. On each family, with
+the plugin installed and no hint, send three requests: one that names the skill, one that needs it
+but does not name it, and one nearby request that must not load it. Record from `notes.md` whether
+the skill was read. A miss on the unnamed request or a load on the nearby one is a trigger
+failure; fix the description first.
 
 ### 4. Blind grade
 
@@ -100,7 +125,8 @@ it read.
    for the skill name, `skill`, and `base`. In the first run, notes showed which side read the
    skill and a folder path named it. In a later run, removing whole lines deleted the evidence
    that one expectation checked.
-4. Open one `checker` pane per pair, on a provider other than the one that ran the pair. Send it
+4. Open one grader pane per pair, on a family other than the one that ran the pair (for example
+   `checker` for a GPT or Gemini pair, `review.hunter` for a Claude pair). Send it
    `references/grader.md`, `references/comparator.md`, the task, the expectations, the script
    results, and the two folders as A and B. Tell it that lines were removed from `notes.md`.
 5. The grader must not learn the skill name, which side is new, or any target. A judge that knows
@@ -112,13 +138,14 @@ in a different context.
 
 ### 5. Verdict
 
-Unblind with the key, then score each case per provider as win, tie, or loss for the skill.
+Unblind with the key, then score each case per family as win, tie, or loss for the skill against
+the baseline and against the placebo. A result is the majority of its three runs.
 
 - **Keep** when the skill wins at least one result and loses none, across all cases and
-  providers. With fewer than three cases, call it a weak keep and add cases.
+  families, and does not lose to the placebo. With fewer than three cases, call it a weak keep and add cases.
 - **Fix** when it loses a result. That case is the fix target. Rerun all cases after the fix.
 - **Cut** when it wins no result. The skill adds nothing, so propose removal.
-- **Split** when one provider wins and the other loses on a case. Rerun that case once. If it
+- **Split** when one family wins and another loses on a case. Rerun that case once. If it
   stays split, report the skill as dependent on the model. A win and a tie are not a split.
 - When the grader names a weak expectation, fix the case before the next run.
 - A baseline `notes.md` that shows the skill was read voids that pair. Rerun it.
@@ -133,16 +160,17 @@ only when no case gets worse. Stop when a cut makes a case lose.
 
 ### 7. Record
 
-Add one row per case and provider to `<skill>/evals/results.md`:
+Add one row per case and family to `<skill>/evals/results.md`, with the routed model and effort,
+so a later model change is visible:
 
 ```markdown
-| date | skill commit | baseline | case | provider | result | grader note |
+| date | skill commit | baseline | case | family | model | effort | trigger | vs baseline | vs placebo | grader note |
 ```
 
 Close every pane, then remove the scratch folder and the pane folders.
 
 ## Reply
 
-Follow the loaded session reply rules. Give the verdict, each case's provider and result, and
+Follow the loaded session reply rules. Give the verdict, each case's family and result, and
 each failed expectation with its quote. Use `<kit root>/references/explain-formats.md` when a
 table helps compare the case results.
