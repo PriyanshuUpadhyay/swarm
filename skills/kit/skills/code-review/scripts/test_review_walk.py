@@ -114,6 +114,11 @@ def test_new_round_patch_and_status():
     assert any("line 3 is not line 3" in p for p in problems), problems
     (d / "03-check.md").write_text(f"Status: done x\nUses: 01-scope@x\nVerdict: REQUEST CHANGES (1 fix)\nRun: {rc}\n")
     assert not any(p.startswith("03-check") for p in rw.checks(d, state)), "the copied line matches"
+    for file in (rc / "03-verdict.md", d / "03-check.md"):
+        file.write_text(file.read_text().replace("REQUEST CHANGES (1 fix)", "STALE (0 fix)"))
+    assert "03-check: the verdict is STALE; run check mode on the commits it lists" in rw.checks(d, state)
+    for file in (rc / "03-verdict.md", d / "03-check.md"):
+        file.write_text(file.read_text().replace("STALE (0 fix)", "REQUEST CHANGES (1 fix)"))
     (rc / "03-verdict.md").write_text("Status: done y\nUses: x\nVerdict: REQUEST CHANGES (1 fix)\n\n- fix `p.ts:2` L-1: wrong (proof: x)\n")
     state["04-comments"] = "done x"
     (d / "04-comments.md").write_text("Status: done x\nUses: 03-check@x\nVerdict: REQUEST CHANGES (1 fix)\n")

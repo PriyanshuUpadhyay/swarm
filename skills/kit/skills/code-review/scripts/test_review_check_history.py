@@ -41,7 +41,21 @@ def test_stale_verdict_guard():
                 assert rc.verdict(run.name) == 0
                 verdict = (run / "03-verdict.md").read_text()
                 assert "Verdict: STALE" in verdict, "a commit after the reviewed head must replace APPROVE"
-                assert f"- not reviewed: {changed[:7]} after stale change" in verdict, verdict
+                # git may print a longer short hash (core.abbrev), so only its first 7 characters are sure.
+                assert f"- not reviewed: {changed[:7]}" in verdict and " after stale change\n" in verdict, verdict
+
+            sh("git", "checkout", "-q", "-b", "other", base)
+            commit({"side.py": "x = 1\n"}, "side work")
+            assert rc.verdict(run.name) == 0
+            verdict = (run / "03-verdict.md").read_text()
+            assert "Verdict: APPROVE" in verdict and "not reviewed" not in verdict, "another branch is not a later commit"
+            target = (run / "target.json").read_text()
+            (run / "target.json").unlink()
+            assert rc.verdict(run.name) == 0, "a run with no target.json still gets a verdict"
+            (run / "target.json").write_text(target)
+            sh("git", "checkout", "-q", "main")
+            assert rc.verdict(run.name) == 0
+
             rc.start(f"{head}..{changed}")
             assert (Path("tmp/review-check") / f"range-{head[:7]}-{changed[:7]}-01").is_dir()
         finally:

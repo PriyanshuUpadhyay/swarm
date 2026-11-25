@@ -278,14 +278,16 @@ def verdict(name, only=None):
     else:
         status = "done"
         word = "REQUEST CHANGES" if count["fix"] else "NEEDS DISCUSSION" if count["ask"] else "APPROVE"
+
     # A commit after the reviewed head is code that no seat saw, so an APPROVE no longer holds (2026-11-25
     # review-misses report: 13 outside findings were on fix commits pushed after the last run). Another branch
     # in the checkout is not a later commit, so only a head that HEAD descends from counts.
     later = []
-    if t["head"] and git("merge-base", t["head"], "HEAD", check=False).strip() == t["head"]:
+    if t.get("head") and git("merge-base", t["head"], "HEAD", check=False).strip() == t["head"]:
         later = git("log", "--reverse", "--format=%h %s", f"{t['head']}..HEAD").splitlines()
     if later and word == "APPROVE":
         word = "STALE"
+
     line3 = (f"Verdict: {word} ({len(seen)} of {len(units)} units, {checked} of {checks} checks; {count['fix']} fix, {count['ask']} ask, "
              f"{count['note']} note, {count['answered']} answered, {count['limit']} limit; rules: {'none' if rules == 'none' else Path(rules).name}; build: {built})")
     uses = ", ".join(f"{f.stem}@{revision(f)}" for f in [d / "01-units.md", *sorted(d.glob("02-review*.md")),

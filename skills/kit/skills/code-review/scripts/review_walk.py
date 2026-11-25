@@ -194,6 +194,8 @@ def checks(d, state):
             out.append("03-check: line 3 is not line 3 of the review-check verdict")
         elif target and target.get("head") != head:
             out.append("03-check: the review-check run is for another head")
+        elif verdict[2].startswith("Verdict: STALE"):
+            out.append("03-check: the verdict is STALE; run check mode on the commits it lists")
         elif state["04-comments"].startswith("done") and text["04-comments"].splitlines()[2:3] != verdict[2:3]:
             out.append("04-comments: line 3 is not the review-check verdict")
         elif state["04-comments"].startswith("done"):
