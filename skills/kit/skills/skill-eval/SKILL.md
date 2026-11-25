@@ -110,7 +110,7 @@ A skill that never loads helps no one, and loading fails apart from following. E
 version under test with its live login, because a temporary home has no login:
 
 - Start a `pi` seat with `swarm spawn <id> <role> -- pi --model <model> --thinking <effort> --no-skills
-  --skill <worktree>/skills/kit/skills`, with the model and effort of its role. `swarm launch` refuses
+  --skill <worktree>/skills/kit/skills`, with the model and effort of its role. Run it from the seat's own `mktemp -d` folder, because `swarm spawn` has no `--cwd` and opens the pane where it runs. `swarm launch` refuses
   `--no-skills`, because the role owns the skill flags. The seat loads only the worktree's skills,
   `swarm-voice` included, and the live plugin stays unchanged.
 - A CLI with no such flag, such as `agy`, needs the version under test in its live home. Ask the
