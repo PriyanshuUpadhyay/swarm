@@ -106,9 +106,15 @@ it read.
 
 ### 3b. Trigger
 
-A skill that never loads helps no one, and loading fails apart from following. On each family, with
-the version under test installed in a temporary home by `<kit root>/blocks/scratch-home/SKILL.md`, so
-the owner's live CLIs keep their plugin, and no hint, send three requests: one that names the skill, one that needs it
+A skill that never loads helps no one, and loading fails apart from following. Each family loads the
+version under test with its live login, because a temporary home has no login:
+
+- A `pi` seat starts with `-- --no-skills --skill <worktree>/skills/kit/skills`, so it loads only the
+  worktree's skills and the live plugin stays unchanged.
+- A CLI with no such flag, such as `agy`, needs the version under test in its live home. Ask the
+  owner first, then install it, and put the live plugin back after the run.
+
+On each family, with no hint, send three requests: one that names the skill, one that needs it
 but does not name it, and one nearby request that must not load it. Record from `notes.md` whether
 the skill was read. A miss on the unnamed request or a load on the nearby one is a trigger
 failure; fix the description first.
