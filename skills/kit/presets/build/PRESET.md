@@ -25,7 +25,7 @@ sunrise. A neon restyle changes only the look tokens.
 - Apply the architecture and deterministic-rendering rules in `blocks/build-canvas/SKILL.md`.
   The look tokens follow `blocks/design-tokens/SKILL.md`, with the shared rules in `blocks/web-ui/SKILL.md`.
 - Choose tools for the look and the story. Dependencies, load time, 3D, and WebGPU are fine.
-- Inspect rendered frames at each milestone. Code that runs does not prove the picture works.
+- Inspect rendered frames at each milestone as `blocks/visual-qa/SKILL.md` says.
 
 ## Routes
 

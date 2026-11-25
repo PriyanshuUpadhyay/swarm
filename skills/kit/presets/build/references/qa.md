@@ -29,7 +29,7 @@ contact-sheet.png (two or more frames)
 ## Reference match
 
 Score each style frame or key frame against its reference crop as `blocks/look-check/SKILL.md` says, with the compare image that
-`blocks/headless-shot/SKILL.md` makes. In build, a `miss` blocks production scenes.
+`blocks/headless-shot/SKILL.md` makes. Apply that block's production gate.
 
 Example. Round 1 of a cloud frame scores the palette `match`, the tone `miss` (flat fills, no dots),
 and the contour `partial` (right colour, even width). Round 2 adds the mass stack and line swell, and

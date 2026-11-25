@@ -48,8 +48,7 @@ The chair runs the seats as the kit block `blocks/run-workers/SKILL.md` says, on
 `search.web` route, and every seat is a visible pane. Share one brief. Completion on swarm is the
 seat's ring and its report file.
 
-Record the actual routed models as `blocks/run-workers/SKILL.md` requires. The site-set seat
-names below describe search purposes, not provider identities.
+The site-set seat names below describe search purposes, not provider identities.
 
 - Agent names are `ws-<voice>-<run>`, so a search and a council can run at the same time.
 - Use the web-search launch scratch in `references/run-folder.md` as every seat's `--cwd`. The launcher
@@ -176,7 +175,6 @@ words.
 **Guards.**
 
 - Use the report-only seat contract in `blocks/worker-brief/SKILL.md`.
-- Every claim follows `blocks/cite-sources/SKILL.md` and its parent `blocks/sources/SKILL.md`.
 
 ## Example
 Initial state: a research question about practice, with three seats briefed.

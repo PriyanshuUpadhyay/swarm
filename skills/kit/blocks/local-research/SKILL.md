@@ -17,7 +17,7 @@ metadata:
 - Read the local sources as the kit's `references/fan-out.md` says. When they disagree, trust them in this order: the repository at hand, its docs, prior reports in the reports folders that `references/run-folder.md` names, then council logs under `~/dotfiles/docs/council/`.
 - For each decision, track the open question, the primary evidence, the contrary evidence, and the gap that remains.
 - Read the source's actual method or code before you accept its headline.
-- Count sources as the kit block `blocks/cite-sources/SKILL.md` says. Judge the claim by the evidence, not by page count or agent agreement.
+- Count and judge sources as `blocks/cite-sources/SKILL.md` says. Agent agreement does not add evidence.
 - When the evidence is thin, name the gap and limit the claim to what the evidence supports.
 - Each finding cites its `path:line` or its report path.
 
