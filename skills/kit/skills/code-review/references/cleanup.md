@@ -10,7 +10,7 @@ diff, so the review budget goes to design instead of style churn.
 **Activation.** The six-step pass runs only when the user explicitly asked for a cleanup,
 readability, simplification, dead-code, or review-comment pass over work already written, or when a
 substantial branch or pull-request diff has reached its delivery gate. A routine diff does not
-activate this pass, and an `implement` build in `pair` mode never does; its per-chunk `approve` is the gate. This preset
+activate this pass, and an `implement` build in `pair` mode does not, because its per-chunk `approve` is the gate. This preset
 owns that decision — no other instruction file states it — and six
 emitted steps over a two-file edit cost more than they return. When the pass is not activated, do
 not emit its steps and do not announce that it was skipped.
@@ -23,7 +23,7 @@ unconfirmed part, and get it confirmed before running step 1.
 **Step list.** Above the diff, list each edit as `path:line — what changed — which rule`, grouped
 by step. Name the steps that found nothing in one line.
 
-**Working set.** Only files this task changed. A file this task never touched is out of scope for
+**Working set.** Only files this task changed. A file this task did not touch is out of scope for
 every step, including step 3 and step 4.
 
 **Rules.** The global coding rules are authoritative for the smallest clear change, comments,
@@ -55,8 +55,8 @@ Map every changed file to a stated scope item. Emit the mapping.
 
 Any file or hunk that no scope item requires is a ride-along: **report it, do not polish it.** For
 each ride-along, offer two choices — revert it, or keep it with the one-line reason that promotes it
-into scope — and wait for that answer before step 2 runs. Never clean a file you have just reported
-as out of scope; cleaning it is what makes unrequested work look requested.
+into scope — and wait for that answer before step 2 runs. Leave a file you have just reported
+as out of scope uncleaned; cleaning it is what makes unrequested work look requested.
 
 Emit: `<file> → <scope item>` per changed file, then the ride-along list.
 
@@ -69,8 +69,8 @@ own, and scaffolding left over from iteration.
 Also inspect each dependency, configuration item, abstraction, service, retry, and compatibility path
 introduced by the task. Remove it if it maps to no confirmed requirement and prevents no concrete
 current failure. If removal would change the confirmed design, report the conflict and return to the
-entry contract. Never use this test to remove required verification, security controls,
-checks for irreversible actions, explicit user requirements, or established repository structure.
+entry contract. Keep required verification, security controls,
+checks for irreversible actions, explicit user requirements, and established repository structure out of this test; removing them breaks the entry contract.
 
 Emit: one line per removal with its reason.
 

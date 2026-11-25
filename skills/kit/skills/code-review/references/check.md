@@ -27,18 +27,18 @@ Offers: prove-it-works, call-tree, headless-shot, lean-review, model-check
 For a gate to new seats and the `implement` handoff from a leaf, apply `blocks/worker-brief/SKILL.md`; this preset names no default that replaces fresh seats.
 
 
-- The review is report-only. Never edit, commit, stash, switch, or reset the user's checkout.
-- Only `verdict` writes the verdict. A reviewer never writes `03-verdict.md` or states a verdict that
-  the script did not print.
+- The review is report-only, as `blocks/worker-brief/SKILL.md` says: leave the user's checkout unedited, uncommitted, unstashed, on its branch, and unreset.
+- Only `verdict` writes the verdict. A reviewer writes no `03-verdict.md` and states only a verdict that
+  the script printed.
 - Every unit gets at least one row, and every rule ID in its checklist gets a result. A missing
-  lens, rules file, or ctags language never skips a unit.
-- The session that wrote the change never fills the checklist. In `implement`, in both modes,
+  lens, rules file, or ctags language still leaves every unit reviewed.
+- The session that wrote the change leaves the checklist to others, because the author would grade their own work. In `implement`, in both modes,
   the rows come from new seats.
 - Judge the change on its own merits. Messy code around it does not excuse a new defect.
 - No style nits that a linter or formatter owns.
-- Seats never judge what the build gate owns, which is compile errors such as a missing import and
+- Seats leave to the build gate what it owns, which is compile errors such as a missing import and
   the IDs in a unit's `tool` list. Missing or stale build evidence gives INCOMPLETE, and those IDs
-  never go back to a seat.
+  stay with the gate.
 
 ## Run
 
@@ -57,7 +57,7 @@ uses a persistent detached worktree at `<repo>/tmp/review-check/verify`, checked
 reviewed head. The live checkout can move while the build runs. `build --run` resets and cleans
 the scratch verify worktree before checkout; ignored files stay. A `local` build uses the live tree and prints that limit.
 If CI needs untracked files (`node_modules`, `.env`, generated code), use `build <run>` or install them in `tmp/review-check/verify` once; only ignored files stay between builds.
-Build may run while seats work, because seats never judge build-gate IDs.
+Build may run while seats work, because seats leave build-gate IDs alone.
 Test gates use the proof commands owned by `blocks/prove-it-works/SKILL.md`; build records their result in `build.json` and keeps the full runner log in `build-tests.log`. Compile-only and lint-only gates keep their existing build scope. For a change that must keep behavior, include that block's canary evidence in the review input. Expected-output comparisons also follow that block.
 `build --run --force` is refused; wait for the running build to release its lock.
 A CI descendant that starts its own session escapes the group kill and must be stopped by hand.
@@ -108,9 +108,9 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
 - `rule` is one ID, a comma list of IDs for a `pass` or an `n/a` row, or `-`.
 - `kind` is `pass` (the unit follows the rule), `n/a` (the rule cannot apply, for example "no SQL
   in this hunk"), `fix` (a proved defect or a rule break), `ask` (a question, or a defect that is
-  not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`; start
+  not proved), or `note` (optional cleanup). An unproved defect is an `ask`, not a `fix`; start
   its problem with "potential issue, not confirmed:" and name the input that would trigger it. A test
-  that a run shows passes with and without its change is proved, so it is a `fix` (`L-14`), never an `ask`. A `fix` also needs a defect that this change
+  that a run shows passes with and without its change is proved, so it is a `fix` (`L-14`), not an `ask`. A `fix` also needs a defect that this change
   introduced and that its author would fix; a matter of taste is a `note`, and wrong behavior in older
   code is an `ask` that starts with `older defect`, unless
   the change says it fixes or bounds that defect (`L-15`). A `TASTE-` row that the change breaks is
@@ -119,7 +119,7 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
   kind, and only an owner's `limit:` answer closes it. When the change did not cause the crash,
   open the problem with `older defect` or `not from this change`.
   The script sets `answered` when an answer closes an `ask`, or `limit` when the user accepts a
-  `fix` as a known limit; a seat never writes those kinds.
+  `fix` as a known limit; a seat leaves those kinds to the script.
 - `quote` is an exact part of one line. A `pass` or `n/a` quotes a line of its unit. Other kinds
   quote the new line that `file:line` names, or a line the diff removed from that file.
 - `proof` names the input, caller, or rule text that triggers the problem. For a `pass`, it names
@@ -131,7 +131,7 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
 
 ## Asks
 
-An `ask` is answered. Never change code for an `ask` inside a review loop. Write one answer per
+An `ask` is answered. Leave code unchanged for an `ask` inside a review loop, because the owner decides it. Write one answer per
 line in `<run>/answers.md` with this shape:
 
 ```text
@@ -145,7 +145,7 @@ code in its opening, such as `older defect` or `not from this change`.
 It closes only with an answer that starts with `fix:` and a failing test, `disproved:` and the quoted
 code line or command that shows it cannot happen, or `limit:` and the user's own sentence. `verdict`
 keeps it open on any other answer. The chair shows it with the seat's proof and gives no
-recommendation, because the chair wrote the code. A new comment in the code never closes it.
+recommendation, because the chair wrote the code. A new comment in the code does not close it.
 Anyone may turn an `ask` into a `fix` with a failing test, when the ask is a behavior bug that a
 real caller can hit, or a guard on auth, data loss, a trust boundary, or the owner gate. Write the
 answer as `fix: <test> fails at <head7>`. For any other ask, follow the test rule in the kit's
@@ -172,7 +172,7 @@ To add or change a rule, a lens, or a repo rules file, read `references/maintain
 
 Use every seat in `checklist.json` on its listed route, as
 [orchestration-check.json](../orchestration-check.json) declares. Each seat answers only the unit-rule pairs
-whose `owners` entry names it, never an ID under `tool`. A `pass` or `n/a` row may list many IDs
+whose `owners` entry names it, not an ID under `tool`. A `pass` or `n/a` row may list many IDs
 with one quote and one proof, so write one row for each group of IDs.
 
 Dispatch and gap follow-ups follow [the kit's fan-out.md](../../../references/fan-out.md).
@@ -217,7 +217,7 @@ that wrote no seat file. Give it each `fix` row with its unit, and no other row.
 disprove each one from the code, and writes one row for each in `02-refute.md`:
 `| file:line | quote | kept or refuted | proof |`. The file and quote are copied from the `fix` row. A
 `refuted` proof names the input, caller, or line that shows the row is wrong. Then run `verdict`
-again. A refuted `fix` becomes an `ask`, never a pass, so only the owner can close it.
+again. A refuted `fix` becomes an `ask`, not a pass, so only the owner can close it.
 
 ## Callers
 

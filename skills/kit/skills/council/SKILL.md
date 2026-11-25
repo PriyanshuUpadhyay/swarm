@@ -9,7 +9,7 @@ Three independent voices in separate sessions debate one pinned question and pro
 top-level session is the chair: relay messages, correct grounding, judge convergence, and
 synthesize. Do not vote as a fourth voice.
 
-The council never makes the user's final design decision and never starts implementation. Seats
+The council leaves the final design decision to the user and does not start implementation, because it only advises. Seats
 inspect evidence and write only council scratch artifacts. Briefs and seats follow the kit block
 `blocks/worker-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
 says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. End with the options, evidence, disagreement, and the decision
@@ -61,10 +61,10 @@ Round-0 questions that survive the filter, and a split after Round 3, set the st
   runner keeps its card.
 - These role IDs are routing aliases, not provider identities. The voices need not use distinct
   providers or model families. Record each seat's actual provider and model, with its method,
-  in the brief, transcript, and output trail. Never call a Codex runner Gemini or Claude.
+  in the brief, transcript, and output trail. Name each runner by its real provider.
 - Every seat is report-only, as `blocks/worker-brief/SKILL.md` says; its result file is its council
   scratch result.
-- Reuse the same three seats for every round, and never start the next round while a seat is
+- Reuse the same three seats for every round, and start the next round only when no seat is
   working.
 
 ## Run state
@@ -121,8 +121,7 @@ WHAT WOULD CHANGE YOUR MIND
 Round 1 is one parallel round. Apply `blocks/run-workers/SKILL.md` for result acceptance,
 then check the returned artifact against this council's protocol. Do not wait for a slow seat past the round
 deadline plus the backend's one bounded resume. When two artifacts are accepted and the third seat
-is still degraded, continue with two positions and say so in the output; never re-prompt a seat
-by hand.
+is still degraded, continue with two positions and say so in the output; re-prompt a seat only through the backend's resume.
 
 **Convergence check.** When all three verdicts share a bucket, the recommended setups or options
 agree, and no voice names an objection the others left unanswered, stop here and write the output
@@ -173,7 +172,7 @@ log for the topic and reuse still-valid resolved constraints.
 The caller may pin one exact decision-log path outside the inspected product repository. Use that
 path when it is present, include it in every seat's pinned brief, and do not also create a repository
 log. An internally triggered planning Council must receive such an external path. Otherwise, use
-the council log path in `references/run-folder.md`. Never write the log into the inspected repository, because a public repository would
+the council log path in `references/run-folder.md`. Write the log outside the inspected repository, because a public repository would
 publish its private paths. Include the artifact pointer,
 Round-0 Q&A, models actually used, final verdict, required changes, dissent, per-seat trail, the round
 at which the council converged, and each round's wall time.

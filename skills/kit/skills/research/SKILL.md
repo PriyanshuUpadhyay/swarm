@@ -29,7 +29,7 @@ folders up from this skill's folder. `reach` below means
      blocks a plain fetch.
    - Use the newest version of a paper. When versions give different numbers, say which version
      says what.
-   - A blog, a summary, or an abstract is a lead, never the origin. Name it "(secondary)" when you
+   - A blog, a summary, or an abstract is a lead, not the origin. Name it "(secondary)" when you
      cannot reach the origin.
 5. **Write the report** as `<kit root>/blocks/report/SKILL.md` says.
 6. **Check every link** as `<kit root>/blocks/link-check/SKILL.md` says. When a link backs a number or a

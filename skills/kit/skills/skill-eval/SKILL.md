@@ -79,7 +79,7 @@ Expect:
 - Take each case from a real failure, in this order: a saved step line `Helped: no`, a wrong skill
   or wrong route in a Trial log, a correction the owner made in chat, and last the skill's own
   example.
-- Write the task as a user would. Never name the skill or tell the agent to use it.
+- Write the task as a user would. Leave the skill name out and do not tell the agent to use it, because naming it would void the load test.
 - Give each expectation one fact that a wrong output cannot meet by chance. A script check
   decides before any model judge.
 - Show the cases to the owner before the first run, because the cases decide the verdict.
@@ -116,7 +116,7 @@ failure; fix the description first.
 
 1. Run each script check on both folders, and record the exit codes.
 2. Flip a coin for each pair with `python3 -c 'import random; print(random.choice("AB"))'`. That
-   letter marks the skill side. Write the key in the scratch folder and never send it.
+   letter marks the skill side. Write the key in the scratch folder and keep it from the grader.
 3. Copy each pair into a new `mktemp -d` folder as `A/` and `B/`, because a path under the
    scratch folder names the skill. In each `notes.md`, replace the skill name, each skill,
    preset, or brief file, and each pane folder path with a neutral phrase such as "the guide"
@@ -150,7 +150,7 @@ the baseline and against the placebo. A result is the majority of its three runs
 - When the grader names a weak expectation, fix the case before the next run.
 - A baseline `notes.md` that shows the skill was read voids that pair. Rerun it.
 
-A skill installed from the web is never edited. When it fails a case, give the owner a choice
+Leave a skill installed from the web unedited, because the owner does not own it. When it fails a case, give the owner a choice
 between removing it and replacing it with a skill of your own.
 
 ### 6. Shrink

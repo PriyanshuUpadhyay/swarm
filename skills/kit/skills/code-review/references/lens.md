@@ -55,7 +55,7 @@ The goal is a change that stays correct under real load, real failures, and real
 
 Each `lens-<name>.md` file next to this one adds rules for one language or platform. The script
 picks the rules for a unit by each file's and each rule's `Files:` and `Applies:` lines. A missing
-language lens never skips a unit.
+language lens still leaves every unit reviewed.
 
 Sources: John Ousterhout, *A Philosophy of Software Design* (deep modules, information hiding,
 cognitive load); Martin Fowler, *Refactoring* ch. 3 (code smells); Google Engineering Practices,

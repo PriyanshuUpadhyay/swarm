@@ -83,7 +83,7 @@ swarm close <id>...                                     # ask for a wrap-up, sav
 swarm close --now <id>                                  # close at once, with no wrap-up
 ```
 
-Run the sweep as a background task of your agent harness, never with `&` in a detached shell, so it
+Run the sweep as a background task of your agent harness, not with `&` in a detached shell, so it
 stops with the session.
 
 The sweep also sends you a message in a child's name when its work is stuck. `unconfirmed:<seq>`:
