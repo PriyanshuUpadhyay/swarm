@@ -2,6 +2,8 @@
 
 The `code-review` skill owns the mode choice. This file owns the PR walk, its steps, and its GitHub writes.
 
+Contents: Preset, Contract, Run folder, Status line, Steps, Roles, Voice, Callers, Output.
+
 Example. A walk of PR 42 (`review_walk.py start 42`) makes `<repo>/tmp/review-walk/pr-42-01/` with five step files.
 The agent maps the files into groups, runs check mode on the PR range, and drafts 15
 short comments in your voice. You say yes, and they go into your pending review on GitHub. You walk

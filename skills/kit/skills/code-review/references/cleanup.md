@@ -2,6 +2,8 @@
 
 The `code-review` skill owns the mode choice. This file owns the cleanup pass and when it activates.
 
+Contents: Activation, Entry contract, Step list, Working set, Rules, Preset, the six steps (scope delta, dead weight, readability, comments, constant locality, test and review triage), Output, Red flags.
+
 One pass over the working tree, run BEFORE a substantial diff, patch, or pull request is presented.
 It replaces the three after-the-fact passes the user otherwise pays for one at a time — readability
 review, simplification, review-bot triage. The diff the user opens should already be the cleaned

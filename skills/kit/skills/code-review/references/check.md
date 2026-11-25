@@ -2,6 +2,8 @@
 
 The `code-review` skill owns the mode choice. This file owns the review gate, its script, and its verdict.
 
+Contents: Preset, Contract, Run, Review (row format and kinds), Asks, Seats, Refute findings, Callers, Output.
+
 Example. An `auto` build finishes on `feat-x` and runs a check of `a1b2c3d..HEAD`. The script finds 14
 units in 6 files. For `index.ts` `hunk 2365-2380` it lists 23 checks: the lens rules whose `Files:`
 glob and `Applies:` regex match the hunk, among them `C-7` (magic number), the TypeScript and
