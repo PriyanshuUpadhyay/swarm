@@ -77,7 +77,7 @@ COUNCIL_DIR="${TMPDIR:-/tmp}/councils/${COUNCIL_RUN_ID}"
 COUNCIL_WORKSPACE="$(pwd -P)"
 mkdir -p -m 700 "$COUNCIL_DIR"
 access=~/.claude/scripts/ensure-council-access.py  # owner's machine only; not in the kit yet
-[ -x "$access" ] && "$access" --council-dir "$COUNCIL_DIR" --workspace "$COUNCIL_WORKSPACE"
+if [ -x "$access" ]; then "$access" --council-dir "$COUNCIL_DIR" --workspace "$COUNCIL_WORKSPACE"; fi
 ```
 
 Without that script, each seat's CLI must be able to read and write `$COUNCIL_DIR`; the first seat

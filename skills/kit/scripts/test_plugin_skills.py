@@ -43,7 +43,7 @@ def test_each_description_is_short_and_says_when():
     bad = []
     for path in sorted((KIT / "skills").glob("*/SKILL.md")) + sorted((KIT / "presets").glob("*/PRESET.md")) + sorted((KIT / "blocks").glob("*/SKILL.md")):
         frontmatter = path.read_text(encoding="utf-8").split("---", 2)[1]
-        text = re.search(r"^description: (.+)$", frontmatter, re.M)[1].strip().strip('"')
+        text = re.search(r"^description: (.+)$", frontmatter, re.M)[1].strip().strip("\"'")
         if len(text) > 160 or not 0 <= text.find("Use when") < 120:
             bad.append(f"{path.relative_to(KIT)}: {len(text)} characters, 'Use when' at {text.find('Use when')}")
     assert not bad, "\n".join(bad)

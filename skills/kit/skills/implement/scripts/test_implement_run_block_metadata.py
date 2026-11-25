@@ -68,8 +68,8 @@ def test_kit_pointers():
 def test_kit_block_frontmatter():
     """Every kit block opens with Agent Skills frontmatter: name (its folder), description, license, and the
     metadata keys that blocks/blocks.toml names, each as `key: value`; only conflicts may be empty. The
-    description says what the block does and when to use it ("Use when"), in 40 words or fewer, so a small
-    model can pick it."""
+    description says what the block does and when to use it ("Use when"); scripts/test_plugin_skills.py owns its
+    length."""
     keys = ["kind", "owns", "serves", "needs", "gives", "conflicts", "users", "source"]
     for path in sorted(implement_run.BLOCKS.glob("*/SKILL.md")):
         text = path.read_text(encoding="utf-8")
@@ -83,7 +83,7 @@ def test_kit_block_frontmatter():
         assert all(line.split(": ", 1)[1].strip() not in ("", '""', "''") for line in lines
                    if ": " in line and line.strip().split(":")[0] != "conflicts"), path
         description = lines[1].split(": ", 1)[1].strip('"')
-        assert "Use when" in description and len(description.split()) <= 40, (path.parent.name, description)
+        assert "Use when" in description, (path.parent.name, description)
 
 
 def test_parent_selection(tmp):

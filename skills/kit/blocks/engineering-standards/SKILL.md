@@ -1,6 +1,6 @@
 ---
 name: engineering-standards
-description: "Select engineering rules. Use when work touches API payloads, data models or queries, retries, deadlines, quotas, limits, auth, dependencies, or tools."
+description: "Select engineering rules. Use when work touches API payloads, data models or queries, retries, deadlines, quotas, limits, or auth, or adds a dependency or tool."
 license: MIT
 metadata:
   kind: rule

@@ -27,7 +27,7 @@ More references, each read on its own trigger:
 - [references/whole.md](references/whole.md): read when check mode starts the `whole` seat.
 - [references/maintain.md](references/maintain.md): read when you add or change a rule, a lens, or a repo rules file.
 - [references/cleanup-rules.md](references/cleanup-rules.md): read at cleanup steps 2 to 5, for the user's rules the global file lacks.
-- [references/lens.md](references/lens.md): read to see the rules each unit is checked against, and the per-language lens files it lists.
+- [references/lens.md](references/lens.md): read when you add or change a rule; a review seat reads the run's `rules.md` instead.
 
 Run the front door in `skills/swarm/SKILL.md` with `Preset: code-review <mode>`, then follow the mode
 file. `review continue <run>` makes no new plan. It goes to the mode that owns that run folder

@@ -124,7 +124,7 @@ section per seat, with these search-specific fields:
    says;
 2. the site set for that seat;
 3. a list of sources already cited, so the seat surfaces new evidence;
-4. **depth** — the deep-search block and the Yield and Floor rules above, given as the Depth rule
+4. **depth** — the deep-search block and the Yield and Floor rules above, given as the Depth gate section
    says, with the known list and the seeds filled in;
 5. **method** — use your own native search and fetch tools and the Reach tools block; when a
    site blocks you, run the `reach.py` row for it, then try the search snippet, a public mirror,

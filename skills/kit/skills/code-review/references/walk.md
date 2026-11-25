@@ -29,7 +29,7 @@ Offers: html-diagram, diagram-check, prove-it-works, headless-shot, drive-app
 
 - The review is report-only, as `check.md` says; the user's checkout stays as it is.
   `git fetch` gets objects and `FETCH_HEAD` only.
-- The user submits or publishes the review on GitHub, because a published review is an outside action.
+- Leave submitting or publishing the review to the user on GitHub; do not submit it yourself, because a published review is an outside action.
 - Every GitHub write (`post`, `remark`) needs the user's yes in chat for that run.
 - Check mode owns the findings, the lens, the repo rules, and the verdict. This mode states only a verdict that check mode printed.
 - No findings about secrets in plain text in a public comment. Tell the user in chat instead.

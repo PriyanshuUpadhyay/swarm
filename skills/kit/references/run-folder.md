@@ -27,7 +27,7 @@ ignored, and `swarm task drop` deletes ignored files with the worktree, so no on
 after the run. `~/.swarm/ws/` and other folders outside the worktree stay until someone deletes them.
 
 Outside a repository, make scratch with `mktemp -d`. It lands in `$TMPDIR`, which only your
-account can open. Choose an approved path rather than a bare `/tmp/<name>`, because `swarm launch` cannot pre-trust a seat
+account can open. Use that folder, not a bare `/tmp/<name>`, because `swarm launch` cannot pre-trust a seat
 there, so each seat stops at its folder-trust question.
 
 For build, `<piece>` is the folder the owner names. When none is named, ask the owner at intake,

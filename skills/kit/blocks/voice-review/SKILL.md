@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- Read `~/.review-walk/voice.md` and follow it. It holds how the reviewer writes, from their own past reviews, and stays outside the repo to keep the reviewer's examples private.
+- Read `~/.review-walk/voice.md` and follow it. It holds how the reviewer writes, from their own past reviews, and stays outside the repo. Do not copy its examples into a repo file, because they are the reviewer's private writing.
 - With no voice file, write short plain comments: one clause, a question when the fix is a guess, no praise, no severity labels, and "potential issue, not confirmed:" before an unproved defect.
 - Use a file-level comment for a note about the whole file, a repeated pattern, or a reminder. Use a line-level comment for a note about one expression or call.
 - Keep each finding's meaning. Change only the words.
