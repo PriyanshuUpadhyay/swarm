@@ -1,6 +1,6 @@
 ---
 name: research
-description: Research one question in a short report with checked links, covering recent underrated finds and the origin of each core claim. Use when the user says research, look into, or find out, or asks where a claim comes from.
+description: Research one question in a short report with checked links. Use when the user says research, look into, find out, or asks where a claim comes from.
 ---
 
 # Research

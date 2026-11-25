@@ -1,6 +1,6 @@
 ---
 name: skill-eval
-description: "Test whether a skill helps. Check that cold models understand its name, run real tasks with and without it in panes, grade them blind, then keep, fix, or cut it. Use when you add, change, rename, or doubt a skill."
+description: Test whether a skill helps, then keep, fix, or cut it. Use when you add, change, rename, or doubt a skill.
 ---
 
 # Skill eval

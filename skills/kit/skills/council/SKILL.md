@@ -1,6 +1,6 @@
 ---
 name: council
-description: Run a debate between three independent voices on one pinned question, for one recommendation. Use when the user asks for a council, or when you cannot say up front what good looks like: bugs, security holes, edge cases, open trade-offs.
+description: 'Debate one pinned question with three voices for one recommendation. Use when asked for a council, or when good is unclear: bugs, security, trade-offs.'
 ---
 
 # Council

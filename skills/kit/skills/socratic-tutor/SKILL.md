@@ -1,6 +1,6 @@
 ---
 name: socratic-tutor
-description: "Tutor a topic through questions, a skill map, review, and saved learner evidence. Use when the user asks to be taught, tutored, quizzed, or drilled to mastery; answer one-off explanation requests normally."
+description: Tutor a topic through questions, review, and saved learner evidence. Use when the user asks to be taught, tutored, quizzed, or drilled to mastery.
 license: MIT
 metadata:
   source: "https://github.com/janestreet/agent_skills/blob/7c6715c29548a3b39d4a9545c698ee4fd17a7213/socratic-tutor/SKILL.md (MIT); adapted for Swarm task files and voice-teach"

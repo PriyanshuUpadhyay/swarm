@@ -1,6 +1,6 @@
 ---
 name: root-cause-analysis
-description: "Find why a production issue happened from existing data: one real instance, each claim checked against logs or tables, and what broke named before any fix. Use when asked for an RCA or why something failed for users."
+description: Find why a production issue happened, from logs or tables. Use when asked for an RCA or why something failed for users.
 ---
 
 # Root cause analysis

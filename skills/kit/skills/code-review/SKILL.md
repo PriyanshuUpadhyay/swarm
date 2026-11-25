@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review code with a script verdict, walk a GitHub PR, or run a cleanup pass. Use when asked to review code or a PR, check a range, or clean up, on "review continue", or when a big diff reaches delivery.
+description: 'Review code, walk a GitHub PR, or run a cleanup pass. Use when asked to review code, a PR or a range, on "review continue", or at delivery of a big diff.'
 ---
 
 # Code review

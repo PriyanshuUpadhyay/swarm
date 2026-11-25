@@ -1,6 +1,6 @@
 ---
 name: pair-programming
-description: Write code with the user one approved diff at a time, committing each finished behavior. Use when the user says pair, pair with me, or let's pair, or when an implement run builds in pair mode.
+description: "Write code with the user one approved diff at a time. Use when the user says pair or \"let's pair\", or when an implement run builds in pair mode."
 ---
 
 # Pair programming
