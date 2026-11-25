@@ -107,7 +107,8 @@ it read.
 ### 3b. Trigger
 
 A skill that never loads helps no one, and loading fails apart from following. On each family, with
-the plugin installed and no hint, send three requests: one that names the skill, one that needs it
+the version under test installed in a temporary home by `<kit root>/blocks/scratch-home/SKILL.md`, so
+the owner's live CLIs keep their plugin, and no hint, send three requests: one that names the skill, one that needs it
 but does not name it, and one nearby request that must not load it. Record from `notes.md` whether
 the skill was read. A miss on the unnamed request or a load on the nearby one is a trigger
 failure; fix the description first.
@@ -139,7 +140,7 @@ in a different context.
 ### 5. Verdict
 
 Unblind with the key, then score each case per family as win, tie, or loss for the skill against
-the baseline and against the placebo. A result is the majority of its three runs.
+the baseline and against the placebo. A result is the majority of its three runs; a win, a tie, and a loss count as a tie.
 
 - **Keep** when the skill wins at least one result and loses none, across all cases and
   families, and does not lose to the placebo. With fewer than three cases, call it a weak keep and add cases.

@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0163 | Kit descriptions fit 160 characters with the trigger first | 2 | accepted | 2026-11-26 | ↑0136 |
 | 0162 | Chat notes go to the main chat's message box and float beside the rows | 2 | accepted | 2026-11-25 | ↑0161 →0029 →0030 |
 | 0161 | Chat notes are browser drafts sent as one typed message | 2 | superseded | 2026-11-24 | ~0162 →0130 →0029 |
 | 0159 | Every agent question is answered in the chat; the pane is for debugging | 2 | accepted | 2026-11-24 | ↑0029 ↑0154 →0121 |
@@ -28,7 +29,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 | 0139 | The chat counts records no parser maps | 2 | accepted | 2026-11-11 | ↑0099 →0120 |
 | 0138 | Swarm notifies when the app chair ends a turn | 2 | accepted | 2026-11-06 | ↑0044 →0077 |
 | 0137 | A verb that becomes a skill leaves presets in the same change | 2 | accepted | 2026-11-05 | →0132 →0136 |
-| 0136 | The plugin ships chosen standalone skills, each tested by skill-eval | 2 | accepted | 2026-11-05 | ↑0132 →0133 |
+| 0136 | The plugin ships chosen standalone skills, each tested by skill-eval | 2 | accepted | 2026-11-05 | ↑0132 →0133 ~0163 |
 | 0135 | Agents edit only in task worktrees, and main is read-only for them | 3 | accepted | 2026-11-03 | ↑0019 →0040 →0042 →0046 →0055 |
 | 0134 | Tests cover the main path and real bugs, not every edge case | 2 | accepted | 2026-11-03 | →0133 |
 | 0133 | A small change takes a short route with one review seat | 2 | accepted | 2026-11-02 | →0132 |

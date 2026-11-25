@@ -26,7 +26,7 @@ If the user gives no story ("make something cool"), propose a 3-5 beat story, on
 and build that. Choose its pattern to suit the brief.
 
 Fill low-risk gaps with defaults and record them. Use 1080x1920 for a vertical reel, 30 fps, 6-12 s
-for a loop, and 15-45 s for a short. Ask for exact brand copy, logos, likenesses, and publishing destinations when they matter, so the owner controls those choices.
+for a loop, and 15-45 s for a short. Always ask for exact brand copy, logos, likenesses, and publishing destinations, because they name real brands and people or publish outside, so the owner decides them.
 
 Record each reference in `ink/01-intake.md`. Find, inspect, and measure the references as `blocks/reference-analysis/SKILL.md` says. In build, the recipes in
 `blocks/build-canvas/references/mark-making.md` give starting numbers where a reference is too small to measure.
