@@ -201,6 +201,38 @@ def test_answers():
             os.chdir(previous)
 
 
+def test_defect_ask():
+    """A defect ask stays open on a bare answer and closes with fix:, disproved: or limit:."""
+    previous = Path.cwd()
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            os.chdir(d)
+            sh("git", "init", "-qb", "main")
+            sh("git", "config", "user.email", "t@t")
+            sh("git", "config", "user.name", "t")
+            base = commit({"util.py": "def helper():\n    return 1\n"}, "defect base")
+            head = commit({"util.py": "def helper():\n    return 2\n"}, "defect change")
+            rc.start(f"{base}..{head}")
+            run = Path("tmp/review-check") / f"range-{base[:7]}-{head[:7]}-01"
+            uid, checks = next(iter(load_checklist(run).items()))
+            rows(run, f"| {uid} | {', '.join(checks['rules']) or '-'} | x | `return 2` | n/a | | "
+                 "the test code has no case these rules name |",
+                 f"| {uid} | - | util.py:2 | `return 2` | ask | potential issue, not confirmed: an old caller "
+                 "can throw | a caller that expects 1 |")
+            (run / "answers.md").write_text("- util.py `return 2`: A, accept as the chair recommends\n")
+            assert rc.verdict(run.name) == 0
+            verdict = (run / "03-verdict.md").read_text()
+            assert "0 fix, 1 ask, 0 note, 0 answered" in verdict, verdict
+            assert "Open: util.py `return 2`: a defect ask closes only with fix:, disproved: or limit:" in verdict, verdict
+            for answer, count in (("disproved: `rg helper` finds no caller that reads the value", "1 answered, 0 limit"),
+                                  ("limit: old callers are gone after the next deploy", "0 answered, 1 limit"),
+                                  (f"fix: test_helper fails at {head[:7]}", "1 fix, 0 ask")):
+                (run / "answers.md").write_text(f"- util.py `return 2`: {answer}\n")
+                assert rc.verdict(run.name) == 0
+                assert count in (run / "03-verdict.md").read_text(), (answer, (run / "03-verdict.md").read_text())
+        finally:
+            os.chdir(previous)
+
 
 def test_refuted_fix():
     """A fix that a second seat refutes in 02-refute.md becomes an open ask; the owner still decides."""

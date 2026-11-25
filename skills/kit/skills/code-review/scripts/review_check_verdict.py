@@ -16,6 +16,19 @@ DENIED = re.compile(r"\b(cannot|can't|never|no|not|won't|doesn't|without)\s+((lo
 OLDER = re.compile(r"[`*_\s]*((follow-up|potential issue, not confirmed):[`*_\s]*)?(an? )?(older (defect|gap|fault|bug)s?|not (from|added by|introduced by|made by) this change)\b", re.I)
 
 
+# A defect ask closes only with proof (2026-11-25 review-misses report: 14 outside findings were asks or notes
+# that a short owner answer or a comment edit closed). Any answer still closes a plain question.
+DEFECT = re.compile(r"[`*_\s]*(potential issue, not confirmed:|older defect\b)", re.I)
+PROOF = ("fix:", "disproved:", "limit:")
+
+
+def closes(kind, problem, answer):
+    text = answer.strip().lower()
+    if kind == "fix":
+        return text.startswith("limit:")
+    return text.startswith(PROOF) if DEFECT.match(problem.strip()) else not text.startswith("limit:")
+
+
 def crashes(problem):
     return not OLDER.match(problem.strip()) and any(not DENIED.search(problem[:m.start()]) for m in CRASH.finditer(problem))
 
@@ -175,7 +188,7 @@ def verdict(name, only=None):
             matches = [(i, match) for i, alternatives in enumerate(replied)
                        if (match := next((alt for alt in alternatives if alt[0] == path
                                           and any(alt[1] == source.strip() for source in new_lines)
-                                          and alt[2].strip().lower().startswith("limit:") == (kind == "fix")), None))] if kind in ("ask", "fix") else []
+                                          and closes(kind, problem, alt[2])), None))] if kind in ("ask", "fix") else []
             scope = new_lines + diff.get(path, {}).get("removed", [])
         if not any(quote in line for line in scope):
             where = "in the unit" if kind in ("pass", "n/a") else f"at {loc.strip('`')} or in code removed from {path}"
@@ -186,6 +199,9 @@ def verdict(name, only=None):
         if kind in ("fix", "ask", "note"):
             problem = f"{rule}: {problem}" if ids else problem
             if kind == "ask" and not matches:
+                history += [f"Open: {alt[0]} `{alt[1]}`: a defect ask closes only with fix:, disproved: or limit:"
+                            for alternatives in replied for alt in alternatives[:1]
+                            if alt[0] == path and any(alt[1] == source.strip() for source in new_lines)]
                 for alternatives in past:
                     match = next((alt for alt in alternatives if alt[0] == path
                                   and any(alt[1] == source.strip() for source in new_lines)), None)
@@ -200,7 +216,7 @@ def verdict(name, only=None):
                     text = match[2].strip()
                     normalized.append((text, text.lower().startswith("fix:")))
                 answer, is_fix = next((item for item in normalized if item[1]), normalized[0])
-                kind = "limit" if kind == "fix" else "fix" if is_fix else "answered"
+                kind = "limit" if kind == "fix" or answer.lower().startswith("limit:") else "fix" if is_fix else "answered"
                 if kind == "fix":
                     problem = answer
                 elif kind == "limit":

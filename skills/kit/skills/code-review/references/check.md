@@ -109,7 +109,8 @@ Write each row as `| unit | rule | file:line | quote | kind | problem | proof |`
   not proved), or `note` (optional cleanup). An unproved defect is an `ask`, never a `fix`; start
   its problem with "potential issue, not confirmed:" and name the input that would trigger it. A test
   that a run shows passes with and without its change is proved, so it is a `fix` (`L-14`), never an `ask`. A `fix` also needs a defect that this change
-  introduced and that its author would fix; an older defect or a matter of taste is a `note`, unless
+  introduced and that its author would fix; a matter of taste is a `note`, and wrong behavior in older
+  code is an `ask` that starts with `older defect`, unless
   the change says it fixes or bounds that defect (`L-15`). A `TASTE-` row that the change breaks is
   the owner's rule, not a matter of taste, so it is a `fix` that asks for the remedy the row names.
   A `note` that names a crash on a line the change added counts as a `fix`; `verdict` changes its
@@ -137,6 +138,11 @@ line in `<run>/answers.md` with this shape:
 
 The user closes an `ask`. The chair may close one only by citing a record the user approved,
 such as the frame's done-when, contracts, an ADR, or an earlier user answer.
+A defect ask is an `ask` whose problem starts with `potential issue, not confirmed:` or `older defect`.
+It closes only with an answer that starts with `fix:` and a failing test, `disproved:` and the quoted
+code line or command that shows it cannot happen, or `limit:` and the user's own sentence. `verdict`
+keeps it open on any other answer. The chair shows it with the seat's proof and gives no
+recommendation, because the chair wrote the code. A new comment in the code never closes it.
 Anyone may turn an `ask` into a `fix` with a failing test, when the ask is a behavior bug that a
 real caller can hit, or a guard on auth, data loss, a trust boundary, or the owner gate. Write the
 answer as `fix: <test> fails at <head7>`. For any other ask, follow the test rule in the kit's
