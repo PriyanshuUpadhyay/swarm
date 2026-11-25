@@ -34,8 +34,8 @@ Shot list
 Pacing
 - Give each beat time to read. As starting values to tune by eye: a new subject holds about 1-2 s before it changes, and on-screen text holds about 1 s plus 0.3 s per word. A key frame that reads only when paused is too fast.
 - Hold still for 0.3-0.75 s between a major action and its result. A cut straight from action to result loses the dramatic pause.
-- If a shot has spare time, advance the story or shorten the shot. Use idle motion only to support the beat. Small living motion on a character, such as a blink, is fine. HyperFrames bans idle loops outright, but its rule targets explainer videos.
-- Fast action, held meaning. Show the cause, then the reaction, and give the last shot time to land. The most common viewer complaint about code-drawn reels is that they move too fast.
+- If a shot has spare time, advance the story or shorten the shot. Use idle motion only to support the beat. Small living motion on a character, such as a blink, is fine.
+- Fast action, held meaning. Show the cause, then the reaction, and give the last shot time to land.
 
 ## Example
 Initial state: the brief is "a paper boat survives a storm".

@@ -14,9 +14,7 @@ metadata:
 ---
 
 ## Rules
-Three visible seats search three different parts of the web at the same time, each with its own
-tools, and each writes its findings to a file. The chair merges them into one report. One session's
-blocked fetch is another seat's open page, so the coverage is wider than any single session.
+Three visible seats search different parts of the web in parallel. The chair merges their reports.
 
 `blocks/run-workers/SKILL.md` selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute. When no user can answer that stop or another owner gate, apply `blocks/worker-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
 - The kit root is two folders up from this file.
@@ -52,8 +50,6 @@ seat's ring and its report file.
 
 Record the actual routed models as `blocks/run-workers/SKILL.md` requires. The site-set seat
 names below describe search purposes, not provider identities.
-
-These four details differ from a council run.
 
 - Agent names are `ws-<voice>-<run>`, so a search and a council can run at the same time.
 - Use the web-search launch scratch in `references/run-folder.md` as every seat's `--cwd`. The launcher
@@ -106,7 +102,7 @@ use the browser when it gives nothing.
 
 **Depth, a hard rule.**
 
-The value of a seat is what sits below the famous answers. Every brief gives the kit block
+Every brief gives the kit block
 `blocks/deep-search/SKILL.md` with the known list and the seeds filled in, and adds the two seat
 rules below. A seat of another provider than the chair gets each named block's Rules quoted, as
 `blocks/worker-brief/SKILL.md` says; a seat of the chair's provider gets the block paths. The chair enforces all of them when each report arrives. The chair takes the seeds

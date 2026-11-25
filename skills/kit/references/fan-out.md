@@ -28,8 +28,6 @@ the step's verdict needs all of them.
 
 ## Caps
 
-These trial limits apply to each run, as set on 2026-10-09.
-
 - 8 live child seats per run, including fix seats.
 - 2 coding seats.
 - 3 shards per cheap review aspect.

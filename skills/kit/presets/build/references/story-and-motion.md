@@ -137,8 +137,8 @@ Smooth 60 fps interpolation of everything reads as software, not as a drawn film
 
 - **Boil.** Hand-drawn lines change 6-12 times per second, not every frame. At 30 fps use
   `boil = Math.floor(frame / 3)` or `/ 4`, and seed each element's wobble with `hash(key, boil)`.
-  Boil characters and hand-drawn props only. Text, halftone, captions, interface layers, and a
-  static page do not boil. Keep hatching in the element's local space so it moves with the element.
+  Boil characters and hand-drawn props only. Keep text, halftone, captions, interface layers, and
+  static pages stable. Keep hatching in the element's local space so it moves with the element.
 - **On twos.** Character poses may hold for two frames (12 poses per second) while the camera moves
   on every frame.
 - **Move, then rest.** Put a motion in the first half of its period (about 55 %) and hold for the

@@ -46,7 +46,3 @@ action appears here with its owner and the work it affects. Apply
 - A worker brief keeps its own owner (the kit block `blocks/worker-brief/SKILL.md`, from the kit root
   one folder up from this file) and is not a plan.
 - A table, a diagram, or a local HTML page follows `explain-formats.md` in this folder.
-
-Sources: Codex plan template, Spec Kit tasks, Google style guide procedures, GOV.UK structure
-guidance, NN/g scanning research, SwarmForge role prompts; council log
-`~/.claude/council-log/2026-09-11-plan-layout-frameworks.md`.

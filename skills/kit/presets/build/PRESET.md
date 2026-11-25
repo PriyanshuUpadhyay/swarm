@@ -123,9 +123,7 @@ For a website, the planner puts `build-site` in place of `build-canvas`, as the 
 
 ## Effort and cost
 
-The `build` route sets the model and the reasoning effort. A production reel takes hours of
-render, look, and fix loops. One public 26-scene rebuild took about 5 h 40 min and 716,000
-output tokens. Tell the user the likely cost before production.
+The `build` route sets the model and reasoning effort. Tell the user the likely cost before production. See [production cost](references/build.md#production-cost) for a reference point.
 
 ## Output
 

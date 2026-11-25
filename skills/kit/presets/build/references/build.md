@@ -8,6 +8,7 @@ The story engine, determinism, debug modes, performance, the toolbox, and delive
 - Animatic
 - Frame export
 - Handoff
+- Production cost
 
 ## Style frames
 
@@ -46,3 +47,7 @@ Deliver these items:
 - the duration, fps, dimensions, and loop and alpha behaviour;
 - editor notes with safe areas;
 - the step files in `ink/`, which hold the notes, the story, the scores, and the QA log.
+
+## Production cost
+
+One public 26-scene rebuild took about 5 h 40 min and 716,000 output tokens. This is a reference point, not an estimate for a new reel.

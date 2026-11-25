@@ -81,7 +81,6 @@ Determinism
 - On the GPU, resolve `seek(t)` after the complete frame is on the canvas so capture gets that frame.
   Render, then wait for `device.queue.onSubmittedWorkDone()` and two animation frames. Use the
   current render API, because three.js deprecated `renderer.renderAsync()` in r181.
-  A 2026-09-30 three.js WebGPU trial captured full frames this way.
 
 Debug modes
 Give toggles for:
@@ -121,11 +120,9 @@ dots only in the shadow band, and a paper pass multiplies over the frame. This i
 | Scroll-driven story | GSAP ScrollTrigger or CSS scroll timelines | see the scroll driver in build's `presets/build/references/story-and-motion.md` |
 | Sound | Web Audio | cues from the shot list |
 
-Procedural 3D can read as a game, not as an illustration. In a 2026-09-30 trial, a three.js scene
-built from plain boxes read as a cel-shaded game. A 2D Canvas build of the same reference read as
-illustration. For an illustrated look, draw the masses in 2D and place them as cards in 3D space
-(2.5D parallax). Or give 3D shapes irregular silhouettes, bevels, and dense set dressing (props
-that fill the scene). Use full 3D when the camera move is the story.
+For an illustrated look, draw the masses in 2D and place them as cards in 3D space
+(2.5D parallax). Or use 3D shapes with irregular silhouettes, bevels, and dense set dressing.
+Use full 3D when the camera move is the story.
 
 Measure first-frame load time and show a loading state that fits the look. Load time is a trade-off,
 not a limit.
