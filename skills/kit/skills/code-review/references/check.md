@@ -20,16 +20,16 @@ Offers: prove-it-works, call-tree, headless-shot, lean-review, model-check
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
-| 01-units | none | the run folder that `review_check.py start` printed, and its seat map | worker-brief | each seat needs a brief from the seat map |
+| 01-units | none | the run folder that `review_check.py start` printed, and its seat map | subagent-brief | each seat needs a brief from the seat map |
 | 02-seats | units | each seat's `02-review-<seat>.md` | run-workers, when-to-extract | new seats answer every unit-rule pair |
 | 03-verdict | seats | line 3 of `03-verdict.md`, then each kept row | voice-reply | the owner reads the script's verdict |
 
 ## Contract
 
-For a gate to new seats and the `implement` handoff from a leaf, apply `blocks/worker-brief/SKILL.md`; this preset names no default that replaces fresh seats.
+For a gate to new seats and the `implement` handoff from a leaf, apply `blocks/subagent-brief/SKILL.md`; this preset names no default that replaces fresh seats.
 
 
-- The review is report-only, as `blocks/worker-brief/SKILL.md` says: leave the user's checkout unedited, uncommitted, unstashed, on its branch, and unreset.
+- The review is report-only, as `blocks/subagent-brief/SKILL.md` says: leave the user's checkout unedited, uncommitted, unstashed, on its branch, and unreset.
 - Only `verdict` writes the verdict. A reviewer writes no `03-verdict.md` and states only a verdict that
   the script printed.
 - Every unit gets at least one row, and every rule ID in its checklist gets a result. A missing

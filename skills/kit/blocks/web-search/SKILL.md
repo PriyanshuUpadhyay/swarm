@@ -16,7 +16,7 @@ metadata:
 ## Rules
 Three visible seats search different parts of the web in parallel. The chair merges their reports.
 
-`blocks/run-workers/SKILL.md` selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute. When no user can answer that stop or another owner gate, apply `blocks/worker-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
+`blocks/run-workers/SKILL.md` selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute. When no user can answer that stop or another owner gate, apply `blocks/subagent-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
 - The kit root is two folders up from this file.
 - Run the wide search when any of these is true; otherwise write in the step which trigger did not hold:
   - the user says intensive, wide, forums, or community;
@@ -104,7 +104,7 @@ use the browser when it gives nothing.
 Every brief gives the kit block
 `blocks/deep-search/SKILL.md` with the known list and the seeds filled in, and adds the two seat
 rules below. A seat of another provider than the chair gets each named block's Rules quoted, as
-`blocks/worker-brief/SKILL.md` says; a seat of the chair's provider gets the block paths. The chair enforces all of them when each report arrives. The chair takes the seeds
+`blocks/subagent-brief/SKILL.md` says; a seat of the chair's provider gets the block paths. The chair enforces all of them when each report arrives. The chair takes the seeds
 from prior reports and its own knowledge at brief time. For later seeds from local sources, follow
 the `03-web` section of `skills/research/SKILL.md`.
 
@@ -117,7 +117,7 @@ the `03-web` section of `skills/research/SKILL.md`.
 
 ### Shared brief
 
-Apply `blocks/worker-brief/SKILL.md` for common fields and read/write limits. One brief has one
+Apply `blocks/subagent-brief/SKILL.md` for common fields and read/write limits. One brief has one
 section per seat, with these search-specific fields:
 
 1. the question, verbatim, and its sub-questions, split by the chair as `blocks/deep-search/SKILL.md`
@@ -143,7 +143,7 @@ section per seat, with these search-specific fields:
    the kit's [`references/plan-layout.md`](../../references/plan-layout.md) where that file applies; quote the rule lines the seat
    needs, because Codex and AGY seats do not load it.
 
-Use a literal result path (`blocks/worker-brief/SKILL.md`) under the run directory.
+Use a literal result path (`blocks/subagent-brief/SKILL.md`) under the run directory.
 
 ### Chair synthesis
 
@@ -174,7 +174,7 @@ words.
 
 ### Guards
 
-- Use the report-only seat contract in `blocks/worker-brief/SKILL.md`.
+- Use the report-only seat contract in `blocks/subagent-brief/SKILL.md`.
 
 ## Example
 - Bad: write "blocked by Reddit" without showing the attempts.

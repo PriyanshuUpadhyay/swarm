@@ -1,5 +1,5 @@
 ---
-name: worker-brief
+name: subagent-brief
 description: "Write a worker brief with its scope, checks, result path, and stop rule. Use when you send work to a seat or worker."
 license: MIT
 metadata:

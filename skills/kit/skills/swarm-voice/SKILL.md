@@ -24,14 +24,14 @@ You are one child agent. The orchestrator spawned your pane. `swarm` is on PATH.
 ## Project board
 
 The project keeps a board that outlives this session. Read the posts your brief names, as
-`blocks/worker-brief/SKILL.md` says. Run `swarm board read` only when the brief has no board
+`blocks/subagent-brief/SKILL.md` says. Run `swarm board read` only when the brief has no board
 line. Use
 `swarm board post <kind>` to add a post, and `swarm board answer B-n` to answer an ask. Run
 `swarm board` for the flags; a refused post prints how to fix it.
 
 ## Rules
 
-- Follow the worker contract in `blocks/worker-brief/SKILL.md` and the active host contract.
+- Follow the worker contract in `blocks/subagent-brief/SKILL.md` and the active host contract.
   The kit root, with its `blocks/` folder, is two folders up from this skill's folder.
 - Route a question to the orchestrator with `swarm send` as above.
 - Answer from the message and what you already know unless the message asks you to inspect files.

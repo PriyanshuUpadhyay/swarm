@@ -109,7 +109,7 @@ otherwise this session searches with its own tools. Either way the web part foll
 merged report is written. Its report is one source among the others, not the answer. If a trigger
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
 that `web-search` did not run and why. When no user can answer a web-seat gate,
-`blocks/worker-brief/SKILL.md` applies, and this is its default.
+`blocks/subagent-brief/SKILL.md` applies, and this is its default.
 
 When the question has a body of papers or reports behind it, map it first by
 `blocks/literature-map/SKILL.md`, before the open search.
@@ -135,5 +135,5 @@ Send the reply by the loaded session reply rules. The kit's `blocks/report/SKILL
 ## Guards
 
 - Every claim cites the source that owns it, as `<kit root>/blocks/cite-sources/SKILL.md` says.
-- A research run, top-level session and seats alike, edits no repository, because research reports and does not change code. Seats also follow `blocks/worker-brief/SKILL.md`.
+- A research run, top-level session and seats alike, edits no repository, because research reports and does not change code. Seats also follow `blocks/subagent-brief/SKILL.md`.
 - The source blocks named here share the rules in their parent `<kit root>/blocks/sources/SKILL.md`.

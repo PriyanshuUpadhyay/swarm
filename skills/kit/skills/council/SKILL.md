@@ -11,7 +11,7 @@ synthesize. Do not vote as a fourth voice.
 
 The council leaves the final design decision to the user and does not start implementation, because it only advises. Seats
 inspect evidence and write only council scratch artifacts. Briefs and seats follow the kit block
-`blocks/worker-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
+`blocks/subagent-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
 says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. End with the options, evidence, disagreement, and the decision
 that remains with the user.
 
@@ -41,7 +41,7 @@ Offers: local-research, deep-search, primary-sources, cite-sources
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
-| `01-brief.md` | none | the pinned brief path, the seat names, and their routed models | worker-brief | each seat judges one pinned brief |
+| `01-brief.md` | none | the pinned brief path, the seat names, and their routed models | subagent-brief | each seat judges one pinned brief |
 | `02-round1.md` | brief | the combined Round-0 and Round-1 ask, any questions and user answers, and each seat's Round-1 verdict and file | run-workers | three visible seats answer the question |
 | `03-cross.md` | round1 | Rounds 2-3 per seat, or `skipped converged at round 1` | run-workers | seats test each other's claims |
 | `04-verdict.md` | cross | the Output block | decision-with-default | the options keep the decision with the user |
@@ -62,7 +62,7 @@ Round-0 questions that survive the filter, and a split after Round 3, set the st
 - These role IDs are routing aliases, not provider identities. The voices need not use distinct
   providers or model families. Record each seat's actual provider and model, with its method,
   in the brief, transcript, and output trail. Name each runner by its real provider.
-- Every seat is report-only, as `blocks/worker-brief/SKILL.md` says; its result file is its council
+- Every seat is report-only, as `blocks/subagent-brief/SKILL.md` says; its result file is its council
   scratch result.
 - Reuse the same three seats for every round, and start the next round only when no seat is
   working.
@@ -89,7 +89,7 @@ streams into the chair context.
 
 ## Pinned brief
 
-Every voice receives the same brief, pinned for a judgment as `blocks/worker-brief/SKILL.md` says.
+Every voice receives the same brief, pinned for a judgment as `blocks/subagent-brief/SKILL.md` says.
 Each brief adds the shared rule and that seat's card from `references/roles.md`, word for word.
 The seats differ by method, so their positions do not repeat one another.
 

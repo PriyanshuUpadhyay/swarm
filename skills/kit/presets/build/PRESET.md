@@ -103,7 +103,7 @@ For a website, the planner puts `build-site` in place of `build-canvas`, as the 
 
 ## Roles
 
-- For a missing builder or visual critic seat, apply the seat routes in `blocks/worker-brief/SKILL.md`.
+- For a missing builder or visual critic seat, apply the seat routes in `blocks/subagent-brief/SKILL.md`.
 - Steps 1 to 3 run in the main session, because they need the user's answers.
 - Steps 4 to 7 go to the role `build`. The builder scores its own rounds. On every route that builds,
   the role `review.visual` judges twice: a first look at the style frames of `04-style-frames`, and an

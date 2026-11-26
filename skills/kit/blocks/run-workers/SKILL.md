@@ -30,7 +30,7 @@ metadata:
 - Send the briefs of one stage under one deadline. Sending returns when the worker took the task, not when it finished; the worker's finish rings the chair. The kit's `references/fan-out.md` owns what goes out in parallel and the chair's work while seats run.
 - Accept only a result that the host's durable channel confirms and that names its seat. Pass the skill's refusal or degraded state to the chair as the skill says.
 - At the end, close only the seats this run started, and check that they are gone.
-- Write every brief by `blocks/worker-brief/SKILL.md`. A worker session follows the worker rules of that block, not this one.
+- Write every brief by `blocks/subagent-brief/SKILL.md`. A worker session follows the worker rules of that block, not this one.
 - Under the swarm host, the host reference is [`references/host-swarm.md`](references/host-swarm.md) in this block's folder.
 - Each runtime adds its own lines; follow the one that the `[agent-runtime: ...]` line names:
   - claude: native background subagents are allowed unless the host contract or the workflow requires a visible pane. Each Workflow `agent()` call pins the model of its named seat role, or Sonnet when it names none. Workflow fan-out allows only Sonnet or Haiku. Refuse any other model and name the role.
