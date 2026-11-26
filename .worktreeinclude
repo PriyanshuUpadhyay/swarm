@@ -1,0 +1,5 @@
+# Build folders that `wt step copy-ignored --require-include` clones from main into a new
+# worktree (copy-on-write on APFS), so its first build is incremental.
+target/
+web/node_modules/
+ui/.build/
