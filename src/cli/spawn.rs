@@ -2,50 +2,12 @@
 
 use super::*;
 
+/// What `launch` resolved for one agent's pane.
 pub(crate) struct SpawnOptions<'a> {
-    pub(crate) provider: Option<&'a str>,
-    pub(crate) account: Option<&'a str>,
-    pub(crate) resolved_account: Option<&'a swarm::profiles::Account>,
+    pub(crate) provider: Provider,
+    pub(crate) account: Option<&'a swarm::profiles::Account>,
     pub(crate) command: &'a [String],
-    pub(crate) runner: Option<&'a swarm::config::Runner>,
-}
-
-pub(crate) fn parse_spawn_options(args: &[String]) -> Result<SpawnOptions<'_>, String> {
-    let mut provider = None;
-    let mut account = None;
-    let mut index = 0;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--" if provider.is_none() || account.is_some() => {
-                return Ok(SpawnOptions {
-                    provider,
-                    account,
-                    resolved_account: None,
-                    command: &args[index + 1..],
-                    runner: None,
-                });
-            }
-            "--provider" if provider.is_none() && index + 1 < args.len() => {
-                provider = Some(args[index + 1].as_str());
-                index += 2;
-            }
-            "--account" if account.is_none() && index + 1 < args.len() => {
-                account = Some(args[index + 1].as_str());
-                index += 2;
-            }
-            _ => return Err(USAGE.to_string()),
-        }
-    }
-    if provider.is_some() && account.is_none() {
-        return Err(USAGE.to_string());
-    }
-    Ok(SpawnOptions {
-        provider,
-        account,
-        resolved_account: None,
-        command: &[],
-        runner: None,
-    })
+    pub(crate) runner: &'a swarm::config::Runner,
 }
 
 pub(crate) fn add_agent(
@@ -231,35 +193,11 @@ pub(crate) fn spawn_agent(
     if !swarm::bus::valid_agent_id(agent_id) {
         return Err(format!("swarm: bad agent id {agent_id}").into());
     }
-    let account = if let Some(account) = options.resolved_account {
-        Some(account.clone())
-    } else if let Some(requested) = options.account {
-        let provider = match options.provider {
-            Some(provider) => provider.to_string(),
-            None => swarm::config::load()
-                .and_then(|(config, _)| {
-                    config
-                        .profile(role)
-                        .map(|profile| profile.runners[0].provider.id().to_string())
-                })
-                .map_err(|error| format!("swarm: {error}"))?,
-        };
-        let accounts = load_accounts(&provider, account_deadline)?;
-        Some(
-            swarm::profiles::resolve_account(&accounts, requested)
-                .map_err(|error| format!("swarm: {error}"))?
-                .clone(),
-        )
-    } else {
-        None
-    };
+    let account = options.account.cloned();
     let session_id = session_id()?;
-    let provider = options
-        .provider
-        .or_else(|| options.command.first().map(String::as_str))
-        .and_then(Provider::parse);
+    let provider = options.provider;
     // Check before any pane or agent row. A failed list read leaves launch to the CLI.
-    if let (Some(provider @ (Provider::Claude | Provider::Codex)), Some(model)) =
+    if let (provider @ (Provider::Claude | Provider::Codex), Some(model)) =
         (provider, swarm::bus::command_model(options.command))
     {
         let account_env = account
@@ -269,10 +207,8 @@ pub(crate) fn spawn_agent(
         let models = provider.models(|cli, args| {
             let mut command = std::process::Command::new(cli);
             command.args(args);
-            if account.is_some() || options.runner.is_some() {
-                for key in provider.account_env_keys() {
-                    command.env_remove(key);
-                }
+            for key in provider.account_env_keys() {
+                command.env_remove(key);
             }
             let output = command
                 .envs(&account_env)
@@ -323,7 +259,6 @@ pub(crate) fn spawn_agent(
     // host of ADR 0126 inside its tmux pane.
     let pty_host = if agent_id == "orchestrator"
         && current_adapter == "tmux-swarm"
-        && options.runner.is_some()
         && env::var("SWARM_CHILD_HOST").is_err()
         && chat_on_pty(root)
     {
@@ -359,23 +294,14 @@ pub(crate) fn spawn_agent(
         );
         let exe = exe.to_string_lossy().into_owned();
         let hook = swarm::adapter::shell_line(&[exe.clone(), "exited".into()]);
-        // A launch has the hook flags already.
-        let command = if options.runner.is_some() {
-            options.command.to_vec()
-        } else {
-            swarm::bus::spawn_hook_command(options.command, agent_id, &env::current_dir()?)?
-        };
-        let child = if account.is_some()
-            || (options.runner.is_some() && provider.is_some_and(Provider::has_accounts))
-        {
+        // The launch command has the hook flags already.
+        let command = options.command;
+        let child = if account.is_some() || provider.has_accounts() {
             // `env` finds the CLI on PATH, so a pane function with the CLI's name never runs. It
             // is one command with no shell syntax, so a fish pane runs it too, and the pane's own
             // variables stay as they were.
             let mut args = vec!["env".to_string()];
-            for key in provider
-                .map(|provider| provider.account_env_keys())
-                .unwrap_or_default()
-            {
+            for key in provider.account_env_keys() {
                 args.extend(["-u".into(), key.to_string()]);
             }
             args.push("--".into());
@@ -385,14 +311,13 @@ pub(crate) fn spawn_agent(
                     .flat_map(|account| &account.env)
                     .map(|(key, value)| format!("{key}={value}")),
             );
-            args.extend_from_slice(&command);
+            args.extend_from_slice(command);
             swarm::adapter::shell_line(&args)
         } else {
-            swarm::adapter::shell_line(&command)
+            swarm::adapter::shell_line(command)
         };
         // tmux answers no OSC 7501 probe, so a CLI that sends reports gets a terminal that does
-        // when the pane feeds `swarm status-feed`; Codex sends none (ADR 0123). Only a launch,
-        // which has a runner, is wrapped: a `swarm spawn` command may be a pane shell function.
+        // when the pane feeds `swarm status-feed`; Codex sends none (ADR 0123).
         // A chair launched with `SWARM_CHILD_HOST=pty` hosts its children on PTYs its shim owns,
         // whatever its provider (ADR 0126).
         let host = agent_id == "orchestrator"
@@ -400,13 +325,9 @@ pub(crate) fn spawn_agent(
         // A chair on its own host needs no shim: the host answers the probe and feeds the store,
         // and a shim would drop the host from the chair's env (ADR 0131).
         let child = if adapter.spawn.contains("SWARM_FEED")
-            && options.runner.is_some()
             && pty_host.is_none()
-            && (host
-                || matches!(
-                    provider,
-                    Some(Provider::Claude | Provider::Agy | Provider::Pi)
-                )) {
+            && (host || matches!(provider, Provider::Claude | Provider::Agy | Provider::Pi))
+        {
             let mut pty = vec![exe, "pty".into()];
             if host {
                 pty.push("--host".into());
@@ -425,9 +346,12 @@ pub(crate) fn spawn_agent(
         &session_id,
         agent_id,
         role,
-        provider.map(Provider::id),
+        Some(provider.id()),
         &vars,
-        options.runner.map(|runner| (runner, options.account)),
+        Some((
+            options.runner,
+            options.account.map(|account| account.name.as_str()),
+        )),
         line,
     )?;
     if let Some(text) = ring {

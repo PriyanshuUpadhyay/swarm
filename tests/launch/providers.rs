@@ -159,6 +159,45 @@ fn a_chat_launches_from_the_chat_profile_and_a_one_off_pick_keeps_its_effort() {
     );
 }
 
+/// A non-chat role takes a one-off `--model` and `--effort` on its first runner's provider, and
+/// the agent row keeps that model and effort with the role as its profile (ADR 0163).
+#[test]
+fn a_non_chat_role_launches_with_a_one_off_model_and_effort() {
+    let home = scratch("role-one-off");
+    let env = trust_session(&home);
+    let env: Vec<(&str, &str)> = env
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    let output = swarm(
+        &home,
+        &env,
+        &[
+            "launch",
+            "seat",
+            "review.deep",
+            "--model",
+            "gpt-6-sol",
+            "--effort",
+            "low",
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let listed = swarm(&home, &env, &["agents", "--json"]);
+    assert!(listed.status.success(), "{}", stderr(&listed));
+    let listed: serde_json::Value = serde_json::from_slice(&listed.stdout).unwrap();
+    let seat = listed["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|agent| agent["id"] == "seat")
+        .unwrap();
+    assert_eq!(seat["profile"], "review.deep");
+    assert_eq!(seat["runner"], "codex/gpt-6-sol/low");
+    assert_eq!(seat["model"], "gpt-6-sol");
+    assert_eq!(seat["effort"], "low");
+}
+
 #[test]
 fn a_superset_chair_registers_as_orchestrator_on_session_new() {
     let home = scratch("superset-chair");
@@ -420,11 +459,4 @@ fn a_feed_pane_runs_claude_agy_and_pi_under_swarm_pty_and_codex_bare() {
             "{seat}: {script}"
         );
     }
-
-    // A `swarm spawn` command is the caller's own line, which may be a pane shell function.
-    let output = swarm(&home, &env, &["spawn", "seat-raw", "chat", "--", "claude"]);
-    assert!(output.status.success(), "{}", stderr(&output));
-    let script =
-        std::fs::read_to_string(home.join(format!(".swarm/runs/{session}/seat-raw.sh"))).unwrap();
-    assert!(!script.contains("'pty'"), "{script}");
 }

@@ -31,9 +31,11 @@ pub(crate) fn commands_launch(
         };
         // `--resume` starts the chat's own CLI session again, with its whole context (ADR 0107).
         let resume = options.iter().any(|arg| arg == "--resume");
+        // `--force` lets the role's own flags through in the extra args (ADR 0163).
+        let force = options.iter().any(|arg| arg == "--force");
         let options: Vec<String> = options
             .iter()
-            .filter(|arg| *arg != "--resume")
+            .filter(|arg| *arg != "--resume" && *arg != "--force")
             .cloned()
             .collect();
         let (mut account, mut cwd, mut requested_provider, mut requested_model, mut effort) =
@@ -110,17 +112,28 @@ pub(crate) fn commands_launch(
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
         let (mut runner, probe): (swarm::config::Runner, Probe) = match requested_model {
-            _ if role != "chat" && (requested_model.is_some() || effort.is_some()) => {
-                return Err("swarm: --model and --effort require the chat role".into());
-            }
-            // A one-off chat pick runs exactly that runner, with no fallback (ADR 0033).
+            // A one-off model runs exactly that runner, with no fallback (ADR 0033). It keeps the
+            // role's runner for that provider, so its sandbox and permission stay (ADR 0163).
             Some(model) => {
-                let provider = requested_provider
-                    .and_then(Provider::parse)
-                    .ok_or("swarm: a chat --model needs --provider")?;
                 let (config, _) =
                     swarm::config::load().map_err(|error| format!("swarm: {error}"))?;
-                let runner = swarm::config::one_off(&config.profiles[0], provider, model)
+                let profile = config
+                    .profile(role)
+                    .map_err(|error| format!("swarm: {error}"))?;
+                let provider = match requested_provider.and_then(Provider::parse) {
+                    Some(provider) => provider,
+                    None if role == "chat" => {
+                        return Err("swarm: a chat --model needs --provider".into());
+                    }
+                    None => profile
+                        .runners
+                        .first()
+                        .map(|runner| runner.provider)
+                        .ok_or_else(|| {
+                            format!("swarm: {role}: profile has no runner; add --provider")
+                        })?,
+                };
+                let runner = swarm::config::one_off(profile, provider, model)
                     .map_err(|error| format!("swarm: {error}"))?;
                 (runner, Probe::new(&config, account))
             }
@@ -149,7 +162,7 @@ pub(crate) fn commands_launch(
         }
         let mut command = swarm::bus::argv(agent_id, role, &runner, &swarm::paths::home()?, &cwd)?;
         let kind = runner.provider;
-        let mut extra = swarm::bus::extra_args(kind, extra)?;
+        let mut extra = swarm::bus::extra_args(kind, extra, force)?;
         if let Some((_, id)) = &resume {
             extra = resume_args(kind, id);
         }
@@ -341,11 +354,10 @@ pub(crate) fn commands_launch(
             agent_id,
             role,
             SpawnOptions {
-                provider: Some(kind.id()),
-                account: picked.as_ref().map(|picked| picked.name.as_str()),
-                resolved_account: picked.as_ref(),
+                provider: kind,
+                account: picked.as_ref(),
                 command: &command,
-                runner: Some(&runner),
+                runner: &runner,
             },
             account_deadline,
         )?;
@@ -360,25 +372,9 @@ pub(crate) fn commands_launch(
         }
         return Ok(Some(()));
     }
-    if let [cmd, agent_id, role, rest @ ..] = args
-        && cmd == "spawn"
-    {
-        if let Some(reason) = swarm::bus::launch_refusal(
-            env::var("SWARM_AGENT_ID").ok().as_deref(),
-            env::var("HERDR_AGENT_PANE").ok().as_deref(),
-        ) {
-            return Err(reason.into());
-        }
-        let options = parse_spawn_options(rest)?;
-        return spawn_agent(
-            connection,
-            root,
-            agent_id,
-            role,
-            options,
-            account_pick_deadline(),
-        )
-        .map(Some);
+    // ADR 0163: launch starts every agent, so a raw command no longer gets a pane.
+    if args.first().is_some_and(|cmd| cmd == "spawn") {
+        return Err("swarm: spawn was removed; use swarm launch <id> <role> [--provider p] [--model m] [--effort e] [--force] [-- args]".into());
     }
     Ok(None)
 }

@@ -5,20 +5,13 @@ set -eu
 
 command -v swarm >/dev/null || { echo "swarm is not on PATH; run: cargo install --path ." >&2; exit 1; }
 
-# The voice CLI. Model and approval flags mirror the Herdr roles. VOICE_CMD overrides the
-# whole line, split on spaces with globbing off, so a token like Bash(x:*) stays literal.
+# The voice CLI. `swarm launch` builds its command from the role review.surface, which has
+# claude and codex runners. No built-in role has an AGY runner, so AGY gets a one-off --model.
 case ${VOICE:=claude} in
-    claude) set -- claude --allowedTools 'Bash(swarm:*)' 'Bash(printf:*)' 'Bash(echo:*)' ;;
-    codex) set -- codex --model gpt-6-astra -c 'model_reasoning_effort="high"' --sandbox workspace-write --ask-for-approval never ;;
-    agy) set -- agy --model gemini-3.8-flash-high --effort high ;;   # accept-edits: skip-permissions keeps Bash sandboxed
+    claude|codex) set -- ;;
+    agy) set -- --model gemini-3.8-flash-high ;;
     *) echo "usage: VOICE=claude|codex|agy sh demo/herdr.sh" >&2; exit 1 ;;
 esac
-if [ -n "${VOICE_CMD:-}" ]; then
-    set -f
-    # shellcheck disable=SC2086
-    set -- $VOICE_CMD
-    set +f
-fi
 
 # The home lives inside the workspace so a workspace-write sandbox (codex) can use it.
 SWARM_HOME=$(mktemp -d "$PWD/.swarm-demo.XXXXXX")
@@ -29,17 +22,17 @@ SWARM_SESSION_ID=$(swarm session new lane)
 export SWARM_SESSION_ID
 export SWARM_AGENT_ID=orchestrator
 swarm agent add orchestrator orchestrator
-echo "session $SWARM_SESSION_ID in $SWARM_HOME, voice $1"
+echo "session $SWARM_SESSION_ID in $SWARM_HOME, voice $VOICE"
 
-PANE=$(swarm spawn reviewer voice -- "$@")
+PANE=$(swarm launch reviewer review.surface --provider "$VOICE" "$@")
 trap 'swarm close --now reviewer; rm -rf "$SWARM_HOME"' EXIT
 echo "pane $PANE"
 
 # The voice gets the protocol from the swarm-voice skill. The pointer is typed into the pane as
 # the first prompt once the CLI is in the foreground, because AGY drops a positional prompt and
-# Codex has no system-prompt flag. The pane already carries the swarm env from spawn.
+# Codex has no system-prompt flag. The pane already carries the swarm env from launch.
 tries=0
-until herdr pane process-info --pane "$PANE" | grep -qi "\"cmdline\":\"[^\"]*$1" || [ "$tries" -ge 30 ]; do
+until herdr pane process-info --pane "$PANE" | grep -qi "\"cmdline\":\"[^\"]*$VOICE" || [ "$tries" -ge 30 ]; do
     sleep 1; tries=$((tries + 1))
 done
 sleep 3   # let the TUI draw its input box before typing

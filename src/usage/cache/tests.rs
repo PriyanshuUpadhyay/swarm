@@ -16,6 +16,7 @@ fn audit_regression_usage_does_not_follow_a_home_to_a_new_login() {
         invalid_home: false,
         fable_spent: false,
         renewable: false,
+        login: None,
     };
 
     let mut meter = status_meter(

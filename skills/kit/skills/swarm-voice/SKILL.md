@@ -1,7 +1,7 @@
 ---
 name: swarm-voice
 user-invocable: false
-description: 'Act as one child agent (a voice) in a swarm session. Use when this pane was started by `swarm launch` or `swarm spawn`, or when a prompt starts with `swarm: new message`.'
+description: 'Act as one child agent (a voice) in a swarm session. Use when this pane was started by `swarm launch`, or when a prompt starts with `swarm: new message`.'
 ---
 
 # Swarm voice

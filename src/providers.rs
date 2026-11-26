@@ -313,6 +313,29 @@ impl Provider {
             ],
         }
     }
+
+    /// Owned flags that `launch --force` still refuses: the model and effort, which launch stores
+    /// and takes as `--model`/`--effort`, and pi's session flags, which carry its fixed log id.
+    pub fn locked_flags(self) -> &'static [&'static str] {
+        match self {
+            Provider::Codex => &["-m", "--model"],
+            Provider::Pi => &[
+                "--model",
+                "--provider",
+                "--thinking",
+                "--session-id",
+                "--session",
+                "--session-dir",
+                "--no-session",
+                "--continue",
+                "-c",
+                "--resume",
+                "-r",
+                "--fork",
+            ],
+            Provider::Claude | Provider::Agy => &["--model", "--effort"],
+        }
+    }
 }
 
 /// The default uses the native Keychain item; existing named homes keep their legacy item.

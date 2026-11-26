@@ -290,7 +290,7 @@ Each command, its caller and its effect are in [docs/commands.md](docs/commands.
 
 ## Skills and demos
 
-`skills/kit/skills/swarm-voice` is for a child that `swarm launch` or `swarm spawn` started, and
+`skills/kit/skills/swarm-voice` is for a child that `swarm launch` started, and
 `skills/kit/skills/swarm-orchestrator` is for the parent. Both ship in the plugin `swarm`, so
 `swarm setup plugin` installs them in each agent CLI. Inside the repo, Claude Code finds them
 through `.claude/skills` and AGY through `.agents/skills`; Codex reads `AGENTS.md`. `demo/herdr.sh` and
@@ -299,22 +299,26 @@ through `.claude/skills` and AGY through `.agents/skills`; Codex reads `AGENTS.m
 
 ## Walkthrough
 
-Run this in a tmux pane, so `spawn` has a pane to split. `my-agent` stands for any command.
+Run this in a tmux pane, so `launch` has a pane to split. `launch` starts every agent from a
+role (ADR 0163).
 
 ```sh
 swarm session new lane   # lane: children talk only to the orchestrator; registers this pane
-swarm spawn coder coder -- my-agent --task "write the parser"   # prints the pane id, e.g. %3
+swarm launch coder code.small --provider claude   # prints the pane id, e.g. %3
+echo "write the parser" | swarm send coder ask
 
-# in the coder pane, SWARM_SESSION_ID and SWARM_AGENT_ID=coder are already set
+# the coder runs the swarm-voice skill; SWARM_SESSION_ID and SWARM_AGENT_ID=coder are already set
 echo "parser done, tests green" | swarm finish        # prints the seq, e.g. 0
 
 # back in the orchestrator pane
 swarm inbox                                            # 0 coder summary runs/<session-id>/0.txt
 swarm ack 0
-swarm close --now coder  # closes at once; my-agent is no swarm voice, so it would not answer a wrap-up
-# a child that runs the swarm-voice skill closes with `swarm close coder` instead, which asks for
-# a wrap-up, saves runs/<session-id>/coder.summary.md, and then closes the pane
+swarm close coder  # asks for a wrap-up, saves runs/<session-id>/coder.summary.md, closes the pane
+# `swarm close --now coder` closes at once, with no wrap-up
 ```
+
+`--model` and `--effort` pick the run; `--force` lets a role-owned flag through after `--`, such
+as pi `--no-skills`.
 
 ## Performance profiling
 

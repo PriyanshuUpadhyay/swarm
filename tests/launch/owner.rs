@@ -5,6 +5,8 @@ use super::*;
 /// A session with a chair and one child on a fake adapter whose screen is `$HOME/screen` and
 /// whose `key` verb appends to `$HOME/keys`. Its history is the same screen. `key_then` runs after each key, to change the screen.
 pub(super) fn answer_session(home: &Path, key_then: &str) -> String {
+    // The default chat profile runs claude.
+    tool(home, "claude", "true");
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
@@ -30,14 +32,11 @@ pub(super) fn answer_session(home: &Path, key_then: &str) -> String {
     ];
     for args in [
         &["agent", "add", "orchestrator", "orchestrator"][..],
-        &["spawn", "seat", "coder", "--", "true"],
+        &["launch", "seat", "chat"],
     ] {
         let output = swarm(home, &chair, args);
         assert!(output.status.success(), "{args:?}: {}", stderr(&output));
     }
-    // A text screen is read by its provider's patterns; `spawn --provider` needs an account.
-    let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
-    swarm::store::set_provider(&connection, &session, "seat", "claude").unwrap();
     session
 }
 

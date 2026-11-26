@@ -187,12 +187,12 @@ mod tests {
             argv("coder", "coder", &pi, "/home", std::path::Path::new("/")).unwrap()[3..],
             ["--thinking", "high"]
         );
-        assert!(extra_args(Provider::Pi, &strings(&["--thinking", "max"])).is_err());
-        assert!(extra_args(Provider::Pi, &strings(&["--session-id", "x"])).is_err());
+        assert!(extra_args(Provider::Pi, &strings(&["--thinking", "max"]), false).is_err());
+        assert!(extra_args(Provider::Pi, &strings(&["--session-id", "x"]), false).is_err());
         // Launch keeps the configured skills and controls which extensions Pi may load.
         for flag in ["--extension", "-e", "--no-skills", "-ns"] {
             assert!(
-                extra_args(Provider::Pi, &strings(&[flag])).is_err(),
+                extra_args(Provider::Pi, &strings(&[flag]), false).is_err(),
                 "{flag}"
             );
         }
@@ -207,15 +207,42 @@ mod tests {
             "--fork",
         ] {
             assert!(
-                extra_args(Provider::Pi, &strings(&[flag])).is_err(),
+                extra_args(Provider::Pi, &strings(&[flag]), false).is_err(),
                 "{flag}"
             );
         }
-        assert!(extra_args(Provider::Pi, &strings(&["--name", "x"])).is_ok());
-        assert_eq!(
-            extra_args(Provider::Pi, &strings(&["--name", "x", "--no-session"])).unwrap_err(),
-            "swarm: the role owns the pi flag --no-session; remove it from the extra args"
+        assert!(extra_args(Provider::Pi, &strings(&["--name", "x"]), false).is_ok());
+        assert!(
+            extra_args(
+                Provider::Pi,
+                &strings(&["--name", "x", "--no-session"]),
+                false
+            )
+            .is_err()
         );
+    }
+
+    /// `--force` lets a role's own flag through to the CLI (ADR 0163).
+    #[test]
+    fn force_lets_an_owned_flag_into_the_launch_args() {
+        assert!(extra_args(Provider::Pi, &strings(&["--no-skills"]), false).is_err());
+        assert_eq!(
+            extra_args(Provider::Pi, &strings(&["--no-skills"]), true).unwrap(),
+            strings(&["--no-skills"])
+        );
+    }
+
+    /// Guard: the model, effort and pi's session flags stay launch's own, also with `--force`, so
+    /// the stored run and the chat log id stay true.
+    #[test]
+    fn force_still_refuses_the_locked_flags() {
+        for (provider, flag) in [
+            (Provider::Pi, "--session-id"),
+            (Provider::Claude, "--model"),
+        ] {
+            let error = extra_args(provider, &strings(&[flag, "x"]), true).unwrap_err();
+            assert!(error.contains("also with --force"), "{error}");
+        }
     }
 
     #[test]

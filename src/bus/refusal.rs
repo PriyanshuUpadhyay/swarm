@@ -1,6 +1,6 @@
 // Why a caller may not launch, revert, set up, sweep, or use a model.
 
-/// Why a caller may not launch an agent, or None. A pane `swarm spawn` made carries its own
+/// Why a caller may not launch an agent, or None. A pane `swarm launch` made carries its own
 /// agent id, and only the orchestrator starts children; Herdr marks its own agent panes too.
 pub fn launch_refusal(
     swarm_agent: Option<&str>,

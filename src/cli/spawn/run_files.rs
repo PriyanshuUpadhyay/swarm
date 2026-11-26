@@ -28,7 +28,7 @@ pub(crate) fn swarm_bin(
 /// Save `command` as `runs/<session>/<agent>.sh` and return the short line that sources it.
 /// A ring types into a new pane before its shell is ready, and the terminal then keeps only the
 /// first 1024 bytes of the line, so a long argv never reaches the shell whole. The pane's own
-/// shell sources the file, so a `swarm spawn` command can be one of its functions; `env` starts a
+/// shell sources the file, so the line stays short; `env` starts a
 /// provider CLI.
 pub(crate) fn script_line(
     root: &std::path::Path,
