@@ -1,12 +1,13 @@
 // The run chip `account · model · thinking` and its popover, which changes the chat's run
 // (ADR 0110). Inside one CLI the session restarts on the new run; another CLI asks what to bring.
 
-import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
 import { accountColor, applyBlock, applyLabel, CARRY_OPTIONS, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
+import { Glyph } from "./glyph";
 import { useLife, ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
 import { Segmented } from "./settings-shared";
@@ -143,7 +144,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
           </Button>
         )}
         <Button type="button" size="sm" data-testid="run-apply" disabled={running || blocked !== null || outcome === "none"} onClick={apply}>
-          {running && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
+          {running && <Glyph form="working" className="size-4" aria-hidden />}
           {applyLabel(outcome)}
         </Button>
       </div>

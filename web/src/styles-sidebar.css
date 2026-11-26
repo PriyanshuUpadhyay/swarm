@@ -435,7 +435,7 @@
   font-size: var(--text-xs);
   color: var(--muted-foreground);
 }
-.tab .glyph {
+.tab .glyph:not(.swarm-glyph) {
   width: 11px;
   height: 11px;
 }
@@ -468,9 +468,6 @@
   height: 12px;
   flex: none;
 }
-.glyph.working {
-  color: var(--status-working);
-}
 .glyph.waiting {
   color: var(--status-waiting);
 }
@@ -483,17 +480,6 @@
 .glyph.ended {
   color: var(--status-ended);
 }
-@media (prefers-reduced-motion: no-preference) {
-  .glyph.working:not(.swarm-glyph) {
-    animation: spin 1.1s linear infinite;
-  }
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .tab[data-drop-target="true"] {
   box-shadow: inset 3px 0 var(--ring);
 }
