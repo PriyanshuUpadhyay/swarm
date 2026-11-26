@@ -25,6 +25,7 @@ import { SkillsDialog } from "./skills";
 import { BranchPicker, Palette } from "./palette";
 import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
+import { SidebarRail } from "./sidebar-rail";
 import { BranchBar } from "./branch-bar";
 import { store } from "./store";
 import { TabStrip } from "./tabs";
@@ -36,6 +37,12 @@ import { watchUpdates } from "./update";
 
 // Sidebar side and width stay in this browser until P3b adds their owner choices.
 const SIDE_KEY = "swarm.sidebar.side";
+const railMedia = window.matchMedia("(width < 1024px)");
+const subscribeRail = (change: () => void) => {
+  railMedia.addEventListener("change", change);
+  return () => railMedia.removeEventListener("change", change);
+};
+const showRail = () => railMedia.matches;
 // ⌘B and ⇧⌘B are registered before the panel exists; Root points them at it.
 const frame = { toggle: () => {}, move: () => {} };
 // ⌘J likewise; ChatColumn points it at the background panel. Open or not stays in this browser.
@@ -50,6 +57,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   useEffect(() => watchUpdates(app), [app]);
   const theme = useTheme();
   const sidebar = usePanelRef();
+  const narrow = useSyncExternalStore(subscribeRail, showRail);
   const [side, setSide] = useState(store.getItem(SIDE_KEY) === "right" ? "right" : "left");
   useEffect(() => {
     frame.toggle = () => {
@@ -71,7 +79,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
       key="side"
       id="side-panel"
       panelRef={sidebar}
-      defaultSize="260px"
+      defaultSize="264px"
       minSize="180px"
       maxSize="560px"
       collapsible
@@ -87,9 +95,14 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   );
   return (
     <TooltipProvider>
-      <ResizablePanelGroup key={side} orientation="horizontal" data-side={side} defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
-        {side === "left" ? [side_, <ResizableHandle key="h" />, main] : [main, <ResizableHandle key="h" />, side_]}
-      </ResizablePanelGroup>
+      <div className="flex h-full min-w-0" data-sidebar-side={side}>
+        {narrow && side === "left" && <SidebarRail app={app} />}
+        <ResizablePanelGroup key={side} className="min-w-0 flex-1" orientation="horizontal" data-side={side}
+          defaultLayout={narrow ? undefined : layout.defaultLayout} onLayoutChanged={narrow ? undefined : layout.onLayoutChanged}>
+          {narrow ? [main] : side === "left" ? [side_, <ResizableHandle key="h" />, main] : [main, <ResizableHandle key="h" />, side_]}
+        </ResizablePanelGroup>
+        {narrow && side === "right" && <SidebarRail app={app} />}
+      </div>
       <Palette app={app} />
       <BranchPicker app={app} />
       <AskDialog app={app} />

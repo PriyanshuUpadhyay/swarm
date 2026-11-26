@@ -132,3 +132,51 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
     await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/U5/chrome-${colorScheme}.png`) });
   }
 });
+
+test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page }) => {
+  await load(page);
+  await page.getByTestId("home-button").click();
+  const sidebar = page.getByTestId("sidebar");
+  const sidePanel = page.getByTestId("side-panel");
+  const rail = page.getByTestId("sidebar-rail");
+  const width = async () => Math.round((await sidePanel.boundingBox())?.width ?? -1);
+  await expect.poll(width).toBe(264);
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(sidebar).toBeVisible();
+  await expect(rail).toHaveCount(0);
+  const handle = page.locator('[data-side] > [data-slot="resizable-handle"]');
+  await handle.press("ArrowRight");
+  await expect.poll(width).toBeGreaterThan(264);
+  const saved = await width();
+  await page.setViewportSize({ width: 1023, height: 900 });
+  await expect(rail).toBeVisible();
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect.poll(width).toBe(saved);
+  await page.keyboard.press("Meta+b");
+  await expect.poll(async () => (await sidePanel.boundingBox())?.width).toBe(0);
+
+  await page.setViewportSize({ width: 1023, height: 900 });
+  await expect(rail).toBeVisible();
+  expect((await rail.boundingBox())?.width).toBe(52);
+  await expect(sidebar).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1023);
+  const main = (await page.getByTestId("main-panel").elementHandle())!;
+  const live = rail.locator(`[data-session="${process.env.SWARM_E2E_GIT}"]`);
+  await live.click();
+  await expect(live).toHaveAttribute("aria-current", "true");
+  await rail.getByRole("button", { name: "New chat" }).click();
+  await expect(page.getByTestId("new-chat-prompt")).toBeFocused();
+  await page.keyboard.press("Escape");
+  for (const colorScheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/U6/rail-${colorScheme}.png`) });
+  }
+
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(rail).toHaveCount(0);
+  expect(await main.evaluate((el) => el.isConnected)).toBe(true);
+  await expect.poll(async () => (await sidePanel.boundingBox())?.width).toBe(0);
+  await page.keyboard.press("Meta+b");
+  await expect(sidebar).toBeVisible();
+  await expect(sidebar.locator(`[data-session="${process.env.SWARM_E2E_GIT}"]`)).toHaveAttribute("aria-current", "true");
+});

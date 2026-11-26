@@ -154,7 +154,7 @@ export class App {
     abort.signal.addEventListener("abort", this.settings.subscribe(() => this.navigation.followUrl()));
     void this.navigation.refreshSnapshot().then(() => {
       whenPainted(
-        () => document.querySelector('[data-testid="sidebar"][data-loaded="true"]') !== null,
+        () => document.querySelector(':is([data-testid="sidebar"], [data-testid="sidebar-rail"])[data-loaded="true"]') !== null,
         () => (window.__swarmReady = true),
       );
     });
