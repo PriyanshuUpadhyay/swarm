@@ -388,7 +388,7 @@ async fn prepare_carry(
         Carry::File => {
             let chain = read_connection(&app.root)
                 .and_then(|db| swarm::store::continuation_chain(&db, old))
-                .map_err(|_| error(StatusCode::CONFLICT, "Cannot read this chat's history"))?;
+                .map_err(super::actions::history_read_error)?;
             let mut text = Vec::new();
             for id in chain {
                 let log = match resolve_log(&app.root, &id, "chair") {

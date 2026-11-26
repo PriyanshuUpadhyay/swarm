@@ -37,6 +37,14 @@ pub fn continue_session(
         (new_id, old_id),
     )?;
     if changed != 1 {
+        let continued: bool = connection.query_row(
+            "SELECT EXISTS (SELECT 1 FROM session WHERE continuation_of = ?1 AND archived_at IS NULL)",
+            [old_id],
+            |row| row.get(0),
+        )?;
+        if continued {
+            return Err("This chat continued in a newer session. Open the newer chat.".into());
+        }
         return Err("sessions cannot be linked as one chat".into());
     }
     Ok(())

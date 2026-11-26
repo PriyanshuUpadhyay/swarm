@@ -72,6 +72,66 @@ async fn handoff_test_run(fixture: &Fixture, body: ContinueChat) -> Result<Value
     .await
 }
 #[tokio::test]
+async fn handoff_refuses_an_archived_source_with_an_unarchive_step() {
+    let (fixture, body) = handoff_fixture();
+    let mut db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::set_sessions_archived(&mut db, std::slice::from_ref(&fixture.session), true)
+        .unwrap();
+
+    let err = handoff_test_run(&fixture, body).await.unwrap_err();
+    assert_eq!(err.0, StatusCode::CONFLICT);
+    assert!(err.1.0["error"].as_str().unwrap().contains("Unarchive"));
+    assert!(!fixture.dir.join("home/handoff-actions").exists());
+}
+
+#[tokio::test]
+async fn handoff_file_refuses_an_invalid_history_link() {
+    let (fixture, mut body) = handoff_fixture();
+    let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let newer = swarm::store::create_session(
+        &db,
+        "lane",
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        None,
+        Some("tmux-swarm"),
+    )
+    .unwrap();
+    db.execute(
+        "UPDATE session SET continuation_of = ?1 WHERE id = ?2",
+        (&newer, &fixture.session),
+    )
+    .unwrap();
+    body.carry = Carry::File;
+
+    let err = handoff_test_run(&fixture, body).await.unwrap_err();
+    assert_eq!(err.0, StatusCode::CONFLICT);
+    assert!(err.1.0["error"].as_str().unwrap().contains("history link"));
+    assert!(!fixture.dir.join("home/handoff-text").exists());
+}
+
+#[test]
+fn handoff_link_conflict_points_to_the_newer_chat() {
+    let db = swarm::store::open(Path::new(":memory:")).unwrap();
+    let new_session = || {
+        swarm::store::create_session(
+            &db,
+            "lane",
+            Path::new(env!("CARGO_MANIFEST_DIR")),
+            None,
+            Some("tmux-swarm"),
+        )
+        .unwrap()
+    };
+    let old = new_session();
+    let first = new_session();
+    let losing = new_session();
+    swarm::store::continue_session(&db, &first, &old).unwrap();
+
+    let err = swarm::store::continue_session(&db, &losing, &old).unwrap_err();
+    assert!(err.to_string().contains("Open the newer chat"));
+}
+
+#[tokio::test]
 async fn handoff_cancel_before_launch() {
     let (fixture, body) = handoff_fixture();
     register_continue(&fixture.app, &body).unwrap();

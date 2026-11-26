@@ -295,19 +295,43 @@ pub(super) fn action_session(app: &Server, session: &str) -> Result<CliCall, Api
 
 pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
     let call = action_session(app, id)?;
-    let current = read_connection(&app.root).and_then(|db| db.query_row(
-        "SELECT archived_at IS NULL AND NOT EXISTS (
+    let (archived, continued) = read_connection(&app.root).and_then(|db| db.query_row(
+        "SELECT archived_at IS NOT NULL, EXISTS (
             SELECT 1 FROM session AS next WHERE next.continuation_of = ?1 AND next.archived_at IS NULL
         ) FROM session WHERE id = ?1",
-        [id], |row| row.get::<_, bool>(0),
+        [id], |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
     )).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
-    if !current {
+    if archived {
         return Err(error(
             StatusCode::CONFLICT,
-            "The chat's current session has changed",
+            "This chat is archived. Unarchive it first.",
+        ));
+    }
+    if continued {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "This chat continued in a newer session. Open the newer chat.",
         ));
     }
     Ok(call)
+}
+
+pub(super) fn history_read_error(err: rusqlite::Error) -> ApiError {
+    let (status, message) = match err {
+        rusqlite::Error::QueryReturnedNoRows => (
+            StatusCode::NOT_FOUND,
+            "Chat not found. Open a chat from the sidebar.",
+        ),
+        rusqlite::Error::InvalidQuery => (
+            StatusCode::CONFLICT,
+            "This chat has an invalid history link. Open a different chat.",
+        ),
+        _ => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Could not read this chat's history. Try again.",
+        ),
+    };
+    error(status, message)
 }
 
 #[cfg(test)]
