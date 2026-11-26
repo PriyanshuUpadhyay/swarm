@@ -217,11 +217,11 @@
   --text-lg: 15px;
   --text-lg--line-height: 20px;
 
-  /* 4px spacing steps; radius matches DesignTokens.Radius (control, card, panel). */
+  /* The spacing and radius scales follow DESIGN.md. */
   --spacing: 4px;
   --radius-sm: 4px;
   --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-lg: 8px;
   --radius-xl: 10px;
   --radius-2xl: 12px;
 
