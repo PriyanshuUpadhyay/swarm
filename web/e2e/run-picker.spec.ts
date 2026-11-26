@@ -137,6 +137,19 @@ test("a typed model stays available in the new-chat picker", async ({ page: tab 
   await expect(row).toHaveAttribute("aria-pressed", "true");
 });
 
+test("the new-chat picker gives a catalog error space inside its footer", async ({ page: tab }) => {
+  await tab.route("**/api/providers", (route) => route.fulfill({ status: 503, json: { error: "catalog offline" } }));
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByTestId("tab-new-chat").click();
+  await tab.getByTestId("chip-run").click();
+  const overlay = tab.getByTestId("composer-overlay");
+  const error = overlay.getByRole("alert").filter({ hasText: "Could not read the CLIs" });
+  await expect(error).toBeVisible();
+  const rail = overlay.getByRole("group", { name: "Model groups" });
+  expect((await error.boundingBox())!.x - (await rail.boundingBox())!.x).toBeGreaterThanOrEqual(8);
+});
+
 test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }) => {
   await pickerCatalog(tab);
   const live = process.env.SWARM_E2E_LIVE!;

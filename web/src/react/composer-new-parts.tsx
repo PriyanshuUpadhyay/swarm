@@ -21,8 +21,10 @@ export function RunMenu({ app, draft, setDraft }: { app: App; draft: Run; setDra
   return (
     <div className="w-full max-w-[560px] rounded-xl border border-menu-border bg-popover text-popover-foreground">
       <RunPicker app={app} catalog={catalog} draft={draft} setDraft={setDraft} />
-      <div className="border-t border-menu-border px-2 py-1.5 text-xs text-muted-foreground">A pick sets the run for this new chat.</div>
-      <ErrorLine text={catalog.error} />
+      <div className="grid gap-1 border-t border-menu-border px-2 py-1.5 text-xs text-muted-foreground">
+        <span>A pick sets the run for this new chat.</span>
+        <ErrorLine text={catalog.error} />
+      </div>
     </div>
   );
 }
