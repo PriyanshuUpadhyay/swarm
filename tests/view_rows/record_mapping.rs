@@ -23,6 +23,42 @@ fn codex_rows(lines: Vec<Value>) -> Vec<Row> {
 }
 
 #[test]
+fn pi_background_children_update_an_earlier_group_without_a_reload() {
+    use transcript::reader_rows::ReaderRows;
+
+    let initial = inline_fixture(
+        "pi",
+        &[
+            r#"{"type":"message","id":"a","message":{"role":"assistant","content":[{"type":"toolCall","id":"batch","name":"subagent","arguments":{"background":true,"tasks":[{"task":"Parser"},{"task":"Render"},{"task":"Docs"}]}}]}}"#,
+            r#"{"type":"message","id":"b","message":{"role":"toolResult","toolName":"subagent","toolCallId":"batch","details":{"v":1,"callId":"batch","results":[{"slot":1,"state":"started"}]}}}"#,
+            r#"{"type":"message","id":"c","message":{"role":"assistant","content":[{"type":"text","text":"Waiting"}],"stopReason":"stop"}}"#,
+        ],
+    );
+    let mut live = ReaderRows::empty(100, false);
+    live.ingest(100, 200, &initial);
+    let children = |upsert: &[Row]| {
+        let run = upsert.iter().find_map(|row| row.subagent.as_ref()).unwrap();
+        serde_json::to_value(run).unwrap()["children"].clone()
+    };
+    assert_eq!(children(&live.delta().upsert)[0]["state"], "started");
+    let settled = inline_fixture(
+        "pi",
+        &[
+            r#"{"type":"custom_message","id":"d","customType":"swarm-pi-subagents","details":{"v":1,"callId":"batch","results":[{"slot":2,"state":"failed"},{"slot":1,"state":"done"}]}}"#,
+        ],
+    );
+    live.ingest(200, 300, &settled);
+    assert_eq!(
+        children(&live.delta().upsert),
+        json!([
+            {"call_id":"batch","description":"Parser","state":"done"},
+            {"call_id":"batch.2","description":"Render","state":"failed"},
+            {"call_id":"batch.3","description":"Docs"}
+        ])
+    );
+}
+
+#[test]
 fn codex_subagent_activity_updates_the_spawn_row() {
     for (source, kind, expected) in [
         ("sub_agent_activity", "started", ToolState::Waiting),

@@ -25,7 +25,7 @@ pub mod worker_protocol;
 
 pub use checklist::TodoItem;
 pub use events::row;
-pub(super) use events::subagent_labels;
+pub(super) use events::{pi_child_facts, subagent_run};
 pub use records::Record;
 pub(super) use shell::shell_row;
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run, strip_terminal};
@@ -71,11 +71,20 @@ pub struct SubagentRun {
     pub call_id: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub other_call_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<SubagentChild>,
     pub agent_type: String,
     pub description: String,
     pub state: super::ToolState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<TextPreview>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SubagentChild {
+    pub call_id: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ShellRun {
