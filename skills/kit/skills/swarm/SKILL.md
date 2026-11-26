@@ -10,7 +10,7 @@ preset, so the agent reads `skills/research/SKILL.md` in full. The planner copie
 `plan.md`, adds no block, and the chart shows five steps. The preset says `Stop: owner`, so the
 owner clicks approve in Plannotator, and `start_plan.py` makes the five step files.
 
-For the approval gate, apply `blocks/worker-brief/SKILL.md`. The default is to return the checked draft and leave its steps unstarted.
+For the approval gate, apply `blocks/subagent-brief/SKILL.md`. The default is to return the checked draft and leave its steps unstarted.
 
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
