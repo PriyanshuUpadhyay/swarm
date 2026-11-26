@@ -8,7 +8,7 @@ import { holdChatStart, open, readTree } from "./lifecycle-helpers";
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
 
-async function shots(tab: Page, unit: number, name: string) {
+async function shots(tab: Page, unit: number | "fix1", name: string) {
   if (!process.env.E2E_SHOTS) return;
   const dir = resolve(import.meta.dirname, `../../tmp/shots/${unit}`);
   mkdirSync(dir, { recursive: true });
@@ -182,9 +182,11 @@ test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }
   await shots(tab, 7, "busy-picker");
   await stop.click();
   await expect.poll(() => stops).toBe(1);
-  await expect(tab.getByTestId("switch-pending")).toBeVisible();
+  const banner = tab.getByTestId("switch-pending");
+  await expect(banner).toBeVisible();
+  await expect(banner.getByText("Switch to model-b?")).toHaveCSS("font-size", "12px");
   expect(switches).toEqual([]);
-  await shots(tab, 7, "switch-confirmation");
+  await shots(tab, "fix1", "switch-confirmation");
   await tab.getByRole("button", { name: "Switch now" }).click();
   await expect.poll(() => switches).toEqual([expect.objectContaining({ old_session: live, model: "model-b", carry: "resume" })]);
 });

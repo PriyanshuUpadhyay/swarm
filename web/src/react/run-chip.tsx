@@ -113,7 +113,7 @@ function RunSwitchBanner({ app, sessionId, chair }: { app: App; sessionId: strin
   if (!pick || chair.who || chair.unreachable || app.life.runBusy(sessionId)) return null;
   return (
     <div data-testid="switch-pending" className="flex min-w-0 items-center gap-2 rounded-lg border border-menu-border p-1.5 text-xs text-foreground">
-      <span className="min-w-0 flex-1 truncate font-mono" title={pick.model ?? undefined}>Switch to {pick.model}?</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={pick.model ?? undefined}>Switch to {pick.model}?</span>
       <Button type="button" size="sm" variant="outline" onClick={() => app.life.confirmSwitch(sessionId)}>Switch now</Button>
       <Button type="button" size="sm" variant="ghost" onClick={() => app.life.dismissSwitch(sessionId)}>Dismiss</Button>
     </div>
