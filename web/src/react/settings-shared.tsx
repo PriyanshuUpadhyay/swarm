@@ -53,7 +53,7 @@ export { label, Row, Segmented, Toggle, useSettings, useNow };
 
 function Segmented<T extends string>({ label: name, value, options, onChange, testid, fitContent }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void; testid: string; fitContent?: boolean }) {
   return (
-    <div role="radiogroup" aria-label={name} className={`view-switch m-0 ${fitContent ? "w-max [&>button]:min-w-max [&>button]:px-2 [&>button]:whitespace-nowrap" : "w-56"}`} data-testid={testid} onKeyDown={(e) => {
+    <div role="radiogroup" aria-label={name} className={`view-switch m-0 ${fitContent ? "w-fit max-w-[calc(100%-4rem)] [&>button]:basis-auto! [&>button]:h-auto! [&>button]:min-h-6 [&>button]:px-2" : "w-56"}`} data-testid={testid} onKeyDown={(e) => {
       // A radiogroup is one tab stop; the arrow keys move the choice (WAI-ARIA radio group).
       const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
       if (!step) return;
