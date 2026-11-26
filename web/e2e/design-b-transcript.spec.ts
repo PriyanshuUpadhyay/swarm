@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { resolve } from "node:path";
 import { mockRows, open, row, rows } from "./ux-helpers";
-import type { Inline } from "../src/core/api";
+import type { Block, Inline } from "../src/core/api";
 
 const lines = (last: string) => Array.from({ length: 16 }, (_, i) => i === 15 ? last : `Check result ${i + 1}`).join("\n");
 
@@ -52,6 +52,23 @@ test("Find reveals a cut user message and highlights a match beyond the cut", as
   await expect(page.getByTestId("find-count")).toHaveText("1 of 1");
   await expect.poll(() => page.evaluate(() => String(CSS.highlights.get("find-current")?.values().next().value))).toBe("socket timeout");
   await expect(message).toContainText(last);
+});
+
+test("a cut user message counts all the lines of an omitted code block", async ({ page }) => {
+  const paragraphs: Block[] = Array.from({ length: 12 }, (_, i) => ({
+    type: "paragraph", value: [{ type: "text", value: `Paragraph ${i + 1}` }],
+  }));
+  const text = Array.from({ length: 300 }, (_, i) => `const check${i + 1} = true;`).join("\n");
+  const result = rows([row("u1", "A user message with a code block", "user")]);
+  result.display = { u1: { blocks: [...paragraphs, { type: "code", value: { label: "ts", text } }] } };
+  await page.route("**/api/rows?*", (route) => route.fulfill({ json: result }));
+
+  await open(page);
+  const message = page.locator('[data-id="u1"]');
+  await expect(message).toContainText("+300 lines");
+  await expect(message.locator(".md-code")).toHaveCount(0);
+  await message.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(message.locator(".md-code pre")).toContainText("const check300 = true;");
 });
 
 test("live thinking shows its last four lines without growing a box", async ({ page }) => {

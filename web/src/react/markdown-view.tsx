@@ -151,6 +151,7 @@ function blocks(nodes: Block[], tight = false): ReactNode[] {
  *  A code or table window is one block; its own scrolling and copy still work. */
 export function cutMarkdown(display: Display, limit: number): { display: Display; hidden: number } {
   let lines = 0;
+  let hiddenBlockLines = 0;
   const takeInlines = (nodes: Inline[]): Inline[] => nodes.flatMap((node): Inline[] => {
     const visible = lines <= limit;
     switch (node.type) {
@@ -184,10 +185,14 @@ export function cutMarkdown(display: Display, limit: number): { display: Display
       const children = takeInlines(node.value.children);
       return visible ? [{ ...node, value: { ...node.value, children } }] : [];
     }
+    if (!visible) {
+      if (node.type === "code") hiddenBlockLines += Math.max(0, sourceLines(node.value.text).length - 1);
+      if (node.type === "table") hiddenBlockLines += node.value.rows.length;
+    }
     return visible ? [node] : [];
   });
   const preview = { blocks: takeBlocks(display.blocks) };
-  return { display: preview, hidden: Math.max(0, lines - limit) };
+  return { display: preview, hidden: Math.max(0, lines - limit) + hiddenBlockLines };
 }
 
 export function MarkdownView({ display }: { display: Display }) {
