@@ -16,7 +16,7 @@ function ResizableHandle({ className, ...props }: React.ComponentProps<typeof Re
     <ResizablePrimitive.Separator
       data-slot="resizable-handle"
       className={cn(
-        "relative w-px shrink-0 bg-border outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-[7px] after:-translate-x-1/2 hover:bg-border-strong focus-visible:bg-ring data-[separator=active]:bg-ring",
+        "relative w-px shrink-0 bg-border outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-[7px] after:-translate-x-1/2 hover:bg-border focus-visible:bg-ring data-[separator=active]:bg-ring",
         className,
       )}
       {...props}

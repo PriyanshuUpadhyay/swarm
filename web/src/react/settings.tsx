@@ -86,12 +86,12 @@ function Banner({ app }: { app: App }) {
         </p>
       )}
       {login && (
-        <p role="status" data-testid="login-note" className="rounded-md border border-border-strong px-3 py-2 text-sm">
+        <p role="status" data-testid="login-note" className="rounded-md border border-border px-3 py-2 text-sm">
           Finish signing in to {label(login.provider)} as “{login.account}” in the login pane <code className="font-mono">{login.pane}</code>. Then press Refresh accounts.
         </p>
       )}
       {confirm && (
-        <div role="alertdialog" aria-label={confirm.action} data-testid="settings-confirm" className="grid gap-2 rounded-md border border-border-strong px-3 py-2 text-sm">
+        <div role="alertdialog" aria-label={confirm.action} data-testid="settings-confirm" className="grid gap-2 rounded-md border border-border px-3 py-2 text-sm">
           <p>{confirm.text}</p>
           <div className="flex gap-2">
             <Button size="sm" data-testid="settings-confirm-yes" onClick={() => void app.settings.answer(true)}>

@@ -42,7 +42,6 @@
   --muted-foreground: #a39f97;
   --disabled-foreground: #6f6b63;
   --border: #2d2a26;
-  --border-strong: var(--border);
   --hover: #201e1b;
   --selected: #24221f;
   --ring: #f3f1ec;
@@ -84,7 +83,6 @@
     --muted-foreground: #6b665e;
     --disabled-foreground: #898379;
     --border: #e0dbd0;
-    --border-strong: var(--border);
     --hover: #ede9e1;
     --selected: #e9e5dc;
     --ring: #1d1b18;
@@ -127,7 +125,6 @@
   --muted-foreground: #6b665e;
   --disabled-foreground: #898379;
   --border: #e0dbd0;
-  --border-strong: var(--border);
   --hover: #ede9e1;
   --selected: #e9e5dc;
   --ring: #1d1b18;
@@ -221,7 +218,6 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-disabled-foreground: var(--disabled-foreground);
   --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
   --color-hover: var(--hover);
   --color-selected: var(--selected);
   --color-accent: var(--selected);
