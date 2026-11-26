@@ -30,7 +30,7 @@ fn a_denied_herdr_socket_refuses_every_call_that_starts_a_run() {
 }
 
 #[test]
-fn a_child_agent_can_neither_launch_nor_spawn() {
+fn a_child_agent_cannot_launch() {
     let home = scratch("child");
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
@@ -53,19 +53,27 @@ fn a_child_agent_can_neither_launch_nor_spawn() {
         ("SWARM_SESSION_ID", session.as_str()),
         ("SWARM_AGENT_ID", "cl-seat-1"),
     ];
-    for args in [
-        &["launch", "grandchild", "review.deep"][..],
-        &["spawn", "grandchild", "coder", "--", "true"],
-    ] {
-        let output = swarm(&home, &child, args);
-        assert!(!output.status.success(), "{args:?} passed");
-        assert!(
-            stderr(&output).contains("a child agent cannot launch agents"),
-            "{args:?}: {}",
-            stderr(&output)
-        );
-    }
+    let output = swarm(&home, &child, &["launch", "grandchild", "review.deep"]);
+    assert!(!output.status.success(), "launch passed");
+    assert!(
+        stderr(&output).contains("a child agent cannot launch agents"),
+        "{}",
+        stderr(&output)
+    );
     assert!(!home.join("spawned").exists());
+}
+
+/// `swarm spawn` is gone; a caller gets the launch form instead of a raw pane (ADR 0163).
+#[test]
+fn spawn_is_refused_with_the_launch_form() {
+    let home = scratch("spawn-removed");
+    let output = swarm(&home, &[], &["spawn", "a", "b", "--", "true"]);
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("spawn was removed"),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]
@@ -73,6 +81,13 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
     let home = scratch("own-swarm");
     // An older `swarm` installed first on the pane's PATH.
     tool(&home, "swarm", "exit 1");
+    // The default chat profile runs this claude, which records the tools its pane finds.
+    // One name per call: dash's `command -v` prints only its first name.
+    tool(
+        &home,
+        "claude",
+        "command -v swarm > \"$HOME/which\"; command -v cargo >> \"$HOME/which\"",
+    );
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
@@ -119,16 +134,7 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
         )
         .envs(chair)
         .current_dir(&home)
-        .args([
-            "spawn",
-            "seat",
-            "coder",
-            "--",
-            "sh",
-            "-c",
-            // One name per call: dash's `command -v` prints only its first name.
-            "command -v swarm > \"$HOME/which\"; command -v cargo >> \"$HOME/which\"",
-        ])
+        .args(["launch", "seat", "chat"])
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", stderr(&output));
@@ -156,10 +162,14 @@ fn a_spawned_agent_runs_the_swarm_that_launched_it() {
         .env_clear()
         .env("HOME", &home)
         .env("SWARM_HOME", &home)
-        .env("PATH", "/usr/bin:/bin")
+        // The launch still needs its CLI, so the fake bin dir comes last.
+        .env(
+            "PATH",
+            format!("/usr/bin:/bin:{}", home.join("bin").display()),
+        )
         .envs(chair)
         .current_dir(&home)
-        .args(["spawn", "next", "coder", "--", "true"])
+        .args(["launch", "next", "chat"])
         .output()
         .unwrap();
     assert!(again.status.success(), "{}", stderr(&again));
@@ -246,46 +256,12 @@ fn claude_launch_uses_shared_chats_and_bypasses_shell_functions() {
     );
 }
 
-/// `swarm spawn -- <cmd>` runs the owner's own command line, so a shell function of the pane
-/// still runs.
-#[test]
-fn a_spawned_owner_command_can_be_a_shell_function_of_the_pane() {
-    let (home, session, _cwd) = account_launch_fixture("spawn-function");
-    let output = swarm(
-        &home,
-        &[
-            ("SWARM_ADAPTER", "fake"),
-            ("SWARM_SESSION_ID", &session),
-            ("SWARM_AGENT_ID", "orchestrator"),
-        ],
-        &["spawn", "seat", "coder", "--", "wrapper", "one"],
-    );
-    assert!(output.status.success(), "{}", stderr(&output));
-    let script = home.join(format!(".swarm/runs/{session}/seat.sh"));
-    let output = Command::new("/bin/sh")
-        .env_clear()
-        .env("HOME", &home)
-        .env("PATH", "/usr/bin:/bin")
-        .args([
-            "-c",
-            "wrapper() { echo \"$1\" > \"$HOME/function-ran\"; }; . \"$1\"",
-            "test",
-            script.to_str().unwrap(),
-        ])
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert_eq!(
-        std::fs::read_to_string(home.join("function-ran")).unwrap(),
-        "one\n"
-    );
-}
-
 /// `spawn` gets this session's own seat panes as `SWARM_PANES`, so a host that stacks seats
 /// anchors only on its own session's panes, never on another chair's seats.
 #[test]
 fn spawn_names_only_this_sessions_seat_panes() {
     let home = scratch("spawn-panes");
+    tool(&home, "claude", "true");
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
@@ -315,7 +291,7 @@ fn spawn_names_only_this_sessions_seat_panes() {
             ("SWARM_SESSION_ID", sessions[session].as_str()),
             ("SWARM_AGENT_ID", "orchestrator"),
         ];
-        let output = swarm(&home, &chair, &["spawn", seat, "coder"]);
+        let output = swarm(&home, &chair, &["launch", seat, "chat"]);
         assert!(output.status.success(), "{seat}: {}", stderr(&output));
     }
     assert_eq!(
@@ -329,6 +305,7 @@ fn spawn_names_only_this_sessions_seat_panes() {
 #[test]
 fn a_run_verb_gets_the_launch_line_and_nothing_is_rung() {
     let home = scratch("run-verb");
+    tool(&home, "claude", "true");
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     let verbs = "self = printf chair\n\
          spawn = printf pane-spawn\n\
@@ -359,7 +336,7 @@ fn a_run_verb_gets_the_launch_line_and_nothing_is_rung() {
             ("SWARM_SESSION_ID", session.as_str()),
             ("SWARM_AGENT_ID", "orchestrator"),
         ];
-        let output = swarm(&home, &chair, &["spawn", "seat", "coder", "--", "true"]);
+        let output = swarm(&home, &chair, &["launch", "seat", "chat"]);
         assert!(output.status.success(), "{adapter}: {}", stderr(&output));
         seen.push(String::from_utf8(output.stdout).unwrap().trim().to_string());
     }
@@ -426,11 +403,12 @@ fn exited_finds_its_own_pane_before_the_pane_is_stored() {
     );
 }
 
-/// A second spawn of a live seat's id is refused before it writes anything, so the live seat's
+/// A second launch of a live seat's id is refused before it writes anything, so the live seat's
 /// launch script stays as it was.
 #[test]
-fn a_refused_duplicate_spawn_leaves_the_live_seats_script() {
+fn a_refused_duplicate_launch_leaves_the_live_seats_script() {
     let home = scratch("duplicate-script");
+    tool(&home, "claude", "true");
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
     std::fs::write(
         home.join(".swarm/adapters/fake.conf"),
@@ -452,18 +430,14 @@ fn a_refused_duplicate_spawn_leaves_the_live_seats_script() {
         ("SWARM_SESSION_ID", session.as_str()),
         ("SWARM_AGENT_ID", "orchestrator"),
     ];
-    let first = swarm(
-        &home,
-        &chair,
-        &["spawn", "seat", "coder", "--", "echo", "first"],
-    );
+    let first = swarm(&home, &chair, &["launch", "seat", "chat"]);
     assert!(first.status.success(), "{}", stderr(&first));
     let script = home.join(format!(".swarm/runs/{session}/seat.sh"));
     let before = std::fs::read_to_string(&script).unwrap();
     let second = swarm(
         &home,
         &chair,
-        &["spawn", "seat", "coder", "--", "echo", "second"],
+        &["launch", "seat", "chat", "--", "--verbose"],
     );
     assert!(!second.status.success());
     assert_eq!(std::fs::read_to_string(&script).unwrap(), before);

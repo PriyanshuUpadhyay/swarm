@@ -18,17 +18,19 @@ swarm session new lane   # lane | relay | open; registers this pane as the orche
 ## Children
 
 ```sh
-swarm launch <id> <role> --cwd "$PWD" [-- <extra agent flags>]   # prints the pane id
+swarm launch <id> <role> --cwd "$PWD" [--model m] [--effort e] [--force] [-- <extra agent flags>]   # prints the pane id
 ```
 
 `launch` resolves the role to a provider, model and effort, marks the directory trusted when the
 owner gave consent, and starts the agent CLI. When it prints `trust-pending <provider> <dir>`, the
 owner has not approved folder trust: the seat waits at its CLI's trust question. Tell the owner,
 with the diff it printed and the `swarm setup trust --plan …` command it names; do not answer
-the trust question yourself. Use `swarm spawn <id> <role> -- <agent cli and its flags>` only for a command no
-role covers. The child must know the voice protocol in the `swarm-voice` skill, which the
-plugin `swarm` installs in each agent CLI; otherwise give it as the child's first prompt, for
-example "Read ~/.swarm/kit/skills/swarm-voice/SKILL.md and follow it".
+the trust question yourself. To pick a model or a level, add `--model <m>` and `--effort <e>`;
+with no `--provider`, a non-chat role uses its first runner's provider. `--force` lets a flag
+the role owns through after `--`, such as pi `--no-skills` or codex `--sandbox`. Launch always
+refuses model, effort and pi session flags after `--`; use `--model` and `--effort`. The child
+must know the voice protocol in the `swarm-voice` skill, which the plugin `swarm` installs in
+each agent CLI; otherwise give it as the child's first prompt, for example "Read ~/.swarm/kit/skills/swarm-voice/SKILL.md and follow it".
 
 Launch every seat of a stage in one turn and send their asks in one turn, as the agent kit's
 `references/fan-out.md` says.

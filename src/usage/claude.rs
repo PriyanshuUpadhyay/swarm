@@ -1,7 +1,7 @@
 // Claude credential reads and usage window parsing.
 use super::*;
 
-pub(super) fn claude_keychain_service(secure_storage: Option<&str>) -> String {
+pub(crate) fn claude_keychain_service(secure_storage: Option<&str>) -> String {
     match secure_storage {
         None => "Claude Code-credentials".into(),
         Some(path) => {

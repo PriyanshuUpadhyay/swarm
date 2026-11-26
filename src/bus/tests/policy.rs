@@ -36,18 +36,25 @@ mod tests {
 
     #[test]
     fn extra_args_keep_role_flags_out_and_agy_interactive() {
-        assert!(extra_args(Provider::Claude, &strings(&["--model=opus"])).is_err());
-        assert!(extra_args(Provider::Codex, &strings(&["-s", "danger-full-access"])).is_err());
+        assert!(extra_args(Provider::Claude, &strings(&["--model=opus"]), false).is_err());
+        assert!(
+            extra_args(
+                Provider::Codex,
+                &strings(&["-s", "danger-full-access"]),
+                false
+            )
+            .is_err()
+        );
         assert_eq!(
-            extra_args(Provider::Claude, &strings(&["--", "--model"])).unwrap(),
+            extra_args(Provider::Claude, &strings(&["--", "--model"]), false).unwrap(),
             strings(&["--", "--model"])
         );
         assert_eq!(
-            extra_args(Provider::Agy, &strings(&["fix the bug"])).unwrap(),
+            extra_args(Provider::Agy, &strings(&["fix the bug"]), false).unwrap(),
             strings(&["-i", "fix the bug"])
         );
         assert_eq!(
-            extra_args(Provider::Agy, &strings(&["-i", "fix"])).unwrap(),
+            extra_args(Provider::Agy, &strings(&["-i", "fix"]), false).unwrap(),
             strings(&["-i", "fix"])
         );
     }

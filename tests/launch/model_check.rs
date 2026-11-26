@@ -1,4 +1,4 @@
-// A launch or spawn names a model; swarm checks it against the provider's model list first.
+// A launch names a model; swarm checks it against the provider's model list first.
 
 use super::*;
 
@@ -72,26 +72,21 @@ impl Fixture {
         swarm(&self.home, &env, args)
     }
 
-    /// `swarm launch` or `swarm spawn` of the seat `seat` on `provider` with `model`.
-    fn start(&self, verb: &str, provider: &str, model: &str, account: Option<&str>) -> Output {
-        let mut args = vec![verb, "seat"];
-        match verb {
-            "launch" => {
-                args.extend(["chat", "--provider", provider, "--model", model]);
-                if let Some(account) = account {
-                    args.extend(["--account", account]);
-                }
-                args.extend(["--cwd", &self.cwd]);
-            }
-            _ => {
-                args.push("coder");
-                if let Some(account) = account {
-                    args.extend(["--provider", provider, "--account", account]);
-                }
-                let flag = if provider == "codex" { "-m" } else { "--model" };
-                args.extend(["--", provider, flag, model]);
-            }
+    /// `swarm launch` of the seat `seat` on `provider` with `model`.
+    fn start(&self, provider: &str, model: &str, account: Option<&str>) -> Output {
+        let mut args = vec![
+            "launch",
+            "seat",
+            "chat",
+            "--provider",
+            provider,
+            "--model",
+            model,
+        ];
+        if let Some(account) = account {
+            args.extend(["--account", account]);
         }
+        args.extend(["--cwd", &self.cwd]);
         self.run(&args)
     }
 
@@ -129,43 +124,37 @@ impl Fixture {
 
 #[test]
 fn model_check_refuses_a_codex_model_that_the_account_does_not_list() {
-    for verb in ["launch", "spawn"] {
-        let fixture = Fixture::new(&format!("model-check-refuse-{verb}"), ACCOUNT_MODELS);
-        // gpt-6-ghost is in spare's list only, so the check must read the picked account's list.
-        let output = fixture.start(verb, "codex", "gpt-6-ghost", Some("work"));
-        let text = fixture.assert_refused(&output, verb);
-        assert!(
-            text.contains(
-                "swarm: model gpt-6-ghost is not in the codex model list for account work"
-            ),
-            "{verb}: {text}"
-        );
-        assert!(text.contains("fixes that might work:"), "{verb}: {text}");
-        let accounts = text
-            .lines()
-            .find(|line| line.contains("another account"))
-            .unwrap_or_else(|| panic!("{verb}: no another-account line: {text}"));
-        assert!(accounts.contains("--account spare"), "{verb}: {text}");
-        assert!(!accounts.contains("work"), "{verb}: {text}");
-        let models = text
-            .lines()
-            .find(|line| line.contains("another model"))
-            .unwrap_or_else(|| panic!("{verb}: no another-model line: {text}"));
-        assert!(models.contains("gpt-6-luna, gpt-6-sol"), "{verb}: {text}");
-        assert!(!models.contains("gpt-6-ghost"), "{verb}: {text}");
-    }
+    let fixture = Fixture::new("model-check-refuse", ACCOUNT_MODELS);
+    // gpt-6-ghost is in spare's list only, so the check must read the picked account's list.
+    let output = fixture.start("codex", "gpt-6-ghost", Some("work"));
+    let text = fixture.assert_refused(&output, "launch");
+    assert!(
+        text.contains("swarm: model gpt-6-ghost is not in the codex model list for account work"),
+        "{text}"
+    );
+    assert!(text.contains("fixes that might work:"), "{text}");
+    let accounts = text
+        .lines()
+        .find(|line| line.contains("another account"))
+        .unwrap_or_else(|| panic!("no another-account line: {text}"));
+    assert!(accounts.contains("--account spare"), "{text}");
+    assert!(!accounts.contains("work"), "{text}");
+    let models = text
+        .lines()
+        .find(|line| line.contains("another model"))
+        .unwrap_or_else(|| panic!("no another-model line: {text}"));
+    assert!(models.contains("gpt-6-luna, gpt-6-sol"), "{text}");
+    assert!(!models.contains("gpt-6-ghost"), "{text}");
 }
 
 #[test]
 fn model_check_lets_a_codex_model_that_the_account_lists_start() {
-    for verb in ["launch", "spawn"] {
-        let fixture = Fixture::new(&format!("model-check-listed-{verb}"), ACCOUNT_MODELS);
-        let output = fixture.start(verb, "codex", "gpt-6-sol", Some("work"));
-        fixture.assert_started(&output, verb);
-    }
+    let fixture = Fixture::new("model-check-listed", ACCOUNT_MODELS);
+    let output = fixture.start("codex", "gpt-6-sol", Some("work"));
+    fixture.assert_started(&output, "launch");
     // The model that work refuses is listed for spare.
     let fixture = Fixture::new("model-check-listed-spare", ACCOUNT_MODELS);
-    let output = fixture.start("launch", "codex", "gpt-6-ghost", Some("spare"));
+    let output = fixture.start("codex", "gpt-6-ghost", Some("spare"));
     fixture.assert_started(&output, "spare");
 }
 
@@ -176,59 +165,45 @@ fn model_check_goes_on_when_codex_cannot_print_its_list() {
         ("empty", "true"),
         ("failing", "echo 'no list' >&2; exit 1"),
     ] {
-        for verb in ["launch", "spawn"] {
-            let fixture = Fixture::new(&format!("model-check-{name}-{verb}"), debug);
-            let output = fixture.start(verb, "codex", "gpt-6-ghost", Some("work"));
-            fixture.assert_started(&output, &format!("{name} {verb}"));
-        }
+        let fixture = Fixture::new(&format!("model-check-{name}"), debug);
+        let output = fixture.start("codex", "gpt-6-ghost", Some("work"));
+        fixture.assert_started(&output, name);
     }
 }
 
 #[test]
 fn model_check_passes_a_claude_full_id_that_the_binary_holds_and_an_alias() {
-    for verb in ["launch", "spawn"] {
-        for model in ["claude-opus-5-5", "haiku"] {
-            let fixture = Fixture::new(
-                &format!("model-check-claude-{verb}-{model}"),
-                ACCOUNT_MODELS,
-            );
-            let output = fixture.start(verb, "claude", model, None);
-            fixture.assert_started(&output, &format!("{verb} {model}"));
-        }
+    for model in ["claude-opus-5-5", "haiku"] {
+        let fixture = Fixture::new(&format!("model-check-claude-{model}"), ACCOUNT_MODELS);
+        let output = fixture.start("claude", model, None);
+        fixture.assert_started(&output, model);
     }
 }
 
 #[test]
 fn model_check_refuses_a_claude_id_that_is_neither_an_alias_nor_in_the_binary() {
-    for verb in ["launch", "spawn"] {
-        let fixture = Fixture::new(
-            &format!("model-check-claude-unknown-{verb}"),
-            ACCOUNT_MODELS,
-        );
-        let output = fixture.start(verb, "claude", "claude-opus-9-9", None);
-        let text = fixture.assert_refused(&output, verb);
-        assert!(
-            text.contains(
-                "swarm: model claude-opus-9-9 is not in the claude model list for the CLI's own login"
-            ),
-            "{verb}: {text}"
-        );
-        let models = text
-            .lines()
-            .find(|line| line.contains("another model"))
-            .unwrap_or_else(|| panic!("{verb}: no another-model line: {text}"));
-        assert!(models.contains("opus"), "{verb}: {text}");
-    }
+    let fixture = Fixture::new("model-check-claude-unknown", ACCOUNT_MODELS);
+    let output = fixture.start("claude", "claude-opus-9-9", None);
+    let text = fixture.assert_refused(&output, "launch");
+    assert!(
+        text.contains(
+            "swarm: model claude-opus-9-9 is not in the claude model list for the CLI's own login"
+        ),
+        "{text}"
+    );
+    let models = text
+        .lines()
+        .find(|line| line.contains("another model"))
+        .unwrap_or_else(|| panic!("no another-model line: {text}"));
+    assert!(models.contains("opus"), "{text}");
 }
 
 /// A `claude` file without the quoted alias `"sonnet"` is a wrapper or a fake, so its list cannot
 /// be read and the launch goes on.
 #[test]
 fn model_check_goes_on_when_the_claude_file_holds_no_model_names() {
-    for verb in ["launch", "spawn"] {
-        let fixture = Fixture::new(&format!("model-check-claude-plain-{verb}"), ACCOUNT_MODELS);
-        tool(&fixture.home, "claude", "true");
-        let output = fixture.start(verb, "claude", "claude-opus-9-9", None);
-        fixture.assert_started(&output, verb);
-    }
+    let fixture = Fixture::new("model-check-claude-plain", ACCOUNT_MODELS);
+    tool(&fixture.home, "claude", "true");
+    let output = fixture.start("claude", "claude-opus-9-9", None);
+    fixture.assert_started(&output, "launch");
 }

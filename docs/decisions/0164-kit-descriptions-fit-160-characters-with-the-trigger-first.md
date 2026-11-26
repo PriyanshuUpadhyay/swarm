@@ -8,7 +8,7 @@ informed-by:
   - 'report ~/.swarm/reports/2026-11-25-skill-model-fit.md: Codex shortens long skill descriptions from the end (OpenAI, 11 Sep 2026), so a trigger at the end is the part it cuts.'
 ---
 
-# 0163. Kit descriptions fit 160 characters with the trigger first
+# 0164. Kit descriptions fit 160 characters with the trigger first
 
 ## Context and Problem Statement
 

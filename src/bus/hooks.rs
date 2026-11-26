@@ -61,35 +61,6 @@ pub fn hook_args(
     }
 }
 
-/// A `swarm spawn` command, with the flags of `hook_args` after a bare `claude` or `codex`, because
-/// only `swarm hook` stores the chat log the app's pane reads. A Claude command with its own
-/// `--settings` keeps it, and any other command stays as it is.
-pub fn spawn_hook_command(
-    command: &[String],
-    agent_id: &str,
-    cwd: &std::path::Path,
-) -> Result<Vec<String>, String> {
-    let Some((cli, rest)) = command.split_first() else {
-        return Ok(Vec::new());
-    };
-    let provider = match Provider::parse(cli) {
-        Some(provider @ (Provider::Claude | Provider::Codex)) => provider,
-        _ => return Ok(command.to_vec()),
-    };
-    if provider == Provider::Claude
-        && rest
-            .iter()
-            .take_while(|arg| *arg != "--")
-            .any(|arg| arg == "--settings" || arg.starts_with("--settings="))
-    {
-        return Ok(command.to_vec());
-    }
-    let mut hooked = vec![cli.clone()];
-    hooked.extend(hook_args(provider, agent_id, cwd)?);
-    hooked.extend_from_slice(rest);
-    Ok(hooked)
-}
-
 /// The state hook for Codex and AGY, whose hook config every swarm build on the Mac shares: Codex
 /// trusts a hash of this text, and AGY's `hooks.json` is global. So the text names no build. It
 /// runs the `runs/<session>/bin/swarm` link that `swarm launch` made for the pane, not `swarm` on

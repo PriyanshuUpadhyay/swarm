@@ -109,10 +109,10 @@ it read.
 A skill that never loads helps no one, and loading fails apart from following. Each family loads the
 version under test with its live login, because a temporary home has no login:
 
-- Start a `pi` seat with `swarm spawn <id> <role> -- pi --model <model> --thinking <effort> --no-skills
-  --skill <worktree>/skills/kit/skills`, with the model and effort of its role. `swarm launch` refuses
-  `--no-skills`, because the role owns the skill flags. The seat loads only the worktree's skills,
-  `swarm-voice` included, and the live plugin stays unchanged.
+- Start a `pi` seat with `swarm launch <id> <role> --cwd <its own mktemp -d folder> --force -- --no-skills
+  --skill <absolute worktree path>/skills/kit/skills`. `--force` lets `--no-skills` through, because the
+  role owns the skill flags. The seat loads only the worktree's skills, `swarm-voice` included, and
+  the live plugin stays unchanged.
 - A CLI with no such flag, such as `agy`, needs the version under test in its live home. Ask the
   owner first, then install it, and put the live plugin back after the run.
 

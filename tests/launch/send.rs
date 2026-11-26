@@ -28,7 +28,15 @@ fn a_send_refuses_an_empty_body_without_storing_or_ringing() {
         );
         assert!(!home.join("rings").exists());
         let run = home.join(".swarm/runs").join(&session);
-        assert!(!run.exists() || std::fs::read_dir(run).unwrap().next().is_none());
+        // The launch put the seat's own script there; a stored body would be `<seq>.txt`.
+        assert!(
+            !run.exists()
+                || std::fs::read_dir(run).unwrap().all(|entry| entry
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_none_or(|ext| ext != "txt"))
+        );
     }
 }
 

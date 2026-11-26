@@ -174,7 +174,11 @@ fn login_digest(account: &Account) -> Option<String> {
     if account.auth_state != AuthState::SignedIn {
         return None;
     }
-    normalized_email(account).map(|email| format!("{:x}", Sha256::digest(email)))
+    // A Claude home whose shared config names another account has no email; its keychain login
+    // still names who signed in.
+    normalized_email(account)
+        .or_else(|| account.login.clone())
+        .map(|key| format!("{:x}", Sha256::digest(key)))
 }
 
 fn cached_accounts(provider: &str, accounts: &[Account], now: i64) -> Vec<UsageMeter> {

@@ -288,11 +288,28 @@ fn find_flag<'a>(args: &'a [String], flags: &[&str]) -> Option<&'a str> {
         .find(|flag| flags.contains(flag))
 }
 
-/// The caller's extra args for `provider`, checked and in the provider's shape.
-pub fn extra_args(provider: Provider, extra: &[String]) -> Result<Vec<String>, String> {
-    if let Some(flag) = find_flag(extra, provider.owned_flags()) {
+/// The caller's extra args for `provider`, checked and in the provider's shape. `force` lets the
+/// role's flags through, but not the locked ones.
+pub fn extra_args(
+    provider: Provider,
+    extra: &[String],
+    force: bool,
+) -> Result<Vec<String>, String> {
+    if let Some(flag) = find_flag(extra, provider.locked_flags()) {
+        let fix = match flag {
+            "-m" | "--model" => "use launch --model",
+            "--effort" | "--thinking" => "use launch --effort",
+            "--provider" => "use launch --provider and --model",
+            _ => "swarm sets it, so the chat log stays found",
+        };
         return Err(format!(
-            "swarm: the role owns the {} flag {flag}; remove it from the extra args",
+            "swarm: launch owns the {} flag {flag}, also with --force; {fix}",
+            provider.id()
+        ));
+    }
+    if !force && let Some(flag) = find_flag(extra, provider.owned_flags()) {
+        return Err(format!(
+            "swarm: the role owns the {} flag {flag}; remove it from the extra args, or add --force",
             provider.id()
         ));
     }
