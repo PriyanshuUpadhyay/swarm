@@ -226,7 +226,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
     <div>
       <div
         data-testid="composer-box"
-        className="relative rounded-2xl border border-border bg-surface shadow-sm focus-within:border-ring has-[textarea:disabled]:opacity-70"
+        className="relative rounded-2xl border border-border bg-surface focus-within:border-ring has-[textarea:disabled]:opacity-70"
       >
         {open && menu && (
           <SlashMenu id={listId} menu={menu} rows={rows} current={current} list={slash.shownList} select={slash.setSelected} choose={choose} />
