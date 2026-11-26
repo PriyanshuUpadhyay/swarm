@@ -315,7 +315,18 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             </Button>
           )}
           {(!showStop || outgoing(text) !== null) && (
-            <Button size="icon" data-testid="send" aria-label="Send" title="Send (⌘Return)" disabled={!canSend} onClick={submit}>
+            <Button
+              size="icon"
+              data-testid="send"
+              aria-label="Send"
+              title="Send (⌘Return)"
+              disabled={!canSend}
+              // keepFocus can restart the slash menu's no-list read after a blur; a menu token still needs its blur.
+              onMouseDown={(e) => {
+                if (e.button === 0 && !menu && document.activeElement === box.current) e.preventDefault();
+              }}
+              onClick={submit}
+            >
               <ArrowUpIcon className="size-4" />
             </Button>
           )}
