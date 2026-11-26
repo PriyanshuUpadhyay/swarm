@@ -87,7 +87,7 @@ export function Home({ app }: { app: App }) {
           </section>
         )}
         <section className="grid gap-1" aria-label="Recent work">
-          <h1 className="mb-2 text-2xl font-bold">Recent work</h1>
+          <h1 className="mb-2 text-lg font-semibold">Recent work</h1>
           {recent.length === 0 && <p className="text-muted-foreground">Your recent chats appear here.</p>}
           {recent.map((r) => (
             <button

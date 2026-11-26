@@ -138,6 +138,7 @@ function AppearancePage({ app }: { app: App }) {
         <Segmented<FontSans>
           label="UI font"
           testid="pref-font-sans"
+          fitContent
           value={sans}
           options={[
             ["swarm", "Swarm (DM Sans)"],
@@ -152,6 +153,7 @@ function AppearancePage({ app }: { app: App }) {
         <Segmented<FontMono>
           label="Code font"
           testid="pref-font-mono"
+          fitContent
           value={mono}
           options={[
             ["swarm", "Swarm (JetBrains Mono)"],
