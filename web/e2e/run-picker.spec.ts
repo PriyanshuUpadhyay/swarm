@@ -121,6 +121,22 @@ test("one idle picker opens by shortcut, keeps an unlisted current model and app
   await expect.poll(() => starts.map((start) => [start.provider, start.model])).toEqual([["codex", "other"]]);
 });
 
+test("a typed model stays available in the new-chat picker", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByTestId("tab-new-chat").click();
+  await tab.getByTestId("chip-run").click();
+  const query = tab.getByTestId("run-query");
+  await expect(tab.getByRole("button", { name: "Model A", exact: true })).toBeVisible();
+  await query.fill("custom-model");
+  await tab.getByRole("button", { name: "Use “custom-model”" }).click();
+  await query.clear();
+  const row = tab.getByTestId("run-models").getByRole("button", { name: "custom-model", exact: true });
+  await expect(row).toBeEnabled();
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+});
+
 test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }) => {
   await pickerCatalog(tab);
   const live = process.env.SWARM_E2E_LIVE!;

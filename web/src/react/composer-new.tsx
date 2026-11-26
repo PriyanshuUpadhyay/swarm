@@ -360,7 +360,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
                   ))}
                 </div>
               )}
-              {shown && <RunMenu app={app} current={shown} draft={shown} setDraft={setRun} />}
+              {shown && <RunMenu app={app} draft={shown} setDraft={setRun} />}
             </div>
           )}
         </div>

@@ -64,14 +64,14 @@ export function runModel(catalog: Catalog, draft: Run) {
 }
 
 /** One picker for a live run, an ended run, or a new chat draft. */
-export function RunPicker({ app, catalog, current, draft, setDraft, disabled = false, preview }: { app: App; catalog: Catalog; current: Run; draft: Run; setDraft: Dispatch<Run>; disabled?: boolean; preview?: (run: Run | null) => void }) {
+export function RunPicker({ app, catalog, current, draft, setDraft, disabled = false, preview }: { app: App; catalog: Catalog; current?: Run; draft: Run; setDraft: Dispatch<Run>; disabled?: boolean; preview?: (run: Run | null) => void }) {
   const [accounts, setAccounts] = useState<Pick<Account, "name" | "email" | "summary">[]>([]);
   const usage = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.usage);
   const prefs = useSyncExternalStore(app.subscribe, () => app.view.tree?.prefs);
   const meters = usage.state === "ready" ? usage.data.meters : [];
   const [query, setQuery] = useState("");
-  const [rail, setRail] = useState(current.provider);
-  const providers = catalog.providers.length ? catalog.providers : [{ id: current.provider }];
+  const [rail, setRail] = useState(current?.provider ?? draft.provider);
+  const providers = catalog.providers.length ? catalog.providers : [{ id: current?.provider ?? draft.provider }];
   const favorites = prefs?.favoriteModels ?? [];
 
   useEffect(() => { void app.settings.loadUsage(); }, [app]);
@@ -93,12 +93,13 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null, summary: null }, ...accounts] : accounts;
   const list = catalog.models[rail];
   const shown = Array.isArray(list) ? list : [];
-  const unavailable = rail === current.provider && current.model && Array.isArray(list) && !shown.some((m) => m.id === current.model);
-  const custom = q && rail !== "favorites" && list !== undefined && !shown.some((m) => m.id.toLowerCase() === q) ? query.trim() : null;
+  const selected = current ?? draft;
+  const unlisted = rail === selected.provider && Array.isArray(list) && selected.model && !shown.some((m) => m.id === selected.model) ? selected.model : null;
+  const custom = q && rail !== "favorites" && list !== undefined && (current || unlisted?.toLowerCase() !== q) && !shown.some((m) => m.id.toLowerCase() === q) ? query.trim() : null;
 
   const modelRun = (provider: string, m: ModelInfo | string) => {
     const cli = catalog.providers.find((p) => p.id === provider);
-    return chooseModel(current, draft, { id: provider, efforts: cli?.efforts ?? [], default_effort: cli?.default_effort ?? "" }, m);
+    return chooseModel(current ?? draft, draft, { id: provider, efforts: cli?.efforts ?? [], default_effort: cli?.default_effort ?? "" }, m);
   };
   const choose = (provider: string, m: ModelInfo | string) => setDraft(modelRun(provider, m));
 
@@ -116,7 +117,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
           <span className="min-w-0 truncate">{m.label}</span>
           {m.note && <span className="truncate text-xs text-muted-foreground" title={m.note}>{m.note}</span>}
           {missing && <span className="text-xs text-muted-foreground">Unavailable</span>}
-          {current.provider === provider && current.model === m.id && <span className="ml-auto rounded border border-menu-border px-1 text-xs text-muted-foreground">now</span>}
+          {current?.provider === provider && current.model === m.id && <span className="ml-auto rounded border border-menu-border px-1 text-xs text-muted-foreground">now</span>}
         </button>
         {!missing && <>
           <button type="button" title={starred ? "Remove from favorites" : "Add to favorites"} aria-label={starred ? `Remove ${m.label} from favorites` : `Add ${m.label} to favorites`} aria-pressed={starred} className={`rounded p-0.5 hover:bg-menu-hover focus-visible:opacity-100 ${starred ? "" : "opacity-0 group-hover:opacity-100"}`} onClick={() => void app.settings.setPref("favoriteModels", starred ? favorites.filter((f) => f.provider !== provider || f.model !== m.id) : [...favorites, pair])}>
@@ -131,7 +132,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   };
   const savedRow = ({ provider, model }: { provider: string; model: string }) => {
     const models = catalog.models[provider];
-    return modelRow(provider, (Array.isArray(models) && models.find((m) => m.id === model)) || { id: model, label: model }, provider !== current.provider);
+    return modelRow(provider, (Array.isArray(models) && models.find((m) => m.id === model)) || { id: model, label: model }, provider !== current?.provider);
   };
 
   return (
@@ -140,7 +141,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
         <button type="button" aria-pressed={rail === "favorites"} className={RAIL} onClick={() => setRail("favorites")}><StarIcon className="size-4 shrink-0" /> Favorites</button>
         {providers.map((p) => <button key={p.id} type="button" aria-pressed={rail === p.id} className={RAIL} onClick={() => setRail(p.id)}>
           <CliMark provider={p.id} selected={rail === p.id} />
-          <span className="truncate">{cliName(p.id)}</span>{p.id !== current.provider && <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden />}
+          <span className="truncate">{cliName(p.id)}</span>{current && p.id !== current.provider && <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden />}
         </button>)}
       </div>
       <div className="grid min-w-0 content-start">
@@ -154,7 +155,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
             <div data-provider={rail}>
               <p className="px-2 py-1 text-xs text-muted-foreground">{rail === "favorites" ? "Favorites" : cliName(rail)}</p>
               {rail === "favorites" ? favorites.map(savedRow) : shown.map((m) => modelRow(rail, m, false))}
-              {unavailable && modelRow(current.provider, { id: current.model!, label: current.model! }, false, true)}
+              {unlisted && modelRow(rail, { id: unlisted, label: unlisted }, false, current !== undefined)}
               {rail !== "favorites" && list === undefined && <p className="px-2 text-xs text-muted-foreground">Reading models…</p>}
               {rail !== "favorites" && Array.isArray(list) && !list.length && <p className="px-2 text-xs text-muted-foreground">No models listed. Type a model id.</p>}
               {rail === "favorites" && !favorites.length && <p className="px-2 text-xs text-muted-foreground">Star a model to see it here.</p>}
@@ -201,7 +202,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
                 <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => setDraft({ ...draft, account: a.name })}>
                   <Radio on={on} />
                   {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
-                  <span className="min-w-0 truncate">{a.name ?? (draft.provider === "codex" && current.provider === "codex" && current.account ? `Keep current account (${current.account})` : "CLI default")}</span>
+                  <span className="min-w-0 truncate">{a.name ?? (draft.provider === "codex" && current?.provider === "codex" && current.account ? `Keep current account (${current.account})` : "CLI default")}</span>
                   {limit?.text && (
                     <span className="ml-auto flex min-w-0 max-w-[60%] items-center gap-1.5 text-xs text-muted-foreground tabular-nums">
                       {limit.left !== null && (
