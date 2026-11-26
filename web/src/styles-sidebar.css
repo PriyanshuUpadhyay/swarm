@@ -338,6 +338,16 @@
   border-radius: 50%;
 }
 
+/* The rail changes the drawn width, not the desktop layout registered with the group. */
+[data-rail] > [id="side-panel"] {
+  flex: 0 0 52px !important;
+}
+[data-rail] > [id="main-panel"] {
+  flex: 1 1 0 !important;
+}
+[data-rail] > [data-slot="resizable-handle"] {
+  display: none;
+}
 .sidebar-rail {
   display: flex;
   flex: 0 0 52px;
@@ -350,7 +360,7 @@
   border-right: 1px solid var(--border);
   background: var(--sidebar);
 }
-[data-sidebar-side="right"] .sidebar-rail {
+[data-side="right"] .sidebar-rail {
   border-right: 0;
   border-left: 1px solid var(--border);
 }

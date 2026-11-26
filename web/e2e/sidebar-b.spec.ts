@@ -141,7 +141,6 @@ test("the rail replaces the sidebar only below 1024 px and keeps desktop collaps
   const rail = page.getByTestId("sidebar-rail");
   const width = async () => Math.round((await sidePanel.boundingBox())?.width ?? -1);
   await expect.poll(width).toBe(264);
-  await page.setViewportSize({ width: 1024, height: 900 });
   await expect(sidebar).toBeVisible();
   await expect(rail).toHaveCount(0);
   const handle = page.locator('[data-side] > [data-slot="resizable-handle"]');

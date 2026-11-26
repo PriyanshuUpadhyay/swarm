@@ -61,6 +61,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   const [side, setSide] = useState(store.getItem(SIDE_KEY) === "right" ? "right" : "left");
   useEffect(() => {
     frame.toggle = () => {
+      if (showRail()) return;
       const panel = sidebar.current;
       if (panel?.isCollapsed()) panel.expand();
       else panel?.collapse();
@@ -85,7 +86,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
       collapsible
       groupResizeBehavior="preserve-pixel-size"
     >
-      <Sidebar app={app} />
+      {narrow ? <SidebarRail app={app} /> : <Sidebar app={app} />}
     </ResizablePanel>
   );
   const main = (
@@ -95,14 +96,15 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   );
   return (
     <TooltipProvider>
-      <div className="flex h-full min-w-0" data-sidebar-side={side}>
-        {narrow && side === "left" && <SidebarRail app={app} />}
-        <ResizablePanelGroup key={side} className="min-w-0 flex-1" orientation="horizontal" data-side={side}
-          defaultLayout={narrow ? undefined : layout.defaultLayout} onLayoutChanged={narrow ? undefined : layout.onLayoutChanged}>
-          {narrow ? [main] : side === "left" ? [side_, <ResizableHandle key="h" />, main] : [main, <ResizableHandle key="h" />, side_]}
-        </ResizablePanelGroup>
-        {narrow && side === "right" && <SidebarRail app={app} />}
-      </div>
+      {/* Keep both panels registered so their pixel sizes survive the breakpoint. */}
+      <ResizablePanelGroup key={side} orientation="horizontal" data-side={side} data-rail={narrow || undefined}
+        defaultLayout={layout.defaultLayout} onLayoutChanged={narrow ? undefined : layout.onLayoutChanged}>
+        {side === "left" && side_}
+        {side === "right" && main}
+        <ResizableHandle disabled={narrow} hidden={narrow} />
+        {side === "left" && main}
+        {side === "right" && side_}
+      </ResizablePanelGroup>
       <Palette app={app} />
       <BranchPicker app={app} />
       <AskDialog app={app} />
