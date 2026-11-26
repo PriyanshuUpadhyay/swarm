@@ -34,6 +34,23 @@ pub fn run(program: &str, args: &[&str], seconds: u64) -> Option<Vec<u8>> {
 }
 
 pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String> {
+    capture_command(command, seconds, None).map(|(output, _)| output)
+}
+
+/// Keeps at most `limit` stdout bytes and reports if there were more. Both paths reap the child.
+pub fn run_command_capped(
+    command: &mut Command,
+    seconds: u64,
+    limit: usize,
+) -> Result<(Output, bool), String> {
+    capture_command(command, seconds, Some(limit))
+}
+
+fn capture_command(
+    command: &mut Command,
+    seconds: u64,
+    cap: Option<usize>,
+) -> Result<(Output, bool), String> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -49,12 +66,25 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
     let (output, receive) = std::sync::mpsc::channel();
     let out_sender = output.clone();
     let out_read = std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = out_sender.send((true, stdout.read_to_end(&mut bytes).map(|_| bytes)));
+        let mut read = || -> std::io::Result<_> {
+            let mut bytes = Vec::with_capacity(cap.unwrap_or(0));
+            let overflow = if let Some(cap) = cap {
+                std::io::copy(&mut stdout.by_ref().take(cap as u64), &mut bytes)?;
+                std::io::copy(&mut stdout, &mut std::io::sink())? != 0
+            } else {
+                stdout.read_to_end(&mut bytes)?;
+                false
+            };
+            Ok((bytes, overflow))
+        };
+        let _ = out_sender.send((true, read()));
     });
     let err_read = std::thread::spawn(move || {
         let mut bytes = Vec::new();
-        let _ = output.send((false, stderr.read_to_end(&mut bytes).map(|_| bytes)));
+        let _ = output.send((
+            false,
+            stderr.read_to_end(&mut bytes).map(|_| (bytes, false)),
+        ));
     });
     let deadline = Instant::now() + Duration::from_secs(seconds);
     let pid = child.id();
@@ -79,12 +109,14 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
     };
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
+    let mut overflow = false;
     let mut failure = None;
     for _ in 0..2 {
         match receive.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            Ok((out, Ok(bytes))) => {
+            Ok((out, Ok((bytes, excess)))) => {
                 if out {
                     stdout = bytes;
+                    overflow = excess;
                 } else {
                     stderr = bytes;
                 }
@@ -101,11 +133,14 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
     if let Some(error) = failure {
         return Err(error);
     }
-    Ok(Output {
-        status: status?,
-        stdout,
-        stderr,
-    })
+    Ok((
+        Output {
+            status: status?,
+            stdout,
+            stderr,
+        },
+        overflow,
+    ))
 }
 fn stop(child: &mut std::process::Child) {
     stop_group(child.id());

@@ -1,6 +1,7 @@
 import { MessageSquarePlusIcon, XIcon } from "lucide-react";
-import { File, PatchDiff, type DiffLineAnnotation, type FileDiffOptions, type FileOptions, type SelectedLineRange } from "@pierre/diffs/react";
-import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { CodeView, File, PatchDiff, type CodeViewHandle, type DiffLineAnnotation, type FileDiffOptions, type FileOptions, type SelectedLineRange } from "@pierre/diffs/react";
+import { parsePatchFiles, type CodeViewDiffItem } from "@pierre/diffs";
+import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject } from "react";
 import type { App } from "../core/app";
 import { type Changes, type DiffComment, type FileDiff, type Load } from "../core/changes";
 import { Button } from "../components/ui/button";
@@ -8,23 +9,89 @@ import { SurfaceFind } from "./surface-find";
 import { textRanges, paintRanges } from "./find-text";
 import { PIERRE, indexOf, patchText, spotOf } from "./pierre-patch";
 import { plural } from "./changes-shared";
+import { CutLine } from "./cut-line";
+
+const ITEM_ID = "patch";
+const DIFF_OPTIONS = {
+  ...PIERRE,
+  unsafeCSS: `${PIERRE.unsafeCSS}
+    [data-content] > [data-line][data-selected-line], [data-gutter] > [data-column-number][data-selected-line] { background: var(--selected); }
+    [data-gutter] > [data-column-number][data-selected-line] { box-shadow: inset 2px 0 var(--foreground); }`,
+  diffStyle: "unified",
+  disableFileHeader: true,
+  enableLineSelection: true,
+} as const;
+type WindowRef = RefObject<CodeViewHandle<Note, undefined> | null>;
+
+function rowAt(root: Element | null, spot: NonNullable<ReturnType<typeof spotOf>>) {
+  const type = spot.side === "deletions" ? '[data-line-type="change-deletion"]' : ':not([data-line-type="change-deletion"])';
+  return root?.querySelector("diffs-container")?.shadowRoot?.querySelector(`[data-content] > [data-line="${spot.lineNumber}"]${type}`);
+}
+
+function paintHit(row: Element, offset: number, length: number) {
+  const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  let start = false;
+  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+    if (!start && offset < node.length) { range.setStart(node, offset); start = true; }
+    if (start && offset + length <= node.length) {
+      range.setEnd(node, offset + length);
+      paintRanges("surface-find", [range]);
+      break;
+    }
+    offset -= node.length;
+  }
+}
 
 function DiffPane({ app, changes }: { app: App; changes: Changes }) {
   const view = useSyncExternalStore(changes.subscribe, () => changes.view);
   const surface = useRef<HTMLDivElement>(null);
+  const window = useRef<CodeViewHandle<Note, undefined>>(null);
   const searchIndex = useRef(0);
+  const paint = useRef(0);
+  const d = view.diff;
+  const data = d.state === "ready" ? d.data : null;
+  const full = view.full.state === "ready";
   const search = (query: string, direction: number) => {
+    cancelAnimationFrame(paint.current);
+    const q = query.trim().toLowerCase();
+    const move = (count: number) => searchIndex.current = direction && count ? (searchIndex.current + direction + count) % count : 0;
+    if (full && !view.showFile && data?.display) {
+      const hits: { spot: NonNullable<ReturnType<typeof spotOf>>; first: number; text: string }[] = [];
+      let count = 0;
+      if (q) for (const line of data.display.lines) {
+        const spot = spotOf(line);
+        if (!spot) continue;
+        const text = line.text.toLowerCase();
+        let at = text.indexOf(q);
+        if (at < 0) continue;
+        hits.push({ spot, first: count, text });
+        for (; at >= 0; at = text.indexOf(q, at + q.length)) count++;
+      }
+      const i = move(count);
+      const hit = hits.reverse().find(({ first }) => first <= i);
+      paintRanges("surface-find", []);
+      if (hit) {
+        let offset = -q.length;
+        for (let n = hit.first; n <= i; n++) offset = hit.text.indexOf(q, offset + q.length);
+        const viewer = window.current;
+        viewer?.scrollTo({ type: "line", id: ITEM_ID, ...hit.spot, align: "center", behavior: "instant" });
+        paint.current = requestAnimationFrame(() => {
+          const row = viewer === window.current && rowAt(surface.current, hit.spot);
+          if (row) paintHit(row, offset, q.length);
+        });
+      }
+      return count ? `${i + 1} of ${count}` : q ? "No matches" : "";
+    }
     const body = surface.current?.querySelector("diffs-container")?.shadowRoot;
     const ranges = body ? textRanges(body, query) : [];
-    searchIndex.current = direction ? (searchIndex.current + direction + ranges.length) % ranges.length : 0;
-    const range = ranges[searchIndex.current];
+    const i = move(ranges.length);
+    const range = ranges[i];
     paintRanges("surface-find", range ? [range] : []);
     range?.startContainer.parentElement?.scrollIntoView({ block: "nearest" });
-    return ranges.length ? `${searchIndex.current + 1} of ${ranges.length}` : query ? "No matches" : "";
+    return ranges.length ? `${i + 1} of ${ranges.length}` : q ? "No matches" : "";
   };
-  const d = view.diff;
   if (d.state === "idle") return <div className="diff-pane" />;
-  const data = d.state === "ready" ? d.data : null;
   return (
     <div ref={surface} tabIndex={-1} data-find-surface="diff" className="diff-pane" data-testid="diff-pane" data-state={d.state}>
       <SurfaceFind surface={surface} scope="diff" search={search} />
@@ -50,26 +117,26 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
       )}
       {d.state === "loading" && <p className="px-3 py-2 text-xs text-muted-foreground">Reading the diff…</p>}
       {d.state === "error" && <p className="px-3 py-2 text-xs break-words text-failed select-text">{d.error}</p>}
-      {data && (view.showFile ? <FileBody file={view.file} /> : <DiffBody app={app} changes={changes} d={data} comments={view.comments} />)}
+      {data && (view.showFile ? <FileBody file={view.file} /> : <DiffBody app={app} changes={changes} d={data} comments={view.comments} expanded={view.full} window={window} />)}
     </div>
   );
 }
 
 type Note = { at: number; comments: DiffComment[]; box: boolean };
 
-/** The capped patch. A click on a line number picks a line, a Shift-click picks a range; a comment
- *  box opens under it. Keys in the body: j/k or arrows move, Shift extends, Enter or c comments. */
-function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d: FileDiff; comments: DiffComment[] }) {
+/** Click to pick a line, Shift-click to pick a range. Keys: j/k or arrows move, Shift extends,
+ *  Enter or c comments. A full patch uses the same indexes but only mounts the rows in view. */
+function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; changes: Changes; d: FileDiff; comments: DiffComment[]; expanded: Load<FileDiff>; window: WindowRef }) {
+  const full = expanded.state === "ready";
   const lines = d.display?.lines ?? [];
   const editor = useSyncExternalStore(changes.subscribe, () => changes.editor(d.path, d.layer ?? "branch"));
   const [sel, setSel] = useState<{ anchor: number; cursor: number } | null>(editor);
   const [composing, setComposing] = useState(!!editor);
   const body = useRef<HTMLDivElement>(null);
   // A new file or a new patch drops the selection.
-  const identity = `${d.layer}\n${d.path}\n${d.patch}`;
-  const [shown, setShown] = useState(identity);
-  if (shown !== identity) {
-    setShown(identity);
+  const [shown, setShown] = useState(d);
+  if (shown !== d) {
+    setShown(d);
     setSel(editor);
     setComposing(!!editor);
   }
@@ -81,19 +148,12 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
     setSel(next);
     changes.setEditor(d.path, d.layer ?? "branch", next && { ...next, text: editor?.text ?? "" });
   };
-  const options: FileDiffOptions<Note, undefined> = {
-    ...PIERRE,
-    diffStyle: "unified",
-    disableFileHeader: true,
-    enableLineSelection: true,
-    controlledSelection: true,
-    onLineSelected: (range) => {
-      const anchor = range ? indexOf(lines, range.side, range.start) : -1;
-      const cursor = range ? indexOf(lines, range.endSide ?? range.side, range.end) : -1;
-      if (anchor < 0 || cursor < 0) return pick(null);
-      pick({ anchor, cursor });
-      setComposing(true);
-    },
+  const onLineSelected: FileDiffOptions<Note, undefined>["onLineSelected"] = (range) => {
+    const anchor = range ? indexOf(lines, range.side, range.start) : -1;
+    const cursor = range ? indexOf(lines, range.endSide ?? range.side, range.end) : -1;
+    if (anchor < 0 || cursor < 0) return pick(null);
+    pick({ anchor, cursor });
+    setComposing(true);
   };
   const patch = useMemo(() => patchText(lines, d.path), [d.path, lines]);
   const selected = useMemo((): SelectedLineRange | null => {
@@ -113,6 +173,9 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
       return spot ? [{ ...spot, metadata: n }] : [];
     });
   }, [comments, d.path, d.layer, lines, composing, hi]);
+  const item = useMemo(() => full ? parsePatchFiles(patch)[0]?.files[0] : null, [full, patch]);
+  const version = useRef(0);
+  const items = useMemo<CodeViewDiffItem<Note>[]>(() => item ? [{ type: "diff", id: ITEM_ID, fileDiff: item, annotations: notes, version: ++version.current }] : [], [item, notes]);
 
   if (d.notice) return <p className="px-3 py-3 text-xs text-muted-foreground">{d.notice}</p>;
   if (!d.display || !d.patch) return <pre className="patch cpatch" data-testid="diff-body">{d.patch ?? ""}</pre>;
@@ -128,8 +191,8 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
       if (i < 0 || i >= lines.length) return;
       pick(e.shiftKey && sel ? { anchor: sel.anchor, cursor: i } : { anchor: i, cursor: i });
       const spot = spotOf(lines[i])!;
-      const type = spot.side === "deletions" ? '[data-line-type="change-deletion"]' : ':not([data-line-type="change-deletion"])';
-      e.currentTarget.querySelector("diffs-container")?.shadowRoot?.querySelector(`[data-content] > [data-line="${spot.lineNumber}"]${type}`)?.scrollIntoView({ block: "nearest" });
+      if (full) window.current?.scrollTo({ type: "line", id: ITEM_ID, ...spot, align: "nearest", behavior: "instant" });
+      else rowAt(e.currentTarget, spot)?.scrollIntoView({ block: "nearest" });
     } else if ((e.key === "Enter" || e.key === "c") && sel) {
       e.preventDefault();
       setComposing(true);
@@ -143,7 +206,7 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
     changes.setEditor(d.path, d.layer ?? "branch", null);
     body.current?.focus();
   };
-  const renderNote = ({ metadata: n }: DiffLineAnnotation<Note>) => (
+  const renderNote = ({ metadata: n }: { metadata: Note }) => (
     <>
       {n.comments.map((c) => <CommentCard key={c.id} c={c} onRemove={() => changes.removeComment(c.id)} />)}
       {n.box && sel && (
@@ -153,7 +216,8 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
           onChange={(text) => changes.setEditor(d.path, d.layer ?? "branch", { ...sel, text })}
           onAdd={async (text) => {
             const captured = changes.editor(d.path, d.layer ?? "branch");
-            const success = await changes.addComment(lo, hi, text);
+            // The range route keeps its request cap. Full diffs send only the chosen hunk lines.
+            const success = await changes.addComment(lo, hi, text, full ? patchText(lines.slice(lo, hi + 1), d.path) : undefined);
             if (success && changes.editor(d.path, d.layer ?? "branch") === captured) {
               setSel(null);
               done();
@@ -168,13 +232,25 @@ function DiffBody({ app, changes, d, comments }: { app: App; changes: Changes; d
 
   return (
     <>
-      <div ref={body} className="cpatch" tabIndex={0} aria-label="Diff lines" data-testid="diff-body" onKeyDown={onKey}>
-        <PatchDiff<Note, undefined> patch={patch} options={options} selectedLines={selected} lineAnnotations={notes} renderAnnotation={renderNote} disableWorkerPool />
+      <div ref={body} className="cpatch" style={full ? { overflow: "hidden", paddingBottom: 0 } : undefined} tabIndex={0} aria-label="Diff lines" data-testid="diff-body" onKeyDown={onKey}>
+        {full ? <CodeView<Note, undefined>
+          ref={window}
+          className="h-full overflow-auto"
+          items={items}
+          options={DIFF_OPTIONS}
+          selectedLines={selected ? { id: ITEM_ID, range: selected } : null}
+          onSelectedLinesChange={(selection) => onLineSelected(selection?.range ?? null)}
+          renderAnnotation={(...[annotation]) => renderNote(annotation)}
+          disableWorkerPool
+        /> : <PatchDiff<Note, undefined> patch={patch} options={{ ...DIFF_OPTIONS, controlledSelection: true, onLineSelected }} selectedLines={selected} lineAnnotations={notes} renderAnnotation={renderNote} disableWorkerPool />}
       </div>
       {(d.is_truncated || (d.hidden_lines ?? 0) > 0) && (
-        <p className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground" data-testid="diff-capped">
-          Showing the first {plural(lines.length, "line")} of {plural(d.full_lines ?? lines.length, "line")}. Open the file in your editor for the rest.
-        </p>
+        <div className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground" data-testid="diff-capped">
+          Showing the first {plural(lines.length, "line")} of {plural(d.full_lines ?? lines.length, "line")}.
+          {expanded.state === "error" ? <p role="status" className="text-failed">{expanded.error}</p> : (
+            <CutLine count={d.hidden_lines ? `${d.hidden_lines.toLocaleString()} more` : "More text"} show={() => void changes.expandDiff()} busy={expanded.state === "loading"} />
+          )}
+        </div>
       )}
       {!composing && !sel && app.view.openId && <p className="diff-hint">Click a line number to comment; Shift-click picks a range.</p>}
     </>

@@ -15,6 +15,9 @@ use std::{
 
 type Result<T> = std::result::Result<T, Error>;
 type Counts = (Option<usize>, Option<usize>);
+type FileCounts = BTreeMap<String, Counts>;
+const FULL_BYTES: usize = 2 * 1024 * 1024;
+const FULL_LINES: usize = 20_010;
 
 #[derive(Clone, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -57,6 +60,9 @@ impl<'a> ReadCommands<'a> {
     }
 }
 fn bytes(read: &ReadCommands<'_>, args: &[&str]) -> Result<Vec<u8>> {
+    Ok(git_bytes(read, args, false)?.expect("uncapped Git output"))
+}
+fn git_bytes(read: &ReadCommands<'_>, args: &[&str], capped: bool) -> Result<Option<Vec<u8>>> {
     let mut command = Command::new("git");
     command
         .args(["-C", read.root, "--literal-pathspecs"])
@@ -64,13 +70,19 @@ fn bytes(read: &ReadCommands<'_>, args: &[&str]) -> Result<Vec<u8>> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("LC_ALL", "C");
-    let output = discovery::run_command(&mut command, read.remaining()?).map_err(Error::Failed)?;
+    let seconds = read.remaining()?;
+    let (output, overflow) = if capped {
+        discovery::run_command_capped(&mut command, seconds, FULL_BYTES)
+    } else {
+        discovery::run_command(&mut command, seconds).map(|output| (output, false))
+    }
+    .map_err(Error::Failed)?;
     if !output.status.success() {
         return Err(Error::Failed(
             String::from_utf8_lossy(&output.stderr).trim().into(),
         ));
     }
-    Ok(output.stdout)
+    Ok((!overflow).then_some(output.stdout))
 }
 fn text(read: &ReadCommands<'_>, args: &[&str]) -> Result<String> {
     String::from_utf8(bytes(read, args)?)
@@ -184,20 +196,35 @@ fn diff(
     format: &[&str],
     path: Option<&str>,
 ) -> Result<Vec<u8>> {
+    Ok(diff_read(read, layer, pair, format, path, false)?.expect("uncapped Git output"))
+}
+fn diff_read(
+    read: &ReadCommands<'_>,
+    layer: &str,
+    pair: &[String],
+    format: &[&str],
+    path: Option<&str>,
+    capped: bool,
+) -> Result<Option<Vec<u8>>> {
     let mut args = diff_args(layer, pair);
     args.extend(format.iter().map(|s| (*s).into()));
     args.push("--".into());
     args.extend(path.map(String::from));
-    bytes(read, &args.iter().map(String::as_str).collect::<Vec<_>>())
+    git_bytes(
+        read,
+        &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        capped,
+    )
 }
 fn patch_and_counts(
     read: &ReadCommands<'_>,
     layer: &str,
     pair: &[String],
     path: &str,
-) -> Result<(String, BTreeMap<String, Counts>)> {
+    capped: bool,
+) -> Result<Option<(String, FileCounts)>> {
     std::thread::scope(|scope| {
-        let patch = scope.spawn(|| diff(read, layer, pair, &[], Some(path)));
+        let patch = scope.spawn(|| diff_read(read, layer, pair, &[], Some(path), capped));
         let counts = scope.spawn(|| {
             diff(
                 read,
@@ -211,14 +238,19 @@ fn patch_and_counts(
                 Some(path),
             )
         });
-        Ok((
-            String::from_utf8(patch.join().expect("patch read")?)
-                .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))?,
-            stats(&counts.join().expect("patch counts")?)?,
-        ))
+        let data = patch.join().expect("patch read")?;
+        let counts = counts.join().expect("patch counts")?;
+        data.map(|data| {
+            Ok((
+                String::from_utf8(data)
+                    .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))?,
+                stats(&counts)?,
+            ))
+        })
+        .transpose()
     })
 }
-fn stats(data: &[u8]) -> Result<BTreeMap<String, Counts>> {
+fn stats(data: &[u8]) -> Result<FileCounts> {
     data.split(|b| *b == 0)
         .filter(|v| !v.is_empty())
         .map(|entry| {
@@ -308,6 +340,28 @@ pub fn patch(
     base: Option<&str>,
     layer: Option<&str>,
 ) -> Result<Value> {
+    Ok(read_patch(root, path, mode, base, layer, false)?.expect("uncapped preview"))
+}
+
+/// `None` means the full patch did not fit; the preview is still available.
+pub fn full_patch(
+    root: &str,
+    path: &str,
+    mode: &Mode,
+    base: Option<&str>,
+    layer: Option<&str>,
+) -> Result<Option<Value>> {
+    read_patch(root, path, mode, base, layer, true)
+}
+
+fn read_patch(
+    root: &str,
+    path: &str,
+    mode: &Mode,
+    base: Option<&str>,
+    layer: Option<&str>,
+    expand: bool,
+) -> Result<Option<Value>> {
     validate_path(path)?;
     let read = ReadCommands::new(root);
     let before = identity(&read, Some(path))?;
@@ -317,7 +371,12 @@ pub fn patch(
         Vec::new()
     };
     let (candidates, mut source) = if matches!(mode, Mode::Branch) {
-        let (source, counts) = patch_and_counts(&read, "branch", &pair, path)?;
+        if expand && layer.is_some_and(|layer| layer != "branch") {
+            return Err(Error::Invalid("Select a changed file and layer".into()));
+        }
+        let Some((source, counts)) = patch_and_counts(&read, "branch", &pair, path, expand)? else {
+            return Ok(None);
+        };
         (
             counts
                 .get(path)
@@ -363,16 +422,18 @@ pub fn patch(
         .ok_or_else(|| Error::Invalid("Select a changed file and layer".into()))?;
     let layer = file.layer.as_str();
     if !matches!(mode, Mode::Branch) && layer != "untracked" {
-        let (patch, counts) = patch_and_counts(&read, layer, &pair, path)?;
+        let Some((patch, counts)) = patch_and_counts(&read, layer, &pair, path, expand)? else {
+            return Ok(None);
+        };
         source = Some(patch);
         (file.added, file.removed) = counts.get(path).copied().unwrap_or((None, None));
     }
     let mut full = None;
     let source = if layer == "untracked" {
-        let Some(source) = untracked(&read, path)? else {
-            return Ok(
+        let Some(source) = untracked_source(&read, path, expand)? else {
+            return Ok(Some(
                 json!({"path":path,"notice":"Binary file or symbolic link","added":file.added,"removed":file.removed}),
-            );
+            ));
         };
         file.added = Some(source.full_lines);
         file.removed = Some(0);
@@ -386,27 +447,39 @@ pub fn patch(
         } else {
             ""
         };
-        full = Some((
-            source.full_lines + 4 + usize::from(!ending.is_empty()),
-            header.len() + source.full_bytes + source.full_lines + ending.len(),
-        ));
-        let patch = source
-            .text
-            .split_inclusive('\n')
-            .map(|l| format!("+{l}"))
-            .collect::<String>();
-        format!(
-            "{header}{patch}{}",
-            if source.text.len() == source.full_bytes {
-                ending
-            } else {
-                ""
-            }
-        )
+        let lines = source.full_lines + 4 + usize::from(!ending.is_empty());
+        let bytes = header.len() + source.full_bytes + source.full_lines + ending.len();
+        if expand && (bytes > FULL_BYTES || lines > FULL_LINES) {
+            return Ok(None);
+        }
+        full = Some((lines, bytes));
+        let mut patch = header;
+        for line in source.text.split_inclusive('\n') {
+            patch.push('+');
+            patch.push_str(line);
+        }
+        if source.text.len() == source.full_bytes {
+            patch.push_str(ending);
+        }
+        patch
     } else {
         source.expect("tracked patch")
     };
-    let mut preview = TextPreview::new(&source, 200);
+    let mut preview = if expand {
+        let lines = source.lines().count();
+        let bytes = source.len();
+        if lines > FULL_LINES || bytes > FULL_BYTES {
+            return Ok(None);
+        }
+        TextPreview {
+            text: source,
+            full_lines: lines,
+            full_bytes: bytes,
+            ..Default::default()
+        }
+    } else {
+        TextPreview::new(&source, 200)
+    };
     if let Some((lines, bytes)) = full {
         preview.is_truncated |= bytes > preview.full_bytes;
         preview.full_lines = lines;
@@ -414,10 +487,10 @@ pub fn patch(
         preview.hidden_lines = lines.saturating_sub(preview.text.lines().count());
     }
     stable(&read, mode, base, Some(path), &before, &pair)?;
-    Ok(
+    Ok(Some(
         json!({"path":path,"layer":layer,"patch":preview.text,"display":super::transcript::patch_wire::changes_patch(&preview.text),"is_truncated":preview.is_truncated,
         "full_lines":preview.full_lines,"full_bytes":preview.full_bytes,"hidden_lines":preview.hidden_lines,"added":file.added,"removed":file.removed}),
-    )
+    ))
 }
 
 fn validate_path(path: &str) -> Result<()> {
@@ -437,9 +510,13 @@ struct Untracked {
     ends_with_newline: bool,
 }
 fn untracked(read: &ReadCommands<'_>, path: &str) -> Result<Option<Untracked>> {
+    untracked_source(read, path, false)
+}
+fn untracked_source(read: &ReadCommands<'_>, path: &str, full: bool) -> Result<Option<Untracked>> {
     let Some(mut file) = open_file(read.root, path)? else {
         return Ok(None);
     };
+    let limit = if full { FULL_BYTES } else { 48_000 };
     let mut prefix = Vec::new();
     let mut buffer = [0; 8192];
     let (mut full_lines, mut full_bytes, mut ends_with_newline) = (0, 0, false);
@@ -456,7 +533,10 @@ fn untracked(read: &ReadCommands<'_>, path: &str) -> Result<Option<Untracked>> {
         full_bytes += size;
         full_lines += bytes.iter().filter(|b| **b == b'\n').count();
         ends_with_newline = bytes.last() == Some(&b'\n');
-        prefix.extend_from_slice(&bytes[..size.min(48_000 - prefix.len())]);
+        if full && (full_bytes > limit || full_lines > FULL_LINES) {
+            break;
+        }
+        prefix.extend_from_slice(&bytes[..size.min(limit - prefix.len())]);
     }
     full_lines += usize::from(full_bytes > 0 && !ends_with_newline);
     let text = match std::str::from_utf8(&prefix) {

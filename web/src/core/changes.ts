@@ -74,6 +74,7 @@ export type ChangesView = {
   /** Diff, or the read-only file. */
   showFile: boolean;
   diff: Load<FileDiff>;
+  full: Load<FileDiff>;
   file: Load<FilePreview>;
   /** Drafts of this workspace, oldest first. They survive a file switch and a closed panel. */
   comments: DiffComment[];
@@ -120,6 +121,7 @@ export class Changes {
   private selected: string | null = null;
   private showFile = false;
   private diff: Load<FileDiff> = IDLE;
+  private full: Load<FileDiff> = IDLE;
   private file: Load<FilePreview> = IDLE;
   private drafts = new Map<string, DiffComment[]>();
   private commentSeq = 0;
@@ -171,7 +173,8 @@ export class Changes {
       list: this.list,
       selected: this.selected,
       showFile: this.showFile,
-      diff: this.diff,
+      diff: this.full.state === "ready" ? this.full : this.diff,
+      full: this.full,
       file: this.file,
       comments: (this.workspace && this.drafts.get(this.workspace)) || NO_COMMENTS,
       sending: this.sending,
@@ -200,6 +203,7 @@ export class Changes {
   private clearFile() {
     this.selected = null;
     this.diff = IDLE;
+    this.full = IDLE;
     this.file = IDLE;
     this.seq.diff++;
     this.seq.file++;
@@ -234,7 +238,11 @@ export class Changes {
   /** Reads the shown tab again. */
   reload() {
     if (this.tab === "pr") void this.loadPr();
-    else void this.loadList();
+    else {
+      if (this.full.state !== "idle") this.seq.diff++;
+      this.full = IDLE;
+      void this.loadList();
+    }
     this.notify();
   }
 
@@ -320,6 +328,7 @@ export class Changes {
     if (key === this.selected && !again) return;
     this.selected = key;
     this.file = IDLE;
+    this.full = IDLE;
     const seq = ++this.seq.diff;
     if (this.diff.state !== "ready" || !again) this.diff = LOADING;
     this.notify();
@@ -333,6 +342,24 @@ export class Changes {
     this.diff = next;
     if (this.showFile) void this.loadFile(f.path);
     this.notify();
+  }
+
+  async expandDiff() {
+    if (this.diff.state !== "ready" || !this.diff.data.is_truncated || this.full.state !== "idle") return;
+    const { path, layer = "branch" } = this.diff.data;
+    const seq = this.seq.diff;
+    this.full = LOADING;
+    this.notify();
+    try {
+      const data = await this.read<FileDiff>("/api/changes/diff", this.query({ path, layer, full: "1" }));
+      if (seq !== this.seq.diff) return;
+      this.full = { state: "ready", data };
+      this.setEditor(path, layer, null);
+    } catch (err) {
+      if (seq !== this.seq.diff) return;
+      this.full = { state: "error", error: message(err) };
+      this.notify();
+    }
   }
 
   /** j/k and the arrows in the file list. */
@@ -398,17 +425,17 @@ export class Changes {
   // ---- diff line comments ----
 
   /** Adds a draft for display lines `from`..`to` of the shown diff. */
-  async addComment(from: number, to: number, text: string): Promise<boolean> {
+  async addComment(from: number, to: number, text: string, rangePatch?: string): Promise<boolean> {
     const ws = this.workspace;
-    const d = this.diff.state === "ready" ? this.diff.data : null;
+    const d = this.view.diff.state === "ready" ? this.view.diff.data : null;
     if (!ws || !d?.patch || !d.display || !text.trim() || this.adding) return false;
     const layer = d.layer ?? "branch";
     const editor = this.editor(d.path, layer);
     const seq = this.seq.diff;
     this.adding = true;
     try {
-      const range = await this.app.api.post<{ lines: string; quoted: string[] }>("/api/changes/comment-range", { op: "range", patch: d.patch, from, to });
-      if (ws !== this.workspace || ws !== this.app.view.workspace || seq !== this.seq.diff || this.diff.state !== "ready" || this.diff.data !== d || this.editor(d.path, layer) !== editor) return false;
+      const range = await this.app.api.post<{ lines: string; quoted: string[] }>("/api/changes/comment-range", { op: "range", ...(rangePatch ? { patch: rangePatch, from: 0, to: rangePatch.split("\n").length } : { patch: d.patch, from, to }) });
+      if (ws !== this.workspace || ws !== this.app.view.workspace || seq !== this.seq.diff || this.view.diff.state !== "ready" || this.view.diff.data !== d || this.editor(d.path, layer) !== editor) return false;
       if (!range.lines) return false;
       const comment: DiffComment = { id: ++this.commentSeq, path: d.path, layer, ...range, text: text.trim(), at: Math.max(from, to) };
       this.drafts.set(ws, [...(this.drafts.get(ws) ?? []), comment]);

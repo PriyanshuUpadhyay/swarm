@@ -39,7 +39,11 @@ export function WorkspacePanel({ app, changes }: { app: App; changes: Changes })
   const view = useSyncExternalStore(changes.subscribe, () => changes.view);
   useEffect(() => {
     if (!view.open || !view.workspace) return;
-    const refresh = () => { if (!document.hidden && changes.view.list.state !== "loading" && changes.view.pr.state !== "loading") changes.reload(); };
+    const refresh = () => {
+      const now = changes.view;
+      // Keep the expanded revision and its selections until a manual refresh or a file change.
+      if (!document.hidden && now.list.state !== "loading" && now.pr.state !== "loading" && (now.tab === "pr" || now.full.state === "idle")) changes.reload();
+    };
     const timer = window.setInterval(refresh, 5000);
     window.addEventListener("focus", refresh);
     return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GIANT_DIFF_LINES } from "./serve";
 
@@ -112,6 +112,69 @@ test("a 20,000-line diff opens capped", async ({ page: tab }) => {
   expect(await tab.locator(DIFF_ROWS).count()).toBeLessThanOrEqual(200);
   await expect(tab.getByTestId("diff-capped")).toContainText("20,004 lines");
   expect(errors).toEqual([]);
+});
+
+test("Show all windows the full diff, finds its tail and sends a range note", async ({ page: tab }) => {
+  const errors = await openGitChat(tab);
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "big.txt").click();
+  await expect(diffPath(tab)).toHaveText("big.txt");
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(tab.getByTestId("diff-capped")).toBeHidden();
+  const body = tab.getByTestId("diff-body");
+  await body.focus();
+  await tab.keyboard.press("Meta+f");
+  const find = tab.getByRole("textbox", { name: "Find in diff" });
+  await find.fill("generated line 20000");
+  await expect(tab.getByRole("search", { name: "Find in diff" })).toContainText("1 of 1");
+  await expect(tab.locator(DIFF_ROWS).filter({ hasText: "generated line 20000" })).toBeVisible();
+  expect(await tab.locator(DIFF_ROWS).count()).toBeLessThan(200);
+
+  const shots = process.env.DESIGN_B_SHOTS;
+  if (shots) {
+    mkdirSync(shots, { recursive: true });
+    for (const theme of ["dark", "light"] as const) {
+      await tab.emulateMedia({ colorScheme: theme });
+      await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
+      await tab.getByTestId("diff-pane").screenshot({ path: join(shots, `changes-full-${theme}.png`) });
+    }
+  }
+  await find.press("Escape");
+  await (await lineNumber(tab, "generated line 19999")).click();
+  const last = await lineNumber(tab, "generated line 20000");
+  await last.click({ modifiers: ["Shift"] });
+  await expect(tab.locator(`${DIFF_ROWS}[data-selected-line]`)).toHaveCount(2);
+  await expect(last).toHaveCSS("box-shadow", /2px 0px 0px 0px inset/);
+  await tab.getByTestId("comment-input").fill("Check the final two lines.");
+  await tab.getByTestId("comment-add").click();
+  await expect(tab.getByTestId("comment-card")).toContainText("Check the final two lines.");
+  await tab.getByTestId("send-comments").click();
+  await expect.poll(() => read("typed")).toContain("big.txt (lines 19999-20000):\n> +generated line 19999\n> +generated line 20000\nCheck the final two lines.");
+  expect(errors).toEqual([]);
+});
+
+test("a late full diff cannot replace the newly selected file", async ({ page: tab }) => {
+  await openGitChat(tab);
+  let release!: () => void;
+  let start!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  const started = new Promise<void>((done) => { start = done; });
+  const isFull = (url: string) => new URL(url).searchParams.get("full") === "1";
+  await tab.route("**/api/changes/diff?**", async (route) => {
+    if (isFull(route.request().url())) { start(); await held; }
+    await route.continue();
+  });
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "big.txt").click();
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
+  await started;
+  await row(tab, "README.md").click();
+  const reply = tab.waitForResponse((response) => response.url().includes("/api/changes/diff?") && isFull(response.url()));
+  release();
+  await (await reply).finished();
+  await tab.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await expect(diffPath(tab)).toHaveText("README.md");
+  await expect(tab.locator(DIFF_ROWS).filter({ hasText: "A test repository, changed." })).toBeVisible();
 });
 
 test("a 20,000-line diff opens inside the 150 ms budget @perf", async ({ page: tab }, info) => {

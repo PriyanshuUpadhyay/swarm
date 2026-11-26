@@ -50,6 +50,48 @@ fn changes_routes_read_a_large_file_in_both_modes() {
 }
 
 #[test]
+fn full_changes_rejects_output_over_cap_without_changing_the_preview() {
+    let server = Server::configured(false, true);
+    let project = server.dir.join("project");
+    let run = |args: &[&str]| {
+        assert!(
+            Command::new("/usr/bin/git")
+                .arg("-C")
+                .arg(&project)
+                .args(args)
+                .status()
+                .unwrap()
+                .success()
+        );
+    };
+    let path = project.join("large.txt");
+    fs::write(&path, "old\n").unwrap();
+    run(&["add", "large.txt"]);
+    fs::write(&path, "x".repeat(2_097_152)).unwrap();
+    let url = format!(
+        "/api/changes/diff?workspace={}&path=large.txt&layer=unstaged",
+        project.display()
+    );
+    let (status, _, body) = server.request("GET", &url, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["is_truncated"],
+        true
+    );
+    let (status, _, body) = server.request("GET", &format!("{url}&full=1"), "", "", true);
+    assert_eq!(status, 413, "{body}");
+    assert!(body.contains("2 MiB"), "{body}");
+
+    let mut git = Command::new("/usr/bin/git");
+    git.arg("-C").arg(project).args(["diff", "--", "large.txt"]);
+    let cap = 2_097_152;
+    let (output, overflow) = swarm::view::discovery::run_command_capped(&mut git, 5, cap).unwrap();
+    assert!(output.status.success() && overflow);
+    assert_eq!(output.stdout.len(), cap);
+    assert_eq!(output.stdout.capacity(), cap);
+}
+
+#[test]
 fn workspace_lifecycle_http_refuses_unlisted_paths_before_any_change() {
     let server = Server::configured(true, true);
     let outside = server.dir.join("outside");
