@@ -214,6 +214,7 @@ fn preference_ops_set_swift_keys_mute_listed_projects_and_refuse_bad_values() {
         json!({"op":"pref","key":"theme","value":"light"}),
         json!({"op":"pref","key":"switchCarry","value":"clean"}),
         json!({"op":"pref","key":"terminalHost","value":"tmux"}),
+        json!({"op":"pref","key":"fontSans","value":"swarm"}),
         json!({"op":"pref","key":"fontSans","value":"avenir"}),
         json!({"op":"pref","key":"fontMono","value":"menlo"}),
         json!({"op":"pref","key":"chatDetail","value":"full"}),

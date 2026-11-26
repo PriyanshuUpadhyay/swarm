@@ -168,7 +168,7 @@ function WorkspaceList({ app }: { app: App }) {
           {!archive && tree?.archivedStatus && <StatusGlyph status={tree.archivedStatus} />}
         </Button>
         {archive && <Button variant="ghost" size="sm" onClick={() => app.life.openClosed()}>Archived chats…</Button>}
-        <span className="ml-auto truncate pr-1 text-[11px] text-muted-foreground" data-testid="row-bar-hint">
+        <span className="ml-auto truncate pr-1 text-xs text-muted-foreground" data-testid="row-bar-hint">
           Hold <Kbd>⌘</Kbd> for actions
         </span>
       </div>
@@ -268,7 +268,7 @@ function SidebarSkeleton() {
 
 function SidebarNote({ title, body, error = false }: { title: string; body: string; error?: boolean }) {
   return (
-    <div role="status" className="mx-3 mt-4 rounded-lg border border-dashed border-border-strong px-3 py-4 text-center">
+    <div role="status" className="mx-3 mt-4 rounded-xl border border-dashed border-border px-3 py-4 text-center">
       <div className="flex items-center justify-center gap-1.5 text-sm font-medium text-foreground">
         {error && <TriangleAlertIcon className="size-3.5 text-failed" />}
         {title}

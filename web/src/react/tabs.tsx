@@ -2,7 +2,7 @@
 // reorder, close, an overflow menu, and children badges. Tab groups are not shown (ADR 0076). One
 // context menu serves every tab.
 
-import { ChevronDownIcon, CopyIcon, LoaderCircleIcon, PencilIcon, PlusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, CopyIcon, PencilIcon, PlusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { App } from "../core/app";
 import type { Starting } from "../core/new-chat";
@@ -10,6 +10,7 @@ import { workspaceRow, type Tab, type Tabs } from "../core/nav";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "../components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { copyText as copy } from "./copy";
+import { Glyph } from "./glyph";
 import { StatusGlyph } from "./status";
 import { useNewChat } from "./composer-new";
 
@@ -229,9 +230,9 @@ const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { 
       className="tab"
     >
       {tab.pending === "starting" || tab.pending === "closing" ? (
-        <LoaderCircleIcon className="glyph working" aria-label={cap(tab.pending)} />
+        <Glyph form="working" size={12} label={cap(tab.pending)} />
       ) : tab.pending === "failed" ? (
-        <TriangleAlertIcon className="glyph error" aria-label="Failed" />
+        <TriangleAlertIcon className="glyph failed" aria-label="Failed" />
       ) : null}
       {tab.pending !== null || !tab.fields.length ? (
         <span className="label">{tab.title}</span>

@@ -4,7 +4,8 @@ import { useState } from "react";
 import type { App } from "../core/app";
 import { USAGE_PROVIDERS, type AccountList } from "../core/settings";
 import { Button } from "../components/ui/button";
-import { FIELD, label, Row, Toggle, useSettings, useNow } from "./settings-shared";
+import { Input } from "../components/ui/input";
+import { label, Row, Toggle, useSettings, useNow } from "./settings-shared";
 import { MeterLine, useWait } from "./usage-meters";
 
 // ---- accounts ----
@@ -106,7 +107,7 @@ function ProviderAccounts({ app, provider }: { app: App; provider: string }) {
       >
         <label className="grid min-w-0 flex-1 gap-1 text-xs text-muted-foreground">
           Add an account
-          <input className={`${FIELD} font-mono`} data-testid="account-name" value={name} disabled={busy || !data} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder="work" />
+          <Input className="font-mono" data-testid="account-name" value={name} disabled={busy || !data} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder="work" />
         </label>
         <Button size="sm" type="submit" data-testid="account-login" disabled={busy || !data || !name.trim()}>
           Open login

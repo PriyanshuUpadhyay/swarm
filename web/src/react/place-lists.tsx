@@ -7,7 +7,8 @@ import type { App } from "../core/app";
 import type { Issue, NewOptions } from "../core/lifecycle";
 import type { Place, Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
-import { FIELD, message, ErrorLine } from "./lifecycle-shared";
+import { Input } from "../components/ui/input";
+import { message, ErrorLine } from "./lifecycle-shared";
 
 type Kind = Place["kind"];
 
@@ -87,8 +88,8 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
       {place.kind === "pr" && (
         <label className="grid gap-1 text-sm text-muted-foreground">
           Pull request number
-          <input
-            className={FIELD}
+          <Input
+            className="w-full"
             data-testid="place-pr"
             inputMode="numeric"
             value={place.number ? String(place.number) : ""}
@@ -134,7 +135,7 @@ function BranchPicker({ label, testid, branches, open, value, onChange }: { labe
       <span className="text-sm text-muted-foreground">
         {label}: <span className="font-mono text-foreground">{value || "none"}</span>
       </span>
-      <input className={FIELD} aria-label={`Filter ${label.toLowerCase()}`} data-testid={`${testid}-filter`} placeholder={`Filter ${branches.length} branches`} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown} />
+      <Input className="w-full" aria-label={`Filter ${label.toLowerCase()}`} data-testid={`${testid}-filter`} placeholder={`Filter ${branches.length} branches`} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown} />
       <div role="listbox" aria-label={label} data-testid={testid} className="max-h-[160px] overflow-y-auto rounded-md border border-border">
         {shown.length === 0 && <p className="px-2 py-2 text-sm text-muted-foreground">No branch matches.</p>}
         {shown.map((b) => (
@@ -183,7 +184,7 @@ function IssuePicker({ app, project, selected, onSelect }: { app: App; project: 
       {!list.issues && !list.error && <p className="text-sm text-muted-foreground">Reading open issues…</p>}
       {list.issues && (
         <>
-          <input className={FIELD} aria-label="Filter issues" placeholder="Filter issues" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Input className="w-full" aria-label="Filter issues" placeholder="Filter issues" value={query} onChange={(e) => setQuery(e.target.value)} />
           <div role="listbox" aria-label="Open issues" data-testid="place-issues" className="max-h-[180px] overflow-y-auto rounded-md border border-border">
             {shown.length === 0 && <p className="px-2 py-2 text-sm text-muted-foreground">{list.issues.length ? "No issue matches." : "This repository has no open issues."}</p>}
             {shown.map((i) => (

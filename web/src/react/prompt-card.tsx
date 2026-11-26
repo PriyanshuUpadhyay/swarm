@@ -64,7 +64,7 @@ export function PromptCard({
       role="group"
       data-testid="prompt-card"
       aria-label={`${who ?? "The chair"} is blocked: ${prompt.screen ? "its screen is shown below" : prompt.question}`}
-      className="grid gap-2 rounded-lg border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      className="grid gap-2 rounded-xl border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       onKeyDown={onKeyDown}
     >
       <div className="flex items-center gap-1.5 text-xs font-semibold text-waiting">
@@ -100,13 +100,13 @@ export function PromptCard({
             value={text}
             disabled={busy !== null}
             onChange={(e) => setTyped({ prompt: prompt.id, text: e.target.value })}
-            className="min-w-0 flex-1 rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+            className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
           />
           <button
             type="submit"
             data-testid="prompt-send"
             disabled={busy !== null || !line}
-            className="flex items-center gap-1.5 rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-sm hover:bg-hover disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm hover:bg-hover disabled:opacity-60"
           >
             Send
             {busy === -1 && <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" />}
@@ -124,7 +124,7 @@ export function PromptCard({
               title={detail ? `${choice}\n${detail}` : choice}
               disabled={busy !== null}
               onClick={() => pick(i)}
-              className="flex min-w-0 items-start gap-2 rounded-md border border-border-strong bg-background px-2.5 py-1.5 text-left text-sm hover:bg-hover disabled:opacity-60"
+              className="flex min-w-0 items-start gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-sm hover:bg-hover disabled:opacity-60"
             >
               {!prompt.screen && <span className="font-mono text-muted-foreground tabular-nums">{i + 1}</span>}
               <span className="min-w-0 flex-1 break-words">

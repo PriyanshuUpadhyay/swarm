@@ -170,7 +170,7 @@ const ChangeRow = memo(function ChangeRow({ f, selected }: { f: ChangeFile; sele
       </span>
       <span className="min-w-0 flex-1 truncate">
         <span className="text-foreground">{f.path.slice(slash + 1)}</span>
-        {slash > 0 && <span className="ml-1.5 text-faint-foreground">{f.path.slice(0, slash)}</span>}
+        {slash > 0 && <span className="ml-1.5 text-muted-foreground">{f.path.slice(0, slash)}</span>}
       </span>
       {LAYER[f.layer] && <span className="layer">{LAYER[f.layer]}</span>}
       <span className="counts num">
@@ -192,7 +192,7 @@ function Drafts({ app, changes, files }: { app: App; changes: Changes; files: Ch
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium">{plural(comments.length, "comment")}</span>
         <span className="flex-1" />
-        <Button size="sm" data-testid="send-comments" disabled={sending || blocked !== null} title={blocked ?? "Send every comment to the chat's agent as one message"} onClick={() => void changes.sendComments()}>
+        <Button size="sm" variant="outline" data-testid="send-comments" disabled={sending || blocked !== null} title={blocked ?? "Send every comment to the chat's agent as one message"} onClick={() => void changes.sendComments()}>
           <SendIcon /> {sending ? "Sending…" : "Send to agent"}
         </Button>
       </div>
@@ -208,7 +208,7 @@ function Drafts({ app, changes, files }: { app: App; changes: Changes; files: Ch
                 if (f) void changes.select(f);
               }}
             >
-              <span className="text-foreground">{c.path.slice(c.path.lastIndexOf("/") + 1)}</span> <span className="text-faint-foreground">{c.lines}</span> {c.text}
+              <span className="text-foreground">{c.path.slice(c.path.lastIndexOf("/") + 1)}</span> <span className="text-muted-foreground">{c.lines}</span> {c.text}
             </button>
             <button className="icon-btn" aria-label="Remove comment" onClick={() => changes.removeComment(c.id)}>
               <XIcon />
@@ -257,7 +257,7 @@ function PrPanel({ pr }: { pr: Load<PrView> }) {
           <span className={`pr-state ${p.isDraft ? "draft" : p.state.toLowerCase()}`} data-testid="pr-state">
             {state}
           </span>
-          <h2 className="min-w-0 flex-1 text-[13px] font-semibold break-words" data-testid="pr-title">
+          <h2 className="min-w-0 flex-1 text-base font-semibold break-words" data-testid="pr-title">
             {p.title}{" "}
             {url ? (
               <a className="font-normal text-muted-foreground hover:text-foreground" href={url} target="_blank" rel="noreferrer">
@@ -306,7 +306,7 @@ function PrPanel({ pr }: { pr: Load<PrView> }) {
 
 function Note({ title, body }: { title: string; body: string }) {
   return (
-    <div role="status" className="mx-3 mt-4 rounded-lg border border-dashed border-border-strong px-3 py-4 text-center">
+    <div role="status" className="mx-3 mt-4 rounded-xl border border-dashed border-border px-3 py-4 text-center">
       <div className="text-sm font-medium text-foreground">{title}</div>
       <p className="mt-1 text-xs text-muted-foreground">{body}</p>
     </div>

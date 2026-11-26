@@ -226,7 +226,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
     <div>
       <div
         data-testid="composer-box"
-        className="relative rounded-lg border border-border-strong bg-surface shadow-sm focus-within:border-ring has-[textarea:disabled]:opacity-70"
+        className="relative rounded-2xl border border-border bg-surface focus-within:border-ring has-[textarea:disabled]:opacity-70"
       >
         {open && menu && (
           <SlashMenu id={listId} menu={menu} rows={rows} current={current} list={slash.shownList} select={slash.setSelected} choose={choose} />
@@ -245,7 +245,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
           <textarea
             ref={box}
             rows={2}
-            className={cn("block w-full", expanded ? "h-[60vh]" : "max-h-[200px]", "resize-none bg-transparent px-3 pt-2.5 text-base outline-none placeholder:text-faint-foreground", chair.provider === "pi" && "composer-text relative")}
+            className={cn("block w-full", expanded ? "h-[60vh]" : "max-h-[200px]", "resize-none bg-transparent px-3 pt-2.5 text-md outline-none placeholder:text-muted-foreground", chair.provider === "pi" && "composer-text relative")}
             data-testid="composer"
             aria-label={`Message ${target}`}
             placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
@@ -285,7 +285,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
           <button type="button" data-testid="usage" className="rounded-md px-1.5 py-1 tabular-nums hover:bg-hover" title={usageTitle(composer.usage)}>
             {usageLabel(composer.usage)}
           </button>
-          {showStop && !chair.who && <span className="text-faint-foreground">⌘. stops</span>}
+          {showStop && !chair.who && <span className="text-muted-foreground">⌘. stops</span>}
           <span className="flex-1" />
           <Button
             variant="ghost"
@@ -307,7 +307,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
               data-testid="stop"
               aria-label={`Stop ${target}`}
               title={chair.who ? `Stop ${target}` : `Stop ${target} (⌘.)`}
-              className="rounded-full text-failed"
+              className="rounded-md text-failed"
               disabled={state.stopping}
               onClick={() => void app.interrupt(sessionId)}
             >
@@ -315,7 +315,18 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             </Button>
           )}
           {(!showStop || outgoing(text) !== null) && (
-            <Button size="icon" data-testid="send" aria-label="Send" title="Send (⌘Return)" disabled={!canSend} onClick={submit}>
+            <Button
+              size="send"
+              data-testid="send"
+              aria-label="Send"
+              title="Send (⌘Return)"
+              disabled={!canSend}
+              // keepFocus can restart the slash menu's no-list read after a blur; a menu token still needs its blur.
+              onMouseDown={(e) => {
+                if (e.button === 0 && !menu && document.activeElement === box.current) e.preventDefault();
+              }}
+              onClick={submit}
+            >
               <ArrowUpIcon className="size-4" />
             </Button>
           )}

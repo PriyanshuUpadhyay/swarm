@@ -185,13 +185,13 @@ export const RecentRow = memo(function RecentRow({ r, selected, current }: { r: 
       className="recent-row"
     >
       <span className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{r.title}</span>
+        <span className="min-w-0 flex-1 truncate text-base font-medium text-foreground">{r.title}</span>
         {r.unread && <span className="unread" role="img" aria-label="Unread" />}
         {r.status && <StatusGlyph status={r.status} />}
       </span>
-      <span className="flex items-center gap-2 text-[11px]">
+      <span className="flex items-center gap-2 text-xs">
         <span className="min-w-0 flex-1 truncate">{r.project && r.project !== r.workspace ? `${r.project} · ${r.workspace}` : r.workspace}</span>
-        <span className="shrink-0 text-[10px] tabular-nums">{r.age}</span>
+        <span className="shrink-0 text-xs tabular-nums">{r.age}</span>
       </span>
     </div>
   );

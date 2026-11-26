@@ -232,7 +232,7 @@ function CommentBox({ label, text, onChange, onAdd, onCancel }: { label: string;
 function CommentCard({ c, onRemove }: { c: DiffComment; onRemove: () => void }) {
   return (
     <div className="comment-card" data-testid="comment-card">
-      <span className="text-[11px] text-muted-foreground">{c.lines}</span>
+      <span className="text-xs text-muted-foreground">{c.lines}</span>
       <span className="min-w-0 flex-1 break-words whitespace-pre-wrap">{c.text}</span>
       <button className="icon-btn" aria-label="Remove comment" onClick={onRemove}>
         <XIcon />

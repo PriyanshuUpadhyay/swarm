@@ -199,7 +199,7 @@ function RowCard({ row }: { row: SidebarRow }) {
         {row.status && <StatusGlyph status={row.status} />}
       </div>
       {rest.length > 0 && <div className="font-mono text-xs break-all whitespace-pre-wrap text-muted-foreground">{rest.join("\n")}</div>}
-      <div className="flex flex-wrap gap-3 text-xs text-faint-foreground">
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="capitalize">{row.kind}</span>
         {row.detail && <span>{row.detail}</span>}
         {row.counts.map((c) => (

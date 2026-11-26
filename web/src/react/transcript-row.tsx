@@ -1,11 +1,12 @@
 // Transcript rows, message bubbles, and disclosures.
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, LoaderCircleIcon, MailIcon, PencilIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, MailIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
 import { duration, imagesOf, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
 import { fold, type FoldLevel } from "../core/fold-display";
 import { copyText } from "./copy";
+import { Glyph } from "./glyph";
 import { ImageThumbs } from "./images";
 import { ImageLoader, MarkdownView } from "./markdown-view";
 import { DiffView, OutputBox } from "./transcript-output";
@@ -102,13 +103,13 @@ function RowBody(ctx: Ctx) {
     return (
       <div className="divider">
         <span>{row.text}</span>
-        {row.detail && <span className="text-faint-foreground">{row.detail}</span>}
+        {row.detail && <span className="text-muted-foreground">{row.detail}</span>}
       </div>
     );
   if (row.system_kind === "working")
     return (
       <div className="quiet" role="status" data-testid="working">
-        <LoaderCircleIcon className="glyph working" /> {row.text}
+        <Glyph form="working" size={12} aria-hidden /> {row.text}
       </div>
     );
   if (row.system_kind === UNMAPPED)

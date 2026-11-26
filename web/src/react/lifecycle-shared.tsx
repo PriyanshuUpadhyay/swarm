@@ -6,7 +6,6 @@ import type { App } from "../core/app";
 import type { LifeState } from "../core/lifecycle";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../components/ui/dialog";
 
-const FIELD = "h-8 w-full min-w-0 rounded-md border border-border-strong bg-background px-2 outline-none focus:border-ring disabled:opacity-60";
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 function useLife<K extends keyof LifeState>(app: App, key: K): LifeState[K] {
@@ -58,4 +57,4 @@ function ErrorLine({ text }: { text: string | null }) {
   );
 }
 
-export { FIELD, message, useLife, Frame, Label, ErrorLine };
+export { message, useLife, Frame, Label, ErrorLine };
