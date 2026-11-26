@@ -48,7 +48,7 @@ The design names a role, and `web/src/styles-base.css` holds the CSS variable. T
 - **Instrument Serif appears only as the question on the new-chat screen** (owner). It marks the start of new work.
 - **Every size comes from the scale** (default), because today 34 raw sizes skip it. The scale is 11, 12, 13, 14 and 15 px, plus 44 px for the serif question. The 10 px size of today is dropped (owner).
 
-- **Reply text in the chat is 16 px with a 1.5 line** (owner). Its headings are 1.3 and 1.12 times that size and its code keeps the sizes of that text, because a reading trial found 13 px too small for long text. All other text follows the type scale.
+- **Reply text in the chat is 16 px with a 1.5 line** (owner). Its headings are 1.3 and 1.12 times that size, its inline code is 0.875 times the text around it, and its code block is 14 px with a 1.45 line, because a reading trial found 13 px too small for long text. All other text follows the type scale.
 
 ## Layout
 
