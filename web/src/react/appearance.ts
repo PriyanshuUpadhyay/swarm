@@ -62,12 +62,14 @@ function ownerChoice<T extends string>(key: Key, values: readonly T[], fallback:
 }
 
 export type Theme = "system" | "light" | "dark";
-export type FontSans = "swarm" | "system" | "helvetica" | "avenir";
-export type FontMono = "swarm" | "system" | "menlo" | "monaco";
+const FONT_SANS = ["swarm", "system", "helvetica", "avenir"] as const;
+const FONT_MONO = ["swarm", "system", "menlo", "monaco"] as const;
+export type FontSans = (typeof FONT_SANS)[number];
+export type FontMono = (typeof FONT_MONO)[number];
 
 const theme = ownerChoice<Theme>("theme", ["system", "light", "dark"], "system");
-export const fontSans = ownerChoice<FontSans>("fontSans", ["swarm", "system", "helvetica", "avenir"], "swarm");
-export const fontMono = ownerChoice<FontMono>("fontMono", ["swarm", "system", "menlo", "monaco"], "swarm");
+export const fontSans = ownerChoice<FontSans>("fontSans", FONT_SANS, "swarm");
+export const fontMono = ownerChoice<FontMono>("fontMono", FONT_MONO, "swarm");
 const ALL = [theme, fontSans, fontMono];
 
 export const chooseTheme = theme.choose;

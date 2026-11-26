@@ -3,7 +3,7 @@ import { Glyph } from "./glyph";
 
 export type Status = "working" | "blocked" | "error" | "done" | "ended" | "idle";
 
-export function shownStatus(status: Status) {
+function shownStatus(status: Status) {
   if (status === "blocked") return "waiting";
   if (status === "error") return "failed";
   return status;

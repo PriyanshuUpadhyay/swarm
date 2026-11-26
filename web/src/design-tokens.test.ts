@@ -51,6 +51,7 @@ function frontMatterTokens(): { shared: Record<string, string>; themes: Record<T
   const themes: Record<Theme, Record<string, string>> = { dark: {}, light: {} };
   let top = "";
   let theme: Theme | "" = "";
+
   for (const line of front.split("\n")) {
     const top1 = /^(\w[\w-]*):/.exec(line);
     if (top1) {
@@ -68,22 +69,23 @@ function frontMatterTokens(): { shared: Record<string, string>; themes: Record<T
     const level3 = /^ {4}([\w-]+):\s*(.+)$/.exec(line);
     if (level3 && theme && (top === "colors" || top === "shadow")) themes[theme][level3[1]] = quoted(level3[2]);
   }
+
   return { shared, themes };
 }
 
-function block(opening: RegExp): Record<string, string> {
+function block(opening: RegExp, closing: string): Record<string, string> {
   const start = opening.exec(css);
   if (!start) throw new Error(`no block for ${opening}`);
-  const end = css.indexOf("\n  }\n", start.index);
-  const text = css.slice(start.index, opening.source.includes("not") ? end : css.indexOf("\n}\n", start.index));
+  const end = css.indexOf(closing, start.index);
+  const text = css.slice(start.index, end);
   const out: Record<string, string> = {};
   for (const m of text.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)) out[m[1]] = m[2].trim();
   return out;
 }
 
-const dark = block(/^:root,\n:root\[data-theme="dark"\] \{/m);
-const lightMedia = block(/^ {2}:root:not\(\[data-theme\]\) \{/m);
-const lightAttr = block(/^:root\[data-theme="light"\] \{/m);
+const dark = block(/^:root,\n:root\[data-theme="dark"\] \{/m, "\n}\n");
+const lightMedia = block(/^ {2}:root:not\(\[data-theme\]\) \{/m, "\n  }\n");
+const lightAttr = block(/^:root\[data-theme="light"\] \{/m, "\n}\n");
 const tokens = frontMatterTokens();
 
 describe("design tokens", () => {

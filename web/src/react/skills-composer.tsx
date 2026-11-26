@@ -93,7 +93,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
                 <label key={j} className={`grid gap-1 ${j >= 2 ? "col-span-2" : ""}`}>
                   <span className="text-xs text-muted-foreground">{COLUMNS[j]}</span>
                   <Input
-                    className={`${j === 0 || j === 3 ? "font-mono" : ""}`}
+                    className={j === 0 || j === 3 ? "font-mono" : undefined}
                     autoComplete="off"
                     spellCheck={j === 2 || j === 4}
                     data-col={COLUMNS[j]}
@@ -142,7 +142,8 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           </p>
           <Button
             size="sm"
-            variant="outline" data-testid="draft-copy"
+            variant="outline"
+            data-testid="draft-copy"
             disabled={!copyable({ draft, check })}
             // copyText shows its own toast on success and on failure.
             onClick={() => void copyText(text, draft.from ? "Stop line and step table" : "SKILL.md")}
