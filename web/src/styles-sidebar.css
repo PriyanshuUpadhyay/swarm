@@ -218,7 +218,7 @@
   width: 6px;
   height: 6px;
   flex: none;
-  border-radius: 50%;
+  @apply rounded-full;
   background: var(--status-working);
 }
 
@@ -297,13 +297,13 @@
   min-width: 24px;
   height: 4px;
   overflow: hidden;
-  border-radius: 2px;
+  @apply rounded-full;
   background: var(--selected);
 }
 .meter-bar > span {
   position: absolute;
   inset: 0 auto 0 0;
-  border-radius: 2px;
+  @apply rounded-full;
 }
 
 /* A switch on a native checkbox, so the browser keeps its keys and its form role. */
@@ -313,7 +313,7 @@
   flex: none;
   width: 28px;
   height: 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--border-strong);
   transition: background-color 120ms;
 }
@@ -324,7 +324,7 @@
   left: 2px;
   width: 12px;
   height: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--background);
   transition: transform 120ms;
 }

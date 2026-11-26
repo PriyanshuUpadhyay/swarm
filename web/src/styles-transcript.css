@@ -161,7 +161,7 @@
   font: 12px var(--font-mono);
   padding: 1px 8px;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  @apply rounded-full;
   background: var(--background);
 }
 .disclosure {
@@ -249,7 +249,7 @@
   max-height: 480px;
   margin: 0.5em 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .md .md-image-missing {

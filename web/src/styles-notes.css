@@ -6,7 +6,7 @@
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
-  border-radius: 999px;
+  @apply rounded-full;
   background: var(--status-waiting);
   color: var(--background);
   font: 600 11px/1 var(--ui-font);
@@ -115,7 +115,7 @@
   color: var(--muted-foreground);
   background: var(--background);
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  @apply rounded-full;
 }
 /* The find bar spans the top of the list; the pill gives way, so it never covers the bar's
    buttons. ⇧⌘A, the palette and the ringed targets still show and switch the mode. */
@@ -142,7 +142,7 @@
   color: var(--muted-foreground);
   background: var(--background);
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  @apply rounded-full;
 }
 .annotating .whole-reply {
   display: inline-block;
@@ -184,7 +184,7 @@
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
-  border-radius: 999px;
+  @apply rounded-full;
   background: var(--status-waiting);
   color: var(--background);
   font: 600 11px/18px var(--ui-font);
