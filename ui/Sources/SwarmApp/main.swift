@@ -45,7 +45,7 @@ final class Shell: NSObject, NSApplicationDelegate, NSWindowDelegate, WKUIDelega
         window.setFrameAutosaveName("Swarm")
         window.collectionBehavior = .fullScreenPrimary
         window.delegate = self
-        window.backgroundColor = NSColor(red: 0x10 / 255, green: 0x10 / 255, blue: 0x10 / 255, alpha: 1)
+        window.backgroundColor = NSColor(red: 0x13 / 255, green: 0x12 / 255, blue: 0x11 / 255, alpha: 1)
         webView.uiDelegate = self
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
