@@ -186,6 +186,7 @@ test("Ended Resume keeps the prior provider and account and uses the keyboard mo
   await tab.keyboard.press("Escape");
   await tab.getByTestId("resume-chat").click();
   await expect.poll(() => resumes).toEqual([{ session: process.env.SWARM_E2E_LIVE, model: "model-b", account: "work" }]);
+  await tab.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("modified Up keeps queued messages", async ({ page: tab }) => {
