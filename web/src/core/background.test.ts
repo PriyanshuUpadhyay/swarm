@@ -80,6 +80,12 @@ describe("poll", () => {
 });
 
 describe("runningLine", () => {
+  it("opens a failed task without showing a running clock", () => {
+    const failed = { ...task("b1", "orchestrator", "failed"), started_at: "2026-11-11T10:05:00Z" };
+    const rows = backgroundRows(session, [agent("orchestrator", { role: "orchestrator" })], [failed]);
+    expect(runningLine(rows)).toEqual({ agents: 0, shells: 0, failed: 1, startedAt: null, key: "task:orchestrator:b1" });
+  });
+
   it("counts running agents and shells once, marks failures, and picks the newest task", () => {
     const newer = { ...task("b1", "orchestrator", "running"), started_at: "2026-11-11T10:05:00Z" };
     const older = { ...task("b2", "worker", "running"), kind: "agent" as const, started_at: "2026-11-11T10:00:00Z" };

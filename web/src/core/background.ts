@@ -50,7 +50,7 @@ export function runningLine(rows: readonly BackgroundRow[]) {
   const picked = newest ?? running[0] ?? failed[0];
   if (!picked) return null;
   const agents = running.filter((r) => r.type === "agent" || (r.type === "task" && r.task.kind === "agent")).length;
-  return { agents, shells: running.length - agents, failed: failed.length, startedAt: Number.isNaN(start(picked)) ? null : start(picked), key: picked.key };
+  return { agents, shells: running.length - agents, failed: failed.length, startedAt: picked.status === "working" && !Number.isNaN(start(picked)) ? start(picked) : null, key: picked.key };
 }
 
 export const GROUP_AFTER = 8;
