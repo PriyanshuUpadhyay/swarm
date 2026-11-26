@@ -20,7 +20,7 @@ The design names a role, and `web/src/styles-base.css` holds the CSS variable. T
 |---|---|---|
 | surface | `--background`, `--sidebar` | `bg-background`, `bg-sidebar` |
 | panel | `--surface`, `--code` | `bg-surface`, `bg-code` |
-| selected | `--selected`, `--accent` | `bg-selected`, `bg-accent` |
+| selected | `--selected` | `bg-selected`, `bg-accent` |
 | row-hover | `--hover` | `bg-hover` |
 | border | `--border` | `border-border` |
 | on-surface | `--foreground` | `text-foreground` |
