@@ -16,7 +16,7 @@ This session is running inside Herdr. The top-level session is the orchestrator.
 
 const HERDR_WORKER_CONTEXT: &str = r#"[agent-host: herdr — worker]
 This session is a worker pane, a child of the orchestrator session. Act only on the task you were assigned.
-- Never spawn visible panes: `swarm launch`, `swarm spawn` and every `herdr` surface-creating command (`pane split`, `pane run`, `agent start`, `tab create`, `workspace create`, `worktree create`) are orchestrator-only and are refused for worker sessions.
+- Never spawn visible panes: `swarm launch` and every `herdr` surface-creating command (`pane split`, `pane run`, `agent start`, `tab create`, `workspace create`, `worktree create`) are orchestrator-only and are refused for worker sessions.
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
@@ -35,7 +35,7 @@ This session is running inside a Superset terminal. The top-level session is the
 
 const SUPERSET_WORKER_CONTEXT: &str = r#"[agent-host: superset — worker]
 This session is a worker pane, a child of the orchestrator session. Act only on the task you were assigned.
-- Never spawn panes: `swarm launch` and `swarm spawn` are orchestrator-only and are refused for worker sessions.
+- Never spawn panes: `swarm launch` is orchestrator-only and is refused for worker sessions.
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
@@ -53,7 +53,7 @@ This session is running inside a Rex block. The top-level session is the orchest
 
 const REX_WORKER_CONTEXT: &str = r#"[agent-host: rex — worker]
 This session is a worker pane, a child of the orchestrator session. Act only on the task you were assigned.
-- Never spawn panes: `swarm launch`, `swarm spawn`, and Rex block-creating commands (`rex split`, `rex run`, `rex new`) are orchestrator-only.
+- Never spawn panes: `swarm launch` and Rex block-creating commands (`rex split`, `rex run`, `rex new`) are orchestrator-only.
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
@@ -73,7 +73,7 @@ This session is a chair that the Swarm app started. The top-level session is the
 
 const APP_WORKER_CONTEXT: &str = r#"[agent-host: swarm-app — worker]
 This session is a worker pane, a child of the orchestrator session. Act only on the task you were assigned.
-- Never spawn panes: `swarm launch` and `swarm spawn` are orchestrator-only and are refused for worker sessions.
+- Never spawn panes: `swarm launch` is orchestrator-only and is refused for worker sessions.
 - Remain a leaf: no provider-native subagents, workflow fan-out, headless one-shots, review rounds, or multi-agent pipelines.
 - Report results to the orchestrator only; do not notify the user."#;
 
