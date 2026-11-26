@@ -228,7 +228,8 @@ pub struct Discovery {
     titles: BTreeMap<String, (String, Option<String>, i64, Option<u128>)>,
     pub fields: BTreeMap<String, WorkspaceFields>,
     dirty_at: BTreeMap<String, i64>,
-    github_at: BTreeMap<String, i64>,
+    github_at: BTreeMap<String, (i64, Option<String>)>,
+    diff_at: BTreeMap<String, (i64, String)>,
 }
 impl Discovery {
     pub fn forget_catalog(&mut self) {
@@ -381,7 +382,8 @@ impl Discovery {
                 run("git", &["-C", path, "status", "--porcelain=v1", "-z"], 5)
                     .map(|b| dirty_count(&b))
             },
-            super::github::lookup,
+            super::github::lookup_for_chip,
+            super::changes::branch_totals,
         )
     }
 
@@ -391,8 +393,18 @@ impl Discovery {
         owner: &OwnerChoices,
         at: i64,
         mut inspect: impl FnMut(&str) -> Option<usize>,
-        mut lookup: impl FnMut(&str) -> Option<Value>,
+        mut lookup: impl FnMut(&str, Option<&str>) -> Option<Value>,
+        mut totals: impl FnMut(&str, &str) -> Option<fields::LineTotals>,
     ) -> bool {
+        let branches: BTreeMap<_, _> = tree
+            .projects
+            .iter()
+            .flat_map(|p| &p.workspaces)
+            .filter(|w| {
+                !w.missing && !w.removed && !w.chats.is_empty() && !owner.archived.contains(&w.path)
+            })
+            .filter_map(|w| Some((w.path.as_str(), w.branch.as_deref()?)))
+            .collect();
         let dirty: BTreeSet<_> = fields::requested_paths("dirty", tree, &owner.fields)
             .into_iter()
             .map(str::to_owned)
@@ -400,25 +412,46 @@ impl Discovery {
         let github: BTreeSet<_> = fields::requested_paths("pr", tree, &owner.fields)
             .into_iter()
             .chain(fields::requested_paths("ci", tree, &owner.fields))
+            .chain(branches.keys().copied())
             .map(str::to_owned)
             .collect();
         let previous = self.fields.clone();
+        self.github_at.retain(|path, _| {
+            let keep = github.contains(path);
+            if !keep && let Some(fields) = self.fields.get_mut(path) {
+                fields.pr = None;
+                fields.ci = None;
+                fields.pr_fact = None;
+            }
+            keep
+        });
+        self.diff_at.retain(|path, _| {
+            let keep = branches.contains_key(path.as_str());
+            if !keep && let Some(fields) = self.fields.get_mut(path) {
+                fields.diff = None;
+            }
+            keep
+        });
         for path in dirty.union(&github) {
+            let branch = tree.workspace(path).and_then(|(_, w)| w.branch.as_ref());
             let read_dirty =
                 dirty.contains(path) && self.dirty_at.get(path).is_none_or(|last| at - last >= 10);
             let read_github = github.contains(path)
-                && self.github_at.get(path).is_none_or(|last| at - last >= 120);
+                && self
+                    .github_at
+                    .get(path)
+                    .is_none_or(|(last, previous)| at - last >= 120 || previous.as_ref() != branch);
             if read_dirty {
                 self.dirty_at.insert(path.clone(), at);
             }
             if read_github {
-                self.github_at.insert(path.clone(), at);
+                self.github_at.insert(path.clone(), (at, branch.cloned()));
             }
             if read_dirty {
                 self.fields.entry(path.clone()).or_default().dirty_count = inspect(path);
             }
             if read_github {
-                let request = lookup(path);
+                let request = lookup(path, branch.map(String::as_str));
                 let fields = request
                     .as_ref()
                     .map(fields::github_fields)
@@ -426,6 +459,16 @@ impl Discovery {
                 let current = self.fields.entry(path.clone()).or_default();
                 current.pr = fields.pr;
                 current.ci = fields.ci;
+                current.pr_fact = fields.pr_fact;
+            }
+            if let Some(&branch) = branches.get(path.as_str())
+                && self
+                    .diff_at
+                    .get(path)
+                    .is_none_or(|(last, previous)| at - last >= 10 || previous != branch)
+            {
+                self.diff_at.insert(path.clone(), (at, branch.into()));
+                self.fields.entry(path.clone()).or_default().diff = totals(path, branch);
             }
         }
         previous != self.fields

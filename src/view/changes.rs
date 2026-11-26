@@ -2,7 +2,11 @@
 mod listing;
 pub use listing::list;
 
-use super::{TextPreview, discovery, lifecycle::Error};
+use super::{
+    TextPreview, discovery,
+    fields::{LineTotals, MAX_SAFE_JSON_INTEGER},
+    lifecycle::Error,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -80,9 +84,8 @@ struct Comparison {
     pair: Vec<String>,
     refs: Vec<String>,
 }
-fn comparison(read: &ReadCommands<'_>, base: Option<&str>, identity: &Value) -> Result<Comparison> {
-    let base = base.ok_or_else(|| Error::Invalid("Select a base ref".into()))?;
-    let refs = text(
+fn comparison_refs(read: &ReadCommands<'_>) -> Result<String> {
+    text(
         read,
         &[
             "for-each-ref",
@@ -90,7 +93,18 @@ fn comparison(read: &ReadCommands<'_>, base: Option<&str>, identity: &Value) -> 
             "refs/heads",
             "refs/remotes",
         ],
-    )?;
+    )
+}
+fn comparison(read: &ReadCommands<'_>, base: Option<&str>, identity: &Value) -> Result<Comparison> {
+    let base = base.ok_or_else(|| Error::Invalid("Select a base ref".into()))?;
+    compare_to(read, &comparison_refs(read)?, base, identity)
+}
+fn compare_to(
+    read: &ReadCommands<'_>,
+    refs: &str,
+    base: &str,
+    identity: &Value,
+) -> Result<Comparison> {
     let entries: Vec<_> = refs
         .lines()
         .map(|line| line.splitn(3, '\t').collect::<Vec<_>>())
@@ -130,6 +144,47 @@ fn comparison(read: &ReadCommands<'_>, base: Option<&str>, identity: &Value) -> 
         refs: entries.iter().map(|entry| entry[0].to_owned()).collect(),
     })
 }
+pub(super) fn branch_totals(root: &str, branch: &str) -> Option<LineTotals> {
+    let read = ReadCommands::new(root);
+    let before = identity(&read, None).ok()?;
+    if before["branch"] != branch {
+        return None;
+    }
+    let refs = comparison_refs(&read).ok()?;
+    let own = format!("refs/heads/{branch}");
+    let names = || {
+        refs.lines()
+            .filter_map(|line| line.split_once('\t').map(|(name, _)| name))
+    };
+    // Match the Changes pane's defaultBase order, not its current user selection.
+    let base = [
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+        "refs/remotes/origin/master",
+        "refs/heads/main",
+        "refs/heads/master",
+    ]
+    .into_iter()
+    .find(|name| *name != own && names().any(|r| r == *name))
+    .or_else(|| names().find(|r| *r != own))?;
+    let pair = compare_to(&read, &refs, base, &before).ok()?.pair;
+    let counts = stats(&diff(&read, "branch", &pair, &["--numstat", "-z"], None).ok()?).ok()?;
+    stable(&read, &Mode::Branch, Some(base), None, &before, &pair).ok()?;
+    let total = |sum: u64, count: Option<usize>| {
+        let sum = sum.checked_add(count.unwrap_or(0) as u64)?;
+        (sum <= MAX_SAFE_JSON_INTEGER).then_some(sum)
+    };
+    let (added_lines, removed_lines) = counts
+        .into_values()
+        .try_fold((0, 0), |(added, removed), (a, r)| {
+            Some((total(added, a)?, total(removed, r)?))
+        })?;
+    Some(LineTotals {
+        added_lines,
+        removed_lines,
+    })
+}
+
 fn stable(
     read: &ReadCommands<'_>,
     mode: &Mode,

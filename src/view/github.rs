@@ -30,6 +30,20 @@ pub fn lookup(path: &str) -> Option<Value> {
     lookup_until(path, deadline)
 }
 pub fn lookup_until(path: &str, deadline: Instant) -> Option<Value> {
+    lookup_matching(path, deadline, false, None)
+}
+
+pub(super) fn lookup_for_chip(path: &str, branch: Option<&str>) -> Option<Value> {
+    let deadline = Instant::now() + std::time::Duration::from_secs(30);
+    lookup_matching(path, deadline, true, branch)
+}
+
+fn lookup_matching(
+    path: &str,
+    deadline: Instant,
+    include_merged: bool,
+    expected_branch: Option<&str>,
+) -> Option<Value> {
     let command = |program, args: &[&str]| {
         let remaining = deadline.saturating_duration_since(Instant::now()).as_secs();
         if remaining == 0 {
@@ -46,6 +60,9 @@ pub fn lookup_until(path: &str, deadline: Instant) -> Option<Value> {
             .map(|s| s.trim().to_owned())
     };
     let branch = git(&["symbolic-ref", "--quiet", "--short", "HEAD"])?;
+    if expected_branch.is_some_and(|expected| expected != branch) {
+        return None;
+    }
     let head = git(&["rev-parse", "HEAD"])?;
     let remotes: Vec<_> = git(&["remote"])?.lines().map(str::to_owned).collect();
     let push = [
@@ -101,50 +118,58 @@ pub fn lookup_until(path: &str, deadline: Instant) -> Option<Value> {
             info["parent"]["name"].as_str()?
         ))?);
     }
-    let mut matches = Vec::new();
-    for target in targets {
-        let requests = gh(&[
-            "pr",
-            "list",
-            "--repo",
-            &format!("github.com/{target}"),
-            "--head",
-            &branch,
-            "--state",
-            "open",
-            "--limit",
-            "100",
-            "--json",
-            "number,title,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,reviewDecision,statusCheckRollup,url",
-        ])?;
-        let requests = requests.as_array()?;
-        if requests.len() >= 100 {
-            return None;
-        }
-        for request in requests.iter().filter(|r| r["headRefName"] == branch) {
-            let repo = request["headRepository"]["nameWithOwner"]
-                .as_str()
-                .and_then(name)?;
-            if repo != head_repository {
-                continue;
-            }
-            if request["number"].as_u64()? == 0
-                || request["baseRefOid"].as_str()?.is_empty()
-                || request["headRefOid"].as_str()?.is_empty()
-            {
+    let matching = |state: &str| -> Option<Vec<Value>> {
+        let mut matches = Vec::new();
+        for target in &targets {
+            let requests = gh(&[
+                "pr",
+                "list",
+                "--repo",
+                &format!("github.com/{target}"),
+                "--head",
+                &branch,
+                "--state",
+                state,
+                "--limit",
+                "100",
+                "--json",
+                "number,title,state,isDraft,baseRefName,baseRefOid,headRefName,headRefOid,headRepository,reviewDecision,statusCheckRollup,url",
+            ])?;
+            let requests = requests.as_array()?;
+            if requests.len() >= 100 {
                 return None;
             }
-            let url = request["url"].as_str()?;
-            if url
-                != format!(
-                    "https://github.com/{target}/pull/{}",
-                    request["number"].as_u64()?
-                )
-            {
-                return None;
+            for request in requests.iter().filter(|r| r["headRefName"] == branch) {
+                let repo = request["headRepository"]["nameWithOwner"]
+                    .as_str()
+                    .and_then(name)?;
+                if repo != head_repository {
+                    continue;
+                }
+                if request["number"].as_u64()? == 0
+                    || (include_merged && request["state"] != state.to_ascii_uppercase())
+                    || request["baseRefOid"].as_str()?.is_empty()
+                    || request["headRefOid"].as_str()?.is_empty()
+                {
+                    return None;
+                }
+                let url = request["url"].as_str()?;
+                if url
+                    != format!(
+                        "https://github.com/{target}/pull/{}",
+                        request["number"].as_u64()?
+                    )
+                {
+                    return None;
+                }
+                matches.push(request.clone());
             }
-            matches.push(request.clone());
         }
+        Some(matches)
+    };
+    let mut matches = matching("open")?;
+    if matches.is_empty() && include_merged {
+        matches = matching("merged")?;
     }
     if matches.len() > 1
         || git(&["symbolic-ref", "--quiet", "--short", "HEAD"])? != branch

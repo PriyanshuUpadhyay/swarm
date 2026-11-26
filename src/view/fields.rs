@@ -89,7 +89,44 @@ pub struct WorkspaceFields {
     pub dirty_count: Option<usize>,
     pub pr: Option<String>,
     pub ci: Option<String>,
+    pub pr_fact: Option<PrFact>,
+    pub diff: Option<LineTotals>,
 }
+
+pub(super) const MAX_SAFE_JSON_INTEGER: u64 = (1 << 53) - 1;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PrFact {
+    pub number: u64,
+    pub url: String,
+    pub state: PrState,
+    pub ci: CiState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PrState {
+    Open,
+    Draft,
+    Merged,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CiState {
+    Passed,
+    Failed,
+    Pending,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineTotals {
+    pub added_lines: u64,
+    pub removed_lines: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct FieldValue {
     pub field: String,
@@ -397,9 +434,30 @@ pub fn github_fields(request: &Value) -> WorkspaceFields {
     } else {
         Some("CI unknown".into())
     };
+    let pr_fact = (|| {
+        let state = match request["state"].as_str()? {
+            "OPEN" if request["isDraft"] == true => PrState::Draft,
+            "OPEN" => PrState::Open,
+            "MERGED" => PrState::Merged,
+            _ => return None,
+        };
+        (number > 0 && number <= MAX_SAFE_JSON_INTEGER).then_some(PrFact {
+            number,
+            url: request["url"].as_str()?.into(),
+            state,
+            ci: match ci.as_deref() {
+                Some("CI passed") => CiState::Passed,
+                Some("CI failed") => CiState::Failed,
+                Some("CI pending") => CiState::Pending,
+                _ => CiState::Unknown,
+            },
+        })
+    })();
+    let merged = pr_fact.as_ref().is_some_and(|p| p.state == PrState::Merged);
     WorkspaceFields {
-        dirty_count: None,
-        pr: Some(format!("PR #{number}")),
-        ci,
+        pr: (!merged).then(|| format!("PR #{number}")),
+        ci: if merged { None } else { ci },
+        pr_fact,
+        ..Default::default()
     }
 }

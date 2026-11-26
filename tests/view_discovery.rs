@@ -79,7 +79,15 @@ printf '%s\n' "$*" >> "$HOME/gh-calls"
 case "$1 $2" in
 'repo view') printf '{"nameWithOwner":"owner/repo","parent":null}\n' ;;
 'pr list') if [ -f "$HOME/fail" ]; then exit 1; fi
-printf '[{"number":7,"state":"OPEN","baseRefOid":"def","headRefOid":"abc","headRefName":"feature","headRepository":{"nameWithOwner":"owner/repo"},"url":"https://github.com/owner/repo/pull/7","statusCheckRollup":[{"state":"SUCCESS"}]}]\n' ;;
+case "$*" in
+*'--state merged'*) printf '[{"number":8,"state":"MERGED","baseRefOid":"def","headRefOid":"abc","headRefName":"feature","headRepository":{"nameWithOwner":"owner/repo"},"url":"https://github.com/owner/repo/pull/8"}]\n' ;;
+*)
+    if [ -f "$HOME/merged" ]; then printf '[]\n'; exit; fi
+    url=https://github.com/owner/repo/pull/7
+    if [ -f "$HOME/foreign" ]; then url=https://example.com/owner/repo/pull/7; fi
+    pr="{\"number\":7,\"state\":\"OPEN\",\"isDraft\":true,\"baseRefOid\":\"def\",\"headRefOid\":\"abc\",\"headRefName\":\"feature\",\"headRepository\":{\"nameWithOwner\":\"owner/repo\"},\"url\":\"$url\",\"statusCheckRollup\":[{\"state\":\"SUCCESS\"}]}"
+    if [ -f "$HOME/ambiguous" ]; then printf '[%s,%s]\n' "$pr" "$pr"; else printf '[%s]\n' "$pr"; fi ;;
+esac ;;
 *) exit 1 ;;
 esac
 "#;
@@ -94,7 +102,7 @@ esac
     }
     let cwd = format!("{home}/repo");
     let log = format!("{home}/chair.jsonl");
-    let mut snapshot = json!({"sessions":[{"id":"chat","cwd":cwd,"chair_log":log,"agents":1,"chair_provider":"codex","created_at":1}],"agents":{"chat":[{"id":"orchestrator","alive":true,"pane":"fixture","state":"working"}]}});
+    let mut snapshot = json!({"sessions":[{"id":"chat","cwd":cwd,"chair_log":log,"agents":1,"adapter":"tmux-swarm","chair_provider":"codex","created_at":1}],"agents":{"chat":[{"id":"orchestrator","alive":true,"pane":"fixture","state":"working"}]}});
     let mut d = Discovery::default();
     let mut owner = OwnerChoices::default();
     owner.project_paths.push(cwd.clone());
@@ -131,23 +139,95 @@ esac
     d.augment(&mut snapshot, &owner, 159);
     assert_eq!(snapshot["sessions"][0]["title"], "Sidebar fix");
     let t = tree::build(&snapshot, &owner);
-    assert!(!d.refresh_fields(&t, &owner, 130));
-    assert!(!std::path::Path::new(&format!("{home}/gh-calls")).exists());
-    owner.fields.workspace.extend(["dirty".into(), "ci".into()]);
+    assert!(d.refresh_fields(&t, &owner, 130));
+    assert_eq!(
+        serde_json::to_value(&d.fields[&cwd]).unwrap()["prFact"],
+        json!({"number":7,"url":"https://github.com/owner/repo/pull/7","state":"draft","ci":"passed"})
+    );
+    assert!(d.fields[&cwd].dirty_count.is_none());
+    owner.fields.workspace.push("dirty".into());
     assert!(d.refresh_fields(&t, &owner, 131));
     assert_eq!(d.fields[&cwd].dirty_count, Some(1));
     assert_eq!(d.fields[&cwd].pr.as_deref(), Some("PR #7"));
     assert_eq!(d.fields[&cwd].ci.as_deref(), Some("CI passed"));
     let ghcalls = fs::read_to_string(format!("{home}/gh-calls")).unwrap();
-    d.refresh_fields(&t, &owner, 250);
+    d.refresh_fields(&t, &owner, 249);
     assert_eq!(
         fs::read_to_string(format!("{home}/gh-calls")).unwrap(),
         ghcalls
     );
-    fs::write(format!("{home}/fail"), "").unwrap();
-    assert!(d.refresh_fields(&t, &owner, 251));
-    assert!(d.fields[&cwd].pr.is_none());
-    assert!(d.fields[&cwd].ci.is_none());
+    for (at, marker) in [(250, "ambiguous"), (370, "foreign"), (490, "fail")] {
+        let flag = format!("{home}/{marker}");
+        fs::write(&flag, "").unwrap();
+        d.refresh_fields(&t, &owner, at);
+        assert!(serde_json::to_value(&d.fields[&cwd]).unwrap()["prFact"].is_null());
+        fs::remove_file(flag).unwrap();
+    }
+    assert!(
+        !fs::read_to_string(format!("{home}/gh-calls"))
+            .unwrap()
+            .contains("--state merged")
+    );
+    fs::write(format!("{home}/merged"), "").unwrap();
+    assert!(d.refresh_fields(&t, &owner, 610));
+    assert_eq!(
+        serde_json::to_value(&d.fields[&cwd]).unwrap()["prFact"],
+        json!({"number":8,"url":"https://github.com/owner/repo/pull/8","state":"merged","ci":"unknown"})
+    );
+    assert!(github::lookup(&cwd).unwrap().is_null());
+}
+
+#[test]
+fn branch_totals_count_only_committed_changes_from_the_merge_base() {
+    let home = ChoicesHome::new();
+    let repo = home.root.join("repo");
+    fs::create_dir(&repo).unwrap();
+    let repo = fs::canonicalize(repo).unwrap();
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "-qb", "main"]);
+    fs::write(repo.join("lines"), "keep\nremove\n").unwrap();
+    git(&["add", "lines"]);
+    git(&["commit", "-qm", "base"]);
+    git(&["switch", "-qc", "feature"]);
+    fs::write(repo.join("lines"), "keep\nadd one\nadd two\n").unwrap();
+    git(&["commit", "-qam", "change"]);
+    fs::write(repo.join("lines"), "uncommitted\n").unwrap();
+    let log = home.root.join("chair.jsonl");
+    fs::write(
+        &log,
+        "{\"type\":\"user\",\"message\":{\"content\":\"Change lines\"}}\n",
+    )
+    .unwrap();
+    let mut snapshot = json!({"sessions":[{"id":"chat","cwd":repo,"chair_log":log,"agents":1,"adapter":"tmux-swarm","chair_provider":"codex","created_at":1}],"agents":{"chat":[{"id":"orchestrator","alive":true,"pane":"fixture","state":"working"}]}});
+    let mut discovery = Discovery::default();
+    let owner = OwnerChoices::default();
+    discovery.augment(&mut snapshot, &owner, 100);
+    let tree = tree::build(&snapshot, &owner);
+    discovery.refresh_fields(&tree, &owner, 100);
+    assert_eq!(
+        serde_json::to_value(discovery.fields.get(repo.to_str().unwrap())).unwrap()["diff"],
+        json!({"addedLines":2,"removedLines":1})
+    );
 }
 #[test]
 fn subprocess_failure_and_deadline_are_bounded_and_reaped() {
