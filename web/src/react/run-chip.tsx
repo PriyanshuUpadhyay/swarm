@@ -161,7 +161,7 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
         {handoff && <SwitchProgress handoff={handoff} />}
         <ErrorLine text={handoff?.error ?? catalog.error} />
         <div className="flex items-center justify-between gap-2">
-          <span data-testid="run-outcome" className="h-[3lh] overflow-auto">{help}</span>
+          <span role="status" data-testid="run-outcome" className="h-[3lh] overflow-auto">{help}</span>
           {busy && <Button type="button" size="sm" variant="outline" disabled={app.composing.input(sessionId).stopping} onClick={() => void app.composing.interrupt(sessionId)}>Stop</Button>}
         </div>
         {switching && <Button className="justify-self-end" type="button" size="sm" variant="outline" data-testid="run-cancel" disabled={!handoff?.canCancel} onClick={() => void app.life.cancelSwitch(sessionId)}>Cancel switch</Button>}

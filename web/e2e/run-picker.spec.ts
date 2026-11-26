@@ -162,6 +162,7 @@ test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }
   await tab.getByTestId("model-chip").click();
   const picker = tab.getByTestId("run-popover");
   await picker.getByRole("button", { name: "Model B", exact: true }).click();
+  await expect(picker.getByRole("status")).toContainText("model-b");
   const stop = picker.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
   await expect(tab.getByTestId("composer-status").getByRole("button", { name: "Stop", exact: true })).toBeVisible();
