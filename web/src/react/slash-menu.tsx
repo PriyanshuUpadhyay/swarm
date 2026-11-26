@@ -23,7 +23,7 @@ export function SlashMenu({ id, menu, rows, current, list, below = false, select
       role="listbox"
       aria-label={menu.opener === "@" ? "Files" : "Commands and skills"}
       data-testid="slash-menu"
-      className={cn("absolute right-0 left-0 z-20 max-h-72 overflow-y-auto rounded-lg border border-border-strong bg-surface p-1 text-sm shadow-lg", below ? "top-full mt-1" : "bottom-full mb-1")}
+      className={cn("absolute right-0 left-0 z-20 max-h-72 overflow-y-auto rounded-xl border border-border-strong bg-surface p-1 text-sm shadow-lg", below ? "top-full mt-1" : "bottom-full mb-1")}
     >
       {rows.map((r, i) => (
         <Fragment key={r.insert}>

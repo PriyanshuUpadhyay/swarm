@@ -72,7 +72,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
           role={open ? "dialog" : undefined}
           data-testid="run-popover"
           aria-label="Change model, thinking, or account"
-          className="m-0 w-[min(640px,calc(100vw-32px))] rounded-lg border border-border-strong bg-popover p-3 text-sm text-popover-foreground shadow-panel"
+          className="m-0 w-[min(640px,calc(100vw-32px))] rounded-xl border border-border-strong bg-popover p-3 text-sm text-popover-foreground shadow-panel"
           style={{ positionAnchor: anchor, positionArea: "top span-right", marginBottom: 6, positionTryFallbacks: "flip-block" } as CSSProperties}
           onToggle={(e) => e.newState === "closed" && app.life.state.switchModel === sessionId && app.life.close("switchModel")}
         >
@@ -128,7 +128,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
       )}
       {handoff && <SwitchProgress handoff={handoff} />}
       <ErrorLine text={handoff?.error ?? error} />
-      <div className={`rounded-lg border px-3 py-2 text-xs ${outcome === "none" && !running ? "border-dashed border-border text-muted-foreground" : "border-border bg-hover"}`} role="status">
+      <div className={`rounded-xl border px-3 py-2 text-xs ${outcome === "none" && !running ? "border-dashed border-border text-muted-foreground" : "border-border bg-hover"}`} role="status">
         {outcome !== "none" && !running && !blocked && <b className="mr-1.5 font-medium text-foreground">What happens</b>}
         <span data-testid="run-outcome">{running ? "Switching…" : (blocked ?? outcomeText(outcome, current, draft, carry, label))}</span>
       </div>

@@ -147,7 +147,7 @@
   min-width: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl);
   padding: 6px 12px;
 }
 .bubble.queued {

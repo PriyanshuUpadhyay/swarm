@@ -355,7 +355,7 @@
   margin-bottom: 4px;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   color: var(--muted-foreground);
   cursor: default;
   outline: none;

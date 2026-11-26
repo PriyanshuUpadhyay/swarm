@@ -158,7 +158,7 @@
   max-height: 60vh;
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--popover);
   box-shadow: var(--shadow);
   outline: none;

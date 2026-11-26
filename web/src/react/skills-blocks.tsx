@@ -166,7 +166,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
     const ring = isSel(key) ? "border-ring bg-selected" : sel?.id === id ? "border-ring/60" : "border-border hover:border-border-strong";
     if (where[0] !== step.file)
       return (
-        <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-lg border border-dashed px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => e.target === e.currentTarget || !(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined}>
+        <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-xl border border-dashed px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => e.target === e.currentTarget || !(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined}>
           <span className="flex items-center gap-2">
             <Dot kind={b.kind} />
             <code className="text-xs font-medium">{id}</code>
@@ -177,7 +177,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
       );
     const also = where.filter((f) => f !== step.file).map(num);
     return (
-      <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-lg border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => (!(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined)}>
+      <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-xl border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => (!(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined)}>
         <span className="flex items-center gap-2">
           <Dot kind={b.kind} />
           <code className="text-xs font-medium">{id}</code>
@@ -195,7 +195,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
     const isOpen = open.has(key);
     const all = f?.parts ?? parts;
     return (
-      <li key={key} {...item(key, 2, { "aria-expanded": isOpen, "data-family": family })} className="min-w-0 rounded-lg border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <li key={key} {...item(key, 2, { "aria-expanded": isOpen, "data-family": family })} className="min-w-0 rounded-xl border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <button type="button" tabIndex={-1} className="flex w-full items-center gap-2 text-left" onClick={() => toggle(key)}>
           <Chevron open={isOpen} />
           <Dot kind="parent" />
@@ -321,7 +321,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
                     </span>
                   );
                 })}
-                {sel?.where === "tree" && sel.key.startsWith("o:") && <div className="w-full rounded-lg border border-border px-3 py-2">{detail(sel.id)}</div>}
+                {sel?.where === "tree" && sel.key.startsWith("o:") && <div className="w-full rounded-xl border border-border px-3 py-2">{detail(sel.id)}</div>}
               </li>,
             )
           ) : (

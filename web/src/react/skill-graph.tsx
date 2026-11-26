@@ -6,7 +6,7 @@ import { layoutSkill, type Size } from "../core/skill-layout";
 import type { Step } from "../core/skills";
 
 const PAD = 12;
-const CARD = "w-[220px] rounded-lg border bg-background p-2.5 text-left text-xs shadow-xs";
+const CARD = "w-[220px] rounded-xl border bg-background p-2.5 text-left text-xs shadow-xs";
 
 /** A step with only the fields the graph draws, so the Composer can pass rows that Python checked. */
 export type GraphStep = Pick<Step, "file" | "holds" | "resolved" | "blocks" | "uses" | "stage">;

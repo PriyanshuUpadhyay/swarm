@@ -64,7 +64,7 @@ export function PromptCard({
       role="group"
       data-testid="prompt-card"
       aria-label={`${who ?? "The chair"} is blocked: ${prompt.screen ? "its screen is shown below" : prompt.question}`}
-      className="grid gap-2 rounded-lg border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      className="grid gap-2 rounded-xl border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       onKeyDown={onKeyDown}
     >
       <div className="flex items-center gap-1.5 text-xs font-semibold text-waiting">

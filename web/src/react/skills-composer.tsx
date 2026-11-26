@@ -86,7 +86,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
         </label>
         <div className="grid gap-2">
           {draft.rows.map((row, i) => (
-            <fieldset key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 rounded-lg border border-border p-2.5" data-testid="draft-row">
+            <fieldset key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 rounded-xl border border-border p-2.5" data-testid="draft-row">
               <legend className="sr-only">Step {i + 1}</legend>
               {row.map((cell, j) => (
                 <label key={j} className={`grid gap-1 ${j >= 2 ? "col-span-2" : ""}`}>

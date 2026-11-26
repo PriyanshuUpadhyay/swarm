@@ -306,7 +306,7 @@ function PrPanel({ pr }: { pr: Load<PrView> }) {
 
 function Note({ title, body }: { title: string; body: string }) {
   return (
-    <div role="status" className="mx-3 mt-4 rounded-lg border border-dashed border-border-strong px-3 py-4 text-center">
+    <div role="status" className="mx-3 mt-4 rounded-xl border border-dashed border-border-strong px-3 py-4 text-center">
       <div className="text-sm font-medium text-foreground">{title}</div>
       <p className="mt-1 text-xs text-muted-foreground">{body}</p>
     </div>
