@@ -6,7 +6,8 @@ import type { App } from "../core/app";
 import { accountCli, CARRY_OPTIONS, savedCarry, type Carry } from "../core/composer";
 import { isSettled, type Handoff } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
-import { FIELD, message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
+import { Input, inputClass } from "../components/ui/input";
+import { message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
 import { modelPickerKey } from "./model-picker";
 import { Segmented } from "./settings-shared";
 
@@ -96,7 +97,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
       <fieldset disabled={running} className="grid gap-3">
         <div className="grid grid-cols-2 gap-2">
           <Label text="Provider">
-            <select className={FIELD} data-testid="sm-provider" value={provider} onChange={(e) => setProvider(e.target.value)}>
+            <select className={`${inputClass} w-full`} data-testid="sm-provider" value={provider} onChange={(e) => setProvider(e.target.value)}>
               {(providers.length ? providers : [{ id: provider, label: provider }]).map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
@@ -105,7 +106,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
             </select>
           </Label>
           <Label text="Account">
-            <select className={FIELD} data-testid="sm-account" value={account} disabled={!hasAccounts} onChange={(e) => setAccount(e.target.value)}>
+            <select className={`${inputClass} w-full`} data-testid="sm-account" value={account} disabled={!hasAccounts} onChange={(e) => setAccount(e.target.value)}>
               <option value="">Default</option>
               {accounts.map((a) => (
                 <option key={a.name} value={a.name}>
@@ -116,7 +117,7 @@ function SwitchModelBody({ app, old }: { app: App; old: string }) {
           </Label>
         </div>
         <Label text="Model">
-          <input className={FIELD} data-testid="sm-query" placeholder="Search or type a model id" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Input className="w-full" data-testid="sm-query" placeholder="Search or type a model id" value={query} onChange={(e) => setQuery(e.target.value)} />
         </Label>
         <div data-testid="sm-models" className="max-h-[160px] overflow-y-auto rounded-md border border-border">
           {!models && <p className="px-2 py-1.5 text-sm text-muted-foreground">Reading models…</p>}

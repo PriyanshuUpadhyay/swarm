@@ -4,7 +4,7 @@
 import type { ReactNode, RefObject } from "react";
 import type { App } from "../core/app";
 import { firstSentence, libraryRows, libraryTag, loadedBy, whereInPlan, type Block, type Kit } from "../core/skills";
-import { FIELD } from "./settings-shared";
+import { Input } from "../components/ui/input";
 import { useSkills } from "./skills";
 
 const DOT: Record<string, string> = { rule: "bg-sky-500", step: "bg-emerald-500", pack: "bg-orange-500", parent: "bg-pink-500" };
@@ -38,8 +38,8 @@ export function Library({ app, kit, preset, selected, expanded, listRef, onPick,
             {query.trim() ? `${rows.length} of ${kit.blocks.length}` : kit.blocks.length}
           </span>
         </div>
-        <input
-          className={`${FIELD} w-full text-sm`}
+        <Input
+          className="w-full text-sm"
           type="search"
           aria-label="Filter blocks"
           placeholder="Which block does…"

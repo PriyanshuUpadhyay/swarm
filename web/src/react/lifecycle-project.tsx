@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { App } from "../core/app";
 import { Button } from "../components/ui/button";
-import { FIELD, message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
+import { Input } from "../components/ui/input";
+import { message, useLife, Frame, Label, ErrorLine } from "./lifecycle-shared";
 
 declare global {
   interface Window {
@@ -56,7 +57,7 @@ function ProjectBody({ app, mode }: { app: App; mode: "create" | "import" }) {
       <div className="flex items-end gap-2">
         <div className="grid flex-1">
           <Label text={mode === "create" ? "New folder (full path)" : "Folder (full path)"}>
-            <input autoFocus className={`${FIELD} font-mono`} data-testid="project-path" value={path} disabled={busy || choice !== null} onChange={(e) => setPath(e.target.value)} placeholder="/Users/you/code/project" />
+            <Input autoFocus className="w-full font-mono" data-testid="project-path" value={path} disabled={busy || choice !== null} onChange={(e) => setPath(e.target.value)} placeholder="/Users/you/code/project" />
           </Label>
         </div>
         {mode === "import" && picker && (
@@ -77,7 +78,7 @@ function ProjectBody({ app, mode }: { app: App; mode: "create" | "import" }) {
       </div>
       {mode === "create" && (
         <Label text="Name">
-          <input className={FIELD} data-testid="project-name" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} placeholder={path.split("/").filter(Boolean).pop() ?? ""} />
+          <Input className="w-full" data-testid="project-name" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} placeholder={path.split("/").filter(Boolean).pop() ?? ""} />
         </Label>
       )}
       {offer ? (

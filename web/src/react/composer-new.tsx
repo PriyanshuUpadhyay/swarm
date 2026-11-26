@@ -274,7 +274,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
   return (
     <div className={`grid w-full gap-3 ${overlay ? "max-w-[min(960px,calc(100vw-32px))]" : "max-w-[960px] px-4"}`} data-testid="new-chat-composer" data-cwd={target.cwd} data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
       <div className="grid gap-3 min-[1000px]:grid-cols-[1fr_280px]">
-        <div className="grid gap-2 rounded-2xl border border-border bg-popover p-3 shadow-2 has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring">
+        <div className="grid gap-2 rounded-2xl border border-border bg-surface p-3 has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring">
           <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => prompt.change(text.split(path).join("").replace(/  +/g, " "))} />
           <div className="relative grid">
             <textarea

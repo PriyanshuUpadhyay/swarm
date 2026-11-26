@@ -307,7 +307,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
               data-testid="stop"
               aria-label={`Stop ${target}`}
               title={chair.who ? `Stop ${target}` : `Stop ${target} (⌘.)`}
-              className="rounded-full text-failed"
+              className="rounded-md text-failed"
               disabled={state.stopping}
               onClick={() => void app.interrupt(sessionId)}
             >
@@ -316,7 +316,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
           )}
           {(!showStop || outgoing(text) !== null) && (
             <Button
-              size="icon"
+              size="send"
               data-testid="send"
               aria-label="Send"
               title="Send (⌘Return)"

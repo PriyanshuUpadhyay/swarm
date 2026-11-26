@@ -311,18 +311,19 @@
   flex: none;
   width: 28px;
   height: 16px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--border);
+  background: transparent;
 }
 .toggle::after {
   content: "";
   position: absolute;
-  top: 2px;
-  left: 2px;
+  top: 1px;
+  left: 1px;
   width: 12px;
   height: 12px;
   border-radius: var(--radius-md);
-  background: var(--background);
+  background: var(--muted-foreground);
 }
 @media (prefers-reduced-motion: no-preference) {
   .trow .chev,
@@ -334,13 +335,15 @@
   }
 }
 .toggle:checked {
-  background: var(--brand);
+  border-color: var(--foreground);
+  background: var(--foreground);
 }
 .toggle:checked::after {
   transform: translateX(12px);
+  background: var(--background);
 }
 .toggle:focus-visible {
-  outline: 1px solid var(--ring);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 /* The app's ring, not the browser's, on the header and tab controls a Tab walk reaches. */

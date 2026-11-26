@@ -14,7 +14,7 @@ import {
   type Kit,
   type Step,
 } from "../core/skills";
-import { FIELD } from "./settings-shared";
+import { inputClass } from "../components/ui/input";
 import { useSkills } from "./skills";
 import { Detail, Dot, kindName, Library } from "./skills-library";
 
@@ -254,7 +254,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
           <label className="text-sm font-medium" htmlFor="skills-start">
             Start from
           </label>
-          <select id="skills-start" className={`${FIELD} w-44 text-sm`} data-testid="skills-start" value={preset} onChange={(e) => start(e.target.value)}>
+          <select id="skills-start" className={`${inputClass} w-44 text-sm`} data-testid="skills-start" value={preset} onChange={(e) => start(e.target.value)}>
             {kit.presets.map((p) => (
               <option key={p.preset} value={p.preset}>
                 {p.preset}

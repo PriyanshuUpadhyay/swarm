@@ -192,7 +192,7 @@ function Drafts({ app, changes, files }: { app: App; changes: Changes; files: Ch
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium">{plural(comments.length, "comment")}</span>
         <span className="flex-1" />
-        <Button size="sm" data-testid="send-comments" disabled={sending || blocked !== null} title={blocked ?? "Send every comment to the chat's agent as one message"} onClick={() => void changes.sendComments()}>
+        <Button size="sm" variant="outline" data-testid="send-comments" disabled={sending || blocked !== null} title={blocked ?? "Send every comment to the chat's agent as one message"} onClick={() => void changes.sendComments()}>
           <SendIcon /> {sending ? "Sending…" : "Send to agent"}
         </Button>
       </div>

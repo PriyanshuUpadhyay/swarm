@@ -7,7 +7,8 @@ import { accountCli, accountColor, chooseModel, cliName, levelWord, limitText, m
 import type { ModelInfo } from "../core/run-catalog";
 import type { Account, ProviderInfo } from "../core/settings";
 import { Button } from "../components/ui/button";
-import { FIELD, message } from "./lifecycle-shared";
+import { Input } from "../components/ui/input";
+import { message } from "./lifecycle-shared";
 import { modelPickerKey } from "./model-picker";
 import { meterTone } from "./usage-meters";
 
@@ -100,7 +101,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   return (
   <fieldset disabled={disabled} className="grid grid-cols-2 gap-3">
       <div className="grid min-w-0 gap-1" onKeyDown={(e) => modelPickerKey(e, query)}>
-        <input className={FIELD} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Input className="w-full" data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
         <div data-testid="run-models" className="max-h-[260px] overflow-y-auto">
           {(catalog.providers.length ? catalog.providers : [{ id: current.provider }]).map((p) => {
             const ms = catalog.models[p.id];

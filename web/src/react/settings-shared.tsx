@@ -5,7 +5,6 @@ import type { App } from "../core/app";
 import { cliName } from "../core/composer";
 import type { SettingsState } from "../core/settings";
 
-const FIELD = "h-8 min-w-0 rounded-md border border-border bg-background px-2 outline-none focus:border-ring disabled:opacity-60";
 const label = cliName;
 
 function useSettings<K extends keyof SettingsState>(app: App, key: K): SettingsState[K] {
@@ -50,7 +49,7 @@ function Toggle({ label: name, checked, onChange, testid, id, disabled, busy }: 
 }
 
 
-export { FIELD, label, Row, Segmented, Toggle, useSettings, useNow };
+export { label, Row, Segmented, Toggle, useSettings, useNow };
 
 function Segmented<T extends string>({ label: name, value, options, onChange, testid }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void; testid: string }) {
   return (

@@ -46,8 +46,6 @@
   --hover: #201e1b;
   --selected: #24221f;
   --ring: #f3f1ec;
-  --primary: #fafafa;
-  --primary-foreground: #101010;
   --brand: #fcd452;
   --brand-foreground: #1d1b18;
   --brand-hover: #fddc6e;
@@ -90,8 +88,6 @@
     --hover: #ede9e1;
     --selected: #e9e5dc;
     --ring: #1d1b18;
-    --primary: #171717;
-    --primary-foreground: #fafafa;
     --brand: #fcd452;
     --brand-foreground: #1d1b18;
     --brand-hover: #fddc6e;
@@ -135,8 +131,6 @@
   --hover: #ede9e1;
   --selected: #e9e5dc;
   --ring: #1d1b18;
-  --primary: #171717;
-  --primary-foreground: #fafafa;
   --brand: #fcd452;
   --brand-foreground: #1d1b18;
   --brand-hover: #fddc6e;
@@ -233,8 +227,6 @@
   --color-accent: var(--selected);
   --color-accent-foreground: var(--foreground);
   --color-ring: var(--ring);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-hover: var(--brand-hover);

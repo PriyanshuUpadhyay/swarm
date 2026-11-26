@@ -6,7 +6,8 @@ import type { App } from "../core/app";
 import type { ModelInfo } from "../core/run-catalog";
 import type { Profile, ProviderInfo, Runner } from "../core/settings";
 import { Button } from "../components/ui/button";
-import { FIELD, Row, useSettings } from "./settings-shared";
+import { Input, inputClass } from "../components/ui/input";
+import { Row, useSettings } from "./settings-shared";
 
 // ---- profiles ----
 
@@ -89,8 +90,8 @@ function MinUsage({ app, value }: { app: App; value: number }) {
   return (
     <Row title="Usage left" detail="A runner is skipped when every account of its provider has less than this left.">
       <span className="flex items-center gap-1 text-sm">
-        <input
-          className={`${FIELD} w-16 text-right ${!valid ? "border-failed" : ""}`}
+        <Input
+          className={`w-16 text-right ${!valid ? "border-failed" : ""}`}
           aria-invalid={!valid}
           aria-describedby="usage-range"
           aria-label="Usage left minimum, percent"
@@ -132,7 +133,7 @@ function NameForm({ app, mode, done }: { app: App; mode: NameMode; done: () => v
     >
       <label className="grid min-w-0 flex-1 gap-1 text-xs text-muted-foreground">
         {title}
-        <input autoFocus className={`${FIELD} font-mono`} data-testid="profile-name" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} placeholder="review.quick" />
+        <Input autoFocus className="font-mono" data-testid="profile-name" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} placeholder="review.quick" />
       </label>
       <Button size="sm" type="submit" disabled={busy || !name.trim()}>
         Save
@@ -175,7 +176,7 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
           <div key={i} className="flex flex-wrap items-center gap-1.5" data-testid="runner">
             <span className="w-4 text-xs text-muted-foreground">{i + 1}</span>
             <select
-              className={FIELD}
+              className={inputClass}
               aria-label={`Runner ${i + 1} provider`}
               data-testid="runner-provider"
               value={r.provider}
@@ -191,7 +192,7 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
               ))}
             </select>
             <ModelField app={app} runner={r} index={i} onChange={(model) => change(i, { ...r, model })} />
-            <select className={FIELD} aria-label={`Runner ${i + 1} effort`} data-testid="runner-effort" value={r.effort} onChange={(e) => change(i, { ...r, effort: e.target.value })}>
+            <select className={inputClass} aria-label={`Runner ${i + 1} effort`} data-testid="runner-effort" value={r.effort} onChange={(e) => change(i, { ...r, effort: e.target.value })}>
               {(efforts.includes(r.effort) ? efforts : [r.effort, ...efforts]).map((e) => (
                 <option key={e}>{e}</option>
               ))}
@@ -236,6 +237,6 @@ function ModelField({ app, runner, index, onChange }: { app: App; runner: Runner
     return () => { live = false; };
   }, [app, runner.provider]);
   const id = `profile-model-${index}`;
-  return <><input className={`${FIELD} w-40 font-mono`} list={id} aria-label={`Runner ${index + 1} model`} data-testid="runner-model" value={runner.model} onChange={(e) => onChange(e.target.value.trim())} />
+  return <><Input className="w-40 font-mono" list={id} aria-label={`Runner ${index + 1} model`} data-testid="runner-model" value={runner.model} onChange={(e) => onChange(e.target.value.trim())} />
     <datalist id={id}>{models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</datalist></>;
 }

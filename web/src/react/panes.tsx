@@ -271,7 +271,7 @@ export function PaneStrip({ app }: { app: App }) {
               Cancel
             </Button>
             <Button
-              className="bg-failed text-white hover:bg-failed/90"
+              variant="destructive"
               onClick={() => {
                 void app.closePane(closing!).catch(failed);
                 setClosing(null);
