@@ -58,7 +58,7 @@ Status: ✅ exists, ✂️ cut from a skill next, ⬜ later, 🆕 new, 🔒 stay
 | prove-it-works | what proves a change works | `blocks/prove-it-works/SKILL.md` (red-first-check merged in) | ✅ |
 | checked-units | small units that each end in a check | `blocks/checked-units/SKILL.md` | ✅ |
 | when-to-extract | code stays inline without a reason | `blocks/when-to-extract/SKILL.md` | ✅ |
-| worker-brief | what a worker brief holds, how a worker acts, and what a skill does at an owner gate with no user | `blocks/worker-brief` | ✅ |
+| subagent-brief | what a worker brief holds, how a worker acts, and what a skill does at an owner gate with no user | `blocks/subagent-brief` | ✅ |
 | run-workers | how a root session runs seats on its host | `blocks/run-workers` (the three adapters point here) | ✅ |
 | task-file | the task file and the resume | `blocks/task-file` | ✅ |
 | cite-sources | each claim cites its owning source; quote only text read; mark snippets | `blocks/cite-sources` | ✅ |

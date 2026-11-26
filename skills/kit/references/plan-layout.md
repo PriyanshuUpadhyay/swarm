@@ -43,6 +43,6 @@ action appears here with its owner and the work it affects. Apply
 - H2 for sections, H3 for phases, no deeper. No bold text used as a heading.
 - Detail, rejected options, and file inventories come after the steps or are dropped. No design
   essay before the steps.
-- A worker brief keeps its own owner (the kit block `blocks/worker-brief/SKILL.md`, from the kit root
+- A worker brief keeps its own owner (the kit block `blocks/subagent-brief/SKILL.md`, from the kit root
   one folder up from this file) and is not a plan.
 - A table, a diagram, or a local HTML page follows `explain-formats.md` in this folder.
