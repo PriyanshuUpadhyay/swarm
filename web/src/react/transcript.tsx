@@ -89,6 +89,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
         const selected = ranges[match.preview ? match.lineOccurrence ?? 0 : match.occurrence];
         paintRanges("find-matches", textRanges(row, find.query));
         paintRanges("find-current", selected ? [selected] : []);
+
         if (selected) {
           const box = selected.startContainer.parentElement?.closest<HTMLElement>("pre.scroll-window");
           if (box) {
@@ -97,6 +98,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
             if (hit.top < visible.top || hit.bottom > visible.bottom) box.scrollTop += hit.top - visible.top - box.clientHeight / 2;
           }
         }
+
         const rect = selected?.getBoundingClientRect();
         if (rect && scrollRef.current) handle.current?.scrollToIndex(i, { align: "start", offset: rect.top - row.getBoundingClientRect().top - scrollRef.current.clientHeight / 2 });
       });

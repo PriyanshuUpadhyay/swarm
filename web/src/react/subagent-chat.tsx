@@ -28,8 +28,10 @@ function openChild(e: MouseEvent<HTMLButtonElement>, callId: string, title: stri
 
 function ChildGroup({ children, title }: { children: SubagentChild[]; title: string }) {
   const [showAll, setShowAll] = useState(false);
+
   const groups = STATES.map((state) => ({ state, items: children.filter((c) => state === "unknown" ? !STATES.slice(0, 3).some((s) => c.state === s) : c.state === state) }));
   const ordered = groups.flatMap(({ state, items }) => items.map((child) => ({ ...child, state })));
+
   return (
     <>
       <div className="card-head flex-wrap">

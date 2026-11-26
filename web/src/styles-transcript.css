@@ -324,7 +324,7 @@
 }
 .md-code pre.scroll-window,
 pre.out.scroll-window {
-  max-height: 360px;
+  max-height: calc(var(--scroll-window-lines) * 18px);
   overflow: auto;
   line-height: 18px;
 }

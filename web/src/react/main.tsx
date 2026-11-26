@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
@@ -111,7 +111,7 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   // A starting chat shows its steps until the owner moves away (ADR 0149).
   const start = useNewChat(app, () => app.newChat.shown());
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
-  const reconnecting = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
+  const reconnecting = useContext(Offline);
   const lastUpdate = useSyncExternalStore(app.subscribe, () => app.view.reconnecting ? app.view.lastStreamUpdate : null);
   // Home and a workspace that takes new chats show the composer in the page; elsewhere ⌘N opens it over the view.
   const inPage = useSyncExternalStore(app.subscribe, () => composerInPage(app.view));

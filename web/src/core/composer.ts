@@ -64,6 +64,9 @@ export type AgentInput = {
   queue: QueuedMessage[];
 };
 
+/** The name used by the composer and by Stop. */
+export const inputTarget = (agent: AgentInput) => agent.who ?? (agent.provider ? `the ${agent.provider} agent` : "the agent");
+
 export const MISSING_ADAPTER = "This session does not record an adapter, so Swarm cannot reach its panes.";
 
 /** The providers whose chat can branch from a message. */

@@ -2,14 +2,12 @@ import { Fragment, createContext, createElement, useContext, useEffect, useState
 import type { Block, Display, Inline } from "../core/api";
 import { HighlightedCode } from "./code-tokens";
 import { plural, sourceLines } from "./cut-line";
-import { ColoredRow, PatchBody, useSplit, useWrap } from "./patch-body";
-
-const WINDOW_LINES = 20;
+import { ColoredRow, PatchBody, SCROLL_WINDOW_LINES, scrollWindowStyle, useSplit, useWrap } from "./patch-body";
 
 function Head({ label, what, diff = false, count = 0 }: { label: string; what: "code" | "table"; diff?: boolean; count?: number }) {
   return (
     <div className="md-head">
-      <span>{label}{count > WINDOW_LINES ? ` · ${plural(count, "line")}` : ""}</span>
+      <span>{label}{count > SCROLL_WINDOW_LINES ? ` · ${plural(count, "line")}` : ""}</span>
       {diff && (
         <div className="seg" role="group" aria-label="Diff layout">
           <button type="button" data-diff-layout="0">Unified</button>
@@ -83,7 +81,7 @@ function HunkCode({ label, text, diff }: { label: string; text: string; diff: Ex
 
 function Code({ value: { label, text, diff } }: { value: Extract<Block, { type: "code" }>["value"] }) {
   const count = sourceLines(text).length;
-  const windowClass = count > WINDOW_LINES ? "scroll-window" : undefined;
+  const windowClass = count > SCROLL_WINDOW_LINES ? "scroll-window" : undefined;
   if (label === null && !windowClass) return <><pre><code>{text}</code></pre>{"\n"}</>;
   if (label !== null && diff && "lines" in diff) return <HunkCode label={label} text={text} diff={diff} />;
   const content = diff && "prefix" in diff
@@ -92,7 +90,7 @@ function Code({ value: { label, text, diff } }: { value: Extract<Block, { type: 
   return (
     <div className="md-code">
       <Head label={label ?? "Code"} what="code" count={count} />
-      <pre className={windowClass} data-patch={diff || label === "patch" || label === "diff" ? "" : undefined}>{content}</pre>{diff || label === "patch" ? null : "\n"}
+      <pre className={windowClass} style={windowClass ? scrollWindowStyle : undefined} data-patch={windowClass && (diff || label === "patch" || label === "diff") ? "" : undefined}>{content}</pre>{diff || label === "patch" ? null : "\n"}
     </div>
   );
 }
@@ -152,6 +150,7 @@ function blocks(nodes: Block[], tight = false): ReactNode[] {
 export function cutMarkdown(display: Display, limit: number): { display: Display; hidden: number } {
   let lines = 0;
   let hiddenBlockLines = 0;
+
   const takeInlines = (nodes: Inline[]): Inline[] => nodes.flatMap((node): Inline[] => {
     const visible = lines <= limit;
     switch (node.type) {
@@ -167,6 +166,7 @@ export function cutMarkdown(display: Display, limit: number): { display: Display
       default: return visible ? [node] : [];
     }
   });
+
   const takeBlocks = (nodes: Block[]): Block[] => nodes.flatMap((node): Block[] => {
     if (node.type === "blockquote") {
       const value = takeBlocks(node.value);
@@ -176,6 +176,7 @@ export function cutMarkdown(display: Display, limit: number): { display: Display
       const items = node.value.items.map(takeBlocks).filter((item) => item.length > 0);
       return items.length ? [{ ...node, value: { ...node.value, items } }] : [];
     }
+
     const visible = ++lines <= limit;
     if (node.type === "paragraph") {
       const value = takeInlines(node.value);
@@ -191,6 +192,7 @@ export function cutMarkdown(display: Display, limit: number): { display: Display
     }
     return visible ? [node] : [];
   });
+
   const preview = { blocks: takeBlocks(display.blocks) };
   return { display: preview, hidden: Math.max(0, lines - limit) + hiddenBlockLines };
 }

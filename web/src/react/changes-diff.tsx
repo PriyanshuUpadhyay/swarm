@@ -56,6 +56,7 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
     cancelAnimationFrame(paint.current);
     const q = query.trim().toLowerCase();
     const move = (count: number) => searchIndex.current = direction && count ? (searchIndex.current + direction + count) % count : 0;
+
     if (full && !view.showFile && data?.display) {
       const hits: { spot: NonNullable<ReturnType<typeof spotOf>>; first: number; text: string }[] = [];
       let count = 0;
@@ -68,9 +69,11 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
         hits.push({ spot, first: count, text });
         for (; at >= 0; at = text.indexOf(q, at + q.length)) count++;
       }
+
       const i = move(count);
       const hit = hits.reverse().find(({ first }) => first <= i);
       paintRanges("surface-find", []);
+
       if (hit) {
         let offset = -q.length;
         for (let n = hit.first; n <= i; n++) offset = hit.text.indexOf(q, offset + q.length);
@@ -83,6 +86,7 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
       }
       return count ? `${i + 1} of ${count}` : q ? "No matches" : "";
     }
+
     const body = surface.current?.querySelector("diffs-container")?.shadowRoot;
     const ranges = body ? textRanges(body, query) : [];
     const i = move(ranges.length);

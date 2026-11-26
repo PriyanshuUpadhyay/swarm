@@ -21,6 +21,7 @@ export function BackgroundLists({ app, session, children }: { app: App; session:
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
   const [tasks, setTasks] = useState<{ session: string; rows: BackgroundTask[] }>({ session, rows: [] });
   const [shells, setShells] = useState<{ session: string; rows: WorkspaceShell[] }>({ session, rows: [] });
+
   useEffect(() => {
     let live = true;
     setShells({ session, rows: [] });
@@ -31,7 +32,9 @@ export function BackgroundLists({ app, session, children }: { app: App; session:
     const stop = poll(read, POLL_MS, () => document.hidden);
     return () => { live = false; stop(); };
   }, [app, session]);
+
   const rows = backgroundRows(snapshot?.sessions.find((s) => s.id === session), snapshot?.agents[session], tasks.session === session ? tasks.rows : [], shells.session === session ? shells.rows : []);
+
   const addShell = (shell: WorkspaceShell) => setShells((list) => list.session === session && !list.rows.some((row) => row.id === shell.id)
     ? { ...list, rows: [...list.rows, shell] } : list);
   const refreshShells = async () => {
@@ -52,8 +55,10 @@ export function BackgroundLine({ session }: { session: string }) {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
   }, [startedAt]);
+
   if (!line) return null;
   const label = ["In background", line.agents ? plural(line.agents, "agent") : "", line.shells ? plural(line.shells, "shell") : ""].filter(Boolean).join(" · ");
+
   return (
     <div className="flex h-7 items-center gap-2 text-sm text-muted-foreground" data-testid="background-line">
       <Glyph form={!offline && (line.agents || line.shells) ? "working" : "unlit"} size={12} className="shrink-0" aria-hidden />

@@ -64,9 +64,11 @@ const shownMessages = new WeakSet<Row>();
 
 function MessageCut({ row, thought, reveal }: { row: Row; thought?: boolean; reveal: boolean }) {
   const [showAll, setShowAll] = useState(() => shownMessages.has(row));
+
   const body = thought ? null : paintBodyOf(row);
   const open = showAll || reveal;
   const show = () => { shownMessages.add(row); setShowAll(true); };
+
   if (body?.kind === "tree") {
     const cut = open ? null : cutMarkdown(body.display, CUT_AT);
     return <>
@@ -74,6 +76,7 @@ function MessageCut({ row, thought, reveal }: { row: Row; thought?: boolean; rev
       {!!cut?.hidden && <CutLine count={`+${plural(cut.hidden, "line")}`} show={show} />}
     </>;
   }
+
   const lines = open ? [] : sourceLines(row.text);
   const hidden = Math.max(0, lines.length - CUT_AT);
   return <>

@@ -13,6 +13,7 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
   const root = useRef<HTMLDivElement>(null);
   const promptId = agent.prompt?.id;
   const [arrival, setArrival] = useState<{ chat: string; prompt: string; activeDraft: boolean } | null>(null);
+
   useLayoutEffect(() => {
     if (promptId === undefined) {
       setArrival(null);
@@ -28,6 +29,7 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
       (card?.querySelector<HTMLInputElement>('[data-testid="prompt-text"]') ?? card)?.focus();
     }
   }, [app, id, promptId, agent.who]);
+
   const lockDraft = agent.waiting && arrival !== null && arrival.chat === id && arrival.prompt === promptId && !arrival.activeDraft;
   return (
     <div ref={root} className="chat-input shrink-0 px-6 pt-1 pb-4">

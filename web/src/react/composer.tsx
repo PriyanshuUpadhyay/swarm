@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SENT, type App, type Composer } from "../core/app";
 import { hasPendingImage, imagePaths } from "../core/images";
 import { historyStep, type Browse } from "../core/history";
-import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
+import { canBranch, inputTarget, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, menuAt, pick, picksAndSends, skillFirst, skillNames, toSend, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { dragOverFiles, dropImage, pasteImage } from "./composer-image";
@@ -19,7 +19,7 @@ const DOUBLE_ESC_MS = 500;
 export function ComposerBox({ app, composer, lockDraft }: { app: App; composer: Composer; lockDraft: boolean }) {
   const { id: sessionId, agent: chair, state } = composer;
   // "the chair" means nothing to a new owner, so the chat's own agent is named.
-  const target = chair.who ?? (chair.provider ? `the ${chair.provider} agent` : "the agent");
+  const target = inputTarget(chair);
   const [text, setText] = useState(() => app.draft(sessionId));
   const [picks, setPicks] = useState(() => app.draftPicks(sessionId));
   const box = useRef<HTMLTextAreaElement>(null);

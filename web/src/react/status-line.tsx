@@ -1,6 +1,8 @@
 import { useContext, useEffect, useEffectEvent, useState } from "react";
 import { Button } from "../components/ui/button";
 import type { App, Composer } from "../core/app";
+import { inputTarget } from "../core/composer";
+import { waitText } from "../core/settings";
 import { Glyph } from "./glyph";
 import { Offline } from "./status";
 
@@ -11,8 +13,8 @@ type Work = { shownAt: number; label: string; clock: string | null };
 
 function clockSince(startS: number | undefined): string | null {
   if (typeof startS !== "number" || !Number.isSafeInteger(startS) || startS <= 0) return null;
-  const elapsed = Math.floor(Date.now() / 1000) - startS;
-  return elapsed < 0 ? null : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
+  const seconds = Math.floor(Date.now() / 1000) - startS;
+  return seconds < 0 ? null : waitText(seconds * 1000);
 }
 
 export function StatusLine({ app, composer }: { app: App; composer: Composer }) {
@@ -21,12 +23,14 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
   const running = agent.running && !agent.waiting && !agent.unreachable;
   const [work, setWork] = useState<Work | null>(null);
   const shownAt = work?.shownAt ?? null;
+
   const sample = useEffectEvent(() => ({ label: workLabel, clock: clockSince(agent.turnStartTimeS) }));
   const reveal = useEffectEvent(() => setWork({ ...sample(), shownAt: performance.now() }));
   const refresh = useEffectEvent(() => {
     const next = sample();
     setWork((previous) => previous ? { ...next, shownAt: previous.shownAt } : null);
   });
+
   useEffect(() => {
     if (running && shownAt === null) {
       const timer = window.setTimeout(reveal, SHOW_AFTER_MS);
@@ -48,7 +52,7 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
   if (agent.unreachable || (!agent.waiting && !work)) return null;
   const label = agent.waiting ? "Waiting for your answer" : running ? workLabel : work?.label;
   const clock = agent.waiting ? null : work?.clock;
-  const target = agent.who ?? (agent.provider ? `the ${agent.provider} agent` : "the agent");
+  const target = inputTarget(agent);
   return (
     <div data-testid="chat-status-line" className="flex h-7 items-center gap-2 text-sm text-muted-foreground">
       {agent.waiting && !offline ? <span className="mx-0.5 size-2 shrink-0 rounded-full bg-waiting" aria-hidden /> : <Glyph form={offline ? "unlit" : "working"} size={12} className="shrink-0" aria-hidden />}

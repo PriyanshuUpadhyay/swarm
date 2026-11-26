@@ -1,5 +1,5 @@
 // The shared patch box and layout choice for tool cards and Markdown fences.
-import { Suspense, lazy, useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import type { PatchInfo, PatchLineWire } from "../core/api";
 import { store } from "./store";
 
@@ -54,6 +54,8 @@ function PlainLines({ info, split, fileLabels }: PierreProps) {
 }
 
 const BOX_HEIGHT = 360;
+export const SCROLL_WINDOW_LINES = 20;
+export const scrollWindowStyle = { "--scroll-window-lines": SCROLL_WINDOW_LINES } as CSSProperties;
 
 /** The height Pierre's patch box will take, from its row, separator, and header sizes, so the
  *  rows below do not move when Pierre loads. Wrapped lines are taller; the box measures them. */
@@ -78,7 +80,7 @@ export function patchBoxHeight(info: Extract<PatchInfo, { lines: unknown }>, spl
 
 /** The patch text, while Pierre loads or when the server sent no line layout. */
 function PlainPatch({ patch, height, windowed }: { patch: string; height?: number; windowed?: boolean }) {
-  const style = height === undefined ? undefined : { height, overflow: "auto", margin: 0 };
+  const style = height === undefined ? (windowed ? scrollWindowStyle : undefined) : { height, overflow: "auto", margin: 0 };
   return <pre className={`out${windowed ? " scroll-window" : ""}`} style={style}>{patch.split("\n").map((text, i, lines) => <span key={i} data-output-line={i}>{text}{i < lines.length - 1 ? "\n" : ""}</span>)}</pre>;
 }
 

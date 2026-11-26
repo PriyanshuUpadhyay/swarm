@@ -51,10 +51,12 @@ export function PromptCard({
   const showAll = expanded === commandId;
   const text = typed.prompt === prompt.id ? typed.text : "";
   const busy = state.answering?.prompt === prompt.id ? state.answering.choice : null;
+
   // The question of a screen card is at the pane's bottom, so its rows open scrolled to the end.
   useEffect(() => {
     if (rows.current) rows.current.scrollTop = rows.current.scrollHeight;
   }, [prompt.id]);
+
   // App state shows the answer's result, so this handler does not await the promise.
   const pick = (i: number) => void app.answer(sessionId, prompt, i);
   // The CLI's input row is one line, so the text goes as one line.
