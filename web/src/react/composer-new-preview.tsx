@@ -38,7 +38,7 @@ export function PreviewCard({ target, place, worktree, preview }: { target: Targ
   const rows = !worktree ? elsewhere : preview && preview !== "failed" ? read(preview) : waiting;
 
   return (
-    <aside className="grid content-start gap-1.5 rounded-xl border border-border p-3 text-sm" aria-label="What starts" data-testid="new-chat-preview">
+    <aside className="grid content-start gap-1.5 rounded-2xl border border-border p-3 text-sm" aria-label="What starts" data-testid="new-chat-preview">
       <h3 className="text-xs font-medium text-muted-foreground">{worktree ? "A new worktree" : "Where the chat runs"}</h3>
       {rows.map(([k, v]) => (
         <div key={k} className="grid grid-cols-[72px_1fr] gap-2">

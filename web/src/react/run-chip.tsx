@@ -72,7 +72,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
           role={open ? "dialog" : undefined}
           data-testid="run-popover"
           aria-label="Change model, thinking, or account"
-          className="m-0 w-[min(640px,calc(100vw-32px))] rounded-xl border border-border-strong bg-popover p-3 text-sm text-popover-foreground shadow-panel"
+          className="m-0 w-[min(640px,calc(100vw-32px))] rounded-lg border border-border-strong bg-popover p-3 text-sm text-popover-foreground shadow-panel"
           style={{ positionAnchor: anchor, positionArea: "top span-right", marginBottom: 6, positionTryFallbacks: "flip-block" } as CSSProperties}
           onToggle={(e) => e.newState === "closed" && app.life.state.switchModel === sessionId && app.life.close("switchModel")}
         >
