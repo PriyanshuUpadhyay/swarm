@@ -185,6 +185,13 @@
   background: var(--selected);
   color: var(--foreground);
 }
+.trow[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--foreground);
+}
 /* Chats picked with ⌘-click or Shift-click stay marked when the list loses focus. */
 .trow[data-marked],
 [data-testid="sidebar"]:focus-within .trow[aria-selected="true"]:not([aria-current="true"]) {
@@ -211,7 +218,7 @@
   height: 6px;
   flex: none;
   @apply rounded-full;
-  background: var(--status-working);
+  background: var(--foreground);
 }
 
 /* Sidebar header: jean's search field and its Projects / Recent switch. */

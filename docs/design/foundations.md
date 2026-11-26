@@ -53,6 +53,7 @@ The design names a role, and `web/src/styles-base.css` holds the CSS variable. T
 ## Layout
 
 - **Sidebar rows follow "way 4"** (owner). Line 2 ends with the PR chip. Only the selected row adds a third line with the branch and diff stat. Other rows stay two lines high, so the list stays calm.
+- **The open chat has the selected fill and a 3 px bar in the text colour** (owner), so it differs from a chat that is marked with ⌘-click or Shift-click.
 - **"Needs you" is a plain group at the top, with a count badge and an amber dot on each row** (owner). It comes first, because those chats are blocked on the owner.
 - **The child badge "3 · 1 waiting" sits at the right end of the title line** (owner), so a parent shows its children's state at a glance.
 - **A thin 36 px branch bar sits under the 40 px tab strip** (owner), so the open chat's branch and PR stay in view.
