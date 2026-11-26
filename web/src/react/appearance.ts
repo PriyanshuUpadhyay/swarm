@@ -61,13 +61,14 @@ function ownerChoice<T extends string>(key: Key, values: readonly T[], fallback:
   };
 }
 
-export type Theme = "system" | "light" | "dark";
+const THEME = ["system", "light", "dark"] as const;
+export type Theme = (typeof THEME)[number];
 const FONT_SANS = ["swarm", "system", "helvetica", "avenir"] as const;
 const FONT_MONO = ["swarm", "system", "menlo", "monaco"] as const;
 export type FontSans = (typeof FONT_SANS)[number];
 export type FontMono = (typeof FONT_MONO)[number];
 
-const theme = ownerChoice<Theme>("theme", ["system", "light", "dark"], "system");
+const theme = ownerChoice<Theme>("theme", THEME, "system");
 export const fontSans = ownerChoice<FontSans>("fontSans", FONT_SANS, "swarm");
 export const fontMono = ownerChoice<FontMono>("fontMono", FONT_MONO, "swarm");
 const ALL = [theme, fontSans, fontMono];
