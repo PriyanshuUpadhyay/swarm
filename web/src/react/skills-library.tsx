@@ -5,13 +5,14 @@ import type { ReactNode, RefObject } from "react";
 import type { App } from "../core/app";
 import { firstSentence, libraryRows, libraryTag, loadedBy, whereInPlan, type Block, type Kit } from "../core/skills";
 import { Input } from "../components/ui/input";
+import { LetterBox } from "../components/ui/letter-box";
 import { useSkills } from "./skills";
 
-const DOT: Record<string, string> = { rule: "bg-sky-500", step: "bg-emerald-500", pack: "bg-orange-500", parent: "bg-pink-500" };
+const LETTER: Record<string, string> = { rule: "R", step: "S", pack: "P", parent: "F" };
 export const kindName = (k: string) => (k === "parent" ? "family" : k);
 
-export function Dot({ kind }: { kind: string }) {
-  return <span aria-hidden className={`size-2 shrink-0 rounded-full ${DOT[kind] ?? "bg-muted-foreground"}`} />;
+export function KindMark({ kind }: { kind: string }) {
+  return <span aria-hidden data-skill-kind={kind} className="inline-flex shrink-0"><LetterBox letter={LETTER[kind] ?? "?"} /></span>;
 }
 
 type LibraryProps = {
@@ -53,7 +54,7 @@ export function Library({ app, kit, preset, selected, expanded, listRef, onPick,
         <p className="flex gap-3 text-xs text-muted-foreground">
           {(["rule", "step", "pack", "parent"] as const).map((k) => (
             <span key={k} className="flex items-center gap-1">
-              <Dot kind={k} />
+              <KindMark kind={k} />
               {kindName(k)}
             </span>
           ))}
@@ -73,7 +74,7 @@ export function Library({ app, kit, preset, selected, expanded, listRef, onPick,
                 className={`flex w-full items-center gap-2 rounded-md py-1 pr-2 text-left ${part ? "pl-5" : "pl-2"} ${current ? "bg-selected" : "hover:bg-hover"}`}
                 onClick={() => onPick(b.id)}
               >
-                <Dot kind={b.kind} />
+                <KindMark kind={b.kind} />
                 <code className={`shrink-0 text-xs ${tag ? "font-semibold" : ""}`}>{b.id}</code>
                 <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{firstSentence(b.description)}</span>
                 {tag && <span className="shrink-0 font-mono text-xs text-muted-foreground">{tag}</span>}
