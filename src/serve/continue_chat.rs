@@ -146,10 +146,14 @@ pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiEr
             "The current chat has no readable transcript to carry forward",
         )
     })?;
+    read_handoff_log(app, old, &log).await
+}
+
+async fn read_handoff_log(app: &App, old: &str, log: &Log) -> Result<Vec<Row>, ApiError> {
     let end = row_offsets(&log.path, 1, None)
         .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
         .1;
-    let state = read_row_window(app, &format!("{old}:chair"), &log, 0, end).await?;
+    let state = read_row_window(app, &format!("{old}:chair"), log, 0, end).await?;
     Ok(view::rows(
         &state.records.values().cloned().collect::<Vec<_>>(),
         false,
@@ -387,7 +391,12 @@ async fn prepare_carry(
                 .map_err(|_| error(StatusCode::CONFLICT, "Cannot read this chat's history"))?;
             let mut text = Vec::new();
             for id in chain {
-                if let Some(part) = handoff::chat_text(&handoff_rows(app, &id).await?) {
+                let log = match resolve_log(&app.root, &id, "chair") {
+                    Ok(log) => log,
+                    Err(err) if err.0 == StatusCode::NOT_FOUND => continue,
+                    Err(err) => return Err(err),
+                };
+                if let Some(part) = handoff::chat_text(&read_handoff_log(app, &id, &log).await?) {
                     text.push(part);
                 }
             }

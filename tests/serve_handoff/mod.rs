@@ -143,6 +143,31 @@ async fn handoff_successful_handoff() {
     );
     assert!(fixture.app.handoffs.lock().unwrap().is_empty());
 }
+#[tokio::test]
+async fn handoff_file_carries_older_text_when_the_leaf_has_no_log() {
+    let (fixture, mut body) = handoff_fixture();
+    let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let leaf = swarm::store::create_session(
+        &db,
+        "lane",
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        Some(("pi", "leaf")),
+        Some("tmux-swarm"),
+    )
+    .unwrap();
+    swarm::store::continue_session(&db, &leaf, &fixture.session).unwrap();
+    body.old_session = leaf.clone();
+    body.carry = Carry::File;
+
+    handoff_test_run(&fixture, body).await.unwrap();
+    let path = fixture.app.root.join("handoffs").join(format!("{leaf}.md"));
+    assert!(
+        std::fs::read_to_string(path)
+            .unwrap()
+            .contains("Check the worker inbox")
+    );
+}
+
 /// The file carries the whole chat, even when it would not fit in a prompt.
 #[tokio::test]
 async fn handoff_long_chat_goes_in_a_file() {
