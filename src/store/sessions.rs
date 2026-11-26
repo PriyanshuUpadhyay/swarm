@@ -31,13 +31,39 @@ pub fn continue_session(
          WHERE id = ?1 AND continuation_of IS NULL AND archived_at IS NULL
            AND EXISTS (SELECT 1 FROM session AS old
                        WHERE old.id = ?2 AND old.archived_at IS NULL
-                         AND old.cwd = session.cwd AND old.id < session.id)",
+                         AND old.cwd = session.cwd AND old.id < session.id)
+           AND NOT EXISTS (SELECT 1 FROM session AS next
+                           WHERE next.continuation_of = ?2 AND next.archived_at IS NULL)",
         (new_id, old_id),
     )?;
     if changed != 1 {
         return Err("sessions cannot be linked as one chat".into());
     }
     Ok(())
+}
+
+/// Reads the existing predecessor chain, oldest first. Every link moves forward in one folder.
+pub fn continuation_chain(connection: &Connection, leaf: &str) -> rusqlite::Result<Vec<String>> {
+    let mut read =
+        connection.prepare_cached("SELECT cwd, continuation_of FROM session WHERE id = ?1")?;
+    let mut chain = Vec::new();
+    let mut id = leaf.to_owned();
+    let mut cwd = None;
+    loop {
+        let (folder, parent): (String, Option<String>) =
+            read.query_row([&id], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        if cwd.as_ref().is_some_and(|cwd| *cwd != folder)
+            || parent.as_ref().is_some_and(|parent| *parent >= id)
+        {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        cwd = Some(folder);
+        chain.push(id);
+        let Some(parent) = parent else { break };
+        id = parent;
+    }
+    chain.reverse();
+    Ok(chain)
 }
 
 /// Links new session `new_id` as a branch of `old_id` in the same folder, with the chair session

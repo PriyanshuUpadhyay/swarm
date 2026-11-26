@@ -312,7 +312,15 @@ pub fn apply(
         ChoiceOp::Pref { key, value } => {
             let valid = match key.as_str() {
                 "theme" => matches!(value.as_str(), Some("system" | "light" | "dark")),
-                "switchCarry" => matches!(value.as_str(), Some("summary" | "clean")),
+                "switchCarry" => matches!(value.as_str(), Some("file" | "summary" | "clean")),
+                "newChatModel" | "recentModels" => valid_model_choice(&value),
+                "favoriteModels" => value.as_array().is_some_and(|models| {
+                    let mut seen = std::collections::BTreeSet::new();
+                    models.iter().all(|model| {
+                        valid_model_choice(model)
+                            && seen.insert((model["provider"].as_str(), model["model"].as_str()))
+                    })
+                }),
                 "terminalHost" => matches!(value.as_str(), Some("pty" | "tmux")),
                 "fontSans" => matches!(
                     value.as_str(),
@@ -335,7 +343,24 @@ pub fn apply(
                 .map_or((None, key.as_str()), |(section, name)| {
                     (Some(section), name)
                 });
-            prefs_object(&mut owner.prefs, section)?.insert(name.into(), value);
+            let prefs = prefs_object(&mut owner.prefs, section)?;
+            let value = if key == "recentModels" {
+                let mut models = vec![value];
+                if let Some(old) = prefs.get(name).and_then(Value::as_array) {
+                    for model in old.iter().filter(|model| valid_model_choice(model)) {
+                        if !models.contains(model) {
+                            models.push(model.clone());
+                        }
+                        if models.len() == 4 {
+                            break;
+                        }
+                    }
+                }
+                Value::Array(models)
+            } else {
+                value
+            };
+            prefs.insert(name.into(), value);
         }
         ChoiceOp::MuteProject { project, muted } => {
             if !tree.projects.iter().any(|p| p.path == project) {
@@ -354,6 +379,17 @@ pub fn apply(
         op => apply_tab(owner, state, tree, op)?,
     }
     Ok(())
+}
+
+fn valid_model_choice(value: &Value) -> bool {
+    value.as_object().is_some_and(|entry| entry.len() == 2)
+        && value["provider"]
+            .as_str()
+            .and_then(crate::providers::Provider::parse)
+            .is_some()
+        && value["model"]
+            .as_str()
+            .is_some_and(crate::config::valid_name)
 }
 
 /// `prefs`, or its `section` object made when absent. A value of another type is refused, not

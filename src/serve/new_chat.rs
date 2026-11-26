@@ -26,11 +26,36 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     Ok(json!({"ok": true, "start": id}))
 }
 
-/// A new chat that a model switch starts in `body.cwd`; it waits for the chat to start.
+/// Starts a handoff in the same folder. Keep the new id so a failed launch can be discarded.
 pub(super) async fn new_chat_now(app: &App, body: NewChat) -> Result<Value, ApiError> {
-    let (mut start, launch) = checked_start(app, body).await?;
-    let (session, workspace, _) = start.steps(&launch).await?;
-    Ok(json!({"ok": true, "session": session, "workspace": workspace}))
+    let (_, launch) = checked_start(app, body).await?;
+    let cwd = &launch.body.cwd;
+    let session = open_session(app, cwd).await?;
+    if let Err(err) = start_chair(
+        app,
+        &launch.body,
+        &launch.role,
+        launch.account.as_deref(),
+        cwd,
+        &session,
+        false,
+    )
+    .await
+    {
+        discard_handoff(app, &chat_call(cwd, Some(&session)), &session).await;
+        return Err(err);
+    }
+    Ok(json!({"ok": true, "session": session, "workspace": cwd}))
+}
+
+pub(super) async fn discard_handoff(app: &App, next: &CliCall, session: &str) {
+    let _ = run_cli(app, next.args(&["close", "--now", "orchestrator"]), None).await;
+    if let Err(err) = run_cli(app, next.args(&["session", "archive", session]), None).await {
+        eprintln!(
+            "swarm: failed to archive handoff session {session}: {}",
+            shells::api_text(&err)
+        );
+    }
 }
 
 /// Checks a new chat request and the folder it names, before any change.

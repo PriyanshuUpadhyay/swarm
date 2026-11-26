@@ -108,7 +108,8 @@ async fn handoff_active_source() {
 }
 #[tokio::test]
 async fn handoff_successful_handoff() {
-    let (fixture, body) = handoff_fixture();
+    let (fixture, mut body) = handoff_fixture();
+    body.carry = serde_json::from_value(json!("file")).unwrap();
     let result = handoff_test_run(&fixture, body).await.unwrap();
     assert_eq!(
         result["session"].as_str().unwrap(),
@@ -129,15 +130,25 @@ async fn handoff_successful_handoff() {
     assert!(calls[calls.len() - 2].ends_with("type orchestrator"));
     assert!(calls[calls.len() - 1].contains("session continue"));
     let text = std::fs::read_to_string(fixture.dir.join("home/handoff-text")).unwrap();
-    assert!(text.contains("These are the messages of the prior chat"));
-    assert!(text.contains("Check the worker inbox"));
+    let path = fixture
+        .app
+        .root
+        .join("handoffs")
+        .join(format!("{}.md", fixture.session));
+    assert!(text.contains(&path.to_string_lossy().to_string()));
+    assert!(
+        std::fs::read_to_string(path)
+            .unwrap()
+            .contains("Check the worker inbox")
+    );
     assert!(fixture.app.handoffs.lock().unwrap().is_empty());
 }
-/// A chat too long to paste goes over whole, in a file the new agent reads.
+/// The file carries the whole chat, even when it would not fit in a prompt.
 #[tokio::test]
 async fn handoff_long_chat_goes_in_a_file() {
     use std::os::unix::fs::PermissionsExt;
-    let (fixture, body) = handoff_fixture();
+    let (fixture, mut body) = handoff_fixture();
+    body.carry = serde_json::from_value(json!("file")).unwrap();
     let long = "first decision ".repeat(1_000);
     let entry = json!({"type":"assistant","uuid":"long","message":{"role":"assistant","content":[{"type":"text","text":long}]}});
     std::fs::OpenOptions::new()
@@ -152,8 +163,15 @@ async fn handoff_long_chat_goes_in_a_file() {
         .root
         .join(format!("handoffs/{}.md", fixture.session));
     let text = std::fs::read_to_string(fixture.dir.join("home/handoff-text")).unwrap();
-    assert!(text.contains(&format!("{}. Read all of it", file.display())), "{text}");
-    assert!(std::fs::read_to_string(&file).unwrap().contains(long.trim()));
+    assert!(
+        text.contains(&format!("{}. Read all of it", file.display())),
+        "{text}"
+    );
+    assert!(
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .contains(long.trim())
+    );
     assert_eq!(
         std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
         0o600
@@ -161,7 +179,8 @@ async fn handoff_long_chat_goes_in_a_file() {
 }
 #[tokio::test]
 async fn handoff_delivery_failure() {
-    let (fixture, body) = handoff_fixture();
+    let (fixture, mut body) = handoff_fixture();
+    body.carry = serde_json::from_value(json!("file")).unwrap();
     std::fs::write(fixture.dir.join("home/fail-delivery"), "").unwrap();
     assert_eq!(
         handoff_test_run(&fixture, body).await.unwrap_err().1.0["error"],
@@ -195,46 +214,55 @@ async fn handoff_live_summary() {
     assert!(text.contains("Keep the user's files"));
 }
 #[tokio::test]
-async fn handoff_summary_timeout_falls_back_and_ready_timeout_leaves_separate() {
-    for ready in [true, false] {
-        let (fixture, body) = handoff_fixture();
-        let home = fixture.dir.join("home");
-        std::fs::write(home.join("source-alive"), "").unwrap();
-        std::fs::write(home.join("no-summary"), "").unwrap();
-        if !ready {
-            std::fs::write(home.join("ready-list.json"), "{\"sessions\":[]}").unwrap();
-        }
-        register_continue(&fixture.app, &body).unwrap();
-        let result = execute_continue_timed(
-            &fixture.app,
-            body,
-            Duration::from_millis(50),
-            // A ready chat must answer within the limit even on a loaded Mac.
-            Duration::from_millis(if ready { 30_000 } else { 70 }),
-            Duration::from_millis(10),
-        )
-        .await;
-        if ready {
-            result.unwrap();
-            assert!(
-                std::fs::read_to_string(home.join("handoff-text"))
-                    .unwrap()
-                    .contains("These are the messages of the prior chat")
-            );
-        } else {
-            assert_eq!(result.unwrap_err().0, StatusCode::GATEWAY_TIMEOUT);
-            assert!(
-                !std::fs::read_to_string(home.join("handoff-actions"))
-                    .unwrap()
-                    .contains("session continue")
-            );
-        }
-    }
+async fn handoff_summary_timeout_does_not_switch_carry_modes() {
+    let (fixture, body) = handoff_fixture();
+    let home = fixture.dir.join("home");
+    std::fs::write(home.join("source-alive"), "").unwrap();
+    std::fs::write(home.join("no-summary"), "").unwrap();
+    register_continue(&fixture.app, &body).unwrap();
+    let result = execute_continue_timed(
+        &fixture.app,
+        body,
+        Duration::from_millis(50),
+        Duration::from_millis(100),
+        Duration::from_millis(10),
+    )
+    .await;
+    assert_eq!(result.unwrap_err().0, StatusCode::GATEWAY_TIMEOUT);
+    assert!(
+        !std::fs::read_to_string(home.join("handoff-actions"))
+            .unwrap()
+            .contains("session new")
+    );
+}
+
+#[tokio::test]
+async fn handoff_file_readiness_failure_does_not_link_the_new_session() {
+    let (fixture, mut body) = handoff_fixture();
+    body.carry = serde_json::from_value(json!("file")).unwrap();
+    let home = fixture.dir.join("home");
+    std::fs::write(home.join("ready-list.json"), "{\"sessions\":[]}").unwrap();
+    register_continue(&fixture.app, &body).unwrap();
+    let result = execute_continue_timed(
+        &fixture.app,
+        body,
+        Duration::from_millis(50),
+        Duration::from_millis(100),
+        Duration::from_millis(10),
+    )
+    .await;
+    assert_eq!(result.unwrap_err().0, StatusCode::GATEWAY_TIMEOUT);
+    let calls = std::fs::read_to_string(home.join("handoff-actions")).unwrap();
+    assert!(!calls.contains("session continue"));
+    assert!(calls.contains("session archive"));
 }
 #[tokio::test]
 async fn handoff_cancel_during_summary_and_refused_after_starting() {
     for late in [false, true] {
-        let (fixture, body) = handoff_fixture();
+        let (fixture, mut body) = handoff_fixture();
+        if late {
+            body.carry = Carry::File;
+        }
         let home = fixture.dir.join("home");
         std::fs::write(
             home.join(if late { "block-launch" } else { "source-alive" }),

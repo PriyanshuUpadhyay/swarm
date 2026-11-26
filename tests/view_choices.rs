@@ -3,7 +3,7 @@ use serde_json::json;
 use sidebar_fixture::*;
 use std::{fs, fs::OpenOptions, time::Duration};
 use swarm::view::{
-    choices::{self, ChoiceWrite, OwnerChoices},
+    choices::{self, ChoiceOp, ChoiceWrite, OwnerChoices},
     choices_store::{self, StoreError},
 };
 #[test]
@@ -193,6 +193,42 @@ fn operation_json_validation_and_plain_folder_pruning() {
     o.tabs.insert("/repo/wt/main".into(), Default::default());
     o.remove_project("/repo", &["/repo/wt/main".into()]);
     assert!(o.pinned.is_empty() && o.plain_folders.is_empty() && o.tabs.is_empty());
+}
+
+#[test]
+fn picker_choices_keep_the_four_latest_distinct_models() {
+    let tree = tree();
+    let mut owner = owner();
+    let mut state = Default::default();
+    let codex = json!({"provider":"codex","model":"gpt-6-sol"});
+    let claude = json!({"provider":"claude","model":"opus"});
+    let agy = json!({"provider":"agy","model":"gemini"});
+    let pi = json!({"provider":"pi","model":"openai-codex/gpt-6-sol"});
+    let sonnet = json!({"provider":"claude","model":"sonnet"});
+    for (key, value) in [
+        ("switchCarry", json!("file")),
+        ("favoriteModels", json!([claude, codex])),
+        ("newChatModel", pi.clone()),
+        ("recentModels", codex.clone()),
+        ("recentModels", claude.clone()),
+        ("recentModels", agy.clone()),
+        ("recentModels", pi.clone()),
+        ("recentModels", sonnet.clone()),
+        ("recentModels", claude.clone()),
+    ] {
+        let op = ChoiceOp::Pref {
+            key: key.into(),
+            value,
+        };
+        choices::apply(&mut owner, &mut state, &tree, op, 100).unwrap();
+    }
+    assert_eq!(owner.prefs["switchCarry"], "file");
+    assert_eq!(owner.prefs["favoriteModels"], json!([claude, codex]));
+    assert_eq!(owner.prefs["newChatModel"], pi);
+    assert_eq!(
+        owner.prefs["recentModels"],
+        json!([claude, sonnet, pi, agy])
+    );
 }
 
 #[test]

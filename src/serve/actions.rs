@@ -290,6 +290,23 @@ pub(super) fn action_session(app: &Server, session: &str) -> Result<CliCall, Api
     })
 }
 
+pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
+    let call = action_session(app, id)?;
+    let current = read_connection(&app.root).and_then(|db| db.query_row(
+        "SELECT archived_at IS NULL AND NOT EXISTS (
+            SELECT 1 FROM session AS next WHERE next.continuation_of = ?1 AND next.archived_at IS NULL
+        ) FROM session WHERE id = ?1",
+        [id], |row| row.get::<_, bool>(0),
+    )).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    if !current {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "The chat's current session has changed",
+        ));
+    }
+    Ok(call)
+}
+
 #[cfg(test)]
 #[path = "actions/tests.rs"]
 mod tests;

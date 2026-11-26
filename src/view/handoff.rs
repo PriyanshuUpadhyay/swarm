@@ -16,8 +16,7 @@ pub fn agy_ready(agents: &Value) -> bool {
     })
 }
 
-/// None while the summary turn runs. Some(None) when it ended with no summary, such as a usage
-/// limit error, so the caller stops waiting and lets the new agent summarize.
+/// None while the summary turn runs. Some(None) when it ended without a summary.
 pub fn summary_turn(rows: &[Row], baseline: usize) -> Option<Option<String>> {
     let added = rows.get(baseline..)?;
     let question = added
@@ -37,43 +36,40 @@ pub fn summary_turn(rows: &[Row], baseline: usize) -> Option<Option<String>> {
 
 /// Each user and agent message of the chat, oldest first, or None when it has none.
 pub fn chat_text(rows: &[Row]) -> Option<String> {
-    let text = rows
-        .iter()
-        .filter(|r| matches!(r.kind, RowKind::User | RowKind::Assistant))
-        .map(|r| {
-            let speaker = if r.kind == RowKind::User {
-                "User"
-            } else {
-                "Agent"
-            };
-            format!("{speaker}: {}", r.text.trim())
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    (!text.is_empty()).then_some(text)
+    let mut text = Vec::new();
+    let mut synthetic = false;
+    for row in rows {
+        let body = row.text.trim();
+        match row.kind {
+            RowKind::User => {
+                synthetic = body == REQUEST
+                    || body.starts_with(SUMMARY_HEADING)
+                    || body.starts_with(FILE_HEADING)
+                    || body.starts_with("The prior chat is too long to paste, so its user and agent messages are in ")
+                    || body.starts_with("These are the messages of the prior chat:\n\n");
+                if !synthetic {
+                    text.push(format!("User: {body}"));
+                }
+            }
+            RowKind::Assistant if !synthetic => text.push(format!("Agent: {body}")),
+            _ => {}
+        }
+    }
+    (!text.is_empty()).then(|| text.join("\n\n"))
 }
 
-/// The longest chat text the first message carries itself; a longer chat goes in a file.
-pub const INLINE_LIMIT: usize = 12_000;
+const SUMMARY_HEADING: &str = "The prior agent prepared this compact handoff summary:\n\n";
+const FILE_HEADING: &str = "The prior chat's user and agent messages are in ";
 
-pub fn first_message(context: &str, summary: bool) -> String {
-    let (heading, instruction) = if summary {
-        (
-            "The prior agent prepared this compact handoff summary:",
-            "Use this context for the next request. Confirm that you are ready, then wait.",
-        )
-    } else {
-        (
-            "These are the messages of the prior chat:",
-            "Make a compact working summary from this context. Confirm that you are ready, then wait.",
-        )
-    };
-    format!("{heading}\n\n{context}\n\n{instruction}")
+pub fn summary_message(context: &str) -> String {
+    format!(
+        "{SUMMARY_HEADING}{context}\n\nUse this context for the next request. Confirm that you are ready, then wait."
+    )
 }
 
 /// The first message when the whole prior chat is in the file at `path`.
 pub fn file_message(path: &str) -> String {
     format!(
-        "The prior chat is too long to paste, so its user and agent messages are in {path}. Read all of it, then make a compact working summary. Confirm that you are ready, then wait."
+        "{FILE_HEADING}{path}. Read all of it, then make a compact working summary. Confirm that you are ready, then wait."
     )
 }
