@@ -471,10 +471,10 @@
 .glyph.working {
   color: var(--status-working);
 }
-.glyph.blocked {
+.glyph.waiting {
   color: var(--status-waiting);
 }
-.glyph.error {
+.glyph.failed {
   color: var(--status-failed);
 }
 .glyph.done {
@@ -484,7 +484,7 @@
   color: var(--status-ended);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .glyph.working {
+  .glyph.working:not(.swarm-glyph) {
     animation: spin 1.1s linear infinite;
   }
 }

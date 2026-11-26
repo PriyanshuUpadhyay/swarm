@@ -231,7 +231,7 @@ const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { 
       {tab.pending === "starting" || tab.pending === "closing" ? (
         <LoaderCircleIcon className="glyph working" aria-label={cap(tab.pending)} />
       ) : tab.pending === "failed" ? (
-        <TriangleAlertIcon className="glyph error" aria-label="Failed" />
+        <TriangleAlertIcon className="glyph failed" aria-label="Failed" />
       ) : null}
       {tab.pending !== null || !tab.fields.length ? (
         <span className="label">{tab.title}</span>
