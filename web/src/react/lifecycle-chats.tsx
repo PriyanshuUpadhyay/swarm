@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import type { App } from "../core/app";
 import type { ClosedChat, ImportableChat } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
-import { FIELD, message, useLife, Frame, ErrorLine } from "./lifecycle-shared";
+import { Input } from "../components/ui/input";
+import { message, useLife, Frame, ErrorLine } from "./lifecycle-shared";
 
 // ---- Archived chats ----
 
@@ -51,7 +52,7 @@ function ClosedBody({ app }: { app: App }) {
   };
   return (
     <>
-      <input data-autofocus className={FIELD} type="search" aria-label="Filter chats" placeholder="Filter chats…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => {
+      <Input data-autofocus className="w-full" type="search" aria-label="Filter chats" placeholder="Filter chats…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => {
         if (e.key === "ArrowDown") { e.preventDefault(); e.currentTarget.nextElementSibling?.querySelector<HTMLButtonElement>("button")?.focus(); }
       }} />
       <div role="list" className="grid max-h-[320px] overflow-y-auto" onKeyDown={(e) => {
@@ -135,7 +136,7 @@ function ImportBody({ app }: { app: App }) {
   };
   return (
     <>
-      <input data-autofocus className={FIELD} type="search" aria-label="Filter chats" placeholder="Filter chats…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => {
+      <Input data-autofocus className="w-full" type="search" aria-label="Filter chats" placeholder="Filter chats…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => {
         if (e.key === "ArrowDown") { e.preventDefault(); e.currentTarget.nextElementSibling?.querySelector<HTMLButtonElement>("button")?.focus(); }
       }} />
       <div role="list" className="grid max-h-[320px] overflow-y-auto" onKeyDown={(e) => {

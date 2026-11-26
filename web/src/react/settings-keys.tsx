@@ -5,7 +5,8 @@ import { useState } from "react";
 import type { App } from "../core/app";
 import type { ApiKey } from "../core/settings";
 import { Button } from "../components/ui/button";
-import { FIELD, useSettings } from "./settings-shared";
+import { Input } from "../components/ui/input";
+import { useSettings } from "./settings-shared";
 
 function KeysPage({ app }: { app: App }) {
   const keys = useSettings(app, "keys");
@@ -71,12 +72,12 @@ function KeyRow({ app, apiKey: key }: { app: App; apiKey: ApiKey }) {
           if (value.trim()) void save();
         }}
       >
-        <input
+        <Input
           id={id}
           type="password"
           autoComplete="off"
           spellCheck={false}
-          className={`${FIELD} flex-1 font-mono text-xs`}
+          className="flex-1 font-mono text-xs"
           placeholder={key.saved ? "Paste a new key to replace it" : "Paste the key"}
           value={value}
           disabled={busy}

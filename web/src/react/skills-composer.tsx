@@ -5,7 +5,8 @@ import type { App } from "../core/app";
 import { blankDraft, composable, copyable, draftText, presetDraft, type Draft, type Kit } from "../core/skills";
 import { Button } from "../components/ui/button";
 import { copyText } from "./copy";
-import { FIELD, Segmented } from "./settings-shared";
+import { Input, inputClass } from "../components/ui/input";
+import { Segmented } from "./settings-shared";
 import { SkillGraph } from "./skill-graph";
 import { useSkills } from "./skills";
 
@@ -32,7 +33,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           <label className="grid gap-1">
             <span className="text-xs text-muted-foreground">Start from</span>
             <select
-              className={`${FIELD} base-select`}
+              className={`${inputClass} base-select`}
               data-testid="draft-from"
               value={draft.from ?? ""}
               onChange={(e) => {
@@ -72,27 +73,27 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           <div className="grid grid-cols-[12rem_minmax(0,1fr)] gap-3">
             <label className="grid gap-1">
               <span className="text-xs text-muted-foreground">Name</span>
-              <input className={`${FIELD} font-mono`} name="skill-name" autoComplete="off" spellCheck={false} data-testid="draft-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
+              <Input className="font-mono" name="skill-name" autoComplete="off" spellCheck={false} data-testid="draft-name" value={draft.name} onChange={(e) => set({ name: e.target.value })} />
             </label>
             <label className="grid gap-1">
               <span className="text-xs text-muted-foreground">Use when</span>
-              <input className={FIELD} name="skill-description" autoComplete="off" data-testid="draft-description" value={draft.description} onChange={(e) => set({ description: e.target.value })} />
+              <Input name="skill-description" autoComplete="off" data-testid="draft-description" value={draft.description} onChange={(e) => set({ description: e.target.value })} />
             </label>
           </div>
         )}
         <label className="grid gap-1">
           <span className="text-xs text-muted-foreground">Offers (blocks the planner may add; off by default)</span>
-          <input className={`${FIELD} font-mono`} name="skill-offers" autoComplete="off" spellCheck={false} placeholder="html-diagram, headless-shot…" data-testid="draft-offers" value={draft.offers} onChange={(e) => set({ offers: e.target.value })} />
+          <Input className="font-mono" name="skill-offers" autoComplete="off" spellCheck={false} placeholder="html-diagram, headless-shot…" data-testid="draft-offers" value={draft.offers} onChange={(e) => set({ offers: e.target.value })} />
         </label>
         <div className="grid gap-2">
           {draft.rows.map((row, i) => (
-            <fieldset key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 rounded-lg border border-border p-2.5" data-testid="draft-row">
+            <fieldset key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 rounded-xl border border-border p-2.5" data-testid="draft-row">
               <legend className="sr-only">Step {i + 1}</legend>
               {row.map((cell, j) => (
                 <label key={j} className={`grid gap-1 ${j >= 2 ? "col-span-2" : ""}`}>
                   <span className="text-xs text-muted-foreground">{COLUMNS[j]}</span>
-                  <input
-                    className={`${FIELD} ${j === 0 || j === 3 ? "font-mono" : ""}`}
+                  <Input
+                    className={j === 0 || j === 3 ? "font-mono" : undefined}
                     autoComplete="off"
                     spellCheck={j === 2 || j === 4}
                     data-col={COLUMNS[j]}
@@ -141,6 +142,7 @@ export function Composer({ app, kit }: { app: App; kit: Kit }) {
           </p>
           <Button
             size="sm"
+            variant="outline"
             data-testid="draft-copy"
             disabled={!copyable({ draft, check })}
             // copyText shows its own toast on success and on failure.

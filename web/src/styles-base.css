@@ -1,8 +1,8 @@
 /* The mirror paints only backgrounds; the textarea keeps native text, caret, and editing. */
 .composer-text {
   font: inherit;
-  font-size: 1rem;
-  line-height: 1.5;
+  font-size: var(--text-md);
+  line-height: var(--text-md--line-height);
   padding: 10px 12px 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -28,97 +28,139 @@
 /* Design tokens. Dark is the default; the system light scheme and `data-theme` on <html> override it.
    Status colours are their own tokens and never the accent, so a theme accent cannot hide a state. */
 
-/* Values follow jean's App.css (Apache-2.0, see web/NOTICE): coolgray surfaces and a yellow brand
-   accent in dark, monochrome in light. */
+/* Colour values come from DESIGN.md at the repo root, which owns them; design-tokens.test.ts checks
+   that the two agree. The design role "surface" is --background and the role "panel" is --surface. */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #101010;
-  --sidebar: #101010;
-  --surface: #181818;
-  --popover: #181818;
-  --code: #181818;
-  --foreground: #fafafa;
-  --muted-foreground: #a1a1a1;
-  --faint-foreground: #6b6b6b;
-  --border: #262626;
-  --border-strong: #323232;
-  --hover: rgb(255 255 255 / 0.05);
-  --selected: #242424;
-  --ring: #fcd452;
-  --primary: #fafafa;
-  --primary-foreground: #101010;
+  --background: #131211;
+  --sidebar: #131211;
+  --surface: #1a1917;
+  --popover: #22201d;
+  --code: #1a1917;
+  --foreground: #f3f1ec;
+  --muted-foreground: #a39f97;
+  --disabled-foreground: #6f6b63;
+  --border: #2d2a26;
+  --hover: #201e1b;
+  --selected: #24221f;
+  --ring: #f3f1ec;
   --brand: #fcd452;
-  --brand-foreground: #101010;
+  --brand-foreground: #1d1b18;
+  --brand-hover: #fddc6e;
+  --brand-pressed: #e8c03e;
+  --brand-disabled: #2d2a26;
+  --quiet-hover: #24221f;
+  --quiet-pressed: #2d2a26;
+  --glyph-lit: #fcd452;
+  --glyph-unlit: #45413a;
+  --pr-quiet: #8d887f;
+  --pr-draft-border: #716b61;
+  --menu-border: #3a3731;
+  --menu-hover: #2d2a26;
+  --menu-selected: #45413a;
+  --tooltip: #2c2a26;
   --overlay: rgb(0 0 0 / 0.5);
-  --shadow: 0 16px 48px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-1: 0 2px 8px rgba(0,0,0,0.40);
+  --shadow-2: 0 8px 24px rgba(0,0,0,0.50);
 
   --status-working: #60a5fa;
   --status-waiting: #f2a33a;
   --status-failed: #f26d6d;
   --status-done: #22c55e;
-  --status-ended: #6f6f6b;
+  --status-ended: #898984;
 }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
     color-scheme: light;
-    --background: #ffffff;
-    --sidebar: #ffffff;
-    --surface: #f5f5f5;
+    --background: #faf8f4;
+    --sidebar: #faf8f4;
+    --surface: #f2efe9;
     --popover: #ffffff;
-    --code: #f7f7f7;
-    --foreground: #0a0a0a;
-    --muted-foreground: #737373;
-    --faint-foreground: #a3a3a3;
-    --border: #ececec;
-    --border-strong: #e0e0e0;
-    --hover: rgb(0 0 0 / 0.035);
-    --selected: #f2f2f2;
-    --ring: #a3a3a3;
-    --primary: #171717;
-    --primary-foreground: #fafafa;
-    --brand: #171717;
-    --brand-foreground: #fafafa;
-    --overlay: rgb(0 0 0 / 0.2);
-    --shadow: 0 16px 48px rgb(0 0 0 / 0.14), 0 0 0 1px rgb(0 0 0 / 0.07);
+    --code: #f2efe9;
+    --foreground: #1d1b18;
+    --muted-foreground: #6b665e;
+    --disabled-foreground: #898379;
+    --border: #e0dbd0;
+    --hover: #ede9e1;
+    --selected: #e9e5dc;
+    --ring: #1d1b18;
+    --brand: #fcd452;
+    --brand-foreground: #1d1b18;
+    --brand-hover: #fddc6e;
+    --brand-pressed: #e8c03e;
+    --brand-disabled: #e0dbd0;
+    --quiet-hover: #e9e5dc;
+    --quiet-pressed: #e0dbd0;
+    --glyph-lit: #a37a00;
+    --glyph-unlit: #d6cfc2;
+    --pr-quiet: #6b665d;
+    --pr-draft-border: #8b8272;
+    --menu-border: #d3cec3;
+    --menu-hover: #e9e5dc;
+    --menu-selected: #d3cec3;
+    --tooltip: #ffffff;
+    --overlay: rgb(29 27 24 / 0.25);
+    --shadow-1: 0 2px 8px rgba(29,27,24,0.10);
+    --shadow-2: 0 8px 24px rgba(29,27,24,0.14);
 
-    --status-working: #1d4ed8;
-    --status-waiting: #c2410c;
-    --status-failed: #d92626;
-    --status-done: #15803d;
-    --status-ended: #8a8a85;
+    --status-working: #2563c9;
+    --status-waiting: #955800;
+    --status-failed: #b73c35;
+    --status-done: #16763d;
+    --status-ended: #6b665e;
   }
 }
 
 /* Same values as the light block above; CSS cannot share one block between a media query and an attribute. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --background: #ffffff;
-  --sidebar: #ffffff;
-  --surface: #f5f5f5;
+  --background: #faf8f4;
+  --sidebar: #faf8f4;
+  --surface: #f2efe9;
   --popover: #ffffff;
-  --code: #f7f7f7;
-  --foreground: #0a0a0a;
-  --muted-foreground: #737373;
-  --faint-foreground: #a3a3a3;
-  --border: #ececec;
-  --border-strong: #e0e0e0;
-  --hover: rgb(0 0 0 / 0.035);
-  --selected: #f2f2f2;
-  --ring: #a3a3a3;
-  --primary: #171717;
-  --primary-foreground: #fafafa;
-  --brand: #171717;
-  --brand-foreground: #fafafa;
-  --overlay: rgb(0 0 0 / 0.2);
-  --shadow: 0 16px 48px rgb(0 0 0 / 0.14), 0 0 0 1px rgb(0 0 0 / 0.07);
+  --code: #f2efe9;
+  --foreground: #1d1b18;
+  --muted-foreground: #6b665e;
+  --disabled-foreground: #898379;
+  --border: #e0dbd0;
+  --hover: #ede9e1;
+  --selected: #e9e5dc;
+  --ring: #1d1b18;
+  --brand: #fcd452;
+  --brand-foreground: #1d1b18;
+  --brand-hover: #fddc6e;
+  --brand-pressed: #e8c03e;
+  --brand-disabled: #e0dbd0;
+  --quiet-hover: #e9e5dc;
+  --quiet-pressed: #e0dbd0;
+  --glyph-lit: #a37a00;
+  --glyph-unlit: #d6cfc2;
+  --pr-quiet: #6b665d;
+  --pr-draft-border: #8b8272;
+  --menu-border: #d3cec3;
+  --menu-hover: #e9e5dc;
+  --menu-selected: #d3cec3;
+  --tooltip: #ffffff;
+  --overlay: rgb(29 27 24 / 0.25);
+  --shadow-1: 0 2px 8px rgba(29,27,24,0.10);
+  --shadow-2: 0 8px 24px rgba(29,27,24,0.14);
 
-  --status-working: #1d4ed8;
-  --status-waiting: #c2410c;
-  --status-failed: #d92626;
-  --status-done: #15803d;
-  --status-ended: #8a8a85;
+  --status-working: #2563c9;
+  --status-waiting: #955800;
+  --status-failed: #b73c35;
+  --status-done: #16763d;
+  --status-ended: #6b665e;
+}
+
+/* Motion tokens do not change with the theme. */
+:root {
+  --motion-fade-quick: 50ms;
+  --motion-state-change: 100ms;
+  --motion-surface-exit: 150ms;
+  --motion-surface-enter: 200ms;
+  --glyph-loop: 1.8s;
 }
 
 /* The owner's UI and code fonts (prefs.fontSans, prefs.fontMono). `@theme inline` copies a value into
@@ -145,23 +187,26 @@
   --font-mono: var(--code-font);
 
   /* Compact type scale: body is 13px, as in the Swift app. */
-  --text-2xs: 10px;
-  --text-2xs--line-height: 14px;
+  --text-display: 44px;
+  --text-display--line-height: 52px;
+  --text-md: 14px;
+  --text-md--line-height: 22px;
   --text-xs: 11px;
   --text-xs--line-height: 16px;
   --text-sm: 12px;
   --text-sm--line-height: 18px;
   --text-base: 13px;
-  --text-base--line-height: 19px;
+  --text-base--line-height: 20px;
   --text-lg: 15px;
-  --text-lg--line-height: 22px;
+  --text-lg--line-height: 20px;
 
-  /* 4px spacing steps; radius matches DesignTokens.Radius (control, card, panel). */
+  /* The spacing and radius scales follow DESIGN.md. */
   --spacing: 4px;
   --radius-sm: 4px;
   --radius-md: 6px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
 
   --color-background: var(--background);
   --color-sidebar: var(--sidebar);
@@ -171,26 +216,41 @@
   --color-code: var(--code);
   --color-foreground: var(--foreground);
   --color-muted-foreground: var(--muted-foreground);
-  --color-faint-foreground: var(--faint-foreground);
+  --color-disabled-foreground: var(--disabled-foreground);
   --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
-  --color-input: var(--border-strong);
   --color-hover: var(--hover);
   --color-selected: var(--selected);
   --color-accent: var(--selected);
   --color-accent-foreground: var(--foreground);
   --color-ring: var(--ring);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-pressed: var(--brand-pressed);
+  --color-brand-disabled: var(--brand-disabled);
+  --color-quiet-hover: var(--quiet-hover);
+  --color-quiet-pressed: var(--quiet-pressed);
+  --color-menu-border: var(--menu-border);
+  --color-menu-hover: var(--menu-hover);
+  --color-menu-selected: var(--menu-selected);
+  --color-tooltip: var(--tooltip);
   --color-overlay: var(--overlay);
   --color-working: var(--status-working);
   --color-waiting: var(--status-waiting);
   --color-failed: var(--status-failed);
   --color-done: var(--status-done);
   --color-ended: var(--status-ended);
-  --shadow-panel: var(--shadow);
+
+  /* Motion: the Material 3 short durations and one ease-out. `--glyph-loop` is the glyph wave. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* The shadows change with the theme, so the utilities read the variable and `@theme` holds no copy. */
+@utility shadow-1 {
+  box-shadow: var(--shadow-1);
+}
+@utility shadow-2 {
+  box-shadow: var(--shadow-2);
 }
 
 @layer base {
@@ -213,6 +273,6 @@
   /* Thin scrollbars that keep their width, so content does not shift. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--border-strong) transparent;
+    scrollbar-color: var(--border) transparent;
   }
 }

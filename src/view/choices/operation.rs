@@ -314,8 +314,14 @@ pub fn apply(
                 "theme" => matches!(value.as_str(), Some("system" | "light" | "dark")),
                 "switchCarry" => matches!(value.as_str(), Some("summary" | "clean")),
                 "terminalHost" => matches!(value.as_str(), Some("pty" | "tmux")),
-                "fontSans" => matches!(value.as_str(), Some("system" | "helvetica" | "avenir")),
-                "fontMono" => matches!(value.as_str(), Some("system" | "menlo" | "monaco")),
+                "fontSans" => matches!(
+                    value.as_str(),
+                    Some("swarm" | "system" | "helvetica" | "avenir")
+                ),
+                "fontMono" => matches!(
+                    value.as_str(),
+                    Some("swarm" | "system" | "menlo" | "monaco")
+                ),
                 "chatDetail" => matches!(value.as_str(), Some("compact" | "full")),
                 "usageHUDAsked" | "notices.post" | "notices.sound" | "notices.done"
                 | "notices.badge" => value.is_boolean(),

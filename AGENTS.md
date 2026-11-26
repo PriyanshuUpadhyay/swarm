@@ -18,3 +18,5 @@ To build and test a worktree, use `scripts/dev.sh`. Do not write the build and t
 - Before you land, run `scripts/dev.sh check`, which runs all the CI checks. Add `--e2e` when the change touches the web UI or the server.
 
 A new chat on a hub's main worktree runs in its own new worktree, and its first prompt names the branch (ADR 0146). Edit and commit there, then run `swarm task land` from that folder; it opens a PR, and `--merge` merges directly (ADR 0150). Land never removes the worktree: after it, offer the cleanup to the owner, and run `swarm task drop` only after approval (ADR 0151). The guard blocks edits to main.
+
+Before you change the look of the web app, read `DESIGN.md`; it owns colours, type, spacing and components (ADR 0164).

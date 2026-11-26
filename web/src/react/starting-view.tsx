@@ -67,7 +67,7 @@ function NextMessage({ app, start }: { app: App; start: Starting }) {
         aria-label="Next message"
         data-testid="starting-prompt"
         placeholder="Type the next message. It goes after the first prompt."
-        className="w-full resize-none rounded-lg border border-border-strong bg-popover p-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="w-full resize-none rounded-lg border border-border bg-popover p-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         value={start.draft}
         onChange={(e) => box.change(e.target.value)}
         onKeyDown={(e) => {

@@ -1,0 +1,31 @@
+/* The seven-dot glyph (react/glyph.tsx). One loop of the wave is --glyph-loop. */
+.swarm-glyph {
+  flex: none;
+}
+.swarm-glyph-dot {
+  fill: var(--glyph-unlit);
+}
+.swarm-glyph-dot[data-lit="true"] {
+  fill: var(--glyph-lit);
+}
+
+.swarm-glyph[data-form="rest"] .swarm-glyph-dot:first-child {
+  fill: var(--foreground);
+}
+
+/* Each ring dot fades out and back; --phase staggers their peaks clockwise. */
+@keyframes swarm-glyph-wave {
+  0%,
+  100% {
+    fill: var(--glyph-lit);
+  }
+  50% {
+    fill: var(--glyph-unlit);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .swarm-glyph[data-form="working"] .swarm-glyph-dot:not(:first-child) {
+    animation: swarm-glyph-wave var(--glyph-loop) ease-in-out infinite;
+    animation-delay: calc(var(--phase) * var(--glyph-loop) / -6);
+  }
+}

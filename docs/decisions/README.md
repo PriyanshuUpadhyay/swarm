@@ -5,6 +5,14 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0171 | A CLI shows as its product mark, with a letter box when it has none | 2 | accepted | 2026-11-26 | →0094 →0167 |
+| 0170 | A usage limit shows in the status line, and "Needs you" holds only chats that wait for an answer | 2 | accepted | 2026-11-26 | →0099 →0112 →0160 →0166 |
+| 0169 | One line in the chat shows where the model changed | 2 | accepted | 2026-11-26 | ↑0099 →0168 |
+| 0168 | A switch to another CLI keeps the same chat and asks nothing | 2 | accepted | 2026-11-26 | ↑0110 →0122 →0083 →0107 →0167 |
+| 0167 | One picker holds the model, the thinking level and the account, and a pick applies at once | 2 | accepted | 2026-11-26 | ↑0112 →0110 →0122 →0168 |
+| 0166 | The sidebar is one list of active chats, and "Needs you" comes first | 2 | accepted | 2026-11-26 | ↑0049 ↑0115 ↑0142 →0054 →0055 →0116 |
+| 0165 | The app shows waiting and failed, and the stored state and the swarm output keep blocked and error | 2 | accepted | 2026-11-26 | ↑0021 →0054 →0164 |
+| 0164 | The look of the web app follows design B, and DESIGN.md owns it | 2 | accepted | 2026-11-26 | ↑0075 ↑0076 →0060 →0152 |
 | 0163 | Launch starts every agent, and spawn is removed | 2 | accepted | 2026-11-26 | ↑0008 ↑0123 ↑0153 →0033 →0086 |
 | 0162 | Chat notes go to the main chat's message box and float beside the rows | 2 | accepted | 2026-11-25 | ↑0161 →0029 →0030 |
 | 0161 | Chat notes are browser drafts sent as one typed message | 2 | superseded | 2026-11-24 | ~0162 →0130 →0029 |

@@ -100,3 +100,15 @@ src/core/fold-display.ts follows the sentence rule and thresholds of TextFold's 
 (https://github.com/chenxiachan/textfold, plugins/textfold/hooks/fold.ts),
 Copyright 2026 Xia Chen, licensed under the Apache License, Version 2.0
 (https://www.apache.org/licenses/LICENSE-2.0).
+
+---
+
+The fonts in public/fonts/ are copied from the npm font packages of Fontsource (https://fontsource.org),
+version 5.3.0, and are used under the SIL Open Font License 1.1 (the full text is in each licence file):
+
+- DM Sans. Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts).
+  Licence: public/fonts/dm-sans-LICENSE.txt
+- JetBrains Mono. Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono).
+  Licence: public/fonts/jetbrains-mono-LICENSE.txt
+- Instrument Serif. Copyright 2022 The Instrument Serif Project Authors (https://github.com/Instrument/instrument-serif).
+  Licence: public/fonts/instrument-serif-LICENSE.txt

@@ -17,14 +17,14 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .t-link {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
   background: transparent;
   border: 0;
@@ -87,21 +87,21 @@
   border-radius: var(--radius-sm);
 }
 .row-label {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
 }
 .quiet {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
 }
 .divider {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
   padding: 6px 0;
 }
@@ -109,7 +109,7 @@
 .divider::after {
   content: "";
   flex: 1;
-  border-top: 1px solid var(--border-strong);
+  border-top: 1px solid var(--border);
 }
 
 /* Copy message shows on hover only, so the transcript stays calm. */
@@ -147,7 +147,7 @@
   min-width: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl);
   padding: 6px 12px;
 }
 .bubble.queued {
@@ -158,10 +158,10 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font: 12px var(--font-mono);
+  font: var(--text-sm) var(--font-mono);
   padding: 1px 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border: 1px solid var(--border);
+  @apply rounded-full;
   background: var(--background);
 }
 .disclosure {
@@ -171,7 +171,7 @@
   min-width: 0;
   max-width: 100%;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
   background: transparent;
   border: 0;
@@ -238,7 +238,7 @@
   margin: 1.3em 0 0.35em;
 }
 .md blockquote {
-  border-left: 3px solid var(--border-strong);
+  border-left: 3px solid var(--border);
   padding-left: 10px;
   color: var(--muted-foreground);
   margin: 6px 0;
@@ -249,7 +249,7 @@
   max-height: 480px;
   margin: 0.5em 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .md .md-image-missing {
@@ -258,7 +258,7 @@
 
 .md hr {
   border: 0;
-  border-top: 1px solid var(--border-strong);
+  border-top: 1px solid var(--border);
   margin: 10px 0;
 }
 .md code {
@@ -283,12 +283,12 @@
   align-items: center;
   justify-content: space-between;
   padding: 3px 8px;
-  font: 11px var(--font-mono);
+  font: var(--text-xs) var(--font-mono);
   color: var(--muted-foreground);
   border-bottom: 1px solid var(--border);
 }
 .md-head button {
-  font: 11px var(--font-sans);
+  font: var(--text-xs) var(--font-sans);
   color: var(--muted-foreground);
   background: transparent;
   border: 0;
@@ -326,7 +326,7 @@
 .md table {
   border-collapse: collapse;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-md);
   /* .line sets overflow-wrap:anywhere, which drops each cell's min width to one character. Words
      keep their width and .md-scroll scrolls a wide table. */
   overflow-wrap: normal;
@@ -368,14 +368,16 @@
   margin: 2px -8px;
   padding: 2px 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface) 50%, transparent);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.card:has(> .card-head:hover) {
+  background: var(--hover);
 }
 .card .card-head {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .card.open {
-  background: var(--surface);
   padding-bottom: 8px;
 }
 .card-indent {
@@ -385,7 +387,7 @@
 .card-preview > div {
   overflow: hidden;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
   text-overflow: ellipsis;
   white-space: pre;
@@ -408,7 +410,7 @@ pre.out {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow-x: auto;
-  font: 12px/1.45 var(--font-mono);
+  font: var(--text-sm)/var(--text-sm--line-height) var(--font-mono);
   white-space: pre;
 }
 pre.plain {
@@ -421,7 +423,7 @@ pre.plain {
   background: var(--code);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  font: 12px var(--font-mono);
+  font: var(--text-sm) var(--font-mono);
   overflow-x: auto;
 }
 .vline {
@@ -443,7 +445,7 @@ pre.plain {
   gap: 8px;
   padding: 4px 8px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .diff-head > :not(.diff-name) {
   flex-shrink: 0;
@@ -456,13 +458,13 @@ pre.plain {
 }
 .seg {
   display: inline-flex;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .seg button {
   font: inherit;
-  font-size: 11px;
+  font-size: var(--text-xs);
   padding: 0 8px;
   color: var(--muted-foreground);
   background: transparent;
@@ -501,7 +503,7 @@ pre.plain {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface) 50%, transparent);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 /* Child combinators: the plan card shares .todo-list, and its markdown lists must keep normal flow. */
 .todo-list > ul {

@@ -8,6 +8,7 @@ import { recentWork, workspaceRow } from "../core/nav";
 import { hudCard, USAGE_PROVIDERS, type Usage } from "../core/settings";
 import { Button } from "../components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
 import { StatusGlyph } from "./status";
 import { NoticesCard } from "./notices";
 import { ComposerPage } from "./composer-new";
@@ -87,7 +88,7 @@ export function Home({ app }: { app: App }) {
           </section>
         )}
         <section className="grid gap-1" aria-label="Recent work">
-          <h1 className="mb-2 text-2xl font-bold">Recent work</h1>
+          <h1 className="mb-2 text-lg font-semibold">Recent work</h1>
           {recent.length === 0 && <p className="text-muted-foreground">Your recent chats appear here.</p>}
           {recent.map((r) => (
             <button
@@ -182,14 +183,13 @@ function AskBody({ app }: { app: App }) {
       }}
     >
       <DialogTitle>{ask.title}</DialogTitle>
-      <input
+      <Input
         autoFocus
         aria-label="Name"
         data-testid="ask-name"
         value={name}
         onChange={(e) => setName(e.target.value)}
         onFocus={(e) => e.target.select()}
-        className="h-8 rounded-md border border-border-strong bg-background px-2 outline-none focus:border-ring"
       />
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={() => app.ask(null)}>

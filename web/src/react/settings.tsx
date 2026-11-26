@@ -86,12 +86,12 @@ function Banner({ app }: { app: App }) {
         </p>
       )}
       {login && (
-        <p role="status" data-testid="login-note" className="rounded-md border border-border-strong px-3 py-2 text-sm">
+        <p role="status" data-testid="login-note" className="rounded-md border border-border px-3 py-2 text-sm">
           Finish signing in to {label(login.provider)} as “{login.account}” in the login pane <code className="font-mono">{login.pane}</code>. Then press Refresh accounts.
         </p>
       )}
       {confirm && (
-        <div role="alertdialog" aria-label={confirm.action} data-testid="settings-confirm" className="grid gap-2 rounded-md border border-border-strong px-3 py-2 text-sm">
+        <div role="alertdialog" aria-label={confirm.action} data-testid="settings-confirm" className="grid gap-2 rounded-md border border-border px-3 py-2 text-sm">
           <p>{confirm.text}</p>
           <div className="flex gap-2">
             <Button size="sm" data-testid="settings-confirm-yes" onClick={() => void app.settings.answer(true)}>
@@ -138,8 +138,10 @@ function AppearancePage({ app }: { app: App }) {
         <Segmented<FontSans>
           label="UI font"
           testid="pref-font-sans"
+          fitContent
           value={sans}
           options={[
+            ["swarm", "Swarm (DM Sans)"],
             ["system", "System"],
             ["helvetica", "Helvetica"],
             ["avenir", "Avenir"],
@@ -151,8 +153,10 @@ function AppearancePage({ app }: { app: App }) {
         <Segmented<FontMono>
           label="Code font"
           testid="pref-font-mono"
+          fitContent
           value={mono}
           options={[
+            ["swarm", "Swarm (JetBrains Mono)"],
             ["system", "System"],
             ["menlo", "Menlo"],
             ["monaco", "Monaco"],

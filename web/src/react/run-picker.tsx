@@ -7,12 +7,13 @@ import { accountCli, accountColor, chooseModel, cliName, levelWord, limitText, m
 import type { ModelInfo } from "../core/run-catalog";
 import type { Account, ProviderInfo } from "../core/settings";
 import { Button } from "../components/ui/button";
-import { FIELD, message } from "./lifecycle-shared";
+import { Input } from "../components/ui/input";
+import { message } from "./lifecycle-shared";
 import { modelPickerKey } from "./model-picker";
 import { meterTone } from "./usage-meters";
 
 /** A one-of-N pill that shows its pick with `aria-pressed`. */
-export const PRESSED_PILL = "rounded-md border border-border px-2 py-1 text-xs hover:bg-hover aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background";
+export const PRESSED_PILL = "rounded-md border border-menu-border px-2 py-1 text-xs hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
 export type Catalog = { providers: ProviderInfo[]; models: Record<string, ModelInfo[] | string>; error: string | null };
 
@@ -100,7 +101,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   return (
   <fieldset disabled={disabled} className="grid grid-cols-2 gap-3">
       <div className="grid min-w-0 gap-1" onKeyDown={(e) => modelPickerKey(e, query)}>
-        <input className={FIELD} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Input className="w-full" data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
         <div data-testid="run-models" className="max-h-[260px] overflow-y-auto">
           {(catalog.providers.length ? catalog.providers : [{ id: current.provider }]).map((p) => {
             const ms = catalog.models[p.id];
@@ -123,7 +124,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
                 {shown.map((m) => {
                   const on = draft.provider === p.id && draft.model === m.id;
                   return (
-                    <button key={m.id} data-model-id={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, m)}>
+                    <button key={m.id} data-model-id={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => choose(p.id, m)}>
                       <Radio on={on} />
                       <span className="min-w-0 truncate">{m.label}</span>
                       <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground" title={m.note}>{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
@@ -131,7 +132,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
                   );
                 })}
                 {custom && (
-                  <button type="button" aria-pressed={draft.provider === p.id && draft.model === custom} data-model-id={custom} data-testid={`run-custom-${p.id}`} className="flex w-full min-w-0 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, custom)}>
+                  <button type="button" aria-pressed={draft.provider === p.id && draft.model === custom} data-model-id={custom} data-testid={`run-custom-${p.id}`} className="flex w-full min-w-0 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => choose(p.id, custom)}>
                     <span className="truncate">Use “{custom}”</span>
                   </button>
                 )}
@@ -157,7 +158,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
                   onClick={() => setDraft({ ...draft, effort: l })}
                 >
                   {levelWord(l)}
-                  {l === defaultLevel && <span className="text-[10px] opacity-70">default</span>}
+                  {l === defaultLevel && <span className="text-xs opacity-70">default</span>}
                 </button>
               ))}
             </div>
@@ -175,7 +176,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
               const on = draft.account === a.name;
               const limit = a.name ? limitText(meters, accountInfo.id, a.name, a.summary ?? null) : null;
               return (
-                <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
+                <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => setDraft({ ...draft, account: a.name })}>
                   <Radio on={on} />
                   {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
                   <span className="min-w-0 truncate">{a.name ?? (draft.provider === "codex" && current.provider === "codex" && current.account ? `Keep current account (${current.account})` : "CLI default")}</span>
@@ -207,5 +208,5 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
 
 /** A radio mark for a pick row; the row's aria-pressed carries the state. */
 function Radio({ on }: { on: boolean }) {
-  return <span aria-hidden className={`size-3 shrink-0 rounded-full border ${on ? "border-[4px] border-foreground" : "border-border-strong"}`} />;
+  return <span aria-hidden className={`size-3 shrink-0 rounded-full border ${on ? "border-[4px] border-foreground" : "border-border"}`} />;
 }

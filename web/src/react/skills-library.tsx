@@ -4,7 +4,7 @@
 import type { ReactNode, RefObject } from "react";
 import type { App } from "../core/app";
 import { firstSentence, libraryRows, libraryTag, loadedBy, whereInPlan, type Block, type Kit } from "../core/skills";
-import { FIELD } from "./settings-shared";
+import { Input } from "../components/ui/input";
 import { useSkills } from "./skills";
 
 const DOT: Record<string, string> = { rule: "bg-sky-500", step: "bg-emerald-500", pack: "bg-orange-500", parent: "bg-pink-500" };
@@ -38,8 +38,8 @@ export function Library({ app, kit, preset, selected, expanded, listRef, onPick,
             {query.trim() ? `${rows.length} of ${kit.blocks.length}` : kit.blocks.length}
           </span>
         </div>
-        <input
-          className={`${FIELD} w-full text-sm`}
+        <Input
+          className="w-full text-sm"
           type="search"
           aria-label="Filter blocks"
           placeholder="Which block does…"
@@ -50,7 +50,7 @@ export function Library({ app, kit, preset, selected, expanded, listRef, onPick,
           value={query}
           onChange={(e) => app.skills.setFilter(e.target.value)}
         />
-        <p className="flex gap-3 text-[11px] text-muted-foreground">
+        <p className="flex gap-3 text-xs text-muted-foreground">
           {(["rule", "step", "pack", "parent"] as const).map((k) => (
             <span key={k} className="flex items-center gap-1">
               <Dot kind={k} />
@@ -75,8 +75,8 @@ export function Library({ app, kit, preset, selected, expanded, listRef, onPick,
               >
                 <Dot kind={b.kind} />
                 <code className={`shrink-0 text-xs ${tag ? "font-semibold" : ""}`}>{b.id}</code>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{firstSentence(b.description)}</span>
-                {tag && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{tag}</span>}
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{firstSentence(b.description)}</span>
+                {tag && <span className="shrink-0 font-mono text-xs text-muted-foreground">{tag}</span>}
               </button>
               {current && expanded && <div className="px-2 pb-2">{detail(b.id)}</div>}
             </li>
@@ -93,14 +93,14 @@ export function Detail({ kit, preset, block }: { kit: Kit; preset: string; block
       <p className="text-sm leading-relaxed">{block.description}</p>
       <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2" data-testid="skills-io">
         <div className="rounded-md border border-border bg-background px-2.5 py-1.5">
-          <span className="block text-[11px] text-muted-foreground">Needs</span>
+          <span className="block text-xs text-muted-foreground">Needs</span>
           {block.needs || "—"}
         </div>
         <span aria-label="gives" className="self-center text-muted-foreground">
           →
         </span>
         <div className="rounded-md border border-border bg-background px-2.5 py-1.5">
-          <span className="block text-[11px] text-muted-foreground">Gives</span>
+          <span className="block text-xs text-muted-foreground">Gives</span>
           {block.gives || "—"}
         </div>
       </div>

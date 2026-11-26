@@ -30,7 +30,7 @@ function Thumb({ path, load, onRemove }: { path: string; load: Load; onRemove?: 
         disabled={!url}
         onClick={() => setOpen(true)}
       >
-        {url ? <img src={url} alt={name} className="size-full object-cover" /> : <span className="text-xs text-faint-foreground">{failed ? "!" : "…"}</span>}
+        {url ? <img src={url} alt={name} className="size-full object-cover" /> : <span className="text-xs text-muted-foreground">{failed ? "!" : "…"}</span>}
       </button>
       {onRemove && (
         <button

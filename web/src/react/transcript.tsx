@@ -248,7 +248,7 @@ function Head({ app, view }: { app: Reader; view: Pane }) {
           {view.loadingOlder ? "Loading earlier messages…" : "Load earlier messages"}
         </button>
       ) : (
-        <span className="text-faint-foreground">Start of chat</span>
+        <span className="text-muted-foreground">Start of chat</span>
       )}
     </div>
   );
@@ -298,7 +298,7 @@ function FindBar({ app, view, listRef }: { app: Reader; view: Pane; listRef: Rea
 function ChatState({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <div role="status" className="flex h-full flex-col items-center justify-center gap-2 text-center">
-      <div className="grid size-10 place-items-center rounded-lg border border-border-strong bg-surface text-muted-foreground">{icon}</div>
+      <div className="grid size-10 place-items-center rounded-lg border border-border bg-surface text-muted-foreground">{icon}</div>
       <div className="mt-1 text-base font-medium">{title}</div>
       <div className="max-w-[420px] text-sm text-muted-foreground">{children}</div>
     </div>

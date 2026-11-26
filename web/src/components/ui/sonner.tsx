@@ -8,11 +8,11 @@ function Toaster(props: ToasterProps) {
         {
           "--normal-bg": "var(--popover)",
           "--normal-text": "var(--foreground)",
-          "--normal-border": "var(--border-strong)",
-          "--border-radius": "var(--radius-lg)",
+          "--normal-border": "var(--menu-border)",
+          "--border-radius": "var(--radius-xl)",
         } as React.CSSProperties
       }
-      toastOptions={{ classNames: { toast: "!text-sm !shadow-panel !py-2.5 !px-3" } }}
+      toastOptions={{ classNames: { toast: "text-sm! leading-4! shadow-1! py-2.5! px-3!" } }}
       {...props}
     />
   );

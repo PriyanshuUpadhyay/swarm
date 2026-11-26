@@ -14,7 +14,7 @@ import {
   type Kit,
   type Step,
 } from "../core/skills";
-import { FIELD } from "./settings-shared";
+import { inputClass } from "../components/ui/input";
 import { useSkills } from "./skills";
 import { Detail, Dot, kindName, Library } from "./skills-library";
 
@@ -163,10 +163,10 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
     const b = byId.get(id)!;
     const key = `b:${step.file}:${id}`;
     const where = stepsLoading(kit, preset, id);
-    const ring = isSel(key) ? "border-ring bg-selected" : sel?.id === id ? "border-ring/60" : "border-border hover:border-border-strong";
+    const ring = isSel(key) ? "border-ring bg-selected" : sel?.id === id ? "border-ring/60" : "border-border";
     if (where[0] !== step.file)
       return (
-        <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-lg border border-dashed px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => e.target === e.currentTarget || !(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined}>
+        <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-xl border border-dashed px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => e.target === e.currentTarget || !(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined}>
           <span className="flex items-center gap-2">
             <Dot kind={b.kind} />
             <code className="text-xs font-medium">{id}</code>
@@ -177,12 +177,12 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
       );
     const also = where.filter((f) => f !== step.file).map(num);
     return (
-      <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-lg border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => (!(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined)}>
+      <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-xl border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => (!(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined)}>
         <span className="flex items-center gap-2">
           <Dot kind={b.kind} />
           <code className="text-xs font-medium">{id}</code>
           <span className="text-xs text-muted-foreground">{kindName(b.kind)}</span>
-          {also.length > 0 && <span className="ml-auto rounded border border-border px-1.5 text-[11px] text-muted-foreground">also in {also.join(", ")}</span>}
+          {also.length > 0 && <span className="ml-auto rounded border border-border px-1.5 text-xs text-muted-foreground">also in {also.join(", ")}</span>}
         </span>
         {isSel(key) ? detail(id) : <span className="mt-1 block truncate text-xs text-muted-foreground">{firstSentence(b.description)}</span>}
       </li>
@@ -195,13 +195,13 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
     const isOpen = open.has(key);
     const all = f?.parts ?? parts;
     return (
-      <li key={key} {...item(key, 2, { "aria-expanded": isOpen, "data-family": family })} className="min-w-0 rounded-lg border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <li key={key} {...item(key, 2, { "aria-expanded": isOpen, "data-family": family })} className="min-w-0 rounded-xl border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <button type="button" tabIndex={-1} className="flex w-full items-center gap-2 text-left" onClick={() => toggle(key)}>
           <Chevron open={isOpen} />
           <Dot kind="parent" />
           <code className="text-xs font-medium">{family}</code>
           <span className="text-xs text-muted-foreground">family, {all.length} parts</span>
-          <span className="ml-auto rounded border border-border px-1.5 text-[11px] text-muted-foreground">
+          <span className="ml-auto rounded border border-border px-1.5 text-xs text-muted-foreground">
             {parts.length} of {all.length} load here
           </span>
         </button>
@@ -218,7 +218,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
                   <span className="flex items-center gap-2">
                     <Dot kind={byId.get(p)?.kind ?? "rule"} />
                     <code className="text-xs">{p}</code>
-                    <span className="ml-auto text-[11px] text-muted-foreground">{state}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{state}</span>
                   </span>
                   {isSel(pk) && detail(p)}
                 </li>
@@ -254,7 +254,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
           <label className="text-sm font-medium" htmlFor="skills-start">
             Start from
           </label>
-          <select id="skills-start" className={`${FIELD} w-44 text-sm`} data-testid="skills-start" value={preset} onChange={(e) => start(e.target.value)}>
+          <select id="skills-start" className={`${inputClass} w-44 text-sm`} data-testid="skills-start" value={preset} onChange={(e) => start(e.target.value)}>
             {kit.presets.map((p) => (
               <option key={p.preset} value={p.preset}>
                 {p.preset}
@@ -278,7 +278,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
               {kit.front.map((id, i) => (
                 <span key={id} className="flex items-center gap-1.5">
                   {i > 0 && <span aria-hidden className="text-muted-foreground">→</span>}
-                  <button type="button" tabIndex={-1} data-block={id} {...hit(id)} className={`rounded border px-1.5 py-0.5 font-mono text-xs ${sel?.id === id ? "border-ring bg-selected" : "border-border-strong hover:border-ring"}`} onClick={() => select({ id, where: "tree", key: "front" })}>
+                  <button type="button" tabIndex={-1} data-block={id} {...hit(id)} className={`rounded border px-1.5 py-0.5 font-mono text-xs ${sel?.id === id ? "border-ring bg-selected" : "border-border hover:border-ring"}`} onClick={() => select({ id, where: "tree", key: "front" })}>
                     {id}
                   </button>
                 </span>
@@ -294,7 +294,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
               <>
                 <code className="shrink-0 text-xs font-semibold">{s.file.replace(/\.md$/, "")}</code>
                 <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{s.holds.replace(/`/g, "")}</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">
+                <span className="shrink-0 text-xs text-muted-foreground">
                   {s.blocks.length} block{s.blocks.length === 1 ? "" : "s"}
                 </span>
               </>,
@@ -309,19 +309,19 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
               <>
                 <span className="shrink-0 text-xs font-semibold">Offered</span>
                 <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">off until the planner adds it</span>
-                <span className="shrink-0 text-[11px] text-muted-foreground">{offered.length} blocks</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{offered.length} blocks</span>
               </>,
               <li className="flex flex-wrap gap-1.5" data-testid="skills-offered">
                 {offered.map((b) => {
                   const key = `o:${b.id}`;
                   return (
-                    <span key={key} {...item(key, 2, { "data-block": b.id, "aria-selected": isSel(key) })} {...hit(b.id)} className={`flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSel(key) ? "border-ring bg-selected" : "border-border-strong hover:border-ring"}`} onClick={() => select({ id: b.id, where: "tree", key })}>
+                    <span key={key} {...item(key, 2, { "data-block": b.id, "aria-selected": isSel(key) })} {...hit(b.id)} className={`flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSel(key) ? "border-ring bg-selected" : "border-border hover:border-ring"}`} onClick={() => select({ id: b.id, where: "tree", key })}>
                       <Dot kind={b.kind} />
                       <code className="text-xs">{b.id}</code>
                     </span>
                   );
                 })}
-                {sel?.where === "tree" && sel.key.startsWith("o:") && <div className="w-full rounded-lg border border-border px-3 py-2">{detail(sel.id)}</div>}
+                {sel?.where === "tree" && sel.key.startsWith("o:") && <div className="w-full rounded-xl border border-border px-3 py-2">{detail(sel.id)}</div>}
               </li>,
             )
           ) : (

@@ -1,12 +1,13 @@
 // The run chip `account · model · thinking` and its popover, which changes the chat's run
 // (ADR 0110). Inside one CLI the session restarts on the new run; another CLI asks what to bring.
 
-import { ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
 import { accountColor, applyBlock, applyLabel, CARRY_OPTIONS, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
+import { Glyph } from "./glyph";
 import { useLife, ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
 import { Segmented } from "./settings-shared";
@@ -72,7 +73,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
           role={open ? "dialog" : undefined}
           data-testid="run-popover"
           aria-label="Change model, thinking, or account"
-          className="m-0 w-[min(640px,calc(100vw-32px))] rounded-xl border border-border-strong bg-popover p-3 text-sm text-popover-foreground shadow-panel"
+          className="m-0 w-[min(640px,calc(100vw-32px))] rounded-xl border border-menu-border bg-popover p-3 text-sm text-popover-foreground shadow-2"
           style={{ positionAnchor: anchor, positionArea: "top span-right", marginBottom: 6, positionTryFallbacks: "flip-block" } as CSSProperties}
           onToggle={(e) => e.newState === "closed" && app.life.state.switchModel === sessionId && app.life.close("switchModel")}
         >
@@ -128,7 +129,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
       )}
       {handoff && <SwitchProgress handoff={handoff} />}
       <ErrorLine text={handoff?.error ?? error} />
-      <div className={`rounded-lg border px-3 py-2 text-xs ${outcome === "none" && !running ? "border-dashed border-border text-muted-foreground" : "border-border bg-hover"}`} role="status">
+      <div className={`rounded-xl border px-3 py-2 text-xs ${outcome === "none" && !running ? "border-dashed border-border text-muted-foreground" : "border-border bg-hover"}`} role="status">
         {outcome !== "none" && !running && !blocked && <b className="mr-1.5 font-medium text-foreground">What happens</b>}
         <span data-testid="run-outcome">{running ? "Switching…" : (blocked ?? outcomeText(outcome, current, draft, carry, label))}</span>
       </div>
@@ -143,7 +144,7 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
           </Button>
         )}
         <Button type="button" size="sm" data-testid="run-apply" disabled={running || blocked !== null || outcome === "none"} onClick={apply}>
-          {running && <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" />}
+          {running && <Glyph form="working" className="size-4" aria-hidden />}
           {applyLabel(outcome)}
         </Button>
       </div>

@@ -13,7 +13,7 @@ function MeterLine({ meter, now }: { meter: Meter; now: number }) {
     return (
       <div className="meter-line" data-testid="meter" data-state={meter.state}>
         <span className="meter-window">{meter.window ?? ""}</span>
-        <span className="min-w-0 flex-1 truncate text-faint-foreground">{meter.reason ?? meter.state}</span>
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">{meter.reason ?? meter.state}</span>
       </div>
     );
   const reset = meter.reset_time_seconds === null ? null : meter.reset_time_seconds - now / 1000;
@@ -25,7 +25,7 @@ function MeterLine({ meter, now }: { meter: Meter; now: number }) {
         <span className={tone} style={{ width: `${left}%` }} />
       </span>
       <span className="w-8 text-right tabular-nums">{left}%</span>
-      <span className="min-w-10 text-right whitespace-nowrap text-faint-foreground tabular-nums">{reset !== null && reset > 0 ? untilText(reset) : ""}</span>
+      <span className="min-w-10 text-right whitespace-nowrap text-muted-foreground tabular-nums">{reset !== null && reset > 0 ? untilText(reset) : ""}</span>
     </div>
   );
 }
