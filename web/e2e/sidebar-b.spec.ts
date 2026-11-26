@@ -94,7 +94,7 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
     const tree: TreeView = await response.json();
     const path = tree.chats.find((row) => row.selection?.chat === session)?.selection?.workspace;
     if (path) Object.assign(tree.workspaces[path], {
-      branch: "feature", pr: { number: 7, url, state: "open", ci: "passed" }, diff: { addedLines: 31, removedLines: 4 },
+      branch: "feature", pr: { number: 7, url, state: "open", ci: "passed" }, diff: { addedLines: 31, removedLines: 1 },
     });
     await route.fulfill({ response, json: tree });
   });
@@ -116,12 +116,13 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   await expect(row).toHaveAttribute("aria-current", "true");
   const branch = sidebar.getByTestId("sidebar-branch");
   await expect(branch).toHaveCount(1);
-  await expect(branch).toHaveText("feature+31−4");
+  await expect(branch).toHaveText("feature+31−1");
+  await expect(branch.getByLabel("31 lines added, 1 line removed")).toBeVisible();
   const strip = page.getByTestId("tab-strip");
   const tab = strip.getByRole("tab", { selected: true });
   const bar = page.getByTestId("branch-bar");
   await expect(bar).toContainText("feature");
-  await expect(bar).toContainText("+31−4");
+  await expect(bar).toContainText("+31−1");
   const barLink = bar.getByRole("link", { name: "PR #7, open, CI passed" });
   await expect(barLink).toHaveAttribute("href", url);
   expect(await barLink.evaluate((element) => element.tabIndex)).toBe(0);

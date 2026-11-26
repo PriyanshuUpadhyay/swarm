@@ -22,11 +22,14 @@ export function PrChip({ pr, tabIndex }: { pr: PrFact | null | undefined; tabInd
   );
 }
 
+const linePlural = new Intl.PluralRules("en");
+const lineCount = (count: number) => `${count} ${linePlural.select(count) === "one" ? "line" : "lines"}`;
+
 /** Null means there was no stable comparison; a real zero has its own display. */
 export function BranchDiff({ diff }: { diff: LineTotals | null | undefined }) {
   if (!diff || ![diff.addedLines, diff.removedLines].every((n) => Number.isSafeInteger(n) && n >= 0)) return null;
   return (
-    <span className="branch-diff" aria-label={`${diff.addedLines} lines added, ${diff.removedLines} lines removed`}>
+    <span className="branch-diff" aria-label={`${lineCount(diff.addedLines)} added, ${lineCount(diff.removedLines)} removed`}>
       <span className="text-done">+{diff.addedLines}</span>
       <span className="text-failed">−{diff.removedLines}</span>
     </span>
