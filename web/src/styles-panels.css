@@ -117,7 +117,7 @@
   padding: 4px 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--popover);
+  background: var(--surface);
 }
 .find-input {
   flex: 1;
@@ -148,7 +148,7 @@
   padding: 4px 12px;
   @apply rounded-full;
   border: 1px solid var(--border);
-  background: var(--popover);
+  background: var(--surface);
   color: var(--foreground);
   box-shadow: var(--shadow-1);
 }
@@ -158,6 +158,7 @@
   max-height: 60vh;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--menu-border);
   border-radius: var(--radius-xl);
   background: var(--popover);
   box-shadow: var(--shadow-2);
@@ -257,7 +258,7 @@
 }
 .change-row[aria-selected="true"] {
   background: var(--selected);
-  box-shadow: inset 3px 0 0 var(--brand);
+  box-shadow: inset 2px 0 0 var(--foreground);
 }
 .changes-list:focus-visible .change-row[aria-selected="true"] {
   outline: 1px solid var(--ring);
@@ -314,7 +315,7 @@
   white-space: normal;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--popover);
+  background: var(--surface);
   box-shadow: var(--shadow-2);
 }
 .comment-card {

@@ -23,12 +23,12 @@ export function SlashMenu({ id, menu, rows, current, list, below = false, select
       role="listbox"
       aria-label={menu.opener === "@" ? "Files" : "Commands and skills"}
       data-testid="slash-menu"
-      className={cn("absolute right-0 left-0 z-20 max-h-72 overflow-y-auto rounded-xl border border-border bg-surface p-1 text-sm shadow-2", below ? "top-full mt-1" : "bottom-full mb-1")}
+      className={cn("absolute right-0 left-0 z-20 max-h-72 overflow-y-auto rounded-xl border border-menu-border bg-popover p-1 text-sm shadow-2", below ? "top-full mt-1" : "bottom-full mb-1")}
     >
       {rows.map((r, i) => (
         <Fragment key={r.insert}>
           {split && (i === 0 || i === swarmCount) && (
-            <div role="presentation" data-testid="slash-group" className={cn("px-2 pt-1 pb-0.5 text-xs text-muted-foreground", i > 0 && "mt-1 border-t border-border pt-2")}>
+            <div role="presentation" data-testid="slash-group" className={cn("px-2 pt-1 pb-0.5 text-xs text-muted-foreground", i > 0 && "mt-1 border-t border-menu-border pt-2")}>
               {i === 0 ? "Swarm skills" : "Other commands and skills"}
             </div>
           )}
@@ -37,7 +37,7 @@ export function SlashMenu({ id, menu, rows, current, list, below = false, select
             role="option"
             aria-selected={i === current}
             data-testid="slash-row"
-            className={cn("flex cursor-default items-baseline gap-2 rounded-md px-2 py-1", i === current && "bg-hover")}
+            className={cn("flex cursor-default items-baseline gap-2 rounded-md px-2 py-1", i === current && "bg-menu-hover")}
             onMouseMove={() => select(i)}
             onMouseDown={(e) => {
               // A click inserts only, and the text area keeps the focus.

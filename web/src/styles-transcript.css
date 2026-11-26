@@ -368,14 +368,16 @@
   margin: 2px -8px;
   padding: 2px 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface) 50%, transparent);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+.card:has(> .card-head:hover) {
+  background: var(--hover);
 }
 .card .card-head {
   font-size: var(--text-sm);
 }
 .card.open {
-  background: var(--surface);
   padding-bottom: 8px;
 }
 .card-indent {

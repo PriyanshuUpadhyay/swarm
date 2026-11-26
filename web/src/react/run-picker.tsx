@@ -13,7 +13,7 @@ import { modelPickerKey } from "./model-picker";
 import { meterTone } from "./usage-meters";
 
 /** A one-of-N pill that shows its pick with `aria-pressed`. */
-export const PRESSED_PILL = "rounded-md border border-border px-2 py-1 text-xs hover:bg-hover aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background";
+export const PRESSED_PILL = "rounded-md border border-menu-border px-2 py-1 text-xs hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
 export type Catalog = { providers: ProviderInfo[]; models: Record<string, ModelInfo[] | string>; error: string | null };
 
@@ -124,7 +124,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
                 {shown.map((m) => {
                   const on = draft.provider === p.id && draft.model === m.id;
                   return (
-                    <button key={m.id} data-model-id={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, m)}>
+                    <button key={m.id} data-model-id={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => choose(p.id, m)}>
                       <Radio on={on} />
                       <span className="min-w-0 truncate">{m.label}</span>
                       <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground" title={m.note}>{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
@@ -132,7 +132,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
                   );
                 })}
                 {custom && (
-                  <button type="button" aria-pressed={draft.provider === p.id && draft.model === custom} data-model-id={custom} data-testid={`run-custom-${p.id}`} className="flex w-full min-w-0 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => choose(p.id, custom)}>
+                  <button type="button" aria-pressed={draft.provider === p.id && draft.model === custom} data-model-id={custom} data-testid={`run-custom-${p.id}`} className="flex w-full min-w-0 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => choose(p.id, custom)}>
                     <span className="truncate">Use “{custom}”</span>
                   </button>
                 )}
@@ -176,7 +176,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
               const on = draft.account === a.name;
               const limit = a.name ? limitText(meters, accountInfo.id, a.name, a.summary ?? null) : null;
               return (
-                <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-hover aria-pressed:bg-selected" onClick={() => setDraft({ ...draft, account: a.name })}>
+                <button key={a.name ?? ""} type="button" aria-pressed={on} title={[a.name && (a.email ? `${a.name} (${a.email})` : a.name), limit?.text].filter(Boolean).join("\n") || undefined} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => setDraft({ ...draft, account: a.name })}>
                   <Radio on={on} />
                   {a.name && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(a.name) }} />}
                   <span className="min-w-0 truncate">{a.name ?? (draft.provider === "codex" && current.provider === "codex" && current.account ? `Keep current account (${current.account})` : "CLI default")}</span>

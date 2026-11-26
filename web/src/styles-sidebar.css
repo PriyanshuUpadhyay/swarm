@@ -1,12 +1,13 @@
 
-/* Sidebar tree rows in jean's look: full-width rows, muted until hovered, and the open row marked by
-   a brand tint with a 3px brand bar. Plain elements; one menu, tooltip and hover card serve the list
+/* Sidebar tree rows: full-width, muted until hovered, with a selected fill on the open row.
+   Plain elements; one menu, tooltip and hover card serve the list
    (decision 3). A row is one line, or two when steps or a chat's children start a second
    (SidebarRowView.lines). */
 .trow {
   position: relative;
   user-select: none;
   padding-right: 6px;
+  border-radius: var(--radius-md);
   cursor: default;
   white-space: nowrap;
   outline: none;
@@ -118,10 +119,10 @@
   display: flex;
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--menu-border);
   border-radius: var(--radius-md);
   background: var(--popover);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+  box-shadow: var(--shadow-2);
 }
 .row-bar button {
   display: grid;
@@ -134,7 +135,7 @@
   color: var(--muted-foreground);
 }
 .row-bar button:hover {
-  background: var(--selected);
+  background: var(--menu-hover);
   color: var(--foreground);
 }
 .row-bar button:disabled {
@@ -181,15 +182,8 @@
 }
 /* The open chat is marked; the keyboard row shows only while the list has focus. */
 .trow[aria-current="true"] {
-  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  background: var(--selected);
   color: var(--foreground);
-}
-.trow[aria-current="true"]::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--brand);
 }
 /* Chats picked with ⌘-click or Shift-click stay marked when the list loses focus. */
 .trow[data-marked],
@@ -391,6 +385,7 @@
   height: 36px;
   padding-right: 8px;
   border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 .tab-title {
   flex: none;
@@ -412,7 +407,8 @@
   max-width: 220px;
   padding: 0 6px 0 12px;
   border-right: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  font-size: var(--text-sm);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
   color: var(--muted-foreground);
   cursor: default;
   white-space: nowrap;
@@ -425,7 +421,7 @@
   color: var(--foreground);
 }
 .tab[aria-selected="true"] {
-  background: var(--selected);
+  background: var(--background);
   color: var(--foreground);
 }
 .tab .label {

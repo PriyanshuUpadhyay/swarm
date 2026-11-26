@@ -124,11 +124,12 @@
 }
 .annotate-pill:hover {
   color: var(--foreground);
+  background: var(--hover);
 }
 .annotate-pill[aria-pressed="true"] {
-  color: var(--background);
-  background: var(--status-working);
-  border-color: var(--status-working);
+  color: var(--foreground);
+  background: var(--selected);
+  border-color: var(--foreground);
 }
 .whole-reply {
   display: none;
@@ -149,6 +150,7 @@
 }
 .whole-reply:hover {
   color: var(--foreground);
+  background: var(--hover);
 }
 .annotating [data-kind="assistant"] .md [tabindex="0"] {
   cursor: pointer;
@@ -279,5 +281,7 @@
 .note-layer.narrow .ncard:focus-within {
   z-index: 3;
   width: min(320px, calc(100vw - 32px), 90%);
-  box-shadow: 0 6px 24px color-mix(in srgb, black 18%, transparent);
+  border-color: var(--menu-border);
+  background: var(--popover);
+  box-shadow: var(--shadow-2);
 }
