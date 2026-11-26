@@ -420,13 +420,13 @@
   outline-offset: 1px;
 }
 
-/* Chat tabs in jean's look: flat cells with a hairline between them; the open one filled. */
+/* A compact strip, with a separate branch line so the open tab does not have to carry it. */
 .tab-bar {
   display: flex;
   flex: none;
   align-items: center;
   gap: 4px;
-  height: 36px;
+  height: 40px;
   padding-right: 8px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
@@ -448,7 +448,8 @@
   gap: 6px;
   flex: none;
   min-width: 120px;
-  max-width: 220px;
+  max-width: 224px;
+  height: 32px;
   padding: 0 6px 0 12px;
   border-right: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   border-radius: var(--radius-lg);
@@ -465,6 +466,7 @@
   color: var(--foreground);
 }
 .tab[aria-selected="true"] {
+  width: 224px;
   background: var(--background);
   color: var(--foreground);
 }
@@ -504,6 +506,41 @@
   background: var(--hover);
   color: var(--foreground);
   opacity: 1;
+}
+
+.branch-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+}
+.branch-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 18px;
+}
+.branch-name svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.branch-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Status glyph: shape and colour, so colour is never the only signal. */

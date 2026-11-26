@@ -189,7 +189,7 @@ test("a long question path wraps inside its labelled group", async ({ page: tab 
     const input = (await tab.locator(".chat-input").boundingBox())!;
     expect(box.x + box.width).toBeLessThanOrEqual(input.x + input.width + 1);
     await expect(card).toHaveRole("group");
-    await expect(card).toHaveAccessibleName(new RegExp(`^The chair is blocked:.*${path}`, "s"));
+    await expect(card).toHaveAccessibleName(new RegExp(`^The chair is waiting:.*${path}`, "s"));
     await tab.screenshot({ path: info.outputPath("long-question.png") });
   } finally {
     writeFileSync(screen, idle);

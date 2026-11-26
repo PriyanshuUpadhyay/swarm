@@ -462,11 +462,11 @@ impl<'a> Projection<'a> {
             .filter(|a| AgentStatus::agent(a) == AgentStatus::Blocked)
             .count();
         let summary = (!children.is_empty()).then(|| {
-            let count = fields::count_text(children.len(), "agent");
+            let count = children.len();
             if waiting > 0 {
-                format!("{count} · {waiting} blocked")
+                format!("{count} · {waiting} waiting")
             } else {
-                count
+                count.to_string()
             }
         });
         let mut context = fields::chat_context(

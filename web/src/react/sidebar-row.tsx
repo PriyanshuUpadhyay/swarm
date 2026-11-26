@@ -1,6 +1,6 @@
 import { ArchiveRestoreIcon, ChevronRightIcon, GitBranchIcon, GitPullRequestIcon, GripVerticalIcon, PinIcon, PlusIcon } from "lucide-react";
 import { memo } from "react";
-import type { Field, NavRow, SidebarRow, WorkspaceFacts } from "../core/nav";
+import { shownStatus, type Field, type NavRow, type SidebarRow, type WorkspaceFacts } from "../core/nav";
 import { BranchDiff, PrChip } from "./pr-chip";
 import { StatusGlyph } from "./status";
 
@@ -92,7 +92,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
           )}
         </div>
         <div className="tline chat-sub">
-          {r.status && <StatusGlyph status={r.status} />}
+          {r.status && <><StatusGlyph status={r.status} />{!needsYou && <span className="fld">{shownStatus(r.status)}</span>}</>}
           {needsYou && r.detail && <span className="label" title={r.detail}>{r.detail}</span>}
           {r.age && <FieldView f={{ field: "age", text: r.age }} row={r} />}
           {other.map((f, i) => <FieldView key={i} f={f} row={r} />)}

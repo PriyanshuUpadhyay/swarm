@@ -25,6 +25,7 @@ import { SkillsDialog } from "./skills";
 import { BranchPicker, Palette } from "./palette";
 import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
+import { BranchBar } from "./branch-bar";
 import { store } from "./store";
 import { TabStrip } from "./tabs";
 import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
@@ -121,6 +122,7 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
           <PanelToggles changes={changes} />
         </div>
       )}
+      {workspace && openId && <BranchBar app={app} workspace={workspace} />}
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
           {start ? <StartingView app={app} start={start} /> : openId ? <ChatColumn app={app} openId={openId} /> : workspace ? <WorkspaceLanding app={app} /> : <Home app={app} />}

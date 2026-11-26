@@ -241,10 +241,7 @@ fn child_folds_and_hides_ended_children() {
     let folded = sections(&snap, &owner, &state, false).remove(0).rows;
     assert_eq!(folded.len(), 1);
     assert!(!folded[0].expanded);
-    assert_eq!(
-        folded[0].children_summary.as_deref(),
-        Some("1 agent · 1 blocked")
-    );
+    assert_eq!(folded[0].children_summary.as_deref(), Some("1 · 1 waiting"));
     assert_eq!(folded[0].status, Some(Status::Blocked));
     state.fold("chat:chat", false);
     let opened = sections(&snap, &owner, &state, false).remove(0).rows;
@@ -390,12 +387,9 @@ fn stable_chain_child_ids_and_current_urgency() {
 #[test]
 fn child_count_without_waiting() {
     for (agents, label) in [
-        (vec![agent("worker", "working")], "1 agent"),
-        (
-            vec![agent("one", "done"), agent("two", "working")],
-            "2 agents",
-        ),
-        (vec![agent("worker", "blocked")], "1 agent · 1 blocked"),
+        (vec![agent("worker", "working")], "1"),
+        (vec![agent("one", "done"), agent("two", "working")], "2"),
+        (vec![agent("worker", "blocked")], "1 · 1 waiting"),
     ] {
         let rows = sections(
             &folder_snapshot(vec![session("chat", "/repo", 1)], json!({"chat":agents})),

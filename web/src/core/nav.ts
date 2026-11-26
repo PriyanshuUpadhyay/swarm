@@ -5,6 +5,9 @@ import type { Snapshot } from "./api";
 import { fuzzySearchItems } from "./fuzzy-search";
 
 export type Status = "ended" | "done" | "working" | "error" | "blocked";
+
+/** Translate stored and wire states only at the display boundary. */
+export const shownStatus = (status: Status | "idle") => status === "blocked" ? "waiting" : status === "error" ? "failed" : status;
 export type Field = { field: string; text: string; status?: Status };
 export type Selection = { workspace: string | null; chat: string | null; agentSession: string | null; agent: string | null };
 

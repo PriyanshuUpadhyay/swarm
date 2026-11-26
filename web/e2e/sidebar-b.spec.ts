@@ -116,9 +116,19 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   const branch = sidebar.getByTestId("sidebar-branch");
   await expect(branch).toHaveCount(1);
   await expect(branch).toHaveText("feature+31−4");
+  const strip = page.getByTestId("tab-strip");
+  const tab = strip.getByRole("tab", { selected: true });
+  const bar = page.getByTestId("branch-bar");
+  await expect(bar).toContainText("feature");
+  await expect(bar).toContainText("+31−4");
+  await expect(bar.getByRole("link", { name: "PR #7, open, CI passed" })).toHaveAttribute("href", url);
+  const [stripBox, tabBox, barBox] = await Promise.all([strip, tab, bar].map((item) => item.boundingBox()));
+  expect(stripBox?.height).toBe(40);
+  expect(tabBox).toMatchObject({ width: 224, height: 32 });
+  expect(barBox?.height).toBe(36);
   for (const colorScheme of ["dark", "light"] as const) {
     await page.emulateMedia({ colorScheme });
     await page.mouse.move(700, 100);
-    await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/U4/sidebar-${colorScheme}.png`) });
+    await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/U5/chrome-${colorScheme}.png`) });
   }
 });

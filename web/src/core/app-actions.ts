@@ -71,11 +71,12 @@ export class AppActions {
       const row = workspaceRow(this.app.tree, workspaceOf(this.app.tree, this.app.snapshot, s));
       return row ? row.archived : this.app.tree?.view === "workspaces" && !listed.includes(s);
     };
-    const order = [...new Set([...listed, ...this.app.chatIds()])].filter((s) => !archived(s));
+    const visible = this.app.rows.flatMap((row) => row.kind === "chat" && row.row?.selection?.chat ? [row.row.selection.chat] : []);
+    const order = [...new Set([...visible, ...listed, ...this.app.chatIds()])].filter((s) => !archived(s));
     const blocked = (s: string) => (this.app.snapshot?.agents[s] ?? []).some((a) => paneStatus(a) === "blocked");
     const next = nextBlocked(order, blocked, this.app.openId);
     if (next) this.app.navigation.openChat(next, e);
-    else this.app.notice("No chat is blocked.");
+    else this.app.notice("No chat is waiting.");
   }
 
   // ---- palette and names ----
@@ -220,7 +221,7 @@ export class AppActions {
       { id: "chat.annotate", title: "Annotate Chat", chord: "Shift+Meta+A", when: chat, run: () => this.app.notes.toggleMode() },
       { id: "prompt.prev", title: "Previous Prompt", chord: "Ctrl+Alt+ArrowUp", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: -1 })) },
       { id: "prompt.next", title: "Next Prompt", chord: "Ctrl+Alt+ArrowDown", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: 1 })) },
-      { id: "chat.blocked", title: "Next Blocked Chat", chord: "Ctrl+Meta+W", run: (e) => this.openBlocked(e) },
+      { id: "chat.blocked", title: "Next waiting chat", chord: "Ctrl+Meta+W", run: (e) => this.openBlocked(e) },
       {
         id: "chat.stop",
         title: "Stop the Chair",

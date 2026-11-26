@@ -168,7 +168,7 @@ export function TabStrip({ app }: { app: App }) {
             data-testid="tabs"
             data-previous-recent={tabs?.previousRecent ?? undefined}
             data-next-recent={tabs?.nextRecent ?? undefined}
-            className="flex h-full min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none]"
+            className="flex h-full min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none]"
             onClick={onClick}
             onKeyDown={onKeyDown}
             onAuxClick={(e) => {
@@ -258,8 +258,8 @@ const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { 
           tabIndex={-1}
           data-action="children"
           className={`fld rounded-sm px-1 hover:bg-hover ${tab.children.blocked ? "text-waiting" : ""}`}
-          title={tab.children.blocked ? "Show first blocked child" : "Show chat"}
-          aria-label={`${tab.title}, ${tab.children.count} agents, ${tab.children.blocked} blocked`}
+          title={tab.children.blocked ? "Show first waiting child" : "Show chat"}
+          aria-label={`${tab.title}, ${tab.children.count} agents${tab.children.blocked ? `, ${tab.children.blocked} waiting` : ""}`}
         >
           {tab.children.text}
         </button>
