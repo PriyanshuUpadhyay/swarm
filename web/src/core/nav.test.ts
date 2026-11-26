@@ -296,10 +296,13 @@ describe("picked chats", () => {
 });
 
 describe("tree refresh", () => {
-  it("keeps the old object of each row and section that did not change", () => {
+  it("keeps the old object of each row, section and workspace fact that did not change", () => {
     const next = JSON.parse(JSON.stringify(sample)) as TreeView;
     next.sections[1].rows[3] = { ...next.sections[1].rows[3], age: "2m" };
+    next.workspaces["/r/web"].branch = "feature";
     const shared = shareTree(sample, next);
+    expect(shared.workspaces["/r/app"]).toBe(sample.workspaces["/r/app"]);
+    expect(shared.workspaces["/r/web"].branch).toBe("feature");
     expect(shared.sections[0]).toBe(sample.sections[0]);
     expect(shared.sections[1]).not.toBe(sample.sections[1]);
     expect(shared.sections[1].rows[0]).toBe(sample.sections[1].rows[0]);
