@@ -46,6 +46,62 @@ fn continued_tab_key_survives_session_change() {
 }
 
 #[test]
+fn sidebar_prioritizes_real_prompts_and_counts_every_hidden_project_chat() {
+    let now = 700_000;
+    let mut prompt = agent("orchestrator", "blocked");
+    prompt["prompt"] =
+        json!({"id":"choose","question":"Approve this change?","choices":["Yes","No"]});
+    let mut sessions: Vec<_> = (1..=6)
+        .map(|i| session(&format!("quiet-{i}"), "/repo/wt/main", now - i))
+        .collect();
+    sessions.extend([
+        session("asks", "/repo/wt/feature", now - 9),
+        session("quiet-wait", "/repo/wt/main", 1),
+        session("old", "/repo/wt/main", 2),
+    ]);
+    let mut snap = snapshot(
+        sessions,
+        json!({
+            "asks": [prompt], "quiet-wait": [agent("orchestrator", "blocked")],
+        }),
+    );
+    snap["projects"].as_array_mut().unwrap().push(json!({
+        "id":"folder:/notes","path":"/notes","launch_directory":"/notes",
+        "workspaces":[{"path":"/notes"}],
+    }));
+    let mut owner = owner();
+    owner.project_paths.push("/notes".into());
+    let tree = swarm::view::tree::build(&snap, &owner);
+    let mut state = ViewState::default();
+    let show = |state: &ViewState| {
+        swarm::view::tree::sections(&tree, &owner, state, false, now, &Default::default())
+    };
+    let display = show(&state);
+    assert_eq!(
+        display.iter().map(|s| s.kind).collect::<Vec<_>>(),
+        ["needs-you", "project", "more-projects"]
+    );
+    assert_eq!(
+        display[0]
+            .rows
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect::<Vec<_>>(),
+        ["chat:asks"]
+    );
+    let project = &display[1].rows;
+    assert!(project.iter().any(|r| r.id == "chat:quiet-wait"));
+    assert!(
+        !project
+            .iter()
+            .any(|r| r.id == "chat:asks" || r.id == "chat:old")
+    );
+    assert_eq!(project.last().unwrap().title, "… 2 more");
+    state.expanded_lists.insert("project:/repo".into());
+    assert!(show(&state)[1].rows.iter().any(|r| r.id == "chat:old"));
+}
+
+#[test]
 fn every_chat_shows_in_the_sidebar_whether_or_not_its_tab_is_open() {
     let tree = tree();
     let mut owner = owner();

@@ -133,7 +133,7 @@ impl ViewState {
     /// A chat's children and a workspace's archived chats start folded, so their stored key
     /// means expanded.
     fn folded_first(id: &str) -> bool {
-        id.starts_with("chat:") || id.starts_with("archived:")
+        id == "more-projects" || id.starts_with("chat:") || id.starts_with("archived:")
     }
     fn collapse_key(id: &str) -> String {
         if Self::folded_first(id) {

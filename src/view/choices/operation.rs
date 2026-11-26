@@ -31,7 +31,7 @@ pub enum ChoiceOp {
         id: String,
     },
     ExpandList {
-        workspace: String,
+        id: String,
     },
     RenameWorkspace {
         workspace: String,
@@ -195,9 +195,15 @@ pub fn apply(
             validate_fold(tree, &id)?;
             state.fold(&id, false);
         }
-        ChoiceOp::ExpandList { workspace } => {
-            tree.workspace(&workspace).ok_or("unknown workspace")?;
-            state.expanded_lists.insert(workspace);
+        ChoiceOp::ExpandList { id } => {
+            if id != "needs-you"
+                && !id
+                    .strip_prefix("project:")
+                    .is_some_and(|path| tree.projects.iter().any(|p| p.path == path))
+            {
+                return Err("unknown list id".into());
+            }
+            state.expanded_lists.insert(id);
         }
         ChoiceOp::RenameWorkspace { workspace, name } => {
             tree.workspace(&workspace).ok_or("unknown workspace")?;
@@ -382,7 +388,7 @@ fn rename(names: &mut BTreeMap<String, String>, key: String, name: String) {
 }
 
 fn validate_fold(tree: &Tree, id: &str) -> Result<(), String> {
-    if id == "pinned"
+    if matches!(id, "pinned" | "more-projects")
         || tree.workspace(id).is_some()
         || tree
             .projects

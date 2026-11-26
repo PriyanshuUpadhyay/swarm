@@ -520,7 +520,8 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
     (result, unlisted)
 }
 
-pub use super::sidebar::{Section, Selection, SidebarRow, sections};
+pub use super::navigation::{Section, Selection, SidebarRow};
+pub use super::sidebar::{chat_catalog, sections};
 
 #[cfg(test)]
 mod tests {

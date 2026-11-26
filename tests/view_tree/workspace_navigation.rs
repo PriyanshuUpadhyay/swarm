@@ -102,11 +102,11 @@ fn bare_hub_removed_and_worktree_states() {
     assert_eq!(row("/repo#removed").title, "Removed worktrees");
     assert!(!row("/repo#removed").missing);
     assert!(!row("/repo#removed").new_chat_enabled);
-    assert!(row("/repo/wt/missing").detail.contains("folder missing"));
-    assert!(!row("/repo/wt/missing").new_chat_enabled);
-    assert!(row("/repo/wt/locked").detail.contains("locked"));
-    assert!(row("/repo/wt/locked").new_chat_enabled);
-    assert!(row("/repo/wt/detached").detail.contains("detached"));
+    let (_, folders) = navigation::navigation_catalog(&tree, &owner, &Default::default());
+    assert!(!rows.iter().any(|r| r.id == "/repo/wt/missing"));
+    assert!(folders["/repo/wt/missing"].missing);
+    assert!(!folders["/repo/wt/missing"].new_chat_enabled);
+    assert!(folders["/repo/wt/locked"].new_chat_enabled);
 }
 #[test]
 fn deepest_project_and_shared_path_ids() {
@@ -133,10 +133,13 @@ fn duplicate_project_names_and_saved_titles() {
         project_paths: vec!["/play/app".into(), "/work/app".into()],
         ..Default::default()
     };
-    let sections = sections(&snap, &owner, &ViewState::default(), false);
+    let mut state = ViewState::default();
+    state.fold("more-projects", false);
+    let sections = sections(&snap, &owner, &state, false);
     assert_eq!(
         sections
             .iter()
+            .filter(|s| s.kind == "project")
             .map(|s| s.title.as_str())
             .collect::<Vec<_>>(),
         ["app — play", "app — work"]
@@ -214,7 +217,7 @@ fn independent_folds_and_case_keys() {
     assert_ne!(navigation::title_key("dogs"), navigation::title_key("docs"));
 }
 #[test]
-fn agent_worktrees_wait_behind_one_more_worktrees_row() {
+fn empty_worktrees_stay_out_of_the_chat_projection() {
     let mut snap = snapshot(vec![session("notes", "/repo/wt/feature", 1)], json!({}));
     snap["projects"][0]["workspaces"]
         .as_array_mut()
@@ -238,15 +241,5 @@ fn agent_worktrees_wait_behind_one_more_worktrees_row() {
         .filter(|r| r.depth == 0)
         .map(|r| r.id.as_str())
         .collect();
-    // Main, the worktree with a chat, and the one the owner opened stay; the agent ones wait.
-    assert_eq!(
-        ids,
-        [
-            "/repo/wt/main",
-            "/repo/wt/empty",
-            "/repo/wt/feature",
-            "worktrees:/repo"
-        ]
-    );
-    assert_eq!(rows.last().unwrap().title, "2 more worktrees");
+    assert_eq!(ids, ["chat:notes"]);
 }

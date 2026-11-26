@@ -130,8 +130,7 @@ export class AppSidebar {
     // "N more worktrees": the composer on Existing branch, where each hidden worktree is marked open.
     if (row.kind === "worktrees") return this.app.newChat.open(nav.section.path ?? undefined, { kind: "branch", branch: "" });
     if (row.kind === "more") {
-      const workspace = sel.workspace ?? row.parentId;
-      if (workspace) void this.app.navigation.choose({ op: "expand_list", workspace });
+      void this.app.navigation.choose({ op: "expand_list", id: nav.section.collapseId });
     } else if (row.kind === "workspace") void this.app.navigation.selectWorkspace(row.id, e);
     else if (row.kind === "child") {
       const session = sel.agentSession ?? sel.chat;

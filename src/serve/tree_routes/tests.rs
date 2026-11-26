@@ -47,7 +47,15 @@ async fn tree_catalog_keeps_every_chat_when_sidebar_is_capped_or_folded() {
     }
     let read = || tree_view(State(fixture.app.clone()), Query(TreeQuery { view: None }));
     let capped = read().await.unwrap().0;
-    assert_eq!(capped["chats"].as_array().unwrap().len(), 7);
+    let chats = capped["chats"].as_array().unwrap();
+    let ids: std::collections::BTreeSet<_> = chats
+        .iter()
+        .map(|row| row["selection"]["chat"].as_str().unwrap())
+        .collect();
+    assert_eq!(chats.len(), 7);
+    assert_eq!(ids.len(), 7);
+    assert!(capped["workspaces"][workspace.to_str().unwrap()]["newChatEnabled"].is_boolean());
+    assert!(!capped["projects"].as_array().unwrap().is_empty());
     let visible = capped["sections"]
         .as_array()
         .unwrap()

@@ -113,7 +113,7 @@ export type ChoiceOp =
   | { op: "pin" | "unpin"; workspace: string }
   | { op: "reorder_workspace"; workspace: string; target: string }
   | { op: "collapse" | "expand"; id: string }
-  | { op: "expand_list"; workspace: string }
+  | { op: "expand_list"; id: string }
   | { op: "rename_workspace"; workspace: string; name: string }
   | { op: "rename_chat"; workspace: string; chat: string; name: string }
   | { op: "rename_project"; project: string; name: string }

@@ -279,7 +279,7 @@ fn slow_fields_follow_each_surface_and_continued_chats_keep_unread() {
     let mut o = owner();
     let t = tree::build(
         &snapshot(
-            vec![a, b],
+            vec![a, b, session("second", "/repo/wt/main", 1)],
             json!({"old":[agent("orchestrator","ended")],"new":[agent("orchestrator","working")]}),
         ),
         &o,
