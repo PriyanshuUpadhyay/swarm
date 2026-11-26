@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Snapshot } from "../src/core/api";
 import type { Prompt } from "../src/core/composer";
@@ -177,6 +177,60 @@ test("a long error token wraps and keeps Retry and Dismiss inside the banner", a
   }
 });
 
+test("a permission command opens in a scroll window without moving its choices out of view", async ({ page: tab }) => {
+  const home = process.env.SWARM_E2E_HOME!;
+  const screen = join(home, "screen");
+  const actions = join(home, "actions");
+  const start = existsSync(actions) ? readFileSync(actions, "utf8").length : 0;
+  const command = Array.from({ length: 27 }, (_, i) => `│ Command line ${i + 1}`).join("\n");
+  const session = process.env.SWARM_E2E_LIVE!;
+  // Extend the displayed command while keeping the real prompt ID and answer route.
+  await tab.route("**/api/snapshot", async (route) => {
+    const response = await route.fetch();
+    const snapshot: Snapshot = await response.json();
+    const prompt = snapshot.agents[session]?.find((agent) => agent.id === "orchestrator")?.prompt as Prompt | undefined;
+    if (prompt) prompt.question = prompt.question.replace("│ touch /tmp/work/probe.txt", command);
+    await route.fulfill({ response, json: snapshot });
+  });
+  writeFileSync(screen, idle);
+  await openChat(tab, session);
+  const composer = tab.locator(".strip-chat").getByTestId("composer");
+  await expect(composer).toBeEnabled();
+  try {
+    writeFileSync(screen, waiting);
+    const card = tab.getByTestId("prompt-card");
+    await expect(card).toBeVisible();
+    const show = card.getByRole("button", { name: "Show all" });
+    await expect(show).toBeVisible();
+    await expect(composer).toBeDisabled();
+    await expect(card).toContainText("23 more");
+    const preview = card.getByTestId("permission-command");
+    await expect(preview).toHaveText("Command line 1\nCommand line 2\nCommand line 3\nCommand line 4", { useInnerText: true });
+    await show.click();
+    await expect(preview).toContainText("Command line 27");
+    expect(await preview.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+      return el.scrollTop > 0 && el.clientHeight <= 20 * parseFloat(getComputedStyle(el).lineHeight);
+    })).toBe(true);
+    await expect(card.getByRole("button", { name: /^3 No$/ })).toBeInViewport();
+    const shots = process.env.DESIGN_B_SHOTS;
+    if (shots) {
+      mkdirSync(shots, { recursive: true });
+      for (const theme of ["dark", "light"]) {
+        await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
+        await card.screenshot({ path: join(shots, `permission-${theme}.png`) });
+      }
+    }
+    await expect(preview).toBeFocused();
+    await tab.keyboard.press("3");
+    await expect.poll(() => existsSync(actions) ? readFileSync(actions, "utf8").slice(start) : "").toContain("key fixture-chair 3\n");
+  } finally {
+    writeFileSync(screen, idle);
+  }
+  await expect(tab.getByTestId("prompt-card")).toBeHidden();
+  await expect(tab.locator(".strip-chat").getByTestId("composer")).toBeEnabled();
+});
+
 test("a long question path wraps inside its labelled group", async ({ page: tab }, info) => {
   const screen = join(process.env.SWARM_E2E_HOME!, "screen");
   const path = `/tmp/${"longpath".repeat(100)}`;
@@ -195,7 +249,7 @@ test("a long question path wraps inside its labelled group", async ({ page: tab 
     const input = (await tab.locator(".chat-input").boundingBox())!;
     expect(box.x + box.width).toBeLessThanOrEqual(input.x + input.width + 1);
     await expect(card).toHaveRole("group");
-    await expect(card).toHaveAccessibleName(new RegExp(`^The chair is blocked:.*${path}`, "s"));
+    await expect(card).toHaveAccessibleName(new RegExp(`^The chair is waiting:.*${path}`, "s"));
     await tab.screenshot({ path: info.outputPath("long-question.png") });
   } finally {
     writeFileSync(screen, idle);
@@ -209,9 +263,9 @@ test("a child question updates one mounted polite status without taking focus", 
   writeFileSync(screen, idle);
   await openChat(tab, process.env[`SWARM_E2E_PANES_${info.project.name}`]!);
   const reviewer = tab.locator('[data-testid="pane"][data-pane="reviewer"]');
-  const status = reviewer.locator(".chat-input").getByRole("status");
+  const status = reviewer.getByTestId("composer-status");
   const caption = "The agent is asking a question. Answer it above first.";
-  await expect(status).toHaveCount(1);
+  await expect(status).toHaveRole("status");
   await expect(status).toBeEmpty();
   const mounted = (await status.elementHandle())!;
   await status.evaluate((el, caption) => {

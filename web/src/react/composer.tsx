@@ -247,6 +247,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             rows={2}
             className={cn("block w-full", expanded ? "h-[60vh]" : "max-h-[200px]", "resize-none bg-transparent px-3 pt-2.5 text-md outline-none placeholder:text-muted-foreground", chair.provider === "pi" && "composer-text relative")}
             data-testid="composer"
+            disabled={chair.waiting && chair.prompt !== null}
             aria-label={`Message ${target}`}
             placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
             aria-expanded={open}
