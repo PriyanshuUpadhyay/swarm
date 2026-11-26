@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Meter } from "../src/core/settings-types";
 import { open, settings } from "./settings-helpers";
+import { open as openChat } from "./ux-helpers";
 
 async function capture(page: Page, target: Locator, name: string) {
   const dir = process.env.DESIGN_B_SHOTS;
@@ -13,6 +14,37 @@ async function capture(page: Page, target: Locator, name: string) {
     await target.screenshot({ path: join(dir, `${name}-${theme}.png`) });
   }
 }
+
+test("refreshing the same diff preserves keyboard selection without opening a comment", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="README.md"]').click();
+  await expect(tab.getByTestId("diff-path")).toHaveText("README.md");
+  const body = tab.getByTestId("diff-body");
+  const picked = tab.locator('[data-testid="diff-body"] [data-content] > [data-line][data-selected-line]');
+  await body.focus();
+  await tab.keyboard.press("j");
+  await expect(picked).toHaveCount(1);
+  await expect(body).toBeFocused();
+  let added = 700;
+  await tab.route("**/api/changes/diff?**", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), added } });
+  });
+  const refresh = async () => {
+    added++;
+    await tab.evaluate(() => dispatchEvent(new Event("focus")));
+    await expect(tab.getByTestId("diff-counts")).toContainText(`+${added}`);
+  };
+
+  await refresh();
+  await expect(body).toBeFocused();
+  await expect(tab.getByTestId("comment-input")).toHaveCount(0);
+  await expect(picked).toHaveCount(1);
+  await tab.keyboard.press("Escape");
+  await refresh();
+  await expect(picked).toHaveCount(0);
+});
 
 test("the 680 px new-chat composer uses the display face only for its question", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

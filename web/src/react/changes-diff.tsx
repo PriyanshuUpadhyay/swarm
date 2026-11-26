@@ -134,9 +134,10 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
   const [composing, setComposing] = useState(!!editor);
   const body = useRef<HTMLDivElement>(null);
   // A new file or a new patch drops the selection.
-  const [shown, setShown] = useState(d);
-  if (shown !== d) {
-    setShown(d);
+  const identity = `${d.layer}\n${d.path}\n${d.patch}`;
+  const [shown, setShown] = useState(identity);
+  if (shown !== identity) {
+    setShown(identity);
     setSel(editor);
     setComposing(!!editor);
   }
@@ -148,6 +149,7 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
     setSel(next);
     changes.setEditor(d.path, d.layer ?? "branch", next && { ...next, text: editor?.text ?? "" });
   };
+  // Open the comment box for a pointer selection, not when keyboard state paints a range.
   const onLineSelected: FileDiffOptions<Note, undefined>["onLineSelected"] = (range) => {
     const anchor = range ? indexOf(lines, range.side, range.start) : -1;
     const cursor = range ? indexOf(lines, range.endSide ?? range.side, range.end) : -1;
@@ -242,7 +244,7 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
           onSelectedLinesChange={(selection) => onLineSelected(selection?.range ?? null)}
           renderAnnotation={(...[annotation]) => renderNote(annotation)}
           disableWorkerPool
-        /> : <PatchDiff<Note, undefined> patch={patch} options={{ ...DIFF_OPTIONS, controlledSelection: true, onLineSelected }} selectedLines={selected} lineAnnotations={notes} renderAnnotation={renderNote} disableWorkerPool />}
+        /> : <PatchDiff<Note, undefined> patch={patch} options={{ ...DIFF_OPTIONS, controlledSelection: true, onLineSelectionEnd: onLineSelected }} selectedLines={selected} lineAnnotations={notes} renderAnnotation={renderNote} disableWorkerPool />}
       </div>
       {(d.is_truncated || (d.hidden_lines ?? 0) > 0) && (
         <div className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground" data-testid="diff-capped">
