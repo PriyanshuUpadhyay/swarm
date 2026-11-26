@@ -241,17 +241,7 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     // An imported chat has no adapter until its first pane.
     call.adapter = "tmux-swarm".into();
     let launch = |model: Option<&str>, effort: Option<&str>, account: Option<&str>| {
-        let mut args = vec!["launch", "orchestrator", "chat", "--resume"];
-        for (flag, value) in [
-            ("--model", model),
-            ("--effort", effort),
-            ("--account", account),
-        ] {
-            if let Some(value) = value {
-                args.extend([flag, value]);
-            }
-        }
-        run_cli(app, call.args(&args), None)
+        run_cli(app, resume_launch(&call, model, effort, account), None)
     };
     if let Err(refused) = launch(Some(&body.model), body.effort.as_deref(), account).await {
         // A chair closed by this switch starts again on its old run, so the chat keeps a pane.

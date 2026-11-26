@@ -338,16 +338,66 @@ pub(super) fn first_line(output: &str) -> Option<&str> {
 
 /// Start the chat's own CLI session again in the chat, with its whole context (ADR 0107).
 pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, ApiError> {
-    let mut call = action_session(app, &body.session)?;
+    for option in [&body.model, &body.effort, &body.account]
+        .into_iter()
+        .flatten()
+    {
+        if !swarm::config::valid_name(option) {
+            return Err(error(StatusCode::BAD_REQUEST, "invalid launch option"));
+        }
+    }
+    let mut call = current_source(app, &body.session)?;
+    let mut account = body.account;
+    if account.is_none() && (body.model.is_some() || body.effort.is_some()) {
+        // A picked Codex run with no account stays in the account that owns its rollout.
+        account = read_connection(&app.root)
+            .and_then(|db| {
+                db.query_row(
+                    "SELECT CASE WHEN s.chair_provider = 'codex' THEN a.account END
+             FROM session AS s LEFT JOIN agent AS a
+               ON a.session_id = s.id AND a.id = 'orchestrator'
+             WHERE s.id = ?1",
+                    [&body.session],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+            })
+            .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "account read failed"))?;
+    }
     // An imported chat has no adapter until its first pane.
     call.adapter = "tmux-swarm".into();
-    call.args = ["launch", "orchestrator", "chat", "--resume"]
-        .map(String::from)
-        .to_vec();
-    let output = run_cli(app, call, None).await?;
+    let output = run_cli(
+        app,
+        resume_launch(
+            &call,
+            body.model.as_deref(),
+            body.effort.as_deref(),
+            account.as_deref(),
+        ),
+        None,
+    )
+    .await?;
     let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
     Ok(json!({"ok": true, "session": body.session, "agent": "orchestrator", "pane": pane}))
+}
+
+pub(super) fn resume_launch(
+    call: &CliCall,
+    model: Option<&str>,
+    effort: Option<&str>,
+    account: Option<&str>,
+) -> CliCall {
+    let mut args = vec!["launch", "orchestrator", "chat", "--resume"];
+    for (flag, value) in [
+        ("--model", model),
+        ("--effort", effort),
+        ("--account", account),
+    ] {
+        if let Some(value) = value {
+            args.extend([flag, value]);
+        }
+    }
+    call.args(&args)
 }
 
 #[path = "new_chat/preview.rs"]

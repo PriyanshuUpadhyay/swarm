@@ -76,6 +76,9 @@ pub(super) enum Place {
 #[serde(deny_unknown_fields)]
 pub(super) struct ResumeChat {
     pub(super) session: String,
+    pub(super) model: Option<String>,
+    pub(super) effort: Option<String>,
+    pub(super) account: Option<String>,
 }
 
 #[derive(Deserialize)]
