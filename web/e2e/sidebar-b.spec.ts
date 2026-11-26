@@ -106,6 +106,7 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   const link = row.getByRole("link", { name: "PR #7, open, CI passed" });
   await expect(row.getByTestId("sidebar-branch")).toHaveCount(0);
   await expect(link).toHaveAttribute("href", url);
+  expect(await link.evaluate((element) => element.tabIndex)).toBe(-1);
   await link.focus();
   const [popup] = await Promise.all([page.waitForEvent("popup"), link.press("Enter")]);
   await expect(popup).toHaveURL(url);
@@ -121,7 +122,9 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   const bar = page.getByTestId("branch-bar");
   await expect(bar).toContainText("feature");
   await expect(bar).toContainText("+31−4");
-  await expect(bar.getByRole("link", { name: "PR #7, open, CI passed" })).toHaveAttribute("href", url);
+  const barLink = bar.getByRole("link", { name: "PR #7, open, CI passed" });
+  await expect(barLink).toHaveAttribute("href", url);
+  expect(await barLink.evaluate((element) => element.tabIndex)).toBe(0);
   const [stripBox, tabBox, barBox] = await Promise.all([strip, tab, bar].map((item) => item.boundingBox()));
   expect(stripBox?.height).toBe(40);
   expect(tabBox).toMatchObject({ width: 224, height: 32 });

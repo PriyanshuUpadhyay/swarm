@@ -97,7 +97,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
           {r.age && <FieldView f={{ field: "age", text: r.age }} row={r} />}
           {other.map((f, i) => <FieldView key={i} f={f} row={r} />)}
           <span className="flex-1" />
-          <PrChip pr={facts?.pr} />
+          <PrChip pr={facts?.pr} tabIndex={-1} />
         </div>
         {open && facts?.branch && (
           <div className="tline chat-sub chat-branch" data-testid="sidebar-branch">

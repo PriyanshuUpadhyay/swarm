@@ -1,7 +1,7 @@
 import { CheckIcon, GitMergeIcon, GitPullRequestIcon, XIcon } from "lucide-react";
 import type { LineTotals, PrFact } from "../core/nav";
 
-export function PrChip({ pr }: { pr: PrFact | null | undefined }) {
+export function PrChip({ pr, tabIndex }: { pr: PrFact | null | undefined; tabIndex?: number }) {
   if (!pr || !Number.isSafeInteger(pr.number) || pr.number < 1) return null;
   if (pr.state !== "open" && pr.state !== "draft" && pr.state !== "merged") return null;
   const url = URL.canParse(pr.url) ? new URL(pr.url) : null;
@@ -11,7 +11,7 @@ export function PrChip({ pr }: { pr: PrFact | null | undefined }) {
   const ci = pr.state === "open" ? pr.ci : "unknown";
   const stateLabel = ci === "passed" || ci === "failed" || ci === "pending" ? `${pr.state}, CI ${ci}` : pr.state;
   return (
-    <a className="pr-chip" data-state={pr.state} data-testid="pr-chip" href={url.href} target="_blank" rel="noopener noreferrer"
+    <a className="pr-chip" data-state={pr.state} data-testid="pr-chip" href={url.href} target="_blank" rel="noopener noreferrer" tabIndex={tabIndex}
       aria-label={`PR #${pr.number}, ${stateLabel}`} title={`PR #${pr.number}, ${stateLabel}`} onClick={(e) => e.stopPropagation()}>
       <Merge className="pr-icon" aria-hidden />
       <span>#{pr.number}</span>
