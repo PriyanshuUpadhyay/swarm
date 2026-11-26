@@ -92,7 +92,7 @@ function Code({ value: { label, text, diff } }: { value: Extract<Block, { type: 
   return (
     <div className="md-code">
       <Head label={label ?? "Code"} what="code" count={count} />
-      <pre className={windowClass}>{content}</pre>{diff || label === "patch" ? null : "\n"}
+      <pre className={windowClass} data-patch={diff || label === "patch" || label === "diff" ? "" : undefined}>{content}</pre>{diff || label === "patch" ? null : "\n"}
     </div>
   );
 }

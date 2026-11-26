@@ -99,6 +99,20 @@ test("long code reports its size and scrolls to the last line", async ({ page })
   await expect(box.getByText("check41", { exact: true })).toBeInViewport();
 });
 
+test("long reply code keeps the reply font size and thought fences stay plain text", async ({ page }) => {
+  const snippet = Array.from({ length: 41 }, (_, i) => `const item${i + 1} = true;`).join("\n");
+  const fence = `\`\`\`ts\n${snippet}\n\`\`\``;
+  const thought = "```ts\nconst thought = true;\n```";
+  await mockRows(page, [row("t1", thought, "thought"), row("a1", fence)]);
+  await open(page);
+
+  await expect(page.locator('[data-id="a1"] pre.scroll-window code')).toHaveCSS("font-size", "12.25px");
+  await page.getByRole("button", { name: "Thinking", exact: true }).click();
+  const saved = page.getByTestId("thought-text");
+  await expect(saved).toHaveText(thought);
+  await expect(saved).toHaveCSS("font-size", "13px");
+});
+
 test("a failed turn presents the original CLI text as one non-interactive row", async ({ page }) => {
   const source = "API Error: 529 Overloaded";
   await mockRows(page, [row("e1", source, "error")]);

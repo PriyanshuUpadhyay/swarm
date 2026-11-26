@@ -326,7 +326,10 @@
 pre.out.scroll-window {
   max-height: 360px;
   overflow: auto;
-  font: var(--text-sm)/18px var(--font-mono);
+  line-height: 18px;
+}
+.md-code pre.scroll-window[data-patch] {
+  font-size: var(--text-sm);
 }
 .md-scroll {
   overflow-x: auto;
