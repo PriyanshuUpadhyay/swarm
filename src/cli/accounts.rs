@@ -429,6 +429,7 @@ mod tests {
                 invalid_home: false,
                 fable_spent: false,
                 renewable: false,
+                login: None,
             });
         }
         let pick = |list: &swarm::profiles::AccountList, typed: &str| {

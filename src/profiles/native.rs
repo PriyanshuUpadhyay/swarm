@@ -356,7 +356,7 @@ fn load_inner(
         if matches!(identity, Err(NativeReadError::CliUnavailable)) {
             list.state = "unavailable".into();
         }
-        let (auth_state, email, api_key, _) =
+        let (auth_state, email, api_key, login) =
             identity.unwrap_or((AuthState::Unavailable, None, false, None));
         list.accounts.push(Account {
             name,
@@ -377,6 +377,7 @@ fn load_inner(
             invalid_home: false,
             fable_spent: false,
             renewable: false,
+            login,
         });
     }
     if include_usage {
@@ -418,6 +419,7 @@ fn load_inner(
             invalid_home: true,
             fable_spent: false,
             renewable: false,
+            login: None,
         });
     }
     list.accounts

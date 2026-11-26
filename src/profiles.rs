@@ -37,6 +37,9 @@ pub struct Account {
     /// Signed in with an expired token, which the CLI renews when a chat starts.
     #[serde(skip)]
     pub renewable: bool,
+    /// The keychain login's account and organization ids, for a native Claude home.
+    #[serde(skip)]
+    pub login: Option<String>,
 }
 
 impl AccountList {
@@ -250,6 +253,7 @@ mod tests {
             invalid_home: false,
             fable_spent: false,
             renewable: false,
+            login: None,
         }
     }
 
