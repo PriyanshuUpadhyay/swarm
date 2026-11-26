@@ -46,6 +46,28 @@ test("refreshing the same diff preserves keyboard selection without opening a co
   await expect(picked).toHaveCount(0);
 });
 
+test("focus refresh resumes after Show all is refused without repeating the full read", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  let fullReads = 0;
+  await tab.route("**/api/changes/diff?**", async (route) => {
+    if (new URL(route.request().url()).searchParams.get("full") !== "1") return route.continue();
+    fullReads++;
+    await route.fulfill({ status: 413, json: { error: "The full diff is over the cap." } });
+  });
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  const cut = tab.getByTestId("diff-capped");
+  const show = cut.getByRole("button", { name: "Show all", exact: true });
+  await show.click();
+  await expect(cut).toContainText("The full diff is over the cap.");
+
+  const refresh = tab.waitForResponse((res) => new URL(res.url()).pathname === "/api/changes", { timeout: 2500 });
+  await tab.evaluate(() => dispatchEvent(new Event("focus")));
+  expect((await refresh).ok()).toBe(true);
+  await expect(show).toBeVisible();
+  expect(fullReads).toBe(1);
+});
+
 test("the 680 px new-chat composer uses the display face only for its question", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page);
