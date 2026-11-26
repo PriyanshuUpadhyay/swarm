@@ -148,7 +148,8 @@ export type ChoiceOp =
   | { op: "pref"; key: string; value: string | boolean }
   | { op: "mute_project"; project: string; muted: boolean };
 
-/** Keep unchanged rows, sections and workspace facts so memoized rows skip a refresh render. */
+/** The new tree, with each row and section that did not change kept as the old object, so a
+ *  memoized row skips its render on a refresh. */
 export function shareTree(old: TreeView | null, next: TreeView): TreeView {
   if (!old) return next;
   const rows = new Map<string, SidebarRow>();
@@ -157,10 +158,6 @@ export function shareTree(old: TreeView | null, next: TreeView): TreeView {
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   return {
     ...next,
-    workspaces: Object.fromEntries(Object.entries(next.workspaces).map(([path, facts]) => {
-      const previous = old.workspaces[path];
-      return [path, previous && same(previous, facts) ? previous : facts];
-    })),
     sections: next.sections.map((s) => {
       const kept = s.rows.map((r) => {
         const o = rows.get(`${s.id}\n${r.id}`);
