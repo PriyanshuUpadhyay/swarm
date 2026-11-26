@@ -53,7 +53,7 @@ export type Section = {
   count?: number;
 };
 
-export type PrFact = { number: number; url: string; state: "open" | "draft" | "merged"; ci: string };
+export type PrFact = { number: number; url: string; state: "open" | "draft" | "merged"; ci: "passed" | "failed" | "pending" | "unknown" };
 export type LineTotals = { addedLines: number; removedLines: number };
 export type ProjectFacts = { path: string; title: string; folder: boolean };
 export type WorkspaceFacts = {
@@ -374,6 +374,7 @@ export function paletteSections(items: PaletteItem[], query: string): { title: s
 export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null) {
   if (!tree) return [];
   const projectTitles = new Map(tree.projects.map((p) => [p.path, p.title]));
+
   const grouped = new Map<string, SidebarRow[]>();
   for (const chat of chatRows(tree)) {
     const workspace = chat.selection?.workspace;
@@ -382,6 +383,7 @@ export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null)
     chats.push(chat);
     grouped.set(workspace, chats);
   }
+
   const statusOrder: Status[] = ["blocked", "error", "working", "done", "ended"];
   return Object.entries(tree.workspaces).filter(([, w]) => !w.archived).map(([path, facts]) => {
     const chats = grouped.get(path) ?? [];

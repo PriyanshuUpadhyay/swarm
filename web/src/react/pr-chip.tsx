@@ -7,9 +7,11 @@ export function PrChip({ pr, tabIndex }: { pr: PrFact | null | undefined; tabInd
   const url = URL.canParse(pr.url) ? new URL(pr.url) : null;
   if (!url || url.origin !== "https://github.com" || url.username || url.password || url.search || url.hash ||
     !/^\/[^/]+\/[^/]+\/pull\/\d+$/.test(url.pathname) || !url.pathname.endsWith(`/pull/${pr.number}`)) return null;
+
   const Merge = pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon;
   const ci = pr.state === "open" ? pr.ci : "unknown";
   const stateLabel = ci === "passed" || ci === "failed" || ci === "pending" ? `${pr.state}, CI ${ci}` : pr.state;
+
   return (
     <a className="pr-chip" data-state={pr.state} data-testid="pr-chip" href={url.href} target="_blank" rel="noopener noreferrer" tabIndex={tabIndex}
       aria-label={`PR #${pr.number}, ${stateLabel}`} title={`PR #${pr.number}, ${stateLabel}`} onClick={(e) => e.stopPropagation()}>

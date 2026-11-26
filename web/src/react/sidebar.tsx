@@ -42,7 +42,6 @@ function WorkspaceList({ app }: { app: App }) {
   const current = currentRow(rows, openId, workspace, archive ? null : tree);
 
   const onClick = (e: MouseEvent) => {
-    if ((e.target as Element).closest("a")) return;
     const el = (e.target as Element).closest<HTMLElement>('[data-testid="tree-row"]');
     const row = el && rows.find((r) => r.id === el.dataset.id);
     if (!row) return;

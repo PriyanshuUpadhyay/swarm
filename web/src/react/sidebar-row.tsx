@@ -79,6 +79,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
   if (r.kind === "chat" && !archive) {
     const needsYou = row.section.kind === "needs-you";
     const other = r.fields.filter((f) => !["title", "unread", "status", "children", "age", "branch", "pr", "ci", "state"].includes(f.field));
+
     return (
       <div {...common} className="trow chat-row" data-session={r.selection?.chat ?? undefined} data-marked={marked || undefined}
         style={{ paddingLeft: 9 + (row.level - 2) * 11 }}>

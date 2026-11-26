@@ -64,6 +64,7 @@ function workspaceActions(app: App, path: string, row: NavRow, menuOnly = false)
   const facts = workspaceRow(app.view.tree, path);
   const up = !menuOnly && app.workspaceMoveTarget(path, -1);
   const down = !menuOnly && app.workspaceMoveTarget(path, 1);
+
   return [
     { label: "New Chat…", icon: PlusIcon, disabled: !facts?.newChatEnabled, menuOnly, run: () => app.newChat.open(path) },
     row.row?.pinned
