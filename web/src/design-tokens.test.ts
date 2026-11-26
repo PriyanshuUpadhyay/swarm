@@ -105,4 +105,20 @@ describe("design tokens", () => {
   it("the two light blocks declare the same variables with the same values", () => {
     expect(lightMedia).toEqual(lightAttr);
   });
+
+  it("the app shells use the DESIGN.md dark surface colour", () => {
+    const surface = tokens.themes.dark.surface;
+    expect(surface).toBeDefined();
+
+    const html = read("../index.html");
+    expect(html.match(/<meta name="theme-color" content="([^"]+)"/)?.[1], "HTML theme-color").toBe(surface);
+
+    const manifest = JSON.parse(read("../public/manifest.webmanifest"));
+    expect(manifest.background_color, "manifest background_color").toBe(surface);
+    expect(manifest.theme_color, "manifest theme_color").toBe(surface);
+
+    const swift = read("../../ui/Sources/SwarmApp/main.swift");
+    const windowRgb = swift.match(/window\.backgroundColor = NSColor\(red: 0x([\da-f]{2}) \/ 255, green: 0x([\da-f]{2}) \/ 255, blue: 0x([\da-f]{2}) \/ 255,/i);
+    expect(windowRgb && `#${windowRgb.slice(1).join("").toLowerCase()}`, "Swift window background").toBe(surface);
+  });
 });
