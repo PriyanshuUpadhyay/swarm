@@ -4,6 +4,7 @@ import { readSse, type SseEvent } from "./sse";
 import { bodyModeOf, displayOf, imagesOf, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, units } from "./transcript";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
+import { hasLinkedHistory } from "./app-panes";
 
 /** How often live text types out, and in how many steps it catches up with the screen. */
 const TYPE_MS = 30;
@@ -21,7 +22,8 @@ export class AppStream {
 
   applySnapshot(snap: Snapshot) {
     this.app.snapshot = snap;
-    if (this.app.life?.state.pendingSwitch || this.app.life?.state.endedRun) this.app.life.reconcileRunPicks(snap);
+    const life = this.app.life;
+    if (Object.keys(life?.state.pendingSwitch ?? {}).length || Object.keys(life?.state.endedRun ?? {}).length) life.reconcileRunPicks(snap);
     // A card stays busy until its question goes; the same question shown again is a new ask.
     for (const [id, input] of this.app.inputs)
       if (input.answering && this.app.composing.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
@@ -50,7 +52,7 @@ export class AppStream {
     // A chair's and a child's log can show up after the chat opens.
     if (this.app.reading.open) this.app.panes.loadChair(this.app.reading.open);
     // A linked chat already has a reader when the leaf's native log first becomes available.
-    if (snap.sessions.some((s) => s.continuation_of)) this.syncSubscriptions();
+    if (hasLinkedHistory(snap)) this.syncSubscriptions();
     for (const id of this.app.visible) this.app.panes.loadPane(id);
     if (this.app.liveAll) void this.loadAllForLive();
   }
@@ -271,8 +273,7 @@ export class AppStream {
     const keys: SubscribeKey[] = [];
     for (const id of [...chairs, ...panes]) {
       const chat = this.app.chats.get(id);
-      const awaitingLog = chat?.agent === "chair" && this.app.snapshot?.sessions.some(
-        (s) => s.id === chat.sessionId && s.continuation_of && !this.app.panes.chairHasLog(s.id));
+      const awaitingLog = chat?.agent === "chair" && hasLinkedHistory(this.app.snapshot, chat.sessionId) && !this.app.panes.chairHasLog(chat.sessionId);
       if (chat?.state === "ready" && !awaitingLog) keys.push({ key: chat.key, from: chat.end, view: "rows" });
       if (keys.length === MAX_KEYS) break;
     }

@@ -20,6 +20,7 @@ export function RunChip({ app, sessionId, chair, ended = false }: { app: App; se
   const open = chosen === sessionId && !chair.who && (ended || !chair.unreachable) && !resuming;
   const shown = ended && next ? { ...chair, ...next } : chair;
   const favorite = state.favoritePick;
+
   const login = !chair.who && shown.account ? accountCli(shown.provider ?? "", shown.model) : null;
   const [single, setSingle] = useState<string | null>(null);
   useEffect(() => {
@@ -96,7 +97,7 @@ export function RunChip({ app, sessionId, chair, ended = false }: { app: App; se
   );
 }
 
-function useRunState(app: App) {
+export function useRunState(app: App) {
   const snapshot = () => app.life.state;
   return useSyncExternalStore(app.life.subscribe, snapshot, snapshot);
 }
@@ -105,7 +106,12 @@ function RunSwitchStatus({ app, sessionId, chair }: { app: App; sessionId: strin
   const state = useRunState(app);
   const open = state.switchModel === sessionId;
   if (chair.who || chair.unreachable || !open || !app.life.runBusy(sessionId)) return null;
-  return <Button type="button" size="sm" variant="ghost" disabled={app.composing.input(sessionId).stopping} onClick={() => void app.composing.interrupt(sessionId)}>Stop</Button>;
+  return <StopRun app={app} sessionId={sessionId} variant="ghost" />;
+}
+
+function StopRun({ app, sessionId, variant }: { app: App; sessionId: string; variant: "ghost" | "outline" }) {
+  // interrupt puts a refusal in the composer's error banner.
+  return <Button type="button" size="sm" variant={variant} disabled={app.composing.input(sessionId).stopping} onClick={() => void app.composing.interrupt(sessionId)}>Stop</Button>;
 }
 
 function RunSwitchBanner({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
@@ -134,6 +140,7 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
   const draft = (ended ? selected : pending) ?? local;
   const [preview, setPreview] = useState<Run | null>(null);
   const catalog = useRunCatalog(app, ended ? draft.provider : current.provider);
+
   const readBusy = () => !ended && app.life.runBusy(sessionId);
   const busy = useSyncExternalStore(app.subscribe, readBusy, readBusy);
   const wasBusy = useRef(busy);
@@ -162,8 +169,9 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
         <ErrorLine text={handoff?.error ?? catalog.error} />
         <div className="flex items-center justify-between gap-2">
           <span role="status" data-testid="run-outcome" className="h-[3lh] overflow-auto">{help}</span>
-          {busy && <Button type="button" size="sm" variant="outline" disabled={app.composing.input(sessionId).stopping} onClick={() => void app.composing.interrupt(sessionId)}>Stop</Button>}
+          {busy && <StopRun app={app} sessionId={sessionId} variant="outline" />}
         </div>
+        {/* cancelSwitch posts a refusal as an app notice. */}
         {switching && <Button className="justify-self-end" type="button" size="sm" variant="outline" data-testid="run-cancel" disabled={!handoff?.canCancel} onClick={() => void app.life.cancelSwitch(sessionId)}>Cancel switch</Button>}
       </div>
     </>

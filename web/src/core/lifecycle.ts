@@ -243,6 +243,7 @@ export class Lifecycle {
       return;
     }
     this.clearRunPick("pendingSwitch", session);
+    // switchModel records the failure on the handoff or posts a notice.
     void this.switchModel(session, run.provider, run.model, run.account, run.effort, outcome === "resume" ? "resume" : savedCarry(this.app.tree?.prefs));
   }
 
@@ -265,6 +266,7 @@ export class Lifecycle {
     if (!provider || chair.unreachable) return;
     const favorites = (this.app.tree?.prefs?.favoriteModels ?? []).filter((m) => m.provider === provider);
     if (!favorites.length) return;
+
     try {
       const [{ providers }, { models }] = await Promise.all([this.runs.providers(), this.runs.models(provider)]);
       if (this.app.openId !== session || this.app.composing.chair(session).model !== model) return;
@@ -321,6 +323,7 @@ export class Lifecycle {
     const run = this.state.endedRun?.[session];
     const handoff = run?.model && run.provider !== chair.provider;
     if (!chair.resumable && !handoff) return;
+
     this.set({ resuming: { ...this.state.resuming, [session]: true }, switchModel: null });
     try {
       if (handoff && run?.model) {

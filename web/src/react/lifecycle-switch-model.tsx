@@ -16,6 +16,7 @@ export function SwitchProgress({ handoff }: { handoff: Handoff }) {
     ] as [string, string][] : []),
   ];
   const phaseIndex = steps.findIndex(([phase]) => phase === handoff.phase);
+
   return (
     <ol className="grid gap-1 text-sm" data-testid="sm-progress" data-phase={handoff.phase} aria-label="Progress" aria-live="polite">
       {steps.map(([phase, label], index) => {

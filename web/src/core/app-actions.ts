@@ -205,6 +205,7 @@ export class AppActions {
       { id: "chat.next", title: "Next Chat", chord: "Shift+Meta+]", run: (e) => this.app.navigation.stepChat(1, e) },
       { id: "chat.prev", title: "Previous Chat", chord: "Shift+Meta+[", run: (e) => this.app.navigation.stepChat(-1, e) },
       { id: "run.pick", title: "Pick a Model", chord: "Shift+Meta+M", palette: false, when: chat, run: (e) => { if (!e?.repeat) this.app.life.openSwitchModel(this.app.openId!); } },
+      // nextFavorite ignores failed catalog reads; pickRun owns any switch failure.
       { id: "run.favorite", title: "Next Favourite Model", chord: "Ctrl+Meta+M", when: chat, run: (e) => { if (!e?.repeat) void this.app.life.nextFavorite(this.app.openId!); } },
       { id: "pane.zoom", title: "Zoom Pane", chord: "Shift+Meta+Enter", when: chat, run: () => this.app.panes.toggleZoom() },
       {

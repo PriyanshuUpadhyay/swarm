@@ -1,6 +1,5 @@
 import { TriangleAlertIcon } from "lucide-react";
-import { useSyncExternalStore } from "react";
-import { RunChip } from "./run-chip";
+import { RunChip, useRunState } from "./run-chip";
 import type { App, Banner, Composer } from "../core/app";
 import { Button } from "../components/ui/button";
 import { ComposerBox } from "./composer";
@@ -34,8 +33,7 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
 }
 
 function ResumeButton({ app, sessionId, native, provider }: { app: App; sessionId: string; native: boolean; provider: string | null }) {
-  const snapshot = () => app.life.state;
-  const state = useSyncExternalStore(app.life.subscribe, snapshot, snapshot);
+  const state = useRunState(app);
   const run = state.endedRun?.[sessionId];
   const busy = state.resuming?.[sessionId] === true;
   if (!native && !(run?.model && run.provider !== provider)) return null;

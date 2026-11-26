@@ -188,7 +188,7 @@ export function limitText(meters: readonly Meter[], provider: string, account: s
 /** One agent run: what the popover picks. */
 export type Run = { provider: string; model: string | null; effort: string | null; account: string | null };
 
-export type Carry = "file" | "summary" | "clean";
+export type Carry = (typeof CARRY_OPTIONS)[number][0];
 
 /** What `/api/chat/continue` does with the old chat. */
 export type SwitchCarry = Carry | "resume";
@@ -196,15 +196,15 @@ export type SwitchCarry = Carry | "resume";
 export type Outcome = "none" | "resume" | "handoff";
 
 /** What to bring on a CLI switch (Settings). */
-export const CARRY_OPTIONS: [Carry, string][] = [
+export const CARRY_OPTIONS = [
   ["file", "File"],
   ["summary", "Summary"],
   ["clean", "No history"],
-];
+] as const satisfies [string, string][];
 
 export function savedCarry(prefs: { switchCarry?: string } | undefined): Carry {
   const mode = prefs?.switchCarry;
-  return mode === "clean" || mode === "summary" ? mode : "file";
+  return CARRY_OPTIONS.find(([key]) => key === mode)?.[0] ?? "file";
 }
 
 /** One CLI resumes its own session. Another CLI continues this chat in a linked session. */
@@ -229,7 +229,7 @@ export function outcomeText(outcome: Outcome, current: Run, draft: Run, carry: C
 }
 
 function handoffLine(draft: Run, target: string, carry: Carry): string {
-  const history = carry === "file" ? "the chat text in a file" : carry === "summary" ? "a summary" : "no history";
+  const history = { file: "the chat text in a file", summary: "a summary", clean: "no history" }[carry];
   return `This chat continues on ${cliName(draft.provider)} · ${target} with ${history}. Thinking, tools and attachments do not carry.`;
 }
 

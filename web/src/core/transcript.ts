@@ -210,10 +210,16 @@ function compare(a: Row, b: Row): number {
   return qa - qb || segment || joined(b) - joined(a) || a.order[0] - b.order[0] || a.order[1] - b.order[1];
 }
 
+/** A historical row ID starts with the UUID of its source session. */
+export function scopedRowId(id: string): { session: string; local: string } | null {
+  const match = /^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}):(.+)$/i.exec(id);
+  return match ? { session: match[1], local: match[2] } : null;
+}
+
 /** A historical output locator prefixes its log byte locator with the owning session. */
 export function sourceLocator(id: string): { session: string; local: string } | null {
-  const match = /^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}):(raw-.+)$/i.exec(id);
-  return match ? { session: match[1], local: match[2] } : null;
+  const scoped = scopedRowId(id);
+  return scoped && /^raw-.+$/i.test(scoped.local) ? scoped : null;
 }
 
 /** Applies `remove` and `upsert` by id. A known row keeps its place; a new row goes in by `order`.

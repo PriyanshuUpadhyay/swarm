@@ -5,6 +5,7 @@ import type { App } from "./app";
 import { firstLine, message } from "./app-types";
 import { hasPendingImage, type Draft } from "./images";
 import type { Run } from "./composer";
+import type { Prefs } from "./nav";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
 import { fileRows, type CommandList } from "./slash";
 import { canStartIn, defaultPlace, defaultTarget, targets, type Place, type Preview } from "./new-chat-places";
@@ -54,7 +55,7 @@ type NewChatState = {
  *  the server's default holds there. */
 export const DEFAULT_ROLE = "chat";
 
-export function defaultRun(prefs: { newChatModel?: { provider: string; model: string } } | undefined): Run | null {
+export function defaultRun(prefs: Pick<Prefs, "newChatModel"> | undefined): Run | null {
   return prefs?.newChatModel ? { ...prefs.newChatModel, effort: null, account: null } : null;
 }
 

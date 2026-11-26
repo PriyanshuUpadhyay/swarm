@@ -14,9 +14,9 @@ import { modelPickerKey } from "./model-picker";
 import { meterTone } from "./usage-meters";
 import { CliMark } from "./cli-mark";
 
-/** A one-of-N pill that shows its pick with `aria-pressed`. */
 const RAIL = "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-muted-foreground hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
+/** A one-of-N pill that shows its pick with `aria-pressed`. */
 export const PRESSED_PILL = "rounded-md border border-menu-border px-2 py-1 text-xs hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
 export type Catalog = { providers: ProviderInfo[]; models: Record<string, ModelInfo[] | string>; error: string | null };
@@ -74,6 +74,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   const providers = catalog.providers.length ? catalog.providers : [{ id: current?.provider ?? draft.provider }];
   const favorites = prefs?.favoriteModels ?? [];
 
+  // loadUsage keeps its errors in the usage state.
   useEffect(() => { void app.settings.loadUsage(); }, [app]);
 
   const accountInfo = catalog.providers.find((p) => p.id === accountCli(draft.provider, draft.model));
@@ -107,6 +108,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
     const on = draft.provider === provider && draft.model === m.id;
     const pair = { provider, model: m.id };
     const starred = favorites.some((f) => f.provider === provider && f.model === m.id);
+
     if (q && ![m.label, m.id].some((text) => text.toLowerCase().includes(q))) return null;
     return (
       <div key={`${provider}/${m.id}`} data-testid={missing ? "run-unavailable" : undefined} className={`group flex items-center gap-1 rounded-md px-1 ${on ? "bg-menu-selected text-foreground" : "hover:bg-menu-hover"}`}>
@@ -120,6 +122,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
           {current?.provider === provider && current.model === m.id && <span className="ml-auto rounded border border-menu-border px-1 text-xs text-muted-foreground">now</span>}
         </button>
         {!missing && <>
+          {/* Choice writes report failures as app notices. */}
           <button type="button" title={starred ? "Remove from favorites" : "Add to favorites"} aria-label={starred ? `Remove ${m.label} from favorites` : `Add ${m.label} to favorites`} aria-pressed={starred} className={`rounded p-0.5 hover:bg-menu-hover focus-visible:opacity-100 ${starred ? "" : "opacity-0 group-hover:opacity-100"}`} onClick={() => void app.settings.setPref("favoriteModels", starred ? favorites.filter((f) => f.provider !== provider || f.model !== m.id) : [...favorites, pair])}>
             <StarIcon className="size-3.5" fill={starred ? "currentColor" : "none"} />
           </button>

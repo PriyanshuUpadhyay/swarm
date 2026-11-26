@@ -2,7 +2,7 @@ import { LetterBox } from "../components/ui/letter-box";
 
 const LETTERS: Record<string, string> = { claude: "C", codex: "X", agy: "A", pi: "P" };
 
-/** The adjacent label names the CLI. Until its product mark is cleared, the box is decorative. */
+/** The letter box is visual only until the product mark is cleared. */
 export function CliMark({ provider, selected = false }: { provider: string; selected?: boolean }) {
   if (!Object.hasOwn(LETTERS, provider)) return null;
   return (

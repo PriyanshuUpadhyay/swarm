@@ -8,7 +8,7 @@ import { focusOpenedChat, keepFocus } from "./focus";
 import { chatFromPath, resolveChat } from "./route";
 import { type Direction, type PaneCell } from "./panes";
 import { type HistoryEntry } from "./history";
-import { type Line } from "./transcript";
+import { scopedRowId, type Line } from "./transcript";
 import { Lifecycle } from "./lifecycle";
 import { type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
@@ -417,7 +417,8 @@ export class App {
   branch(row: string) {
     if (!this.openId) return;
     const source = this.reading.open?.rows.find((r) => r.id === row)?.source_session;
-    void this.actions.branch(source ?? this.openId, source ? row.slice(source.length + 1) : row);
+    const scoped = source ? scopedRowId(row) : null;
+    void this.actions.branch(source ?? this.openId, scoped?.local ?? row);
   }
 
   canBranchFrom(session: string): boolean {
