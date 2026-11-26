@@ -8,7 +8,6 @@ import { fold, type FoldLevel } from "../core/fold-display";
 import { Kbd } from "../components/ui/kbd";
 import { copyText } from "./copy";
 import { CutLine, plural, sourceLines } from "./cut-line";
-import { Glyph } from "./glyph";
 import { ImageThumbs } from "./images";
 import { cutMarkdown, ImageLoader, MarkdownView } from "./markdown-view";
 import { DiffView, OutputBox } from "./transcript-output";
@@ -133,12 +132,6 @@ function RowBody(ctx: Ctx) {
       <div className="divider">
         <span>{row.text}</span>
         {row.detail && <span className="text-muted-foreground">{row.detail}</span>}
-      </div>
-    );
-  if (row.system_kind === "working")
-    return (
-      <div className="quiet" role="status" data-testid="working">
-        <Glyph form="working" size={12} aria-hidden /> {row.text}
       </div>
     );
   if (row.system_kind === UNMAPPED)

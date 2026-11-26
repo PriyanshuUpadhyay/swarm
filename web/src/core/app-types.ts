@@ -84,6 +84,7 @@ export type Composer = {
   /** The owner's queued rows at the end of the transcript. */
   queued: number;
   usage: Usage;
+  workLabel?: string;
 };
 
 export type Find = { open: boolean; query: string; matches: Match[]; index: number; seq: number; pending?: boolean; error?: string | null };
@@ -186,13 +187,6 @@ export const PICKS_PREFIX = "composer.skills.";
 export const HISTORY_PREFIX = "composer.history.";
 export const STASH_PREFIX = "composer.stash.";
 export const NO_FIND: Find = { open: false, query: "", matches: [], index: -1, seq: 0 };
-/** The last line while the agent runs. A turn can log nothing for minutes, such as Claude's /compact. */
-export const WORKING: Line = {
-  id: "working",
-  row: { id: "working", kind: "notice", system_kind: "working", text: "Working…", order: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER] },
-  fold: null,
-  open: false,
-};
 export const NO_PANE: Pane = {
   id: "",
   chatState: "none",

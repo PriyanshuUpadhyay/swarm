@@ -55,6 +55,8 @@ export type AgentInput = {
   /** An unreachable chair whose own CLI session can start again in this chat (ADR 0107). */
   resumable: boolean;
   running: boolean;
+  waiting: boolean;
+  turnStartTimeS?: number;
   prompt: Prompt | null;
   /** Claude and pi in tmux keep a queue that Up pulls back (ADR 0038). */
   pullBack: boolean;
@@ -85,7 +87,8 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
   // A blocked agent has a dialog open, where Enter means yes, so typed text could approve a tool.
   // A picker that waits on the owner shows as a card too. The card is above the box, or comes with
   // the next listing.
-  if (!disabled && (agent?.state === "blocked" || prompt)) disabled = "The agent is asking a question. Answer it above first.";
+  const waiting = !unreachable && (agent?.state === "blocked" || prompt !== null);
+  if (waiting) disabled = "The agent is asking a question. Answer it above first.";
   return {
     who: child,
     provider,
@@ -96,6 +99,8 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     unreachable,
     resumable: unreachable && !child && provider !== null && typeof session?.chair_id === "string",
     running: agent?.state === "working",
+    waiting,
+    turnStartTimeS: agent?.turn_start_time_s,
     prompt: unreachable ? null : prompt,
     pullBack: (provider === "claude" || provider === "pi") && (adapter === "tmux" || adapter === "tmux-swarm"),
     queue: (agent?.queue as QueuedMessage[] | undefined) ?? [],

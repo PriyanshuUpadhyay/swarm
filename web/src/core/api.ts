@@ -14,7 +14,7 @@ export type Session = {
   [field: string]: unknown;
 };
 
-export type Agent = { id: string; role: string; state: string | null; alive: boolean | null; [field: string]: unknown };
+export type Agent = { id: string; role: string; state: string | null; alive: boolean | null; turn_start_time_s?: number; [field: string]: unknown };
 
 export type Snapshot = { version: number; sessions: Session[]; agents: Record<string, Agent[]> };
 

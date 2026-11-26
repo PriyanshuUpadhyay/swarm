@@ -1,4 +1,4 @@
-import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, Maximize2Icon, Minimize2Icon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SENT, type App, type Composer } from "../core/app";
 import { hasPendingImage, imagePaths } from "../core/images";
@@ -285,7 +285,6 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
           <button type="button" data-testid="usage" className="rounded-md px-1.5 py-1 tabular-nums hover:bg-hover" title={usageTitle(composer.usage)}>
             {usageLabel(composer.usage)}
           </button>
-          {showStop && !chair.who && <span className="text-muted-foreground">⌘. stops</span>}
           <span className="flex-1" />
           <Button
             variant="ghost"
@@ -300,20 +299,6 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
           >
             {expanded ? <Minimize2Icon className="size-3.5" /> : <Maximize2Icon className="size-3.5" />}
           </Button>
-          {showStop && (
-            <Button
-              variant="outline"
-              size="icon"
-              data-testid="stop"
-              aria-label={`Stop ${target}`}
-              title={chair.who ? `Stop ${target}` : `Stop ${target} (⌘.)`}
-              className="rounded-md text-failed"
-              disabled={state.stopping}
-              onClick={() => void app.interrupt(sessionId)}
-            >
-              <SquareIcon className="size-3 fill-current" />
-            </Button>
-          )}
           {(!showStop || outgoing(text) !== null) && (
             <Button
               size="send"

@@ -4,13 +4,15 @@ import type { App, Banner, Composer } from "../core/app";
 import { Button } from "../components/ui/button";
 import { ComposerBox } from "./composer";
 import { PromptCard } from "./prompt-card";
+import { StatusLine } from "./status-line";
 
 /** Below the transcript: the error banner, the agent's question, and the composer. */
 export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
   const { id, agent, state } = composer;
   return (
     <div className="chat-input shrink-0 px-6 pt-1 pb-4">
-      <div className="mx-auto grid max-w-[820px] gap-2">
+      <div className="mx-auto grid max-w-[760px] gap-2">
+        <StatusLine key={id} app={app} composer={composer} />
         {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
         {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
         {/* A child with no pane shows only the reason (ChildColumnView). A chair with none shows
