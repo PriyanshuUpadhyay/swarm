@@ -1,4 +1,4 @@
-use super::super::{fields::RowFieldLists, tabs::TabStrip, tree::Tree};
+use super::super::{fields::RowFieldLists, sidebar::MORE_PROJECTS, tabs::TabStrip, tree::Tree};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -133,7 +133,7 @@ impl ViewState {
     /// A chat's children and a workspace's archived chats start folded, so their stored key
     /// means expanded.
     fn folded_first(id: &str) -> bool {
-        id == "more-projects" || id.starts_with("chat:") || id.starts_with("archived:")
+        id == MORE_PROJECTS || id.starts_with("chat:") || id.starts_with("archived:")
     }
     fn collapse_key(id: &str) -> String {
         if Self::folded_first(id) {

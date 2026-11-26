@@ -158,6 +158,10 @@ pub struct ArchivedChat {
     pub archived_at: i64,
 }
 impl Workspace {
+    pub(super) fn can_start_chat(&self, archived: bool) -> bool {
+        !self.missing && !self.removed && !archived
+    }
+
     pub fn chat(&self, id: &str) -> Option<&Chat> {
         self.chats
             .iter()

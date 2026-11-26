@@ -10,6 +10,10 @@ use std::{
     path::Path,
 };
 
+pub(super) const NEEDS_YOU: &str = "needs-you";
+pub(super) const PINNED: &str = "pinned";
+pub(super) const MORE_PROJECTS: &str = "more-projects";
+
 const CHAT_LIMIT: usize = 5;
 const RECENT_SECONDS: i64 = 7 * 24 * 60 * 60;
 
@@ -38,6 +42,7 @@ pub fn sections(
     };
     let mut sections = Vec::new();
     let mut promoted = BTreeSet::new();
+
     if !archive {
         let mut asks: Vec<_> = view
             .live_workspaces(tree)
@@ -52,7 +57,7 @@ pub fn sections(
         let count = asks.len();
         if count > 0 {
             promoted.extend(asks.iter().map(|(_, chat)| chat.id.as_str()));
-            if !state.expanded_lists.contains("needs-you") {
+            if !state.expanded_lists.contains(NEEDS_YOU) {
                 asks.truncate(CHAT_LIMIT);
             }
             let hidden = count - asks.len();
@@ -61,13 +66,14 @@ pub fn sections(
                 view.chat_rows(w, chat, None, &mut rows);
             }
             if hidden > 0 {
-                rows.push(more("needs-you", hidden));
+                rows.push(more(NEEDS_YOU, hidden));
             }
             sections.push(Section {
                 count: Some(count),
-                ..view.group("needs-you", "Needs you".into(), rows, true)
+                ..view.group(NEEDS_YOU, "Needs you".into(), rows, true)
             });
         }
+
         let mut pinned = Vec::new();
         for project in &tree.projects {
             for w in &project.workspaces {
@@ -84,12 +90,7 @@ pub fn sections(
             }
         }
         if !pinned.is_empty() {
-            sections.push(view.group(
-                "pinned",
-                "Pinned".into(),
-                pinned,
-                !state.is_collapsed("pinned"),
-            ));
+            sections.push(view.group(PINNED, "Pinned".into(), pinned, !state.is_collapsed(PINNED)));
         }
     }
 
@@ -122,15 +123,15 @@ pub fn sections(
     }
     if !inactive.is_empty() {
         let count = inactive.len();
-        let expanded = !state.is_collapsed("more-projects");
+        let expanded = !state.is_collapsed(MORE_PROJECTS);
         let title = format!("{count} more project{}", if count == 1 { "" } else { "s" });
         sections.push(Section {
             count: Some(count),
-            ..view.group("more-projects", title, Vec::new(), expanded)
+            ..view.group(MORE_PROJECTS, title, Vec::new(), expanded)
         });
         if expanded {
             for mut section in inactive {
-                section.parent_id = Some("more-projects".into());
+                section.parent_id = Some(MORE_PROJECTS.into());
                 sections.push(section);
             }
         }
@@ -246,6 +247,7 @@ impl<'a> Projection<'a> {
         let collapse_id = format!("project:{}", p.path);
         let mut rows = Vec::new();
         let mut folder = false;
+
         if archive {
             let mut archived = Vec::new();
             for w in &p.workspaces {
@@ -261,6 +263,7 @@ impl<'a> Projection<'a> {
                     (p.workspaces.len() > 1).then(|| workspace_heading(p, w, self.owner, true));
                 archived.extend(w.archived.iter().map(|chat| (chat, name.clone())));
             }
+
             archived.sort_by_key(|(chat, _)| Reverse(chat.archived_at));
             rows.extend(archived_fold(
                 format!("archived:project:{}", p.path),
@@ -288,6 +291,7 @@ impl<'a> Projection<'a> {
                 .copied()
                 .filter(|(w, c)| self.active(w, c))
                 .collect();
+
             let open = self.state.expanded_lists.contains(&collapse_id);
             let shown: Vec<_> = if open {
                 all.clone()
@@ -299,6 +303,7 @@ impl<'a> Projection<'a> {
                     .filter_map(|(i, entry)| (i < CHAT_LIMIT || urgent(entry.1)).then_some(entry))
                     .collect()
             };
+
             self.grouped_rows(p, &shown, &active, &mut rows);
             folder = is_folder(p) && rows.first().is_some_and(|r| r.kind == "workspace");
             if all.len() > shown.len() {
@@ -353,6 +358,7 @@ impl<'a> Projection<'a> {
         for &(w, c) in active {
             groups.entry(&w.path).or_default().push((w, c));
         }
+
         let mut shown_groups: BTreeMap<&str, Vec<_>> = BTreeMap::new();
         for &(w, chat) in shown {
             if groups
@@ -362,6 +368,7 @@ impl<'a> Projection<'a> {
                 shown_groups.entry(&w.path).or_default().push(chat);
             }
         }
+
         for &(w, chat) in shown {
             let Some(group) = groups.get(w.path.as_str()).filter(|group| group.len() >= 2) else {
                 self.chat_rows(w, chat, None, out);
@@ -385,6 +392,7 @@ impl<'a> Projection<'a> {
         let pinned = owner.pinned.contains(&w.path);
         let archived = owner.archived.contains(&w.path);
         let in_project = !pinned || archived;
+
         let title = workspace_heading(p, w, owner, in_project);
         let mut ids: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for item in &p.workspaces {
@@ -401,6 +409,7 @@ impl<'a> Projection<'a> {
         if let Some(mark) = &w.mark {
             detail.push_str(&format!(" · {mark}"));
         }
+
         let status = AgentStatus::aggregate(chats.iter().filter_map(|(_, c)| c.status));
         let mut context = fields::workspace_context(
             std::slice::from_ref(w),
@@ -418,6 +427,7 @@ impl<'a> Projection<'a> {
                 .join(" · ");
             context.text.insert("branch".into(), branch);
         }
+
         SidebarRow {
             id: w.path.clone(),
             kind: "workspace",
@@ -441,7 +451,7 @@ impl<'a> Projection<'a> {
             pinned,
             archived,
             missing: w.missing,
-            new_chat_enabled: !w.missing && !w.removed && !archived,
+            new_chat_enabled: w.can_start_chat(archived),
             starts_chat_worktree: w.hub_main,
             fields: context.with_status(status).values(&owner.fields.workspace),
             selection: Some(Selection {
@@ -469,6 +479,7 @@ impl<'a> Projection<'a> {
                 count.to_string()
             }
         });
+
         let mut context = fields::chat_context(
             c,
             self.state,
@@ -485,6 +496,7 @@ impl<'a> Projection<'a> {
             .find_map(|s| s["branch_of"].as_str())
             .and_then(|parent| w.chats.iter().find(|c| c.contains(parent)));
         let detail = prompt(c).or_else(|| c.agents.iter().find_map(|a| a["state_detail"].as_str()));
+
         SidebarRow {
             expanded: !self.state.is_collapsed(&id),
             id,
@@ -527,6 +539,7 @@ impl<'a> Projection<'a> {
         if !expanded {
             return;
         }
+
         for agent in c.children() {
             let status = AgentStatus::agent(agent);
             let name = agent["id"].as_str().unwrap_or_default();
@@ -536,6 +549,7 @@ impl<'a> Projection<'a> {
             if let Some(branch) = &w.branch {
                 context.text.insert("branch".into(), branch.clone());
             }
+
             out.push(SidebarRow {
                 id: c.child_id(agent),
                 kind: "child",

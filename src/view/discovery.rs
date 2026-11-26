@@ -416,6 +416,7 @@ impl Discovery {
             .map(str::to_owned)
             .collect();
         let previous = self.fields.clone();
+
         self.github_at.retain(|path, _| {
             let keep = github.contains(path);
             if !keep && let Some(fields) = self.fields.get_mut(path) {
@@ -432,6 +433,7 @@ impl Discovery {
             }
             keep
         });
+
         for path in dirty.union(&github) {
             let branch = tree.workspace(path).and_then(|(_, w)| w.branch.as_ref());
             let read_dirty =
@@ -441,12 +443,14 @@ impl Discovery {
                     .github_at
                     .get(path)
                     .is_none_or(|(last, previous)| at - last >= 120 || previous.as_ref() != branch);
+
             if read_dirty {
                 self.dirty_at.insert(path.clone(), at);
             }
             if read_github {
                 self.github_at.insert(path.clone(), (at, branch.cloned()));
             }
+
             if read_dirty {
                 self.fields.entry(path.clone()).or_default().dirty_count = inspect(path);
             }

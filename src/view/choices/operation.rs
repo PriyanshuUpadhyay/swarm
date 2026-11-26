@@ -1,4 +1,7 @@
-use super::super::tree::Tree;
+use super::super::{
+    sidebar::{MORE_PROJECTS, NEEDS_YOU, PINNED},
+    tree::Tree,
+};
 use super::{OwnerChoices, ViewState, state::object, tabs::apply_tab};
 use serde::Deserialize;
 use serde_json::Value;
@@ -196,7 +199,7 @@ pub fn apply(
             state.fold(&id, false);
         }
         ChoiceOp::ExpandList { id } => {
-            if id != "needs-you"
+            if id != NEEDS_YOU
                 && !id
                     .strip_prefix("project:")
                     .is_some_and(|path| tree.projects.iter().any(|p| p.path == path))
@@ -388,7 +391,7 @@ fn rename(names: &mut BTreeMap<String, String>, key: String, name: String) {
 }
 
 fn validate_fold(tree: &Tree, id: &str) -> Result<(), String> {
-    if matches!(id, "pinned" | "more-projects")
+    if matches!(id, PINNED | MORE_PROJECTS)
         || tree.workspace(id).is_some()
         || tree
             .projects

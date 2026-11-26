@@ -399,6 +399,7 @@ pub fn github_fields(request: &Value) -> WorkspaceFields {
                 .to_uppercase()
         })
         .collect();
+
     let ci = if states.is_empty() {
         None
     } else if states.iter().any(|s| {
@@ -413,7 +414,7 @@ pub fn github_fields(request: &Value) -> WorkspaceFields {
         ]
         .contains(&s.as_str())
     }) {
-        Some("CI failed".into())
+        Some(CiState::Failed)
     } else if states.iter().any(|s| {
         [
             "PENDING",
@@ -425,15 +426,16 @@ pub fn github_fields(request: &Value) -> WorkspaceFields {
         ]
         .contains(&s.as_str())
     }) {
-        Some("CI pending".into())
+        Some(CiState::Pending)
     } else if states
         .iter()
         .all(|s| ["SUCCESS", "NEUTRAL", "SKIPPED"].contains(&s.as_str()))
     {
-        Some("CI passed".into())
+        Some(CiState::Passed)
     } else {
-        Some("CI unknown".into())
+        Some(CiState::Unknown)
     };
+
     let pr_fact = (|| {
         let state = match request["state"].as_str()? {
             "OPEN" if request["isDraft"] == true => PrState::Draft,
@@ -445,18 +447,23 @@ pub fn github_fields(request: &Value) -> WorkspaceFields {
             number,
             url: request["url"].as_str()?.into(),
             state,
-            ci: match ci.as_deref() {
-                Some("CI passed") => CiState::Passed,
-                Some("CI failed") => CiState::Failed,
-                Some("CI pending") => CiState::Pending,
-                _ => CiState::Unknown,
-            },
+            ci: ci.unwrap_or(CiState::Unknown),
         })
     })();
+
     let merged = pr_fact.as_ref().is_some_and(|p| p.state == PrState::Merged);
+    let ci_text = ci.filter(|_| !merged).map(|state| {
+        match state {
+            CiState::Passed => "CI passed",
+            CiState::Failed => "CI failed",
+            CiState::Pending => "CI pending",
+            CiState::Unknown => "CI unknown",
+        }
+        .into()
+    });
     WorkspaceFields {
         pr: (!merged).then(|| format!("PR #{number}")),
-        ci: if merged { None } else { ci },
+        ci: ci_text,
         pr_fact,
         ..Default::default()
     }

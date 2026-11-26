@@ -204,6 +204,7 @@ pub fn navigation_catalog(
 ) -> (Vec<ProjectNav>, BTreeMap<String, WorkspaceNav>) {
     let mut projects = Vec::new();
     let mut workspaces = BTreeMap::new();
+
     for p in &tree.projects {
         projects.push(ProjectNav {
             path: p.path.clone(),
@@ -220,7 +221,7 @@ pub fn navigation_catalog(
                     title: workspace_heading(p, w, owner, true),
                     missing: w.missing,
                     archived,
-                    new_chat_enabled: !w.missing && !w.removed && !archived,
+                    new_chat_enabled: w.can_start_chat(archived),
                     starts_chat_worktree: w.hub_main,
                     branch: w.branch.clone(),
                     diff: facts.and_then(|f| f.diff).filter(|_| w.branch.is_some()),
@@ -231,6 +232,7 @@ pub fn navigation_catalog(
             );
         }
     }
+
     (projects, workspaces)
 }
 
@@ -260,6 +262,7 @@ pub(super) fn archived_fold(
     if chats.is_empty() {
         return Vec::new();
     }
+
     let expanded = !state.is_collapsed(&id);
     let title = format!("Archived · {}", chats.len());
     let field = |text| FieldValue {
@@ -279,6 +282,7 @@ pub(super) fn archived_fold(
         fields: vec![field(title)],
         ..Default::default()
     }];
+
     if expanded {
         rows.extend(chats.iter().map(|(chat, workspace)| SidebarRow {
             id: format!("archived-chat:{}", chat.id),

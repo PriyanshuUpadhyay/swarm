@@ -1,7 +1,12 @@
 //! PR identity checks from the Swift GitHubInspection boundary.
 use super::discovery::run;
 use serde_json::Value;
-use std::{collections::BTreeSet, time::Instant};
+use std::{
+    collections::BTreeSet,
+    time::{Duration, Instant},
+};
+
+const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub fn repository(remote: &str) -> Option<String> {
     let path = remote
@@ -26,16 +31,14 @@ fn name(path: &str) -> Option<String> {
     .then(|| path.to_ascii_lowercase())
 }
 pub fn lookup(path: &str) -> Option<Value> {
-    let deadline = Instant::now() + std::time::Duration::from_secs(30);
-    lookup_until(path, deadline)
+    lookup_until(path, Instant::now() + LOOKUP_TIMEOUT)
 }
 pub fn lookup_until(path: &str, deadline: Instant) -> Option<Value> {
     lookup_matching(path, deadline, false, None)
 }
 
 pub(super) fn lookup_for_chip(path: &str, branch: Option<&str>) -> Option<Value> {
-    let deadline = Instant::now() + std::time::Duration::from_secs(30);
-    lookup_matching(path, deadline, true, branch)
+    lookup_matching(path, Instant::now() + LOOKUP_TIMEOUT, true, branch)
 }
 
 fn lookup_matching(
@@ -59,6 +62,7 @@ fn lookup_matching(
             .ok()
             .map(|s| s.trim().to_owned())
     };
+
     let branch = git(&["symbolic-ref", "--quiet", "--short", "HEAD"])?;
     if expected_branch.is_some_and(|expected| expected != branch) {
         return None;
@@ -91,6 +95,7 @@ fn lookup_matching(
         return None;
     }
     let head_repository = head_repositories.first()?.clone();
+
     let mut targets = BTreeSet::from([head_repository.clone()]);
     for remote in remotes {
         if let Some(repo) =
@@ -118,6 +123,7 @@ fn lookup_matching(
             info["parent"]["name"].as_str()?
         ))?);
     }
+
     let matching = |state: &str| -> Option<Vec<Value>> {
         let mut matches = Vec::new();
         for target in &targets {
@@ -167,6 +173,7 @@ fn lookup_matching(
         }
         Some(matches)
     };
+
     let mut matches = matching("open")?;
     if matches.is_empty() && include_merged {
         matches = matching("merged")?;

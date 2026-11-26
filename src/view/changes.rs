@@ -150,6 +150,7 @@ pub(super) fn branch_totals(root: &str, branch: &str) -> Option<LineTotals> {
     if before["branch"] != branch {
         return None;
     }
+
     let refs = comparison_refs(&read).ok()?;
     let own = format!("refs/heads/{branch}");
     let names = || {
@@ -167,9 +168,11 @@ pub(super) fn branch_totals(root: &str, branch: &str) -> Option<LineTotals> {
     .into_iter()
     .find(|name| *name != own && names().any(|r| r == *name))
     .or_else(|| names().find(|r| *r != own))?;
+
     let pair = compare_to(&read, &refs, base, &before).ok()?.pair;
     let counts = stats(&diff(&read, "branch", &pair, &["--numstat", "-z"], None).ok()?).ok()?;
     stable(&read, &Mode::Branch, Some(base), None, &before, &pair).ok()?;
+
     let total = |sum: u64, count: Option<usize>| {
         let sum = sum.checked_add(count.unwrap_or(0) as u64)?;
         (sum <= MAX_SAFE_JSON_INTEGER).then_some(sum)
