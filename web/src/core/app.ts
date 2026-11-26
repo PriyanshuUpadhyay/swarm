@@ -88,6 +88,7 @@ export class App {
   listeners = new Set<() => void>();
   streamId: string | null = null;
   reconnecting = false;
+  lastStreamUpdate: number | null = null;
   /** The server build of the first stream; a later stream from another build reloads the page. */
   serverBuild: string | null = null;
   sentKeys = "";

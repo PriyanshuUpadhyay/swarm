@@ -4,6 +4,7 @@ import type { App } from "../core/app";
 import { backgroundRows, elapsed, OPEN_BACKGROUND, poll, runningLine, type BackgroundRow, type BackgroundTask, type OpenBackgroundDetail, type WorkspaceShell } from "../core/background";
 import { plural } from "./cut-line";
 import { Glyph } from "./glyph";
+import { Offline } from "./status";
 
 const POLL_MS = 3000;
 type Lists = { rows: BackgroundRow[]; addShell: (shell: WorkspaceShell) => void; refreshShells: () => Promise<void> };
@@ -41,7 +42,8 @@ export function BackgroundLists({ app, session, children }: { app: App; session:
 }
 
 export function BackgroundLine({ session }: { session: string }) {
-  const line = runningLine(useBackground().rows);
+  const line = runningLine(useContext(Background)?.rows ?? []);
+  const offline = useContext(Offline);
   const [now, setNow] = useState(() => Date.now());
   const startedAt = line?.startedAt ?? null;
   useEffect(() => {
@@ -54,7 +56,7 @@ export function BackgroundLine({ session }: { session: string }) {
   const label = ["In background", line.agents ? plural(line.agents, "agent") : "", line.shells ? plural(line.shells, "shell") : ""].filter(Boolean).join(" · ");
   return (
     <div className="flex h-7 items-center gap-2 text-sm text-muted-foreground" data-testid="background-line">
-      <Glyph form={line.agents || line.shells ? "working" : "unlit"} size={12} className="shrink-0" aria-hidden />
+      <Glyph form={!offline && (line.agents || line.shells) ? "working" : "unlit"} size={12} className="shrink-0" aria-hidden />
       <span role="status" className="min-w-0 truncate">{label}</span>
       {line.failed > 0 && <span className="flex shrink-0 items-center gap-1 text-failed"><XIcon className="size-3" aria-hidden />{line.failed} failed</span>}
       {startedAt !== null && <span className="shrink-0 font-mono tabular-nums">{elapsed(now - startedAt)}</span>}

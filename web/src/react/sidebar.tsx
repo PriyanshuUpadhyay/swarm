@@ -3,7 +3,7 @@
 // and new-chat menu serve the tree (decision 3). Drags use the browser's own drag and drop.
 
 import { ArchiveRestoreIcon, TriangleAlertIcon } from "lucide-react";
-import { useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
+import { useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
 import { SIDEBAR_VIEWS, type App } from "../core/app";
 import { archivedSession, currentRow, type SidebarRow } from "../core/nav";
 import { canStartIn } from "../core/new-chat";
@@ -12,18 +12,20 @@ import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
 import { RowHints, RowMenu } from "./row-overlays";
 import { RecentMenu, RowBar, recentTarget, treeTarget } from "./row-actions";
-import { StatusGlyph } from "./status";
+import { Offline, StatusGlyph } from "./status";
 import { RowView, RecentRow } from "./sidebar-row";
 import { SidebarHeader } from "./sidebar-header";
 
 export function Sidebar({ app }: { app: App }) {
   const sidebarView = useSyncExternalStore(app.subscribe, () => app.view.sidebarView);
+  const offline = useContext(Offline);
   useLayoutEffect(() => app.sidebar.focusRequestedView());
   return (
     <div className="flex h-full min-w-0 flex-col bg-sidebar">
       <SidebarHeader app={app} />
       <ViewSwitch app={app} current={sidebarView} />
       {sidebarView === 2 ? <RecentList app={app} /> : <WorkspaceList app={app} />}
+      {offline && <p className="shrink-0 px-4 py-2 text-xs text-muted-foreground">Offline. Showing the last list.</p>}
     </div>
   );
 }

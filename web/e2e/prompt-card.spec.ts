@@ -151,6 +151,8 @@ test("a long error token wraps and keeps Retry and Dismiss inside the banner", a
     await composer.press("Meta+Enter");
     const banner = tab.getByTestId("chat-banner");
     await expect(banner).toContainText(error);
+    await expect(banner).toHaveCSS("padding-top", "6px", { timeout: 2000 });
+    await expect(banner).toHaveCSS("border-top-left-radius", "8px");
     expect(await banner.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     const box = (await banner.boundingBox())!;
     const input = (await tab.locator(".chat-input").boundingBox())!;
@@ -163,6 +165,10 @@ test("a long error token wraps and keeps Retry and Dismiss inside the banner", a
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(box.x + box.width + 1);
     }
     await tab.screenshot({ path: info.outputPath("long-error.png") });
+    if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
+      await tab.emulateMedia({ colorScheme: theme });
+      await banner.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `action-error-${theme}.png`), animations: "disabled" });
+    }
     await banner.getByRole("button", { name: "Dismiss" }).click();
     await expect(banner).toBeHidden();
   } finally {

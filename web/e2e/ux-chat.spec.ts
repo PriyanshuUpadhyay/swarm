@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { row, rows, open, mockRows } from "./ux-helpers";
+import type { Snapshot } from "../src/core/api";
 
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
@@ -125,13 +126,63 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
   await tab.screenshot({ path: info.outputPath("model-picker.png") });
 });
 
-test("stream loss shows Reconnecting and clears it after hello", async ({ page: tab }, info) => {
-  await tab.route("**/api/stream", (route) => route.fulfill({ contentType: "text/event-stream", body: "" }));
+test("stream loss keeps the last list and accepted update, then clears after hello", async ({ page: tab }) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await tab.setViewportSize({ width: 960, height: 540 });
+  await tab.route("**/api/snapshot", async (route) => {
+    const snapshot = await (await route.fetch()).json() as Snapshot;
+    snapshot.agents[session][0].state = "working";
+    await route.fulfill({ json: snapshot });
+  });
+  await tab.route("**/api/subscribe", (route) => route.fulfill({ json: { ok: true } }));
+  await tab.addInitScript(() => {
+    const fetch = window.fetch.bind(window);
+    const scope = window as unknown as { fixtureFrame: (type: string, data: unknown) => void; dropFixtureStream: () => void; restoreFixtureStream: () => void };
+    let down = false;
+    scope.restoreFixtureStream = () => { down = false; };
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.endsWith("/api/stream")) return fetch(input, init);
+      const headers = { "Content-Type": "text/event-stream" };
+      if (down) return Promise.resolve(new Response("", { headers }));
+      const body = new ReadableStream({ start(controller) {
+        scope.fixtureFrame = (type, data) => controller.enqueue(new TextEncoder().encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
+        scope.dropFixtureStream = () => { down = true; controller.close(); };
+        scope.fixtureFrame("hello", { stream: "offline-fixture", build: "fixture" });
+      } });
+      return Promise.resolve(new Response(body, { headers }));
+    };
+  });
+  await tab.clock.setFixedTime(new Date("2030-01-01T14:02:00Z"));
   await open(tab);
-  await expect(tab.getByTestId("reconnecting")).toBeVisible();
-  await tab.screenshot({ path: info.outputPath("reconnecting.png") });
-  await tab.unroute("**/api/stream");
-  await expect(tab.getByTestId("reconnecting")).toHaveCount(0);
+  const status = tab.getByTestId("chat-status-line");
+  await expect(status.locator('svg[data-form="working"]')).toBeVisible();
+  const accepted = "2030-01-01T14:02:10.000Z";
+  await tab.clock.setFixedTime(new Date(accepted));
+  const read = tab.waitForResponse("**/api/snapshot");
+  await tab.evaluate(() => (window as unknown as { fixtureFrame: (type: string, data: unknown) => void }).fixtureFrame("snapshot", { version: 0 }));
+  await read;
+  await tab.clock.setFixedTime(new Date("2030-01-01T14:02:30Z"));
+  await tab.evaluate(() => {
+    const scope = window as unknown as { fixtureFrame: (type: string, data: unknown) => void; dropFixtureStream: () => void };
+    scope.fixtureFrame("unsupported", {});
+    scope.dropFixtureStream();
+  });
+  const banner = tab.getByTestId("reconnecting");
+  const lastList = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
+  await expect(banner.locator("time")).toHaveAttribute("datetime", accepted, { timeout: 2000 });
+  await expect(banner).toHaveCSS("height", "28px");
+  await expect(banner.getByRole("button")).toHaveCount(0);
+  await expect(tab.getByText("Offline. Showing the last list.", { exact: true })).toBeVisible();
+  await expect(lastList).toBeVisible();
+  await expect(status.locator('svg[data-form="unlit"]')).toBeVisible();
+  if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
+    await tab.emulateMedia({ colorScheme: theme });
+    await tab.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `offline-${theme}.png`), animations: "disabled" });
+  }
+  await tab.evaluate(() => (window as unknown as { restoreFixtureStream: () => void }).restoreFixtureStream());
+  await expect(banner).toHaveCount(0);
+  await expect(status.locator('svg[data-form="working"]')).toBeVisible();
 });
 
 test("an arriving question keeps an active draft and cannot turn a typed digit into approval", async ({ page: tab }) => {

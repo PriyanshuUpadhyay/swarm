@@ -78,8 +78,11 @@ export class AppStream {
     } catch {
       return;
     }
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
     switch (e.event) {
       case "hello":
+        if (typeof data.stream !== "string" || typeof data.build !== "string") return;
+        this.app.lastStreamUpdate = Date.now();
         this.app.reconnecting = false;
         // A frame sent while the stream was down is lost, so live text could be stale.
         for (const chat of this.app.chats.values()) {
@@ -99,10 +102,12 @@ export class AppStream {
         void this.app.newChat.recheck();
         break;
       case "snapshot":
+        if (typeof data.version === "number") this.app.lastStreamUpdate = Date.now();
         if (data.version !== this.app.snapshot?.version) void this.app.navigation.refreshSnapshot();
         break;
       case "rows": {
         const frame = data as unknown as RowFrame;
+        if (typeof frame.key === "string" && Number.isSafeInteger(frame.end_offset)) this.app.lastStreamUpdate = Date.now();
         const slot = this.app.pending.get(frame.key);
         if (slot) slot.push(frame);
         else this.app.pending.set(frame.key, [frame]);
@@ -110,6 +115,7 @@ export class AppStream {
         break;
       }
       case "live": {
+        if (typeof data.key === "string") this.app.lastStreamUpdate = Date.now();
         // Each new watcher sends its first read, often a null that changes nothing. A redraw then
         // would follow the end before a reader's scroll up registers.
         const slot = this.app.pending.get(String(data.key));
@@ -118,6 +124,7 @@ export class AppStream {
         break;
       }
       case "reset":
+        if (typeof data.key === "string") this.app.lastStreamUpdate = Date.now();
         void this.reset(String(data.key));
         break;
       case "reload":

@@ -53,17 +53,18 @@ function ResumeButton({ app, sessionId }: { app: App; sessionId: string }) {
   );
 }
 
-function ChatBanner({ app, sessionId, banner }: { app: App; sessionId: string; banner: Banner }) {
+type BannerView = (Banner & { tone?: "failed" }) | { text: string; tone: "neutral" };
+
+function ChatBanner({ app, sessionId, banner }: { app: App; sessionId: string; banner: BannerView }) {
+  const failed = banner.tone !== "neutral";
   return (
-    <div role="alert" data-testid="chat-banner" className="flex min-w-0 items-start gap-2 rounded-lg border border-failed/40 bg-failed/10 px-3 py-2 text-sm">
-      <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-failed" />
-      <span className="min-w-0 flex-1 font-mono text-xs leading-5 break-words whitespace-pre-wrap">{banner.text}</span>
-      <Button variant="outline" size="sm" onClick={banner.retry}>
-        Retry
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => app.dismissBanner(sessionId)}>
-        Dismiss
-      </Button>
+    <div role={failed ? "alert" : "status"} data-testid="chat-banner" className={`flex min-w-0 items-start gap-2 rounded-lg border p-1.5 ${failed ? "border-failed" : "border-menu-border"}`}>
+      {failed && <TriangleAlertIcon className="mt-1 size-3.5 shrink-0 text-failed" aria-hidden />}
+      <span className="min-w-0 flex-1 self-center font-mono text-sm leading-[18px] break-words whitespace-pre-wrap">{banner.text}</span>
+      {failed && <>
+        <Button variant="outline" size="sm" onClick={banner.retry}>Retry</Button>
+        <Button variant="ghost" size="sm" onClick={() => app.dismissBanner(sessionId)}>Dismiss</Button>
+      </>}
     </div>
   );
 }

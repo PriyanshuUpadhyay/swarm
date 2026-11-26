@@ -122,6 +122,7 @@ export type Strip = {
 export type View = Pane & {
   loaded: boolean;
   reconnecting: boolean;
+  lastStreamUpdate: number | null;
   tree: TreeView | null;
   treeName: TreeName;
   error: string | null;

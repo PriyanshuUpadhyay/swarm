@@ -1,5 +1,8 @@
 import { CircleAlertIcon, CircleCheckIcon, CircleIcon, OctagonXIcon } from "lucide-react";
+import { createContext, useContext } from "react";
 import { Glyph } from "./glyph";
+
+export const Offline = createContext(false);
 
 export type Status = "working" | "blocked" | "error" | "done" | "ended" | "idle";
 
@@ -26,7 +29,9 @@ const ICON = {
 
 /** A shape and a status colour, so colour is never the only signal. `data-tip` feeds the list tooltip. `label` names the state in the reader's words when the status word does not fit. */
 export function StatusGlyph({ status, label }: { status: Status; label?: string }) {
+  const offline = useContext(Offline);
   const shown = shownStatus(status);
+  if (offline && (shown === "working" || shown === "waiting")) return <Glyph form="unlit" size={12} className="glyph" />;
   if (shown === "idle") return null;
   const className = `glyph ${shown}`;
   const name = label ?? shown;

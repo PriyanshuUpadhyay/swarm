@@ -40,6 +40,7 @@ export class AppPanes {
       treeName: this.app.treeName,
       error: this.app.error,
       reconnecting: this.app.reconnecting,
+      lastStreamUpdate: this.app.lastStreamUpdate,
       rows: this.app.rows,
       selected: this.app.selected,
       marked: this.app.marked,
