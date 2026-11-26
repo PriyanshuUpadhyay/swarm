@@ -31,14 +31,13 @@ pub(super) async fn new_chat_now(app: &App, body: NewChat) -> Result<Value, ApiE
     let (_, launch) = checked_start(app, body).await?;
     let cwd = &launch.body.cwd;
     let session = open_session(app, cwd).await?;
-    if let Err(err) = start_chair(
+    if let Err(err) = launch_chair(
         app,
         &launch.body,
         &launch.role,
         launch.account.as_deref(),
         cwd,
         &session,
-        false,
     )
     .await
     {
@@ -271,8 +270,6 @@ async fn start_chair(
     session: &str,
     own_worktree: bool,
 ) -> Result<Option<String>, ApiError> {
-    let mut call = chat_call(cwd, Some(session));
-
     let mut warning = None;
     if own_worktree {
         let (root, path, id) = (app.root.clone(), cwd.to_owned(), session.to_owned());
@@ -288,6 +285,20 @@ async fn start_chair(
         warning = found;
     }
 
+    launch_chair(app, body, role, account, cwd, session).await?;
+    remember_started_model(app, session).await;
+    Ok(warning)
+}
+
+async fn launch_chair(
+    app: &App,
+    body: &NewChat,
+    role: &str,
+    account: Option<&str>,
+    cwd: &str,
+    session: &str,
+) -> Result<(), ApiError> {
+    let mut call = chat_call(cwd, Some(session));
     call.args = vec!["launch".into(), "orchestrator".into(), role.to_owned()];
     for (flag, value) in [
         ("--provider", body.provider.as_deref()),
@@ -302,7 +313,42 @@ async fn start_chair(
     let output = run_cli(app, call, None).await?;
     first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
-    Ok(warning)
+    Ok(())
+}
+
+/// The launch owns the actual model, including the runner an ordinary profile selected.
+pub(super) async fn remember_started_model(app: &App, session: &str) {
+    let root = app.root.clone();
+    let session = session.to_owned();
+    let saved = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let db = read_connection(&root).map_err(|err| err.to_string())?;
+        let pair = db
+            .query_row(
+                "SELECT provider, model FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
+                [&session],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|err| err.to_string())?;
+        if let Some((Some(provider), Some(model))) = pair {
+            choices_store::update(&root, None, |owner, _| {
+                choices::ChoiceOp::remember_model(owner, provider, model)
+            })
+            .map_err(|err| err.to_string())?;
+        }
+        Ok(())
+    })
+    .await;
+    match saved {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => eprintln!("swarm: could not record the recent model: {err}"),
+        Err(err) => eprintln!("swarm: recent model task failed: {err}"),
+    }
 }
 
 /// True when the workspace that holds `cwd` is archived, missing, or removed. That is the deepest
@@ -378,6 +424,7 @@ pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, Ap
     .await?;
     let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
+    remember_started_model(app, &body.session).await;
     Ok(json!({"ok": true, "session": body.session, "agent": "orchestrator", "pane": pane}))
 }
 

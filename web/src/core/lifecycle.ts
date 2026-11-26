@@ -6,7 +6,7 @@ import { ApiError, sleep } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 import { RunCatalog } from "./run-catalog";
-import type { SwitchCarry } from "./composer";
+import { chooseModel, savedCarry, switchOutcome, type Run, type SwitchCarry } from "./composer";
 import {
   type NewOptions,
   type Issue,
@@ -199,10 +199,41 @@ export class Lifecycle {
     this.set({ switchModel: session, handoffs: h && !isSettled(h.phase) ? this.state.handoffs : rest });
   }
 
-  /** Switch model (ADR 0110). `resume` starts the chat's own CLI session again on the new run; a
-   *  new chat takes this chat's summary, or nothing on `clean`. Progress comes from `handoff`
-   *  frames; on success the chat that runs now opens. */
-  async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: SwitchCarry = "summary") {
+  pickRun(session: string, run: Run) {
+    const chair = this.app.composing.chair(session);
+    if (!chair.provider || chair.running || !run.model) return;
+    const current: Run = { provider: chair.provider, model: chair.model, effort: chair.effort, account: chair.account };
+    const outcome = switchOutcome(current, run);
+    if (outcome === "none") return;
+    void this.switchModel(session, run.provider, run.model, run.account, run.effort, outcome === "resume" ? "resume" : savedCarry(this.app.tree?.prefs));
+  }
+
+  async nextFavorite(session: string) {
+    const chair = this.app.composing.chair(session);
+    const { provider, model, effort, account } = chair;
+    if (!provider || chair.unreachable) return;
+    const favorites = (this.app.tree?.prefs?.favoriteModels ?? []).filter((m) => m.provider === provider);
+    if (!favorites.length) return;
+    try {
+      const [{ providers }, { models }] = await Promise.all([this.runs.providers(), this.runs.models(provider)]);
+      if (this.app.openId !== session || this.app.composing.chair(session).model !== model) return;
+      const cli = providers.find((p) => p.id === provider);
+      const usable = favorites.flatMap((m) => models.filter((listed) => listed.id === m.model));
+      const index = usable.findIndex((m) => m.id === model);
+      const next = usable[(index + 1) % usable.length];
+      if (!cli || !next || next.id === model) return;
+      const current = { provider, model, effort, account };
+      const favoritePick = { session, label: next.label };
+      this.set({ favoritePick });
+      setTimeout(() => { if (this.state.favoritePick === favoritePick) this.set({ favoritePick: undefined }); }, 1800);
+      this.pickRun(session, chooseModel(current, current, cli, next));
+    } catch {
+      // A failed catalog read cannot prove that a favourite is available.
+    }
+  }
+
+  /** Native resume or linked handoff; the server owns progress and cancel. */
+  async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: SwitchCarry = "file") {
     const running = this.state.handoffs[old];
     if (running && !isSettled(running.phase)) return;
     // The server's frames own canCancel.

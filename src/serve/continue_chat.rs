@@ -306,7 +306,11 @@ pub(super) async fn execute_continue_timed(
         if *cancelled.borrow() { return Err(error(StatusCode::CONFLICT, "model switch cancelled")); }
         let mut call = current_source(app, old)?;
         if call.adapter.is_empty() { call.adapter = "tmux-swarm".into(); }
-        if body.carry == Carry::Resume { return resume_switch(app, &body).await; }
+        if body.carry == Carry::Resume {
+            let resumed = resume_switch(app, &body).await?;
+            remember_started_model(app, old).await;
+            return Ok(resumed);
+        }
         let first = tokio::select! {
             biased;
             _ = cancelled.changed() => return Err(error(StatusCode::CONFLICT, "model switch cancelled")),
@@ -324,6 +328,7 @@ pub(super) async fn execute_continue_timed(
                 run_cli(app, next.args(&["type", "orchestrator"]), Some(first)).await?;
             }
             run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
+            remember_started_model(app, session).await;
             Ok(())
         }.await;
         if done.is_err() {

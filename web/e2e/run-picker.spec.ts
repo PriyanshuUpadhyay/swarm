@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { open, readTree } from "./lifecycle-helpers";
+import { holdChatStart, open, readTree } from "./lifecycle-helpers";
 
 async function shots(tab: Page, unit: number, name: string) {
   if (!process.env.E2E_SHOTS) return;
@@ -65,4 +65,55 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     await expect.poll(async () => (await readTree()).sections.flatMap((s) => s.rows).some((row) => row.selection?.chat === root)).toBe(true);
   }
   expect(errors).toEqual([]);
+});
+
+async function pickerCatalog(tab: Page) {
+  const providers = ["claude", "codex", "agy", "pi"].map((id) => ({ id, accounts: id === "claude" || id === "codex", efforts: ["low", "high"], default_effort: "high" }));
+  await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers } }));
+  await tab.route("**/api/models?*", (route) => {
+    const cli = new URL(route.request().url()).searchParams.get("provider");
+    const models = cli === "claude" ? [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] : [{ id: "other", label: "Other model" }];
+    return route.fulfill({ json: { models } });
+  });
+  await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts: [] } }));
+}
+
+test("one idle picker opens by shortcut, keeps an unlisted current model and applies picks at once", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const live = process.env.SWARM_E2E_LIVE!;
+  const picked: Record<string, unknown>[] = [];
+  await tab.route("**/api/chat/continue", (route) => {
+    picked.push(route.request().postDataJSON());
+    return route.fulfill({ json: { session: live } });
+  });
+  await tab.route("**/api/snapshot", async (route) => {
+    const snap = await (await route.fetch()).json();
+    Object.assign(snap.agents[live][0], { provider: "claude", model: picked.at(-1)?.model ?? "unlisted-model", effort: "high", state: "done", prompt: null });
+    await route.fulfill({ json: snap });
+  });
+  await tab.route("**/api/tree?*", async (route) => {
+    const tree = await (await route.fetch()).json();
+    tree.prefs = { ...tree.prefs, favoriteModels: [{ provider: "claude", model: "model-b" }], recentModels: [{ provider: "codex", model: "other" }], newChatModel: { provider: "codex", model: "other" } };
+    await route.fulfill({ json: tree });
+  });
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
+  await tab.keyboard.press("Shift+Meta+m");
+  const picker = tab.getByTestId("run-popover");
+  await expect(picker).toBeVisible();
+  await expect(picker.getByTestId("run-unavailable")).toContainText("unlisted-model");
+  await expect(picker.getByTestId("run-recent")).toContainText("Other model");
+  await expect(picker.getByTestId("run-apply")).toHaveCount(0);
+  await shots(tab, 6, "picker");
+  await picker.getByRole("button", { name: "Model A", exact: true }).click();
+  await expect.poll(() => picked.map((run) => run.model)).toEqual(["model-a"]);
+  await expect(tab.getByTestId("model-chip-label")).toContainText("model-a");
+  await tab.keyboard.press("Control+Meta+m");
+  await expect.poll(() => picked.map((run) => run.model)).toEqual(["model-a", "model-b"]);
+  await expect(tab.getByTestId("run-favorite-toast")).toHaveText("Model B");
+  await expect(picker).toBeHidden();
+
+  const starts = await holdChatStart(tab);
+  await tab.keyboard.press("Meta+t");
+  await expect.poll(() => starts.map((start) => [start.provider, start.model])).toEqual([["codex", "other"]]);
 });

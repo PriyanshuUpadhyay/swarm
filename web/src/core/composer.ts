@@ -188,27 +188,26 @@ export function limitText(meters: readonly Meter[], provider: string, account: s
 /** One agent run: what the popover picks. */
 export type Run = { provider: string; model: string | null; effort: string | null; account: string | null };
 
-export type Carry = "summary" | "clean";
+export type Carry = "file" | "summary" | "clean";
 
 /** What `/api/chat/continue` does with the old chat. */
 export type SwitchCarry = Carry | "resume";
 
 export type Outcome = "none" | "resume" | "handoff";
 
-/** The two answers to "what does a switch to another CLI bring", in the popover, the ended-chat
- *  dialog, and Settings. */
+/** What to bring on a CLI switch (Settings). */
 export const CARRY_OPTIONS: [Carry, string][] = [
+  ["file", "File"],
   ["summary", "Summary"],
-  ["clean", "Start clean"],
+  ["clean", "No history"],
 ];
 
-/** The saved answer to "what does a switch to another CLI bring"; unset means Summary. */
 export function savedCarry(prefs: { switchCarry?: string } | undefined): Carry {
-  return prefs?.switchCarry === "clean" ? "clean" : "summary";
+  const mode = prefs?.switchCarry;
+  return mode === "clean" || mode === "summary" ? mode : "file";
 }
 
-/** What Apply does (ADR 0110). Inside one CLI the session starts again on the new run with its
- *  history; another CLI, or another Codex account, cannot take the session, so a new chat starts. */
+/** One CLI resumes its own session. Another CLI continues this chat in a linked session. */
 export function switchOutcome(current: Run, draft: Run): Outcome {
   if (current.provider !== draft.provider) return "handoff";
   if (current.model === draft.model && current.effort === draft.effort && current.account === targetAccount(current, draft)) return "none";
@@ -230,7 +229,8 @@ export function outcomeText(outcome: Outcome, current: Run, draft: Run, carry: C
 }
 
 function handoffLine(draft: Run, target: string, carry: Carry): string {
-  return `Starts a new ${cliName(draft.provider)} chat on ${target} with ${carry === "summary" ? "a summary of" : "nothing from"} this one. This chat stays as it is.`;
+  const history = carry === "file" ? "the chat text in a file" : carry === "summary" ? "a summary" : "no history";
+  return `This chat continues on ${cliName(draft.provider)} · ${target} with ${history}. Thinking, tools and attachments do not carry.`;
 }
 
 function resumeLine(current: Run, draft: Run, target: string): string {
@@ -244,25 +244,6 @@ function resumeLine(current: Run, draft: Run, target: string): string {
   }
   if (current.model !== draft.model) return `Restarts this chat on ${target}. History stays. ${REREAD}`;
   return `Restarts this chat on ${draft.effort ? levelWord(draft.effort) : "the default"} thinking. History stays. ${REREAD}`;
-}
-
-/** Apply's label says what it does. */
-export function applyLabel(outcome: Outcome): string {
-  switch (outcome) {
-    case "none":
-      return "Apply";
-    case "handoff":
-      return "Start new chat";
-    case "resume":
-      return "Restart and apply";
-  }
-}
-
-/** Why Apply cannot run now, or null. A switch blocks only its own chat. */
-export function applyBlock(chair: AgentInput, draft: Run): string | null {
-  if (!chair.provider) return "This chat does not record its CLI, so it cannot switch.";
-  if (chair.running) return "Wait for this turn to end, or stop it.";
-  return draft.model ? null : "Pick a model.";
 }
 
 /** The levels a model can run on: its own list within the CLI's, or the CLI's. */

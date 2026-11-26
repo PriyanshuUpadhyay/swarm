@@ -76,7 +76,7 @@ describe("chats", () => {
       throw new ApiError(409, "model switch cancelled");
     });
     await cancelled.life.switchModel("chat-1", "codex", "gpt-5", null);
-    expect(cancelled.life.state.handoffs["chat-1"]).toEqual({ old: "chat-1", phase: "cancelled", canCancel: false, error: null, carry: "summary" });
+    expect(cancelled.life.state.handoffs["chat-1"]).toEqual({ old: "chat-1", phase: "cancelled", canCancel: false, error: null, carry: "file" });
 
     const failed = fakeApp(async () => {
       throw new ApiError(409, "Wait for the current reply to finish, or stop it before switching model.");
@@ -156,7 +156,7 @@ describe("chats", () => {
 
   it("follows handoff frames for its own chat until a final phase", () => {
     const { life } = fakeApp(() => new Promise(() => {}));
-    void life.switchModel("chat-1", "codex", "gpt-5", null);
+    void life.switchModel("chat-1", "codex", "gpt-5", null, null, "summary");
     life.onHandoff({ old_session: "other-chat", phase: "starting", canCancel: false });
     life.onHandoff({ old_session: "chat-1", phase: "summarizing", canCancel: true });
     expect(life.state.handoffs["chat-1"]).toEqual({ old: "chat-1", phase: "summarizing", canCancel: true, error: null, carry: "summary" });

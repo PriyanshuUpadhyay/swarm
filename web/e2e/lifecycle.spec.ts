@@ -109,7 +109,11 @@ test("A chat whose chair has no pane shows only its log, and Continue chat opens
   expect(errors).toEqual([]);
 });
 
-test("The run chip hands off to another CLI with a summary, and Cancel stops it while the chair writes it", async ({ page: tab }, info) => {
+test("An instant cross-CLI pick uses saved Summary, and Cancel stops it while the chair writes it", async ({ page: tab }, info) => {
+  await tab.route("**/api/tree?*", async (route) => {
+    const tree = await (await route.fetch()).json();
+    await route.fulfill({ json: { ...tree, prefs: { ...tree.prefs, switchCarry: "summary" } } });
+  });
   const errors = await open(tab);
   const live = process.env.SWARM_E2E_LIVE!;
   const chats = async () => (await readTree()).sections.flatMap((s) => s.rows).filter((r) => r.kind === "chat").length;
@@ -117,38 +121,15 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   await tab.locator(`[data-testid="tree-row"][data-session="${live}"]`).click();
   await tab.getByTestId("model-chip").click();
   const dialog = tab.getByRole("dialog", { name: "Change model, thinking, or account" });
-  await expect(dialog).toBeVisible();
-  // Focus moves into the popover, so typing searches at once.
   await expect(dialog.getByTestId("run-query")).toBeFocused();
+  await dialog.getByRole("button", { name: "Codex", exact: true }).click();
   await dialog.getByTestId("run-query").fill("gpt-e2e");
-  // The same CLI restarts its own session and asks nothing.
-  await dialog.getByTestId("run-custom-claude").click();
-  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Restarts this chat on gpt-e2e\b.* History stays\. The next reply re-reads the whole chat once, so it costs more\.$/);
-  await expect(dialog.getByTestId("run-apply")).toHaveText("Restart and apply");
-  await expect(dialog.getByTestId("run-carry")).toHaveCount(0);
-  await dialog.getByTestId("run-custom-codex").click();
-  // Another CLI asks what to bring, with Summary as the default.
-  const summary = dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Summary" });
-  await expect(summary).toHaveAttribute("aria-checked", "true");
-  // The choice is one tab stop, and the arrow keys move it.
-  await summary.focus();
-  await tab.keyboard.press("ArrowRight");
-  await expect(dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Start clean" })).toBeFocused();
-  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Starts a new Codex chat on gpt-e2e\b.* with nothing from this one\. This chat stays as it is\.$/);
-  await expect(dialog.locator('[data-provider="codex"]')).toContainText("new chat");
-  await tab.keyboard.press("ArrowLeft");
-  await expect(summary).toHaveAttribute("aria-checked", "true");
-  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Starts a new Codex chat on gpt-e2e\b.* with a summary of this one\. This chat stays as it is\.$/);
-  await expect(dialog.locator('[data-provider="codex"]')).toContainText("new chat + summary");
-  await expect(dialog.getByTestId("run-apply")).toHaveText("Start new chat");
+  await expect(dialog.getByTestId("run-apply")).toHaveCount(0);
   await shoot(tab, "run-popover", info.project.name);
-  await dialog.getByTestId("run-apply").click();
+  await dialog.getByTestId("run-custom-codex").click();
   const progress = dialog.getByTestId("sm-progress");
-  // The live chair was asked for a summary and does not answer, so the switch waits here.
   await expect(progress).toHaveAttribute("data-phase", "summarizing");
-  // The open popover says the switch runs, so the chip's own status stays quiet until it closes.
   await expect(tab.getByTestId("run-chip-status")).toHaveText("");
-  await shoot(tab, "switch-model", info.project.name);
   await tab.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(tab.getByTestId("run-chip-status")).toHaveText("Switching…");
@@ -157,8 +138,6 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   await expect(progress).toHaveAttribute("data-phase", "cancelled");
   await expect(progress).toContainText("Cancelled. This chat is unchanged.");
   expect(await chats()).toBe(before);
-  await tab.keyboard.press("Escape");
-  await expect(tab.locator(`[data-testid="transcript"][data-chat="${live}"]`)).toBeVisible();
   expect(errors).toEqual([]);
 });
 

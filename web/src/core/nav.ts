@@ -66,10 +66,15 @@ export type TreeView = {
   tmuxAvailable?: boolean;
 };
 
+export type ModelChoice = { provider: string; model: string };
+
 export type Prefs = {
   theme?: string;
-  /** What a switch to another CLI brings: `summary` (absent) or `clean` (ADR 0110). */
+  /** What a switch to another CLI brings; absent means File (ADR 0168). */
   switchCarry?: string;
+  favoriteModels?: ModelChoice[];
+  recentModels?: ModelChoice[];
+  newChatModel?: ModelChoice;
   /** Where a new chat runs: `pty` (absent) or `tmux`, which counts only while tmux is on PATH (ADR 0131). */
   terminalHost?: string;
   fontSans?: string;
@@ -123,7 +128,7 @@ export type ChoiceOp =
   | { op: "selected_chat"; workspace: string; chat: string | null; recording_history?: boolean }
   | { op: "seen"; workspace: string; chat: string }
   | { op: "setup_script"; project: string; setup_script: string }
-  | { op: "pref"; key: string; value: string | boolean }
+  | { op: "pref"; key: string; value: string | boolean | ModelChoice | ModelChoice[] }
   | { op: "mute_project"; project: string; muted: boolean };
 
 /** The new tree, with each row and section that did not change kept as the old object, so a

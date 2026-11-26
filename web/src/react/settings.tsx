@@ -181,7 +181,7 @@ function AppearancePage({ app }: { app: App }) {
           onChange={(v) => void app.settings.setPref("chatDetail", v)}
         />
       </Row>
-      <Row title="Switch to another CLI" detail="What the new chat gets. The run chip asks each time with this as the default.">
+      <Row title="Switch to another CLI" detail="What the next CLI gets when this chat switches.">
         <Segmented
           label="Switch to another CLI"
           testid="pref-switch-carry"

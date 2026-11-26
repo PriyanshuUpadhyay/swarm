@@ -208,9 +208,10 @@ export class Settings {
 
   // ---- preferences ----
 
-  /** One `prefs` key: `theme`, `switchCarry`, `terminalHost`, `fontSans`, `fontMono`, `usageHUDAsked` or `notices.post|sound|done|badge`. */
-  setPref(key: string, value: string | boolean): Promise<boolean> {
-    return this.app.choose({ op: "pref", key, value });
+  async setPref(key: string, value: Extract<import("./nav").ChoiceOp, { op: "pref" }>["value"]): Promise<boolean> {
+    const saved = await this.app.choose({ op: "pref", key, value });
+    if (saved && (key === "favoriteModels" || key === "newChatModel" || key === "switchCarry")) await this.app.refresh();
+    return saved;
   }
 
   mute(project: string, muted: boolean): Promise<boolean> {

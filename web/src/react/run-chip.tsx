@@ -1,22 +1,29 @@
-// The run chip `account · model · thinking` and its popover, which changes the chat's run
-// (ADR 0110). Inside one CLI the session restarts on the new run; another CLI asks what to bring.
+// The run chip `account · model · thinking` and its instant picker (ADR 0167).
 
 import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { accountColor, applyBlock, applyLabel, CARRY_OPTIONS, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Carry, type Run } from "../core/composer";
+import { accountCli, accountColor, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
-import { Glyph } from "./glyph";
 import { useLife, ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
-import { Segmented } from "./settings-shared";
 import { RunPicker, runModel, useRunCatalog } from "./run-picker";
 
 export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
   const chosen = useLife(app, "switchModel");
   const handoff = useLife(app, "handoffs")[sessionId];
   const open = chosen === sessionId && !chair.who && !chair.unreachable;
+  const favorite = useLife(app, "favoritePick");
+  const login = !chair.who && chair.account ? accountCli(chair.provider ?? "", chair.model) : null;
+  const [single, setSingle] = useState<string | null>(null);
+  useEffect(() => {
+    if (!login) return;
+    let live = true;
+    void app.life.runs.accounts(login).then(({ accounts }) => { if (live) setSingle(accounts.length === 1 ? login : null); }, () => {});
+    return () => { live = false; };
+  }, [app, login]);
+  const multipleAccounts = !login || single !== login;
   const pop = useRef<HTMLDivElement>(null);
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -51,12 +58,13 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
         style={{ anchorName: anchor } as CSSProperties}
         onClick={() => (open ? app.life.close("switchModel") : app.life.openSwitchModel(sessionId))}
       >
-        {chair.account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(chair.account) }} />}
+        {chair.account && multipleAccounts && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(chair.account) }} />}
         <span className="truncate" data-testid="model-chip-label">
-          {switching ?? runLabel(chair)}
+          {switching ?? runLabel(multipleAccounts ? chair : { ...chair, account: null })}
         </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
+      {favorite?.session === sessionId && !chair.who && <span data-testid="run-favorite-toast" role="status" className="absolute z-10 -translate-y-full rounded-md border border-menu-border bg-popover px-2 py-1 text-xs" style={{ positionAnchor: anchor, positionArea: "top" } as CSSProperties}>{favorite.label}</span>}
       {/* A button's children are presentational, so a running switch is announced from outside it.
           The open popover has its own status. A child's chip never switches, and its composer keeps
           one status for the prompt caption. */}
@@ -73,7 +81,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
           role={open ? "dialog" : undefined}
           data-testid="run-popover"
           aria-label="Change model, thinking, or account"
-          className="m-0 w-[min(640px,calc(100vw-32px))] rounded-xl border border-menu-border bg-popover p-3 text-sm text-popover-foreground shadow-2"
+          className="m-0 w-[min(560px,calc(100vw-32px))] rounded-xl border border-menu-border bg-popover text-sm text-popover-foreground shadow-2"
           style={{ positionAnchor: anchor, positionArea: "top span-right", marginBottom: 6, positionTryFallbacks: "flip-block" } as CSSProperties}
           onToggle={(e) => e.newState === "closed" && app.life.state.switchModel === sessionId && app.life.close("switchModel")}
         >
@@ -88,66 +96,30 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
   const handoff = useLife(app, "handoffs")[sessionId];
   const saved = useSyncExternalStore(app.subscribe, () => savedCarry(app.view.tree?.prefs));
   const current: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
-  const provider = current.provider;
   const [draft, setDraft] = useState<Run>(current);
-  const [carry, setCarry] = useState<Carry>(saved);
-  const catalog = useRunCatalog(app, provider);
-  const running = handoff !== undefined && !isSettled(handoff.phase);
-
-  const { label } = runModel(catalog, draft);
-  const outcome = switchOutcome(current, draft);
-  const blocked = applyBlock(chair, draft);
-  const error = catalog.error;
-
-  const apply = () => {
-    if (!draft.model || outcome === "none") return;
-    const how = outcome === "resume" ? "resume" : carry;
-    // switchModel keeps its own failure in the handoff state, so nothing waits for it.
-    void app.life.switchModel(sessionId, draft.provider, draft.model, draft.account, draft.effort, how);
+  const [preview, setPreview] = useState<Run | null>(null);
+  const catalog = useRunCatalog(app, current.provider);
+  const switching = handoff !== undefined && !isSettled(handoff.phase);
+  const proposed = preview ?? draft;
+  const { label } = runModel(catalog, proposed);
+  const outcome = switchOutcome(current, proposed);
+  const pick = (run: Run) => {
+    setDraft(run);
+    app.life.pickRun(sessionId, run);
   };
 
+  const help = outcome !== "none" ? outcomeText(outcome, current, proposed, saved, label)
+    : chair.running ? "Wait for this turn to end, or stop it."
+    : "A pick applies now. The next reply may read the whole chat once, so it costs more.";
   return (
-    <div className="grid gap-3">
-      <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={setDraft} disabled={running} note={(p) => (p !== current.provider ? (carry === "summary" ? "new chat + summary" : "new chat") : null)} />
-      {outcome === "handoff" && !running && (
-        <div className="flex flex-wrap items-center gap-2" data-testid="run-carry">
-          <span className="text-xs text-muted-foreground">Bring over</span>
-          <Segmented<Carry>
-            label="Bring over"
-            testid="run-carry-choice"
-            value={carry}
-            options={CARRY_OPTIONS}
-            onChange={setCarry}
-          />
-          {/* setPref shows its own notice on failure, so the promise never rejects. */}
-          {carry !== saved && (
-            <Button type="button" variant="ghost" size="sm" data-testid="run-carry-default" onClick={() => void app.settings.setPref("switchCarry", carry)}>
-              Make default
-            </Button>
-          )}
-        </div>
-      )}
-      {handoff && <SwitchProgress handoff={handoff} />}
-      <ErrorLine text={handoff?.error ?? error} />
-      <div className={`rounded-xl border px-3 py-2 text-xs ${outcome === "none" && !running ? "border-dashed border-border text-muted-foreground" : "border-border bg-hover"}`} role="status">
-        {outcome !== "none" && !running && !blocked && <b className="mr-1.5 font-medium text-foreground">What happens</b>}
-        <span data-testid="run-outcome">{running ? "Switching…" : (blocked ?? outcomeText(outcome, current, draft, carry, label))}</span>
+    <>
+      <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={pick} disabled={switching} preview={setPreview} />
+      <div className="grid gap-2 border-t border-menu-border p-2 text-xs text-muted-foreground">
+        {handoff && <SwitchProgress handoff={handoff} />}
+        <ErrorLine text={handoff?.error ?? catalog.error} />
+        <span data-testid="run-outcome">{help}</span>
+        {switching && <Button className="justify-self-end" type="button" size="sm" variant="outline" data-testid="run-cancel" disabled={!handoff?.canCancel} onClick={() => void app.life.cancelSwitch(sessionId)}>Cancel switch</Button>}
       </div>
-      <div className="flex items-center justify-end gap-2">
-        {running ? (
-          <Button type="button" variant="outline" size="sm" data-testid="run-cancel" disabled={!handoff?.canCancel} onClick={() => void app.life.cancelSwitch(sessionId)}>
-            Cancel switch
-          </Button>
-        ) : (
-          <Button type="button" variant="ghost" size="sm" onClick={() => app.life.close("switchModel")}>
-            Cancel
-          </Button>
-        )}
-        <Button type="button" size="sm" data-testid="run-apply" disabled={running || blocked !== null || outcome === "none"} onClick={apply}>
-          {running && <Glyph form="working" className="size-4" aria-hidden />}
-          {applyLabel(outcome)}
-        </Button>
-      </div>
-    </div>
+    </>
   );
 }

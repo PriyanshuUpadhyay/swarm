@@ -1,7 +1,8 @@
 // The run picker: models of each CLI, the thinking level and the account. The chat's run chip
 // and the new chat composer both show it (ADR 0110, ADR 0149).
 
-import { useEffect, useId, useState, useSyncExternalStore, type Dispatch } from "react";
+import { ArrowUpRightIcon, StarIcon } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore, type Dispatch } from "react";
 import type { App } from "../core/app";
 import { accountCli, accountColor, chooseModel, cliName, levelWord, limitText, modelLevels, type Run } from "../core/composer";
 import type { ModelInfo } from "../core/run-catalog";
@@ -13,6 +14,8 @@ import { modelPickerKey } from "./model-picker";
 import { meterTone } from "./usage-meters";
 
 /** A one-of-N pill that shows its pick with `aria-pressed`. */
+const RAIL = "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-muted-foreground hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
+
 export const PRESSED_PILL = "rounded-md border border-menu-border px-2 py-1 text-xs hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
 export type Catalog = { providers: ProviderInfo[]; models: Record<string, ModelInfo[] | string>; error: string | null };
@@ -59,22 +62,20 @@ export function runModel(catalog: Catalog, draft: Run) {
   return { info, model, levels: modelLevels(info?.efforts ?? [], model?.efforts), defaultLevel: model?.default_effort ?? info?.default_effort, label: model?.label ?? draft.model ?? "" };
 }
 
-/** `current` is the run the picker starts from; `note` labels a CLI's group. */
-export function RunPicker({ app, catalog, current, draft, setDraft, disabled = false, note }: { app: App; catalog: Catalog; current: Run; draft: Run; setDraft: Dispatch<Run>; disabled?: boolean; note?: (provider: string) => string | null }) {
+/** One picker for a live run, an ended run, or a new chat draft. */
+export function RunPicker({ app, catalog, current, draft, setDraft, disabled = false, preview }: { app: App; catalog: Catalog; current: Run; draft: Run; setDraft: Dispatch<Run>; disabled?: boolean; preview?: (run: Run | null) => void }) {
   const [accounts, setAccounts] = useState<Pick<Account, "name" | "email" | "summary">[]>([]);
   const usage = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.usage);
+  const prefs = useSyncExternalStore(app.subscribe, () => app.view.tree?.prefs);
   const meters = usage.state === "ready" ? usage.data.meters : [];
   const [query, setQuery] = useState("");
-  const anchorId = `run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const providers = catalog.providers;
+  const [rail, setRail] = useState(current.provider);
+  const providers = catalog.providers.length ? catalog.providers : [{ id: current.provider }];
+  const favorites = prefs?.favoriteModels ?? [];
 
-  // The meters are a cached read with no provider call; Settings may not have read them yet.
-  useEffect(() => {
-    // loadUsage keeps its own error in state.usage, so nothing waits for it.
-    void app.settings.loadUsage();
-  }, [app]);
+  useEffect(() => { void app.settings.loadUsage(); }, [app]);
 
-  const accountInfo = providers.find((p) => p.id === accountCli(draft.provider, draft.model));
+  const accountInfo = catalog.providers.find((p) => p.id === accountCli(draft.provider, draft.model));
   useEffect(() => {
     let live = true;
     setAccounts([]);
@@ -83,65 +84,84 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
         (a) => live && setAccounts(a.accounts),
         () => {}, // Accounts are optional; the default account starts.
       );
-    return () => {
-      live = false;
-    };
+    return () => { live = false; };
   }, [app, accountInfo]);
 
   const { levels, defaultLevel, label } = runModel(catalog, draft);
   const q = query.trim().toLowerCase();
-  // A failed accounts read still shows the chat's own account, which Apply sends.
   const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null, summary: null }, ...accounts] : accounts;
+  const list = catalog.models[rail];
+  const shown = Array.isArray(list) ? list : [];
+  const unavailable = rail === current.provider && current.model && Array.isArray(list) && !shown.some((m) => m.id === current.model);
+  const custom = q && rail !== "favorites" && list !== undefined && !shown.some((m) => m.id.toLowerCase() === q) ? query.trim() : null;
 
-  const choose = (provider: string, m: ModelInfo | string) => {
-    const cli = providers.find((x) => x.id === provider) ?? { id: provider, efforts: [], default_effort: "" };
-    setDraft(chooseModel(current, draft, cli, m));
+  const modelRun = (provider: string, m: ModelInfo | string) => {
+    const cli = catalog.providers.find((p) => p.id === provider) ?? { id: provider, efforts: [], default_effort: "" };
+    return chooseModel(current, draft, cli, m);
+  };
+  const choose = (provider: string, m: ModelInfo | string) => setDraft(modelRun(provider, m));
+
+  const modelRow = (provider: string, m: ModelInfo, nameCli: boolean, missing = false) => {
+    const on = draft.provider === provider && draft.model === m.id;
+    const pair = { provider, model: m.id };
+    const starred = favorites.some((f) => f.provider === provider && f.model === m.id);
+    if (q && ![m.label, m.id].some((text) => text.toLowerCase().includes(q))) return null;
+    return (
+      <div key={`${provider}/${m.id}`} data-testid={missing ? "run-unavailable" : undefined} className={`group flex items-center gap-1 rounded-md px-1 ${on ? "bg-menu-selected text-foreground" : "hover:bg-menu-hover"}`}>
+        <button type="button" data-model-id={missing ? undefined : m.id} aria-pressed={on} disabled={missing} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1.5 text-left" onClick={() => choose(provider, m)}
+          onMouseEnter={() => preview?.(modelRun(provider, m))} onFocus={() => preview?.(modelRun(provider, m))}
+          onMouseLeave={() => preview?.(null)} onBlur={() => preview?.(null)}>
+          {nameCli && <span className="shrink-0 text-xs text-muted-foreground">{cliName(provider)}</span>}
+          <span className="min-w-0 truncate">{m.label}</span>
+          {m.note && <span className="truncate text-xs text-muted-foreground" title={m.note}>{m.note}</span>}
+          {missing && <span className="text-xs text-muted-foreground">Unavailable</span>}
+          {current.provider === provider && current.model === m.id && <span className="ml-auto rounded border border-menu-border px-1 text-xs text-muted-foreground">now</span>}
+        </button>
+        {!missing && <>
+          <button type="button" title={starred ? "Remove from favorites" : "Add to favorites"} aria-label={starred ? `Remove ${m.label} from favorites` : `Add ${m.label} to favorites`} aria-pressed={starred} className={`rounded p-0.5 hover:bg-menu-hover focus-visible:opacity-100 ${starred ? "" : "opacity-0 group-hover:opacity-100"}`} onClick={() => void app.settings.setPref("favoriteModels", starred ? favorites.filter((f) => f.provider !== provider || f.model !== m.id) : [...favorites, pair])}>
+            <StarIcon className="size-3.5" fill={starred ? "currentColor" : "none"} />
+          </button>
+          <button type="button" className="rounded px-1 text-xs text-muted-foreground opacity-0 hover:bg-menu-hover focus-visible:opacity-100 group-hover:opacity-100" onClick={() => void app.settings.setPref("newChatModel", pair)}>
+            {prefs?.newChatModel?.provider === provider && prefs.newChatModel.model === m.id ? "New chat default" : "Use for new chats"}
+          </button>
+        </>}
+      </div>
+    );
+  };
+  const savedRow = ({ provider, model }: { provider: string; model: string }) => {
+    const models = catalog.models[provider];
+    return modelRow(provider, (Array.isArray(models) && models.find((m) => m.id === model)) || { id: model, label: model }, provider !== current.provider);
   };
 
   return (
-  <fieldset disabled={disabled} className="grid grid-cols-2 gap-3">
-      <div className="grid min-w-0 gap-1" onKeyDown={(e) => modelPickerKey(e, query)}>
-        <Input className="w-full" data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <div data-testid="run-models" className="max-h-[260px] overflow-y-auto">
-          {(catalog.providers.length ? catalog.providers : [{ id: current.provider }]).map((p) => {
-            const ms = catalog.models[p.id];
-            const shown = Array.isArray(ms) ? ms.filter((m) => !q || m.label.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) : [];
-            // A typed model id still works when the list could not be read.
-            const custom = q && ms !== undefined && !(Array.isArray(ms) && ms.some((m) => m.id.toLowerCase() === q)) ? query.trim() : null;
-            return (
-              <div key={p.id} role="group" aria-labelledby={`${anchorId}-${p.id}`} data-provider={p.id}>
-                <div id={`${anchorId}-${p.id}`} className="flex gap-2 px-2 pt-2 pb-1 text-xs text-muted-foreground">
-                  <span className="flex-1 font-medium">{cliName(p.id)}</span>
-                  {note?.(p.id) && <span>{note(p.id)}</span>}
-                </div>
-                {ms === undefined && <p className="px-2 py-1 text-xs text-muted-foreground">Reading models…</p>}
-                {Array.isArray(ms) && !ms.length && <p className="px-2 py-1 text-xs text-muted-foreground">No models listed. Type a model id.</p>}
-                {typeof ms === "string" && (
-                  <p className="line-clamp-2 px-2 py-1 text-xs break-words text-failed" title={ms}>
-                    {ms}
-                  </p>
-                )}
-                {shown.map((m) => {
-                  const on = draft.provider === p.id && draft.model === m.id;
-                  return (
-                    <button key={m.id} data-model-id={m.id} type="button" aria-pressed={on} className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => choose(p.id, m)}>
-                      <Radio on={on} />
-                      <span className="min-w-0 truncate">{m.label}</span>
-                      <span className="ml-auto max-w-[55%] truncate text-xs text-muted-foreground" title={m.note}>{[m.note, current.provider === p.id && current.model === m.id && "now"].filter(Boolean).join(" · ")}</span>
-                    </button>
-                  );
-                })}
-                {custom && (
-                  <button type="button" aria-pressed={draft.provider === p.id && draft.model === custom} data-model-id={custom} data-testid={`run-custom-${p.id}`} className="flex w-full min-w-0 rounded-md px-2 py-1 text-left hover:bg-menu-hover aria-pressed:bg-menu-hover" onClick={() => choose(p.id, custom)}>
-                    <span className="truncate">Use “{custom}”</span>
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
+    <fieldset disabled={disabled} className="grid min-w-0 grid-cols-[min(136px,30%)_minmax(0,1fr)] overflow-hidden rounded-[inherit]">
+      <div className="grid content-start gap-1 bg-hover p-1.5" aria-label="Model groups" role="group">
+        <button type="button" aria-pressed={rail === "favorites"} className={RAIL} onClick={() => setRail("favorites")}><StarIcon className="size-4 shrink-0" /> Favorites</button>
+        {providers.map((p) => <button key={p.id} type="button" aria-pressed={rail === p.id} className={RAIL} onClick={() => setRail(p.id)}>
+          <span className="truncate">{cliName(p.id)}</span>{p.id !== current.provider && <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden />}
+        </button>)}
       </div>
-      <div className="grid content-start gap-3">
+      <div className="grid min-w-0 content-start">
+        <div className="grid min-w-0 gap-1 p-2" onKeyDown={(e) => modelPickerKey(e, query)}>
+          <Input className="w-full" data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <div data-testid="run-models" className="max-h-[min(300px,38vh)] overflow-y-auto">
+            {rail !== "favorites" && !!prefs?.recentModels?.length && <div data-testid="run-recent">
+              <p className="px-2 pt-1 text-xs text-muted-foreground">Recent</p>
+              {prefs.recentModels.slice(0, 4).map(savedRow)}
+            </div>}
+            <div data-provider={rail}>
+              <p className="px-2 py-1 text-xs text-muted-foreground">{rail === "favorites" ? "Favorites" : cliName(rail)}</p>
+              {rail === "favorites" ? favorites.map(savedRow) : shown.map((m) => modelRow(rail, m, false))}
+              {unavailable && modelRow(current.provider, { id: current.model!, label: current.model! }, false, true)}
+              {rail !== "favorites" && list === undefined && <p className="px-2 text-xs text-muted-foreground">Reading models…</p>}
+              {rail !== "favorites" && Array.isArray(list) && !list.length && <p className="px-2 text-xs text-muted-foreground">No models listed. Type a model id.</p>}
+              {rail === "favorites" && !favorites.length && <p className="px-2 text-xs text-muted-foreground">Star a model to see it here.</p>}
+              {typeof list === "string" && <p className="line-clamp-2 px-2 text-xs text-failed">{list}</p>}
+              {custom && <button type="button" data-model-id={custom} data-testid={`run-custom-${rail}`} className="w-full truncate rounded-md px-2 py-1 text-left hover:bg-menu-hover" onClick={() => choose(rail, custom)}>Use “{custom}”</button>}
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-2 border-t border-menu-border p-2">
         <div className="grid gap-1.5" role="group" aria-label="Thinking" data-testid="run-thinking">
           <div className="flex gap-2 text-xs text-muted-foreground">
             <span className="flex-1 font-medium">Thinking</span>
@@ -200,6 +220,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
             <span>{meters.filter((m) => m.provider === accountInfo.id).map((m) => m.as_of_seconds).filter((t): t is number => t !== null).sort((a, b) => a - b).slice(0, 1).map((t) => `Limits checked ${new Date(t * 1000).toLocaleString()}`).join("") || "No cached limit time"}</span>
             <Button type="button" variant="ghost" size="sm" onClick={() => void app.settings.refreshUsage(accountInfo.id)}>Refresh limits</Button>
           </div>}
+        </div>
         </div>
       </div>
     </fieldset>

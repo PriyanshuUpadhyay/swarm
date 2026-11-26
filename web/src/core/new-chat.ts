@@ -54,6 +54,10 @@ type NewChatState = {
  *  the server's default holds there. */
 export const DEFAULT_ROLE = "chat";
 
+export function defaultRun(prefs: { newChatModel?: { provider: string; model: string } } | undefined): Run | null {
+  return prefs?.newChatModel ? { ...prefs.newChatModel, effort: null, account: null } : null;
+}
+
 /** How long the start's POST may take. The server answers in under a second, after its checks. */
 const START_TIMEOUT_MS = 10_000;
 
@@ -197,6 +201,7 @@ export class NewChat {
   /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. Only a
    *  start that the composer sent closes it and takes its text. */
   async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, submittedText, queued = [], bindUpload }: StartOptions = {}): Promise<boolean> {
+    if (!run.run && run.role === undefined) run = { ...run, run: defaultRun(this.app.tree?.prefs) };
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
     this.posting = true;

@@ -104,25 +104,29 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
     Object.assign(snap.agents[session][0], { provider: "codex", account: "work", model: "model-a" });
     await route.fulfill({ json: snap });
   });
+  const picks: Record<string, unknown>[] = [];
+  await tab.route("**/api/chat/continue", (route) => {
+    picks.push(route.request().postDataJSON());
+    return route.fulfill({ json: { session: process.env.SWARM_E2E_LIVE! } });
+  });
   let reads = 0;
   await tab.route("**/api/usage", (route) => { reads++; return route.fulfill({ json: { meters: [] } }); });
   await open(tab);
   await tab.getByTestId("model-chip").click();
-  await expect(tab.getByTestId("run-popover").getByText("Codex", { exact: true })).toBeVisible();
+  await expect(tab.getByTestId("run-popover").getByRole("button", { name: "Codex", exact: true })).toBeVisible();
+  await expect(tab.getByRole("button", { name: "Keep current account (work)", exact: true })).toBeVisible();
+  await tab.screenshot({ path: info.outputPath("model-picker.png") });
   await tab.getByTestId("run-query").fill("model-b");
   await tab.getByTestId("run-query").press("ArrowDown");
   await tab.keyboard.press("Enter");
-  await expect(tab.getByTestId("run-models").locator('button[aria-pressed="true"]')).toContainText("Model B");
-  await expect(tab.getByTestId("run-apply")).toBeEnabled();
-  await expect(tab.getByRole("button", { name: "Keep current account (work)", exact: true })).toBeVisible();
+  await expect.poll(() => picks.map((p) => p.model)).toEqual(["model-b"]);
   const first = reads;
-  await tab.getByTestId("run-popover").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(tab.getByTestId("run-popover")).toBeHidden();
   await tab.getByTestId("model-chip").click();
   await expect.poll(() => reads).toBeGreaterThan(first);
   await tab.getByTestId("run-query").fill("custom-id");
   await tab.getByTestId("run-query").press("Enter");
-  await expect(tab.getByTestId("run-custom-codex")).toHaveAttribute("aria-pressed", "true");
-  await tab.screenshot({ path: info.outputPath("model-picker.png") });
+  await expect.poll(() => picks.map((p) => p.model)).toEqual(["model-b", "custom-id"]);
 });
 
 test("stream loss shows Reconnecting and clears it after hello", async ({ page: tab }, info) => {

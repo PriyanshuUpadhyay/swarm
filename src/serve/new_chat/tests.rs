@@ -178,3 +178,29 @@ async fn ended_resume_launches_the_picked_run_in_the_same_session() {
         "{calls}"
     );
 }
+
+#[tokio::test]
+async fn recent_models_include_the_model_an_ended_resume_started() {
+    let fixture = action_fixture();
+    let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    // The stand-in launch does not publish runtime metadata; provide the stores it would update.
+    db.execute("UPDATE agent SET provider = 'claude', model = 'sonnet' WHERE session_id = ?1 AND id = 'orchestrator'", [&fixture.session]).unwrap();
+    let prefs = || {
+        choices_store::load(&fixture.app.root, false)
+            .unwrap()
+            .owner
+            .prefs
+    };
+    assert!(prefs()["recentModels"].is_null());
+    call_action(
+        &fixture,
+        "/api/chat/resume",
+        json!({"session": fixture.session}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        prefs()["recentModels"],
+        json!([{"provider":"claude", "model":"sonnet"}])
+    );
+}

@@ -344,23 +344,11 @@ pub fn apply(
                     (Some(section), name)
                 });
             let prefs = prefs_object(&mut owner.prefs, section)?;
-            let value = if key == "recentModels" {
-                let mut models = vec![value];
-                if let Some(old) = prefs.get(name).and_then(Value::as_array) {
-                    for model in old.iter().filter(|model| valid_model_choice(model)) {
-                        if !models.contains(model) {
-                            models.push(model.clone());
-                        }
-                        if models.len() == 4 {
-                            break;
-                        }
-                    }
-                }
-                Value::Array(models)
+            if key == "recentModels" {
+                put_recent(prefs, value);
             } else {
-                value
-            };
-            prefs.insert(name.into(), value);
+                prefs.insert(name.into(), value);
+            }
         }
         ChoiceOp::MuteProject { project, muted } => {
             if !tree.projects.iter().any(|p| p.path == project) {
@@ -379,6 +367,36 @@ pub fn apply(
         op => apply_tab(owner, state, tree, op)?,
     }
     Ok(())
+}
+
+impl ChoiceOp {
+    pub fn remember_model(
+        owner: &mut OwnerChoices,
+        provider: String,
+        model: String,
+    ) -> Result<(), String> {
+        let value = serde_json::json!({ "provider": provider, "model": model });
+        if !valid_model_choice(&value) {
+            return Err("invalid value for recentModels".into());
+        }
+        put_recent(prefs_object(&mut owner.prefs, None)?, value);
+        Ok(())
+    }
+}
+
+fn put_recent(prefs: &mut serde_json::Map<String, Value>, value: Value) {
+    let mut models = vec![value];
+    if let Some(old) = prefs.get("recentModels").and_then(Value::as_array) {
+        for model in old.iter().filter(|model| valid_model_choice(model)) {
+            if !models.contains(model) {
+                models.push(model.clone());
+            }
+            if models.len() == 4 {
+                break;
+            }
+        }
+    }
+    prefs.insert("recentModels".into(), Value::Array(models));
 }
 
 fn valid_model_choice(value: &Value) -> bool {

@@ -66,6 +66,7 @@ export type LifeState = {
   setupScript: { project: string; title: string } | null;
   /** The chat that Switch model continues. */
   switchModel: string | null;
+  favoritePick?: { session: string; label: string };
   /** Each chat's switch, by its session; a switch blocks only its own chat. */
   handoffs: Record<string, Handoff>;
   confirm: Confirm | null;
