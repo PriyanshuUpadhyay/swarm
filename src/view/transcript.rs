@@ -28,6 +28,7 @@ pub use events::row;
 pub(super) use events::{pi_child_facts, subagent_run};
 pub use records::Record;
 pub(super) use shell::shell_row;
+const SUBAGENT_TOOL: &str = "subagent";
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run, strip_terminal};
 pub use state::{
     ChatUsage, UsageState, clear_boundary, queued, usage, view_rows, view_rows_with_context,

@@ -53,6 +53,7 @@ pub(super) async fn panel_read(
                 .as_deref()
                 .ok_or_else(|| error(StatusCode::BAD_REQUEST, "Select a file path"))
         };
+
         if let Some(full) = query.full.as_deref() {
             if full != "1" || uri.path() != "/api/changes/diff" {
                 return Err(error(
@@ -76,6 +77,7 @@ pub(super) async fn panel_read(
                 )
             });
         }
+
         let result = match uri.path() {
             "/api/changes" => changes::list(&query.workspace, &query.mode, query.base.as_deref()),
             "/api/changes/diff" => changes::patch(

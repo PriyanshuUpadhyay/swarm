@@ -3,8 +3,8 @@
 use super::super::tool;
 use super::checklist;
 use super::{
-    RECORD, Record, Row, RowKind, TextPreview, UNMAPPED, chip, is_record, key, meta, peer_text,
-    record_text, shell_row, shell_run, string, tagged, task_summary,
+    RECORD, Record, Row, RowKind, SUBAGENT_TOOL, TextPreview, UNMAPPED, chip, is_record, key, meta,
+    peer_text, record_text, shell_row, shell_run, string, tagged, task_summary,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -27,7 +27,7 @@ fn is_subagent_call(name: &str) -> bool {
         "task",
         "spawn_agent",
         "invoke_subagent",
-        "subagent",
+        SUBAGENT_TOOL,
     ]
     .iter()
     .any(|known| name.eq_ignore_ascii_case(known))
@@ -57,6 +57,7 @@ type ChildStates<'a> = [Option<&'a str>; 4];
 pub(in crate::view) fn pi_child_facts(records: &[Record]) -> HashMap<usize, ChildStates<'_>> {
     let mut calls = HashMap::new();
     let mut facts: HashMap<usize, ChildStates<'_>> = HashMap::new();
+
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
         let id = string(event, "tool_call_id");
@@ -64,13 +65,15 @@ pub(in crate::view) fn pi_child_facts(records: &[Record]) -> HashMap<usize, Chil
             continue;
         }
         let key = (meta(event, "session_id"), id);
+
         match string(event, "type") {
-            "tool_call" if string(event, "name") == "subagent" => {
+            "tool_call" if string(event, "name") == SUBAGENT_TOOL => {
                 calls
                     .entry(key)
                     .and_modify(|previous| *previous = None)
                     .or_insert(Some(index));
             }
+
             "pi_child_results" => {
                 if let (Some(Some(call)), Some(states)) =
                     (calls.get(&key), event["states"].as_array())
@@ -101,6 +104,7 @@ pub(in crate::view) fn subagent_run(
     let name = string(event, "name");
     let call_id = string(event, "tool_call_id");
     let (agent_type, description) = subagent_labels(input, name);
+
     let mut run = SubagentRun {
         call_id: call_id.into(),
         other_call_ids: Vec::new(),
@@ -110,9 +114,10 @@ pub(in crate::view) fn subagent_run(
         state,
         result,
     };
+
     if let Some(tasks) = input["tasks"]
         .as_array()
-        .filter(|tasks| name == "subagent" && tasks.len() > 1)
+        .filter(|tasks| name == SUBAGENT_TOOL && tasks.len() > 1)
     {
         for (i, task) in tasks.iter().take(4).enumerate() {
             let (_, description) = subagent_labels(task, name);

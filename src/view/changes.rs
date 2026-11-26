@@ -60,9 +60,9 @@ impl<'a> ReadCommands<'a> {
     }
 }
 fn bytes(read: &ReadCommands<'_>, args: &[&str]) -> Result<Vec<u8>> {
-    Ok(git_bytes(read, args, false)?.expect("uncapped Git output"))
+    Ok(git_bytes(read, args, false)?.0)
 }
-fn git_bytes(read: &ReadCommands<'_>, args: &[&str], capped: bool) -> Result<Option<Vec<u8>>> {
+fn git_bytes(read: &ReadCommands<'_>, args: &[&str], capped: bool) -> Result<(Vec<u8>, bool)> {
     let mut command = Command::new("git");
     command
         .args(["-C", read.root, "--literal-pathspecs"])
@@ -70,6 +70,7 @@ fn git_bytes(read: &ReadCommands<'_>, args: &[&str], capped: bool) -> Result<Opt
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("LC_ALL", "C");
+
     let seconds = read.remaining()?;
     let (output, overflow) = if capped {
         discovery::run_command_capped(&mut command, seconds, FULL_BYTES)
@@ -77,12 +78,13 @@ fn git_bytes(read: &ReadCommands<'_>, args: &[&str], capped: bool) -> Result<Opt
         discovery::run_command(&mut command, seconds).map(|output| (output, false))
     }
     .map_err(Error::Failed)?;
+
     if !output.status.success() {
         return Err(Error::Failed(
             String::from_utf8_lossy(&output.stderr).trim().into(),
         ));
     }
-    Ok((!overflow).then_some(output.stdout))
+    Ok((output.stdout, overflow))
 }
 fn text(read: &ReadCommands<'_>, args: &[&str]) -> Result<String> {
     String::from_utf8(bytes(read, args)?)
@@ -196,7 +198,7 @@ fn diff(
     format: &[&str],
     path: Option<&str>,
 ) -> Result<Vec<u8>> {
-    Ok(diff_read(read, layer, pair, format, path, false)?.expect("uncapped Git output"))
+    Ok(diff_read(read, layer, pair, format, path, false)?.0)
 }
 fn diff_read(
     read: &ReadCommands<'_>,
@@ -205,7 +207,7 @@ fn diff_read(
     format: &[&str],
     path: Option<&str>,
     capped: bool,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<(Vec<u8>, bool)> {
     let mut args = diff_args(layer, pair);
     args.extend(format.iter().map(|s| (*s).into()));
     args.push("--".into());
@@ -238,16 +240,16 @@ fn patch_and_counts(
                 Some(path),
             )
         });
-        let data = patch.join().expect("patch read")?;
+
+        let (data, overflow) = patch.join().expect("patch read")?;
         let counts = counts.join().expect("patch counts")?;
-        data.map(|data| {
-            Ok((
-                String::from_utf8(data)
-                    .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))?,
-                stats(&counts)?,
-            ))
-        })
-        .transpose()
+
+        if overflow {
+            return Ok(None);
+        }
+        let patch = String::from_utf8(data)
+            .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))?;
+        Ok(Some((patch, stats(&counts)?)))
     })
 }
 fn stats(data: &[u8]) -> Result<FileCounts> {
@@ -340,7 +342,8 @@ pub fn patch(
     base: Option<&str>,
     layer: Option<&str>,
 ) -> Result<Value> {
-    Ok(read_patch(root, path, mode, base, layer, false)?.expect("uncapped preview"))
+    read_patch(root, path, mode, base, layer, false)?
+        .ok_or_else(|| Error::Failed("Preview did not fit".into()))
 }
 
 /// `None` means the full patch did not fit; the preview is still available.
@@ -352,6 +355,10 @@ pub fn full_patch(
     layer: Option<&str>,
 ) -> Result<Option<Value>> {
     read_patch(root, path, mode, base, layer, true)
+}
+
+fn fits_full(lines: usize, bytes: usize) -> bool {
+    lines <= FULL_LINES && bytes <= FULL_BYTES
 }
 
 fn read_patch(
@@ -370,6 +377,7 @@ fn read_patch(
     } else {
         Vec::new()
     };
+
     let (candidates, mut source) = if matches!(mode, Mode::Branch) {
         if expand && layer.is_some_and(|layer| layer != "branch") {
             return Err(Error::Invalid("Select a changed file and layer".into()));
@@ -408,6 +416,7 @@ fn read_patch(
             None,
         )
     };
+
     let mut candidates: Vec<_> = candidates
         .into_iter()
         .filter(|f: &Change| f.path == path && layer.is_none_or(|l| f.layer == l))
@@ -421,6 +430,7 @@ fn read_patch(
         .pop()
         .ok_or_else(|| Error::Invalid("Select a changed file and layer".into()))?;
     let layer = file.layer.as_str();
+
     if !matches!(mode, Mode::Branch) && layer != "untracked" {
         let Some((patch, counts)) = patch_and_counts(&read, layer, &pair, path, expand)? else {
             return Ok(None);
@@ -428,6 +438,7 @@ fn read_patch(
         source = Some(patch);
         (file.added, file.removed) = counts.get(path).copied().unwrap_or((None, None));
     }
+
     let mut full = None;
     let source = if layer == "untracked" {
         let Some(source) = untracked_source(&read, path, expand)? else {
@@ -449,7 +460,7 @@ fn read_patch(
         };
         let lines = source.full_lines + 4 + usize::from(!ending.is_empty());
         let bytes = header.len() + source.full_bytes + source.full_lines + ending.len();
-        if expand && (bytes > FULL_BYTES || lines > FULL_LINES) {
+        if expand && !fits_full(lines, bytes) {
             return Ok(None);
         }
         full = Some((lines, bytes));
@@ -465,10 +476,11 @@ fn read_patch(
     } else {
         source.expect("tracked patch")
     };
+
     let mut preview = if expand {
         let lines = source.lines().count();
         let bytes = source.len();
-        if lines > FULL_LINES || bytes > FULL_BYTES {
+        if !fits_full(lines, bytes) {
             return Ok(None);
         }
         TextPreview {
@@ -486,6 +498,7 @@ fn read_patch(
         preview.full_bytes = bytes;
         preview.hidden_lines = lines.saturating_sub(preview.text.lines().count());
     }
+
     stable(&read, mode, base, Some(path), &before, &pair)?;
     Ok(Some(
         json!({"path":path,"layer":layer,"patch":preview.text,"display":super::transcript::patch_wire::changes_patch(&preview.text),"is_truncated":preview.is_truncated,
@@ -533,7 +546,7 @@ fn untracked_source(read: &ReadCommands<'_>, path: &str, full: bool) -> Result<O
         full_bytes += size;
         full_lines += bytes.iter().filter(|b| **b == b'\n').count();
         ends_with_newline = bytes.last() == Some(&b'\n');
-        if full && (full_bytes > limit || full_lines > FULL_LINES) {
+        if full && !fits_full(full_lines, full_bytes) {
             break;
         }
         prefix.extend_from_slice(&bytes[..size.min(limit - prefix.len())]);

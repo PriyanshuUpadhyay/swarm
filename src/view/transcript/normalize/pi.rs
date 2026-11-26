@@ -4,13 +4,13 @@ use super::claude_input::{self, Input};
 use super::claude_json::{self, Object};
 use super::pi_text;
 use super::{NormalizedEvent, SnapshotError, Work};
+use crate::view::transcript::SUBAGENT_TOOL;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{Value, json, value::RawValue};
 
 /// Swarm's Pi question tool (src/bus/pi_live.ts), shown like Claude's AskUserQuestion.
 const QUESTION_TOOL: &str = "ask_user_question";
-const SUBAGENT_TOOL: &str = "subagent";
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -39,6 +39,7 @@ fn child_results(
     let Some(results) = details.array("results").filter(|items| items.len() <= 4) else {
         return Ok(());
     };
+
     let mut states = [None; 4];
     for raw in results {
         work.check()?;
@@ -48,6 +49,7 @@ fn child_results(
         let Some(slot) = result.integer("slot").filter(|n| (1..=4).contains(n)) else {
             return Ok(());
         };
+
         let state = result
             .get("state")
             .and_then(|raw| serde_json::from_str::<ChildState>(raw.get()).ok());
@@ -57,6 +59,7 @@ fn child_results(
             return Ok(());
         }
     }
+
     if states.iter().any(Option::is_some) {
         fact.push(
             "pi_child_results",
