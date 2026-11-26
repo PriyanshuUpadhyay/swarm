@@ -2,6 +2,24 @@ import { expect, test } from "@playwright/test";
 import type { Row } from "../src/core/api";
 import { open, row, rows } from "./ux-helpers";
 
+test("a long group title is truncated inside the card", async ({ page }) => {
+  const title = "Review the release and the related checks ".repeat(5).trim();
+  const batch: Row = {
+    ...row("sub1", title, "subagent"),
+    subagent: {
+      call_id: "fixture-call", other_call_ids: ["fixture-call.2"], agent_type: "subagent", description: "First child", state: "finished",
+    },
+  };
+  await page.route("**/api/rows?*", (route) => route.fulfill({ json: rows([batch]) }));
+  await open(page);
+  await page.setViewportSize({ width: 850, height: 720 });
+
+  const name = page.getByTestId("subagent-row").getByText(title, { exact: true });
+  await expect(name).toBeVisible();
+  await expect(name).toHaveCSS("text-overflow", "ellipsis");
+  expect(await name.evaluate((el) => el.scrollWidth > el.clientWidth && el.getBoundingClientRect().right <= el.parentElement!.getBoundingClientRect().right)).toBe(true);
+});
+
 test("a group shows observed states, expands after five and opens the chosen child", async ({ page }) => {
   const batch = {
     ...row("sub1", "Review the release", "subagent"),

@@ -33,7 +33,7 @@ function ChildGroup({ children, title }: { children: SubagentChild[]; title: str
   return (
     <>
       <div className="card-head flex-wrap">
-        <span className="font-semibold">{title}</span>
+        <span className="min-w-0 truncate font-semibold" title={title}>{title}</span>
         <span className="font-mono text-muted-foreground">{groups.filter((g) => g.items.length).map((g) => `${g.items.length} ${g.state}`).join(" · ")}</span>
       </div>
       <ul className="m-0 list-none px-2 pb-1">
