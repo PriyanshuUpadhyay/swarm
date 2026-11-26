@@ -192,13 +192,14 @@ async fn recent_models_include_the_model_an_ended_resume_started() {
             .prefs
     };
     assert!(prefs()["recentModels"].is_null());
-    call_action(
+    let response = call_action(
         &fixture,
         "/api/chat/resume",
         json!({"session": fixture.session}),
     )
     .await
     .unwrap();
+    assert_eq!(response["session"], json!(fixture.session));
     assert_eq!(
         prefs()["recentModels"],
         json!([{"provider":"claude", "model":"sonnet"}])
