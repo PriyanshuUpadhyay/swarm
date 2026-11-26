@@ -2,7 +2,7 @@
 
 This repo ships two skills for agent CLIs that take part in a swarm.
 
-- If your pane was started by `swarm launch` or `swarm spawn`, read
+- If your pane was started by `swarm launch`, read
   `skills/kit/skills/swarm-voice/SKILL.md` and follow it.
 - If you are asked to run a swarm session, read `skills/kit/skills/swarm-orchestrator/SKILL.md`.
 

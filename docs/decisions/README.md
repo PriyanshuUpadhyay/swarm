@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0163 | Launch starts every agent, and spawn is removed | 2 | accepted | 2026-11-26 | ↑0008 ↑0123 ↑0153 →0033 →0086 |
 | 0162 | Chat notes go to the main chat's message box and float beside the rows | 2 | accepted | 2026-11-25 | ↑0161 →0029 →0030 |
 | 0161 | Chat notes are browser drafts sent as one typed message | 2 | superseded | 2026-11-24 | ~0162 →0130 →0029 |
 | 0159 | Every agent question is answered in the chat; the pane is for debugging | 2 | accepted | 2026-11-24 | ↑0029 ↑0154 →0121 |
