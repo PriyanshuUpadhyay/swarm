@@ -42,8 +42,6 @@ export function PromptCard({
   state: Input;
   showColumn?: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const field = useRef<HTMLInputElement>(null);
   const rows = useRef<HTMLPreElement>(null);
   const commandWindow = useRef<HTMLPreElement>(null);
   const [typed, setTyped] = useState({ prompt: prompt.id, text: "" });
@@ -53,13 +51,6 @@ export function PromptCard({
   const showAll = expanded === commandId;
   const text = typed.prompt === prompt.id ? typed.text : "";
   const busy = state.answering?.prompt === prompt.id ? state.answering.choice : null;
-  // A question may take focus from its empty composer. Keep focus with an active draft.
-  // The chair may also take focus when nothing has it; a child never takes it from another pane.
-  useEffect(() => {
-    const a = document.activeElement;
-    const own = a?.matches('[data-testid="composer"]') && ref.current?.closest(".chat-input")?.contains(a);
-    if (!app.draft(sessionId).trim() && (own || (!who && (!a || a === document.body)))) (field.current ?? ref.current)?.focus();
-  }, [sessionId, prompt.id, who]);
   // The question of a screen card is at the pane's bottom, so its rows open scrolled to the end.
   useEffect(() => {
     if (rows.current) rows.current.scrollTop = rows.current.scrollHeight;
@@ -81,7 +72,6 @@ export function PromptCard({
   };
   return (
     <div
-      ref={ref}
       tabIndex={0}
       role="group"
       data-testid="prompt-card"
@@ -127,7 +117,6 @@ export function PromptCard({
       {prompt.input && (
         <form className="flex min-w-0 items-center gap-2" onSubmit={submit}>
           <input
-            ref={field}
             data-testid="prompt-text"
             aria-label="Your answer"
             placeholder={prompt.screen ? "Type text; Send types it and presses Enter" : "Or type your own answer…"}

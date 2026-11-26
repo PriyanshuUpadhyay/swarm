@@ -1,5 +1,5 @@
 import { TriangleAlertIcon } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { App, Banner, Composer } from "../core/app";
 import { Button } from "../components/ui/button";
 import { BackgroundLine } from "./background-line";
@@ -10,8 +10,27 @@ import { StatusLine } from "./status-line";
 /** Below the transcript: the error banner, the agent's question, and the composer. */
 export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
   const { id, agent, state } = composer;
+  const root = useRef<HTMLDivElement>(null);
+  const promptId = agent.prompt?.id;
+  const [arrival, setArrival] = useState<{ chat: string; prompt: string; activeDraft: boolean } | null>(null);
+  useLayoutEffect(() => {
+    if (promptId === undefined) {
+      setArrival(null);
+      return;
+    }
+    // Sample before disabling the textarea can move focus. This decision belongs to this prompt.
+    const focused = document.activeElement;
+    const own = focused?.matches('[data-testid="composer"]') && root.current?.contains(focused);
+    const hasDraft = !!app.draft(id).trim();
+    setArrival({ chat: id, prompt: promptId, activeDraft: !!own && hasDraft });
+    if (!hasDraft && (own || (!agent.who && (!focused || focused === document.body)))) {
+      const card = root.current?.querySelector<HTMLElement>('[data-testid="prompt-card"]');
+      (card?.querySelector<HTMLInputElement>('[data-testid="prompt-text"]') ?? card)?.focus();
+    }
+  }, [app, id, promptId, agent.who]);
+  const lockDraft = agent.waiting && arrival !== null && arrival.chat === id && arrival.prompt === promptId && !arrival.activeDraft;
   return (
-    <div className="chat-input shrink-0 px-6 pt-1 pb-4">
+    <div ref={root} className="chat-input shrink-0 px-6 pt-1 pb-4">
       <div className="mx-auto grid max-w-[760px] gap-2">
         <StatusLine key={id} app={app} composer={composer} />
         {!agent.who && <BackgroundLine key={`background:${id}`} session={id} />}
@@ -32,7 +51,7 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
             </Button>
           </div>
         ) : (
-          <ComposerBox key={id} app={app} composer={composer} />
+          <ComposerBox key={id} app={app} composer={composer} lockDraft={lockDraft} />
         )}
       </div>
     </div>

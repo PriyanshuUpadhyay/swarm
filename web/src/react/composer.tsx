@@ -16,7 +16,7 @@ import { cn } from "../lib/utils";
 /** Two Escapes within this many ms count as Esc Esc. */
 const DOUBLE_ESC_MS = 500;
 
-export function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
+export function ComposerBox({ app, composer, lockDraft }: { app: App; composer: Composer; lockDraft: boolean }) {
   const { id: sessionId, agent: chair, state } = composer;
   // "the chair" means nothing to a new owner, so the chat's own agent is named.
   const target = chair.who ?? (chair.provider ? `the ${chair.provider} agent` : "the agent");
@@ -247,7 +247,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             rows={2}
             className={cn("block w-full", expanded ? "h-[60vh]" : "max-h-[200px]", "resize-none bg-transparent px-3 pt-2.5 text-md outline-none placeholder:text-muted-foreground", chair.provider === "pi" && "composer-text relative")}
             data-testid="composer"
-            disabled={chair.waiting && chair.prompt !== null}
+            disabled={lockDraft}
             aria-label={`Message ${target}`}
             placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
             aria-expanded={open}
