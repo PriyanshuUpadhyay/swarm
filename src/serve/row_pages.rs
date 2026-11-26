@@ -122,6 +122,7 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
     if (linked && query.before.is_some()) || (!linked && query.older_cursor.is_some()) {
         return Err(invalid_cursor());
     }
+
     let mut index = chain.len() - 1;
     let mut before = query.before;
     if let Some(cursor) = &query.older_cursor {
@@ -163,14 +164,8 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
             && index > 0
             && let Some(connection) = &connection
         {
-            let (from, to): (Option<String>, Option<String>) = connection
-                .query_row(
-                    "SELECT old.chair_provider, new.chair_provider FROM session AS new
-                 JOIN session AS old ON old.id = new.continuation_of WHERE new.id = ?1",
-                    [session],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .map_err(|_| {
+            let (from, to) =
+                swarm::store::continuation_providers(connection, session).map_err(|_| {
                     error(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "chat history read failed",
@@ -215,6 +210,7 @@ pub(super) async fn transcript_rows(
     let root = app.root.clone();
     let session = query.session.clone();
     let agent = query.agent.clone();
+
     let segment = tokio::task::spawn_blocking(move || segment_page(&root, &query))
         .await
         .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows task failed"))??;
@@ -248,6 +244,7 @@ async fn load_segment(
         .iter()
         .any(|(source, _)| source == &segment.session);
     let model = |state: &LiveRows| needs_model.then(|| state.first_model()).flatten();
+
     let cached_page = if !before {
         let hub = app.hub.lock().unwrap();
         let cached = hub
@@ -271,6 +268,7 @@ async fn load_segment(
     if let Some(page) = cached_page {
         return Ok(page);
     }
+
     let recovery = if before {
         let hub = app.hub.lock().unwrap();
         hub.followers
@@ -334,6 +332,7 @@ async fn render_row_page(
 ) -> Result<Json<Value>, ApiError> {
     let leaf = leaf.to_owned();
     let historical = segment.session != leaf;
+
     tokio::task::spawn_blocking(move || {
         let (start, end) = if historical {
             page.rows.retain(|row| row.kind != RowKind::Queued);
@@ -341,13 +340,14 @@ async fn render_row_page(
                 row.scope_to(&segment.session);
             }
             for id in &mut page.remove {
-                *id = format!("{}:{id}", segment.session);
+                *id = Row::scoped_id(&segment.session, id);
             }
             page.usage = None;
             (0, 0)
         } else {
             (segment.start, segment.end)
         };
+
         for (source, mut label) in segment.joins.into_iter().rev() {
             if source == segment.session && let Some(model) = &model {
                 label.push_str(&format!(" · {model}"));
@@ -362,6 +362,7 @@ async fn render_row_page(
                 page.rows.push(row);
             }
         }
+
         let display = view::markdown::row_displays(&page.rows);
         let body = view::markdown::row_bodies(&page.rows, &display);
         let patch = view::patch_wire::row_patches(&page.rows);

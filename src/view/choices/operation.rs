@@ -117,10 +117,7 @@ pub enum ChoiceOp {
         list: String,
         fields: Vec<String>,
     },
-    /// One owner preference under `prefs`, in the Swift `Prefs` keys: `theme`, `fontSans`, `fontMono`, `usageHUDAsked`,
-    /// `switchCarry` (what a switch to another CLI brings, ADR 0110), `terminalHost` (`pty` or
-    /// `tmux`, where a new chat runs, ADR 0131), `chatDetail` (`compact` or `full`, ADR 0047), or a
-    /// notice switch `notices.post|sound|done|badge` that `swarm notices --due` reads (ADR 0077).
+    /// One owner preference under `prefs`. `apply` checks the key and its allowed values.
     Pref {
         key: String,
         value: Value,
@@ -314,6 +311,7 @@ pub fn apply(
                 "theme" => matches!(value.as_str(), Some("system" | "light" | "dark")),
                 "switchCarry" => matches!(value.as_str(), Some("file" | "summary" | "clean")),
                 "newChatModel" | "recentModels" => valid_model_choice(&value),
+
                 "favoriteModels" => value.as_array().is_some_and(|models| {
                     let mut seen = std::collections::BTreeSet::new();
                     models.iter().all(|model| {
@@ -369,17 +367,13 @@ pub fn apply(
     Ok(())
 }
 
-impl ChoiceOp {
-    pub fn remember_model(
-        owner: &mut OwnerChoices,
-        provider: String,
-        model: String,
-    ) -> Result<(), String> {
-        let value = serde_json::json!({ "provider": provider, "model": model });
-        if !valid_model_choice(&value) {
+impl OwnerChoices {
+    pub fn remember_model(&mut self, provider: String, model: String) -> Result<(), String> {
+        if !valid_model_names(&provider, &model) {
             return Err("invalid value for recentModels".into());
         }
-        put_recent(prefs_object(&mut owner.prefs, None)?, value);
+        let value = serde_json::json!({ "provider": provider, "model": model });
+        put_recent(prefs_object(&mut self.prefs, None)?, value);
         Ok(())
     }
 }
@@ -403,11 +397,12 @@ fn valid_model_choice(value: &Value) -> bool {
     value.as_object().is_some_and(|entry| entry.len() == 2)
         && value["provider"]
             .as_str()
-            .and_then(crate::providers::Provider::parse)
-            .is_some()
-        && value["model"]
-            .as_str()
-            .is_some_and(crate::config::valid_name)
+            .zip(value["model"].as_str())
+            .is_some_and(|(provider, model)| valid_model_names(provider, model))
+}
+
+fn valid_model_names(provider: &str, model: &str) -> bool {
+    crate::providers::Provider::parse(provider).is_some() && crate::config::valid_name(model)
 }
 
 /// `prefs`, or its `section` object made when absent. A value of another type is refused, not

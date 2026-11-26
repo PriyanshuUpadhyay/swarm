@@ -118,6 +118,12 @@ pub(super) struct CliCall {
 }
 
 impl CliCall {
+    pub(super) fn default_adapter(&mut self) {
+        if self.adapter.is_empty() {
+            self.adapter = "tmux-swarm".into();
+        }
+    }
+
     pub(super) fn args(&self, args: &[&str]) -> Self {
         Self {
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
@@ -276,6 +282,10 @@ pub(super) fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>
 pub(super) fn action_session(app: &Server, session: &str) -> Result<CliCall, ApiError> {
     let connection = read_connection(&app.root)
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    session_call(&connection, session)
+}
+
+fn session_call(connection: &rusqlite::Connection, session: &str) -> Result<CliCall, ApiError> {
     let row = connection
         .query_row(
             "SELECT cwd, adapter FROM session WHERE id = ?1",
@@ -294,13 +304,11 @@ pub(super) fn action_session(app: &Server, session: &str) -> Result<CliCall, Api
 }
 
 pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
-    let call = action_session(app, id)?;
-    let (archived, continued) = read_connection(&app.root).and_then(|db| db.query_row(
-        "SELECT archived_at IS NOT NULL, EXISTS (
-            SELECT 1 FROM session AS next WHERE next.continuation_of = ?1 AND next.archived_at IS NULL
-        ) FROM session WHERE id = ?1",
-        [id], |row| Ok((row.get::<_, bool>(0)?, row.get::<_, bool>(1)?)),
-    )).map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let connection = read_connection(&app.root)
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let call = session_call(&connection, id)?;
+    let (archived, continued) = swarm::store::continuation_source_state(&connection, id)
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
     if archived {
         return Err(error(
             StatusCode::CONFLICT,

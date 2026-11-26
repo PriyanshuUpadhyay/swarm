@@ -189,23 +189,23 @@ impl Row {
             order: [0, 0],
         }
     }
+    pub fn scoped_id(session: &str, id: &str) -> String {
+        format!("{session}:{id}")
+    }
+
+    fn scope_id(id: &mut String, session: &str) {
+        if !id.is_empty() {
+            *id = Self::scoped_id(session, id);
+        }
+    }
+
     pub fn scope_to(&mut self, session: &str) {
-        fn prefix(id: &mut String, session: &str) {
-            if !id.is_empty() {
-                *id = format!("{session}:{id}");
-            }
-        }
         self.source_session = Some(session.into());
-        prefix(&mut self.id, session);
+        Self::scope_id(&mut self.id, session);
+
         if let Some(diff) = &mut self.diff {
-            prefix(&mut diff.id, session);
+            Self::scope_id(&mut diff.id, session);
         }
-        if let Some(tool) = &mut self.tool {
-            for diff in &mut tool.diffs {
-                prefix(&mut diff.id, session);
-            }
-        }
-        let tool = self.tool.as_mut();
         let command = self.command.as_mut();
         for preview in [
             self.output.as_mut(),
@@ -215,14 +215,17 @@ impl Row {
         .into_iter()
         .flatten()
         {
-            prefix(&mut preview.id, session);
+            Self::scope_id(&mut preview.id, session);
         }
-        if let Some(tool) = tool {
+        if let Some(tool) = &mut self.tool {
+            for diff in &mut tool.diffs {
+                Self::scope_id(&mut diff.id, session);
+            }
             for preview in [&mut tool.output, &mut tool.skill_body]
                 .into_iter()
                 .flatten()
             {
-                prefix(&mut preview.id, session);
+                Self::scope_id(&mut preview.id, session);
             }
         }
         if let Some(command) = command {
@@ -230,7 +233,7 @@ impl Row {
                 .into_iter()
                 .flatten()
             {
-                prefix(&mut preview.id, session);
+                Self::scope_id(&mut preview.id, session);
             }
         }
         for step in &mut self.steps {

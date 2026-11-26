@@ -34,10 +34,11 @@ pub fn summary_turn(rows: &[Row], baseline: usize) -> Option<Option<String>> {
     Some((!answer.is_empty()).then(|| answer.chars().take(12_000).collect()))
 }
 
-/// Each user and agent message of the chat, oldest first, or None when it has none.
+/// User and agent text, oldest first, without synthetic handoff turns or non-message rows.
 pub fn chat_text(rows: &[Row]) -> Option<String> {
     let mut text = Vec::new();
     let mut synthetic = false;
+
     for row in rows {
         let body = row.text.trim();
         match row.kind {

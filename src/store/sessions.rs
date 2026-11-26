@@ -20,6 +20,20 @@ pub fn create_session(
     Ok(id)
 }
 
+const LIVE_CONTINUATION: &str =
+    "SELECT 1 FROM session WHERE continuation_of = :source AND archived_at IS NULL";
+
+pub fn continuation_source_state(
+    connection: &Connection,
+    id: &str,
+) -> rusqlite::Result<(bool, bool)> {
+    connection.query_row(
+        &format!("SELECT archived_at IS NOT NULL, EXISTS ({LIVE_CONTINUATION}) FROM session WHERE id = :source"),
+        rusqlite::named_params! { ":source": id },
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+}
+
 /// Link a newer session in the same directory; the link is written only after handoff delivery.
 pub fn continue_session(
     connection: &Connection,
@@ -27,19 +41,20 @@ pub fn continue_session(
     old_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let changed = connection.execute(
-        "UPDATE session SET continuation_of = ?2
-         WHERE id = ?1 AND continuation_of IS NULL AND archived_at IS NULL
-           AND EXISTS (SELECT 1 FROM session AS old
-                       WHERE old.id = ?2 AND old.archived_at IS NULL
-                         AND old.cwd = session.cwd AND old.id < session.id)
-           AND NOT EXISTS (SELECT 1 FROM session AS next
-                           WHERE next.continuation_of = ?2 AND next.archived_at IS NULL)",
-        (new_id, old_id),
+        &format!(
+            "UPDATE session SET continuation_of = :source
+             WHERE id = :target AND continuation_of IS NULL AND archived_at IS NULL
+               AND EXISTS (SELECT 1 FROM session AS old
+                           WHERE old.id = :source AND old.archived_at IS NULL
+                             AND old.cwd = session.cwd AND old.id < session.id)
+               AND NOT EXISTS ({LIVE_CONTINUATION})"
+        ),
+        rusqlite::named_params! { ":target": new_id, ":source": old_id },
     )?;
     if changed != 1 {
         let continued: bool = connection.query_row(
-            "SELECT EXISTS (SELECT 1 FROM session WHERE continuation_of = ?1 AND archived_at IS NULL)",
-            [old_id],
+            &format!("SELECT EXISTS ({LIVE_CONTINUATION})"),
+            rusqlite::named_params! { ":source": old_id },
             |row| row.get(0),
         )?;
         if continued {
@@ -50,6 +65,18 @@ pub fn continue_session(
     Ok(())
 }
 
+pub fn continuation_providers(
+    connection: &Connection,
+    id: &str,
+) -> rusqlite::Result<(Option<String>, Option<String>)> {
+    connection.query_row(
+        "SELECT old.chair_provider, new.chair_provider FROM session AS new
+         JOIN session AS old ON old.id = new.continuation_of WHERE new.id = ?1",
+        [id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+}
+
 /// Reads the existing predecessor chain, oldest first. Every link moves forward in one folder.
 pub fn continuation_chain(connection: &Connection, leaf: &str) -> rusqlite::Result<Vec<String>> {
     let mut read =
@@ -57,6 +84,7 @@ pub fn continuation_chain(connection: &Connection, leaf: &str) -> rusqlite::Resu
     let mut chain = Vec::new();
     let mut id = leaf.to_owned();
     let mut cwd = None;
+
     loop {
         let (folder, parent): (String, Option<String>) =
             read.query_row([&id], |row| Ok((row.get(0)?, row.get(1)?)))?;

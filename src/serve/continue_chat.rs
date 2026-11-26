@@ -41,14 +41,11 @@ pub(super) fn register_continue(app: &App, body: &ContinueChat) -> Result<(), Ap
     if swarm::providers::Provider::parse(&body.provider).is_none() {
         return Err(error(StatusCode::BAD_REQUEST, "unknown provider"));
     }
-    if !swarm::config::valid_name(&body.model)
-        || [&body.account, &body.effort]
-            .into_iter()
-            .flatten()
-            .any(|value| !swarm::config::valid_name(value))
-    {
-        return Err(error(StatusCode::BAD_REQUEST, "invalid launch option"));
-    }
+    validate_launch_options([
+        Some(body.model.as_str()),
+        body.account.as_deref(),
+        body.effort.as_deref(),
+    ])?;
     current_source(app, &body.old_session)?;
     let mut runs = app.handoffs.lock().unwrap();
     if runs.contains_key(&body.old_session) {
@@ -166,9 +163,7 @@ pub(super) async fn chair_agent(app: &App, call: &CliCall) -> Result<Value, ApiE
     let mut read = call.args(&["agents", "--json"]);
     // An imported chat has no adapter until its first pane. A chat on another adapter keeps it, so
     // the read lists that adapter's panes and not the app's own tmux server.
-    if read.adapter.is_empty() {
-        read.adapter = "tmux-swarm".into();
-    }
+    read.default_adapter();
     let output = run_cli(app, read, None).await?;
     let agents: Value = serde_json::from_str(&output)
         .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid agents JSON from swarm"))?;
@@ -220,17 +215,7 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     }
     let closed = chair["alive"] == true;
     if closed {
-        // A chat before its first turn has no log yet, and so no reply that runs.
-        if chair["state"] == "working"
-            || handoff_rows(app, old)
-                .await
-                .is_ok_and(|rows| view::is_active(&rows))
-        {
-            return Err(error(
-                StatusCode::CONFLICT,
-                "Wait for the current reply to finish, or stop it before switching model.",
-            ));
-        }
+        require_idle(app, old, &chair).await?;
         continue_phase(app, old, "starting")?;
         run_cli(app, call.args(&["close", "--now", "orchestrator"]), None).await?;
     } else {
@@ -309,7 +294,8 @@ pub(super) async fn execute_continue_timed(
         let mut cancelled = app.handoffs.lock().unwrap().get(old).ok_or_else(|| error(StatusCode::CONFLICT, "model switch cancelled"))?.cancel.subscribe();
         if *cancelled.borrow() { return Err(error(StatusCode::CONFLICT, "model switch cancelled")); }
         let mut call = current_source(app, old)?;
-        if call.adapter.is_empty() { call.adapter = "tmux-swarm".into(); }
+
+        call.default_adapter();
         if body.carry == Carry::Resume {
             let resumed = resume_switch(app, &body).await?;
             remember_started_model(app, old).await;
@@ -372,17 +358,11 @@ async fn prepare_carry(
     continue_phase(app, old, "preparing")?;
     let chair = chair_agent(app, call).await?;
     let alive = chair["alive"] == true;
-    if alive
-        && (chair["state"] == "working"
-            || handoff_rows(app, old)
-                .await
-                .is_ok_and(|rows| view::is_active(&rows)))
-    {
-        return Err(error(
-            StatusCode::CONFLICT,
-            "Wait for the current reply to finish, or stop it before switching model.",
-        ));
+
+    if alive {
+        require_idle(app, old, &chair).await?;
     }
+
     match body.carry {
         Carry::Clean => Ok(None),
         Carry::File => {
@@ -453,6 +433,21 @@ async fn prepare_carry(
     }
 }
 
+async fn require_idle(app: &App, old: &str, chair: &Value) -> Result<(), ApiError> {
+    // A chat before its first turn has no log yet, and so no reply that runs.
+    if chair["state"] == "working"
+        || handoff_rows(app, old)
+            .await
+            .is_ok_and(|rows| view::is_active(&rows))
+    {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "Wait for the current reply to finish, or stop it before switching model.",
+        ));
+    }
+    Ok(())
+}
+
 async fn wait_for_carry(
     app: &App,
     next: &CliCall,
@@ -464,11 +459,9 @@ async fn wait_for_carry(
     tokio::time::timeout(wait, async {
         loop {
             tokio::time::sleep(poll).await;
-            let (cmd, key) = if provider == "agy" {
-                ("agents", "agents")
-            } else {
-                ("sessions", "sessions")
-            };
+            let agy = provider == "agy";
+            let cmd = if agy { "agents" } else { "sessions" };
+
             let output = run_cli(app, next.args(&[cmd, "--json"]), None).await?;
             let listing: Value = serde_json::from_str(&output).map_err(|_| {
                 error(
@@ -476,14 +469,15 @@ async fn wait_for_carry(
                     "invalid readiness listing from swarm",
                 )
             })?;
-            if listing[key].as_array().is_some_and(|rows| {
-                if provider == "agy" {
-                    handoff::agy_ready(&listing)
-                } else {
+            let ready = if agy {
+                handoff::agy_ready(&listing)
+            } else {
+                listing[cmd].as_array().is_some_and(|rows| {
                     rows.iter()
                         .any(|s| s["id"] == session && handoff::ready(s, provider))
-                }
-            }) {
+                })
+            };
+            if ready {
                 return Ok(());
             }
         }
