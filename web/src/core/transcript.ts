@@ -203,7 +203,17 @@ export function cut(d: Display, n: number): Display {
 function compare(a: Row, b: Row): number {
   const qa = a.kind === "queued" ? 1 : 0;
   const qb = b.kind === "queued" ? 1 : 0;
-  return qa - qb || a.order[0] - b.order[0] || a.order[1] - b.order[1];
+  const sourceA = a.source_session ?? "~";
+  const sourceB = b.source_session ?? "~";
+  const segment = sourceA < sourceB ? -1 : sourceA > sourceB ? 1 : 0;
+  const joined = (row: Row) => row.kind === "model_change" && row.id.startsWith(row.source_session ? `${row.source_session}:cli-join:` : "cli-join:") ? 1 : 0;
+  return qa - qb || segment || joined(b) - joined(a) || a.order[0] - b.order[0] || a.order[1] - b.order[1];
+}
+
+/** A historical output locator prefixes its log byte locator with the owning session. */
+export function sourceLocator(id: string): { session: string; local: string } | null {
+  const match = /^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}):(raw-.+)$/i.exec(id);
+  return match ? { session: match[1], local: match[2] } : null;
 }
 
 /** Applies `remove` and `upsert` by id. A known row keeps its place; a new row goes in by `order`.

@@ -97,7 +97,8 @@ function RowBody(ctx: Ctx) {
   if (row.kind === "fold") return <FoldLine app={app} line={line} />;
   if (row.kind === "todoList") return <TodoRow row={row} />;
   if (row.kind === "proposedPlan") return <PlanRow row={row} />;
-  if (row.subagent) return <SubagentRow run={row.subagent} title={row.text} />;
+  if (row.subagent) return <SubagentRow run={row.subagent} title={row.text} sourceSession={row.source_session} />;
+  if (row.kind === "model_change") return <div className="quiet" data-testid="model-change">{row.text}</div>;
   if (row.tool) return <ToolCard {...ctx} />;
   if (row.kind === "divider")
     return (
@@ -152,7 +153,7 @@ function RowBody(ctx: Ctx) {
         row={row}
         queued={row.kind === "queued" || row.system_kind === "queued_prompt"}
         reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
-        branch={row.kind === "user" && ctx.branches && app.branch ? () => app.branch?.(row.id) : undefined}
+        branch={row.kind === "user" && app.branch && (row.source_session ? app.canBranchFrom?.(row.source_session) : ctx.branches) ? () => app.branch?.(row.id) : undefined}
       >
         <MdBody row={row} />
         <ImageThumbs paths={imagesOf(row)} load={app.imageUrl} />

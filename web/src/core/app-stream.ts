@@ -48,6 +48,8 @@ export class AppStream {
     }
     // A chair's and a child's log can show up after the chat opens.
     if (this.app.reading.open) this.app.panes.loadChair(this.app.reading.open);
+    // A linked chat already has a reader when the leaf's native log first becomes available.
+    if (snap.sessions.some((s) => s.continuation_of)) this.syncSubscriptions();
     for (const id of this.app.visible) this.app.panes.loadPane(id);
     if (this.app.liveAll) void this.loadAllForLive();
   }
@@ -268,7 +270,9 @@ export class AppStream {
     const keys: SubscribeKey[] = [];
     for (const id of [...chairs, ...panes]) {
       const chat = this.app.chats.get(id);
-      if (chat?.state === "ready") keys.push({ key: chat.key, from: chat.end, view: "rows" });
+      const awaitingLog = chat?.agent === "chair" && this.app.snapshot?.sessions.some(
+        (s) => s.id === chat.sessionId && s.continuation_of && !this.app.panes.chairHasLog(s.id));
+      if (chat?.state === "ready" && !awaitingLog) keys.push({ key: chat.key, from: chat.end, view: "rows" });
       if (keys.length === MAX_KEYS) break;
     }
     const sig = keys.map((k) => k.key).sort().join(",");

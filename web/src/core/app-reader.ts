@@ -1,7 +1,7 @@
 
 
 import type { Usage } from "./composer";
-import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, wantsLayout, type Line } from "./transcript";
+import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, sourceLocator, wantsLayout, type Line } from "./transcript";
 import { ApiError, type Row } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
@@ -115,7 +115,7 @@ export class AppReader {
       noteFind(page.rows, page.find);
       noteImages(page.rows, page.images);
       chat.rows = mergeRows([], page.rows);
-      chat.older = page.page.start_offset;
+      chat.older = page.page.older_cursor ?? page.page.start_offset;
       chat.end = page.page.end_offset;
       chat.usage = page.usage as Usage;
       chat.state = "ready";
@@ -204,7 +204,8 @@ export class AppReader {
     this.changed(chat);
     let next: FullText;
     try {
-      const { text, patch } = await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId, wantsLayout(previewId));
+      const source = sourceLocator(previewId);
+      const { text, patch } = await this.app.api.toolOutput(source?.session ?? chat.sessionId, chat.agent, source?.local ?? previewId, wantsLayout(previewId));
       next = { state: "ready", text, lines: text.split("\n"), patch };
     } catch (err) {
       next = { state: "error", error: String(err) };
@@ -231,7 +232,8 @@ export class AppReader {
     const have = chat?.full.get(previewId);
     if (have?.state === "ready") return have.text;
     if (!chat) throw new Error("no chat open");
-    return (await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId)).text;
+    const source = sourceLocator(previewId);
+    return (await this.app.api.toolOutput(source?.session ?? chat.sessionId, chat.agent, source?.local ?? previewId)).text;
   }
 
   async retryRows(id?: string) {
@@ -248,7 +250,7 @@ export class AppReader {
   /** Pages older rows in above the current ones. */
   async loadOlder(id?: string) {
     const chat = this.chat(id);
-    if (!chat || chat.state !== "ready" || chat.loadingOlder || chat.older <= 0) return;
+    if (!chat || chat.state !== "ready" || chat.loadingOlder || !chat.older) return;
     chat.loadingOlder = true;
     chat.error = null;
     this.app.notify();
@@ -260,7 +262,7 @@ export class AppReader {
       noteFind(page.rows, page.find);
       noteImages(page.rows, page.images);
       chat.rows = mergeRows(chat.rows, page.rows, page.remove);
-      chat.older = page.page.start_offset;
+      chat.older = page.page.older_cursor ?? page.page.start_offset;
       chat.version++;
       chat.shift = true;
     } catch (err) {

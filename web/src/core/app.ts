@@ -2,7 +2,7 @@
 
 import { Api, type RowFrame, type Snapshot } from "./api";
 import { installKeys, Registry } from "./commands";
-import { type AgentInput, type Answer, type Prompt } from "./composer";
+import { canBranch, type AgentInput, type Answer, type Prompt } from "./composer";
 import { whenPainted } from "./perf";
 import { focusOpenedChat, keepFocus } from "./focus";
 import { chatFromPath, resolveChat } from "./route";
@@ -415,7 +415,13 @@ export class App {
 
   /** Branch from here on a user row of the open chat. */
   branch(row: string) {
-    if (this.openId) void this.actions.branch(this.openId, row);
+    if (!this.openId) return;
+    const source = this.reading.open?.rows.find((r) => r.id === row)?.source_session;
+    void this.actions.branch(source ?? this.openId, source ? row.slice(source.length + 1) : row);
+  }
+
+  canBranchFrom(session: string): boolean {
+    return canBranch(this.composing.chair(session));
   }
 
   /** The Esc Esc picker of the open chat's messages to branch from. */

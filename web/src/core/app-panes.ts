@@ -60,7 +60,7 @@ export class AppPanes {
       chatState: chat.loaded ? chat.state : hasLog ? "loading" : "none",
       chatError: chat.error,
       lines: this.app.composing.chair(chat.id).running ? chat.built.lines.concat(WORKING) : chat.built.lines,
-      hasOlder: chat.older > 0,
+      hasOlder: !!chat.older,
       loadingOlder: chat.loadingOlder,
       shift: chat.shift,
       full: chat.full,
@@ -121,9 +121,10 @@ export class AppPanes {
     return log !== null && log !== "";
   }
 
-  /** Loads a chair's chat once its log exists. */
+  /** A linked chair can show earlier rows before its own log exists. */
   loadChair(chat: Chat) {
-    if (chat.loaded || !this.chairHasLog(chat.sessionId)) return;
+    const linked = this.app.snapshot?.sessions.some((s) => s.id === chat.sessionId && s.continuation_of);
+    if (chat.loaded || (!linked && !this.chairHasLog(chat.sessionId))) return;
     chat.loaded = true;
     void this.app.reading.loadTail(chat).then(() => {
       this.app.streaming.syncSubscriptions();

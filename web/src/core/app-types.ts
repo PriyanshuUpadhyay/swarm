@@ -22,8 +22,8 @@ export type Chat = {
   /** False for a child's chat until its column first shows. */
   loaded: boolean;
   rows: Row[];
-  /** The next older page ends here; 0 means no older rows. */
-  older: number;
+  /** A linked cursor or a single-log byte offset; 0 means no older rows. */
+  older: number | string;
   end: number;
   state: "loading" | "ready" | "error";
   error: string | null;
@@ -159,6 +159,7 @@ export type Reader = {
   closeFind(): void;
   /** Reuse on a sent prompt: puts its text in the composer `composerId`. */
   reuse(composerId: string, text: string): void;
+  canBranchFrom?(session: string): boolean;
   /** Branch from here on a user row; only the open chat's chair transcript has it. */
   branch?(row: string): void;
   /** The notes on agent replies, kept per main chat (ADR 0162). */

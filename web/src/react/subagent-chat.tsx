@@ -15,7 +15,7 @@ const REFRESH_MS = 3000;
 /** Failed reads in a row after which the dialog stops trying and shows the error with Retry. */
 const MAX_FAILED_READS = 10;
 
-export function SubagentRow({ run, title }: { run: SubagentRun; title: string }) {
+export function SubagentRow({ run, title, sourceSession }: { run: SubagentRun; title: string; sourceSession?: string }) {
   const result = run.result?.text.trim().split("\n", 1)[0] ?? "";
 
   return (
@@ -27,7 +27,7 @@ export function SubagentRow({ run, title }: { run: SubagentRun; title: string })
         onClick={(e) => {
           // The transcript above names its chat; a pane column's rows open from their own chat.
           const chatId = e.currentTarget.closest<HTMLElement>("[data-chat]")?.dataset.chat;
-          if (chatId) openSubagent({ chatId, callId: run.call_id, title });
+          if (chatId) openSubagent({ chatId, callId: run.call_id, title, sourceSession });
         }}
       >
         <StatusGlyph state={run.state} />
@@ -41,7 +41,7 @@ export function SubagentRow({ run, title }: { run: SubagentRun; title: string })
           className="card-head"
           onClick={(e) => {
             const chatId = e.currentTarget.closest<HTMLElement>("[data-chat]")?.dataset.chat;
-            if (chatId) openSubagent({ chatId, callId, title: `${title} · Child ${i + 2}` });
+            if (chatId) openSubagent({ chatId, callId, title: `${title} · Child ${i + 2}`, sourceSession });
           }}
         >
           Child {i + 2}
@@ -57,7 +57,7 @@ export function SubagentOverlay({ app }: { app: App }) {
   useSyncExternalStore(app.subscribe, () => app.view);
   const parent = open ? app.chats.get(open.chatId) : undefined;
   const agent = parent && open ? subagentAgent(parent.agent, open.callId) : undefined;
-  const sessionId = parent?.sessionId;
+  const sessionId = open?.sourceSession ?? parent?.sessionId;
 
   useEffect(() => {
     if (!sessionId || !agent) return;

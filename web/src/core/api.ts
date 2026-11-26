@@ -8,6 +8,7 @@ export type Session = {
   cwd: string;
   created_at: number;
   chair_provider: string | null;
+  continuation_of?: string | null;
   adapter: string | null;
   project: string | null;
   workspace: string | null;
@@ -18,7 +19,7 @@ export type Agent = { id: string; role: string; state: string | null; alive: boo
 
 export type Snapshot = { version: number; sessions: Session[]; agents: Record<string, Agent[]> };
 
-export type Page = { start_offset: number; end_offset: number };
+export type Page = { start_offset: number; end_offset: number; older_cursor?: string | null };
 
 // Row wire types from `src/view` (P0-U1). An absent field means null, false or [].
 export type RowKind =
@@ -36,6 +37,7 @@ export type RowKind =
   | "result"
   | "shell"
   | "divider"
+  | "model_change"
   | "fold"
   | "queued"
   | "todoList"
@@ -109,6 +111,7 @@ export type Row = {
   command?: CommandChip;
   subagent?: SubagentRun;
   source_ids?: string[];
+  source_session?: string;
   ends_turn?: boolean;
   starts_turn?: boolean;
   arrives_mid_turn?: boolean;
@@ -250,9 +253,10 @@ export class Api {
     return this.json("/api/snapshot");
   }
 
-  rows(session: string, agent: string, tail: number, before?: number): Promise<RowPage> {
+  rows(session: string, agent: string, tail: number, before?: number | string): Promise<RowPage> {
     const q = new URLSearchParams({ session, agent, tail: String(tail) });
-    if (before !== undefined) q.set("before", String(before));
+    if (typeof before === "string") q.set("older_cursor", before);
+    else if (before !== undefined) q.set("before", String(before));
     return this.json(`/api/rows?${q}`);
   }
 
