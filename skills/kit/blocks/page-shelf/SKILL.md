@@ -1,6 +1,6 @@
 ---
 name: page-shelf
-description: "Give the owner a built page as a local URL from the swarm page shelf, never a hosted artifact or a file path. Use when a step makes an HTML page for the owner to see."
+description: "Give the owner a built page as a local swarm page shelf URL. Use when a step makes an HTML page for the owner to see."
 license: MIT
 metadata:
   kind: step

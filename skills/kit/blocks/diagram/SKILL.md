@@ -19,7 +19,7 @@ metadata:
 - A node or an arrow that names code carries its `path:line`. In an HTML page, put it in the source as a comment or `data-src`. The caller's own check covers these citations.
 - A diagram shown in a page, file, or reply has a caption. Each caption is one sentence that says what to notice. A plain-text call tree needs no caption. In a page, give the diagram a text description.
 
-`references/explain-formats.md` owns when to draw, the diagram type, and the form for the reading surface.
+[`references/explain-formats.md`](../../references/explain-formats.md) owns when to draw, the diagram type, and the form for the reading surface.
 Each part keeps its own size, layout, record, or review checks.
 
 ## Example

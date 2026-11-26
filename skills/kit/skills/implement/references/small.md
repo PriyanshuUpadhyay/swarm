@@ -28,7 +28,7 @@ Take the small route only when all of these hold. Otherwise run the `implement` 
 4. Commit. Run `python3 <kit root>/skills/code-review/scripts/review_check.py start <base>..HEAD`, and
    send the run's seat map to one fresh seat that the `run-workers` block starts. One seat writes
    every named seat file, as the Seats section of the `code-review` skill's `references/check.md`
-   allows. The agent that wrote the change never fills the rows.
+   allows. A different agent fills the rows, because the author would grade their own change.
 5. Run `verdict`. On `REQUEST CHANGES`, fix each `fix` row and review the new range once more. On
    `NEEDS DISCUSSION`, bring the asks to the owner. A second `REQUEST CHANGES` goes to the owner.
    On `INCOMPLETE`, run `review_check.py build <run> --run` when `01-units.md` has a Build line,

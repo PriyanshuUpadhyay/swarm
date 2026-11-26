@@ -1,6 +1,6 @@
 ---
 name: simplest-design
-description: "Propose the design with the fewest parts that meets the stated needs. Trace each part to a need, reuse what the code already gives, and cut the rest. Use when you propose a design, plan, or approach before code."
+description: Propose the design with the fewest parts that meets the stated needs. Use when you propose a design, plan, or approach before code.
 ---
 
 # Simplest design

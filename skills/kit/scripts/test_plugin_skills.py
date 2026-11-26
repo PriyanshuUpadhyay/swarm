@@ -38,13 +38,14 @@ def test_each_skill_name_is_its_folder_name():
 
 
 def test_each_description_is_short_and_says_when():
-    # Owner rule 2026-10-16: at most 40 words, with "Use when", for every skill and block.
+    # Owner rule 2026-11-26: at most 160 characters, with "Use when" starting in the first 120, for every
+    # skill, preset, and block. Codex shortens long descriptions from the end, so the trigger goes early.
     bad = []
     for path in sorted((KIT / "skills").glob("*/SKILL.md")) + sorted((KIT / "presets").glob("*/PRESET.md")) + sorted((KIT / "blocks").glob("*/SKILL.md")):
         frontmatter = path.read_text(encoding="utf-8").split("---", 2)[1]
-        text = re.search(r"^description: (.+)$", frontmatter, re.M)[1].strip().strip('"')
-        if len(text.split()) > 40 or "Use when" not in text:
-            bad.append(f"{path.relative_to(KIT)}: {len(text.split())} words")
+        text = re.search(r"^description: (.+)$", frontmatter, re.M)[1].strip().strip("\"'")
+        if len(text) > 160 or not 0 <= text.find("Use when") < 120:
+            bad.append(f"{path.relative_to(KIT)}: {len(text)} characters, 'Use when' at {text.find('Use when')}")
     assert not bad, "\n".join(bad)
 
 

@@ -1,6 +1,6 @@
 ---
 name: drive-app
-description: "Drive the real app or browser one action at a time: expected result, fresh snapshot, one action, readback. Use when a proof or task needs real clicks, typing, or a native window."
+description: "Use one real app action at a time, with a fresh snapshot and readback. Use when a task or proof needs real clicks, typing, or a native window."
 license: MIT
 metadata:
   kind: step
@@ -19,7 +19,7 @@ metadata:
 - Take a fresh snapshot of the exact window or tab before each action. Pick the target by its role or label before its index, and by its index before pixels. A target from an old snapshot is stale after a repaint, a page change, or a dialog.
 - Do one action, then take a new snapshot and check the expected result. A tool's success message proves only that the action was sent; `blocks/prove-it-works/SKILL.md` owns that rule.
 - Send input in the background first. Use the foreground only when a fresh snapshot shows that the background action did not land. Retry only the step that failed.
-- If the state is unclear, or an unknown dialog opens, stop and report what you see. Do not click through it.
+- If the state is unclear or an unknown dialog opens, stop and report what you see, because the action may affect the user's app or data.
 - Work in your own session or tab. Close only what you opened, and leave windows, focus, tabs, and the clipboard as you found them.
 - Capture only the target window, and crop out anything private before a shot leaves the machine.
 - Sending a message, submitting a form, buying, deleting, or publishing follows the Safety rules of the active host. Logins, passwords, and MFA stay with the user.

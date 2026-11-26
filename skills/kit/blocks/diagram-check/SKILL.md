@@ -14,12 +14,12 @@ metadata:
 ---
 
 ## Rules
-- Run from the repo root when you use this block's script checks.
+- Use the check location that `blocks/web-ui/SKILL.md` sets.
 - The source of truth is {{source_of_truth}}. First name the part of it that each diagram draws, with its path.
 - Map each node and each arrow to one source line. Write one row per item: item, source `path:line`, `match` or `miss`.
 - A node or an arrow with no source line is an invented component. It is a `miss`.
 - Labels use source words: names on the diagram use the same words as the source. Citations follow `blocks/base-rules/SKILL.md`.
-- Shoot each diagram at each width from `blocks/web-ui-basics/SKILL.md` to `{{shots}}/diagram-<diagram>-<W>.png`, where W is that width. A page shot cannot stand in for it. Read each label in it at 100 % zoom. No label is clipped, and no arrow crosses a label. A moving part never hides a letter.
+- Shoot each diagram at each width from `blocks/web-ui-basics/SKILL.md` to `{{shots}}/diagram-<diagram>-<W>.png`, where W is that width. A page shot cannot stand in for it. Read each label in it at 100 % zoom. No label is clipped, and no arrow crosses a label. Keep letters visible throughout any movement.
 - The diagram reads on its own: a reader gets the caption's point from the picture without the body text.
 - Write each finding as `path:line - issue`, grouped by file.
 

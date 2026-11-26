@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0172 | Kit descriptions fit 160 characters with the trigger first | 2 | accepted | 2026-11-26 | →0136 |
 | 0171 | A CLI shows as its product mark, with a letter box when it has none | 2 | accepted | 2026-11-26 | →0094 →0167 |
 | 0170 | A usage limit shows in the status line, and "Needs you" holds only chats that wait for an answer | 2 | accepted | 2026-11-26 | →0099 →0112 →0160 →0166 |
 | 0169 | One line in the chat shows where the model changed | 2 | accepted | 2026-11-26 | ↑0099 →0168 |

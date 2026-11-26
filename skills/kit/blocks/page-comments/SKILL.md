@@ -1,6 +1,6 @@
 ---
 name: page-comments
-description: "Carry the owner's comments on a built page through rounds of fixes and checks until they approve it. Use when the owner reviews a rendered page, a walkthrough, or a demo before it is done."
+description: "Carry owner comments through fixes and checks until approval. Use when the owner reviews a rendered page, walkthrough, or demo."
 license: MIT
 metadata:
   kind: step

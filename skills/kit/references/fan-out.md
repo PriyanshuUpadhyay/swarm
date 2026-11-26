@@ -17,7 +17,7 @@ End the turn when nothing is ready, because a seat's finish rings the chair.
 Take each result when it arrives and act on it. Wait for all seats only when
 the step's verdict needs all of them.
 
-## Do not fan out
+## Work that runs in sequence
 
 - Edits to shared state or the same file.
 - A step that reads another step's result.
@@ -27,8 +27,6 @@ the step's verdict needs all of them.
 - More seats than the caps allow.
 
 ## Caps
-
-These trial limits apply to each run, as set on 2026-10-09.
 
 - 8 live child seats per run, including fix seats.
 - 2 coding seats.

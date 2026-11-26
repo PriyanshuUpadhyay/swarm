@@ -1,6 +1,6 @@
 ---
 name: build
-description: Make pictures, films, and sites where code (p5.js, three.js, shaders) draws every frame. Use when the user asks for a reel, loop, generative still, landing page, portfolio, "make this in code", or style rules from references only.
+description: "Make code-drawn visuals. Use when asked for a reel, loop, generative still, landing page, portfolio, “make this in code”, or style rules from references."
 ---
 
 # build
@@ -25,7 +25,7 @@ sunrise. A neon restyle changes only the look tokens.
 - Apply the architecture and deterministic-rendering rules in `blocks/build-canvas/SKILL.md`.
   The look tokens follow `blocks/design-tokens/SKILL.md`, with the shared rules in `blocks/web-ui/SKILL.md`.
 - Choose tools for the look and the story. Dependencies, load time, 3D, and WebGPU are fine.
-- Inspect rendered frames at each milestone. Code that runs does not prove the picture works.
+- Inspect rendered frames at each milestone as `blocks/visual-qa/SKILL.md` says.
 
 ## Routes
 
@@ -34,8 +34,8 @@ sunrise. A neon restyle changes only the look tokens.
 - `production`: the full look, texture, lettering, export, and handoff.
 - `analysis-only`: rules from references, with no build.
 
-Default to `prototype` for anything with more than one beat. A polished multi-scene piece is not a
-one-prompt task, so do not suggest it is.
+Default to `prototype` for anything with more than one beat. Set expectations for a polished
+multi-scene piece: it needs more than one prompt.
 
 ## Steps
 
@@ -48,7 +48,7 @@ one-prompt task, so do not suggest it is.
    and [story-and-motion.md](references/story-and-motion.md).
 4. **Style frames** with the real drawing code, one of them the signature shot, scored beside the
    reference as `blocks/look-check/SKILL.md` says, including its round rule. See
-   `blocks/build-canvas/references/mark-making.md` and [qa.md](references/qa.md).
+   [`blocks/build-canvas/references/mark-making.md`](../../blocks/build-canvas/references/mark-making.md) and [qa.md](references/qa.md).
 5. **Animatic.** Flat shapes, final timing, real transitions. See [build.md](references/build.md).
 6. **Detail passes** up to the style frames, with scenes in batches of about eight. Build with `blocks/build-canvas/SKILL.md` and its `references/mark-making.md`.
 7. **QA, export, and handoff.** See `blocks/visual-qa/SKILL.md`, [qa.md](references/qa.md),
@@ -63,7 +63,7 @@ pattern file when a build solves a new one.
 
 ## Progress
 
-Choose `<piece>`, the piece folder, by `references/run-folder.md`, so a new chat continues where
+Choose `<piece>`, the piece folder, by [`references/run-folder.md`](../../references/run-folder.md), so a new chat continues where
 the last one stopped.
 
 `start` binds `{{site}}` and `{{shots}}` as `blocks/blocks.toml` says.
@@ -72,7 +72,7 @@ Example. `~/work/seed-city/ink/` holds one file per step. Steps 1-4 are done, so
 `04-style-frames.md` reads `Status: done 3f9a1c2b7e10`. A new chat gets
 `build continue ~/work/seed-city`, reads line 1 of every file, and starts `05-animatic.md`.
 
-A piece is a step run, so `references/step-run.md` owns the status line, ready and stale steps,
+A piece is a step run, so [`references/step-run.md`](../../references/step-run.md) owns the status line, ready and stale steps,
 pick-up, close, and when a step waits for the user. Run the front door in `skills/swarm/SKILL.md`
 with the preset below, and write `plan.md` in `<piece>/ink/`. The `Blocks` column makes `start`
 link each block's rules in its step file, and `take` prints them in full.
@@ -123,11 +123,9 @@ For a website, the planner puts `build-site` in place of `build-canvas`, as the 
 
 ## Effort and cost
 
-The `build` route sets the model and the reasoning effort. A production reel takes hours of
-render, look, and fix loops. One public 26-scene rebuild took about 5 h 40 min and 716,000
-output tokens. Tell the user the likely cost before production.
+The `build` route sets the model and reasoning effort. Tell the user the likely cost before production. See [production cost](references/build.md#production-cost) for a reference point.
 
 ## Output
 
-Never return only a prompt. Return the build, the run command, the seed, and the step files. Say what
+Return the build, the run command, the seed, and the step files. Say what
 matched, what changed to stay original, and what was not verified.

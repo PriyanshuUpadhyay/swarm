@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- `references/explain-formats.md` owns when to draw a diagram, when to skip it, and which type fits the shape. This block adds only the rules below.
+- [`references/explain-formats.md`](../../references/explain-formats.md) owns when to draw a diagram, when to skip it, and which type fits the shape. This block adds only the rules below.
 - For each diagram, write in the design step's file (`02-design.md` in implement) the trigger it meets and the type picked from the shape.
 - A parts diagram (the parts of a system and how they connect, not the steps of a flow or a sequence) has 12 nodes at most (10 in a plan, which `blocks/planner/SKILL.md` owns), in 2 to 3 columns. Place the nodes on a grid.
 - A state diagram has 8 states at most. Put the main path on the top row and the ways out below it. Without a grid, labels overlap once arrows cross. No state that cannot be reached. No dead end that is not final.

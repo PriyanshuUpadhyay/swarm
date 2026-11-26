@@ -1,7 +1,7 @@
 ---
 name: swarm-orchestrator
 user-invocable: false
-description: Run a swarm session as the parent agent. It creates the session, spawns child agent CLIs into visible panes, sends them work, collects answers, and cleans up. Use when asked to fan work out to other agent CLIs.
+description: 'Run a swarm session as the parent: spawn child agent CLIs in panes, send work, collect answers. Use when asked to fan work out to other agent CLIs.'
 ---
 
 # Swarm orchestrator
@@ -73,8 +73,8 @@ sets. The kit root is two folders up from this skill's folder.
 
 Swarm notifies the owner when any agent waits on a permission or a question. When the run's work
 is done, or you need the owner for something else, run
-`swarm notify "swarm: <project> done" --body "<one line>"`. This is the only way to notify the
-owner, and only the orchestrator may run it. When your host contract says swarm notifies at your
+`swarm notify "swarm: <project> done" --body "<one line>"`. Only the orchestrator notifies the
+owner, as `blocks/worker-brief/SKILL.md` says for workers. When your host contract says swarm notifies at your
 turn end, that contract owns the done notice.
 
 ## Health and cleanup
@@ -85,7 +85,7 @@ swarm close <id>...                                     # ask for a wrap-up, sav
 swarm close --now <id>                                  # close at once, with no wrap-up
 ```
 
-Run the sweep as a background task of your agent harness, never with `&` in a detached shell, so it
+Run the sweep as a background task of your agent harness, not with `&` in a detached shell, so it
 stops with the session.
 
 The sweep also sends you a message in a child's name when its work is stuck. `unconfirmed:<seq>`:

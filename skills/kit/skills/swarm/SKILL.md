@@ -1,6 +1,6 @@
 ---
 name: swarm
-description: Plan and run any task from kit blocks, starting from a preset when one fits; show the chart, get approval, run the steps. Use when asked to build, implement, review, research, explain, run a council, or plan a task.
+description: Plan and run any task from kit blocks; show the chart, get approval, run. Use when asked to build, implement, review, research, explain, or plan.
 ---
 
 # Swarm

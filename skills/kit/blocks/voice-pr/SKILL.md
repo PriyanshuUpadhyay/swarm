@@ -1,6 +1,6 @@
 ---
 name: voice-pr
-description: "Draft a PR title and body from the repo's PR template and the author's voice file, for the owner to approve before anything is posted. Use when a task needs PR text."
+description: "Draft a PR title and body from the repo template and the author's voice file for owner approval. Use when a task needs PR text."
 license: MIT
 metadata:
   kind: rule

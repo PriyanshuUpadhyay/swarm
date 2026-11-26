@@ -1,6 +1,6 @@
 ---
 name: literature-map
-description: "Find a field's surveys first, date their scope, follow their citations back to the origin papers, and forward to newer work. Use when a question has a body of papers or reports behind it."
+description: "Trace papers from surveys back to original work and forward to newer work. Use when a question has a body of research behind it."
 license: MIT
 metadata:
   kind: step

@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Build one change through seven steps (frame, design, contracts, impact, build, review, close) in pair or auto mode. Use when the user asks to implement, pair on, or deliver a change, or says "implement continue" with a folder.
+description: 'Build one change in seven steps, in pair or auto mode. Use when asked to implement, pair on, or deliver a change, or on "implement continue" with a folder.'
 ---
 
 # Implement
@@ -18,7 +18,7 @@ Run Align from `skills/pair-programming/SKILL.md` before plan approval, in eithe
 Run the front door in `skills/swarm/SKILL.md` with the preset below. After the owner approves the
 plan, start the run with the preset's `Start:` command, then do `01-frame.md` first. The plan may
 add blocks to a step but keeps the preset's steps and Needs, because `start` refuses any other. Then pick
-the lane from the change and the repo's contracts, never from the missing folder. The fast lane skips `02-design.md`,
+the lane from the change and the repo's contracts, because a missing folder says nothing about risk. The fast lane skips `02-design.md`,
 `03-contracts.md`, and `04-impact.md` with `skip <folder> <step> fast lane: <reason>` only when none
 of them needs a new decision. Otherwise do them before build.
 Ask the user to choose the mode in the reply that shows `01-frame.md`, unless the request named it.
@@ -33,7 +33,7 @@ The mode sets how the build step runs. The steps and the review stay the same.
   Follow [references/auto.md](references/auto.md).
 
 Write the choice in `01-frame.md` as `Mode: pair`, or as `Mode: auto, owner said: "<the owner's words>"`.
-`take 05-build` refuses `auto` without the owner's quoted words, so the agent never picks it alone.
+`take 05-build` refuses `auto` without the owner's quoted words, so the agent leaves the choice of `auto` to the owner.
 With no `Mode:` line, the build runs in `pair` mode.
 
 When a step ends and the next step is not yours, print `Next: <command>` as the last line of the
@@ -60,7 +60,7 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    python3 $F take <folder> <step> <agent>   # marks the step active and prints its file with its skills in full;
                                              # take 06-review as `review-seats`, not as the agent that took 05-build
    python3 $F done <folder> <step> <n>       # sets the step done for take's claim #<n>, as references/step-run.md says
-   python3 $F skip <folder> <step> <reason>  # skips 02-design, 03-contracts, or 04-impact, never another step
+   python3 $F skip <folder> <step> <reason>  # skips 02-design, 03-contracts, or 04-impact only
    python3 $F block <folder> <step> <reason> # records a blocked step
    ```
 
@@ -83,7 +83,7 @@ the git common dir (`git rev-parse --git-common-dir`), not the worktree folder n
    and the repo rules) under `## Rules for this step`, and a todo list. Apply the rules, check each
    todo with its evidence after the last colon, write the result under `## Result`, and close the step
    with `done`. A step file from `start --plan` also has a `Plan blocks:` line with the blocks that the
-   approved plan gives the step; follow `blocks/<id>/SKILL.md` for each of them too. Never set a step done or skipped by hand. When a tool
+   approved plan gives the step; follow `blocks/<id>/SKILL.md` for each of them too. Set a step done or skipped with the script, because it checks the claim. When a tool
    that the profile names is missing, set the status to `unavailable <tool>` and tell the user.
 5. Write only your step's file. Line 1 is the status.
 
@@ -138,19 +138,15 @@ For owner gates in `pair` or `auto` mode, and the build-to-review handoff when t
 The `implement` skill owns the step list, the order, the profiles, and the domain catalog.
 Its script uses `references/step_run.py` for the shared status commands in
 `references/step-run.md`.
-The mode file owns the chunks, the commits, and the build loop; the `implement` skill never starts `auto`
-mode by itself.
-The `code-review` skill's check mode owns the review and its verdict; the `implement` skill never fixes a finding itself. An `INCOMPLETE` verdict is no review.
+The mode file owns the chunks, the commits, and the build loop; the `implement` skill starts `auto`
+mode only on the owner's words.
+The `code-review` skill's check mode owns the review and its verdict; the `implement` skill leaves each finding to the build step. An `INCOMPLETE` verdict is no review.
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. The kit block
 `blocks/prove-it-works/SKILL.md` owns the choice of check and the evidence.
-The kit block `blocks/checked-units/SKILL.md` owns the unit order. The repo's decision log owns the ADRs. The `implement` skill never pushes.
+The kit block `blocks/checked-units/SKILL.md` owns the unit order. The repo's decision log owns the ADRs. The `implement` skill does not push, because a push is the owner's action.
 
 ## Trial log
 
-This preset is on trial. At the end of each step file, add two lines:
-
-- `Skills read: <paths>` (the script writes it when you `take` a step)
-- `Helped: yes | no, <one example>`
-
-Also add a line for each stall, wrong skill, or repeated manual step. These lines decide if the
-skill stays, changes, or is removed.
+This preset is on trial. The script writes `Skills read: <paths>` at the end of each step file when
+you `take` a step. Add a line for each stall, wrong skill, or repeated manual step. These lines
+decide if the skill stays, changes, or is removed.

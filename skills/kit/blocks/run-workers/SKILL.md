@@ -1,6 +1,6 @@
 ---
 name: run-workers
-description: "Start, brief, collect, and close worker seats on the host the session runs in, and stop when the host cannot do it safely. Use when a skill asks for seats, a council, a review, or a parallel search."
+description: "Start, brief, collect, and close worker seats through the host. Use when a skill asks for seats, a council, a review, or a parallel search."
 license: MIT
 metadata:
   kind: rule
@@ -17,31 +17,30 @@ metadata:
 - The skill owns its seats, prompts, rounds, result routing, and refusals. Read its orchestration file (`orchestration*.json`) as requirements, not as advice. This block runs those requirements and stops when the host cannot meet them. It does not change the workflow or copy its prompts.
 - Before the first worker, require an injected `[agent-host: ...]` contract. With none, go on alone only when the skill allows it; else report the missing capability and stop.
 - Load the host reference that the contract names. The host owns pane creation, sending, liveness, result collection, and close.
-- Resolve every seat role with `swarm roles get <role>` before launch. Keep `runnerId`, `provider`, `mode`, `model`, `effort`, and `fallbackRunnerIds`. Use only the declared fallbacks. Refuse a role that does not resolve or that the host cannot run. Never hardcode a model, an effort, a sandbox, or an approval value.
-- Give the host one entry per seat: a unique name, the routed runner, the working folder, the permission level, the input digest, the brief, the expected result file, and the deadline. The host picks the run folder under its message root, because every worker sandbox can write there. Never brief a worker to write into a home-state path.
-- Do not start headless CLIs or detached processes yourself. When the skill or the host contract asks for visible seats, every seat is a visible, interactive pane owned by this run. Otherwise a native subagent of the runtime is allowed; the runtime adapter names which.
+- Resolve every seat role with `swarm roles get <role>` before launch. Keep `runnerId`, `provider`, `mode`, `model`, `effort`, and `fallbackRunnerIds`. Use only the declared fallbacks. Refuse a role that does not resolve or that the host cannot run. Take the model and effort from the role and the sandbox and approval settings from the host, so the active route controls the launch.
+- Give the host one entry per seat: a unique name, the routed runner, the working folder, the permission level, the input digest, the brief, the expected result file, and the deadline. The host picks the run folder under its message root, because every worker sandbox can write there. Put worker output in that run folder to protect the owner's home state.
+- Use the host's visible interactive panes, or use a runtime-native subagent when the host and skill allow it, so each worker belongs to the run.
 - Use a visible `swarm launch` pane for Fable or Astra. Where `swarm guard` cannot see the resolved
   native subagent model, verify it before you start the worker. Check inheritance, agent definitions,
   and runtime defaults. If you cannot verify the model, use a visible pane.
 - A search can run in the current agent without a worker pane. When a workflow requires workers, use the visibility and lifecycle rules of the active host and runtime contract.
-- Before a retry of a launch or a send that timed out, check whether the first one landed, with `swarm agents --json` for a launch and `swarm messages --json` for a send. Retry only when it did not, so a slow call never makes a second seat or a second message.
+- Before a retry of a launch or a send that timed out, check whether the first one landed, with `swarm agents --json` for a launch and `swarm messages --json` for a send. Retry only when it did not, to avoid a duplicate seat or message.
 - If a visible seat cannot launch or stay interactive, retry it once. Then start a visible seat on the role's next declared fallback runner, and tell the user the run is degraded. With no fallback left, go on without that seat only when the skill allows it.
-- When a worker publishes `blocked: tried <the 3>`, the chair, as the senior, may take the task: it closes the blocked seat, because a run has at most two coding seats, then relaunches the task once on `code.complex`, with the worker's result as the new brief. The binary's claim and handoff refusals still apply. When the checker role declares a runner of another provider than the worker's, the chair may launch the checker on that runner.
+- When a worker publishes `blocked: tried <the 3>`, the chair may take the task as the senior. Close the blocked seat to stay within the coding-seat cap in [`references/fan-out.md`](../../references/fan-out.md). Relaunch the task once on `code.complex`, using the worker's result as the new brief. The binary's claim and handoff refusals still apply. When the checker role declares a runner of another provider than the worker's, the chair may launch the checker on that runner.
 - Send the briefs of one stage under one deadline. Sending returns when the worker took the task, not when it finished; the worker's finish rings the chair. The kit's `references/fan-out.md` owns what goes out in parallel and the chair's work while seats run.
 - Accept only a result that the host's durable channel confirms and that names its seat. Pass the skill's refusal or degraded state to the chair as the skill says.
 - At the end, close only the seats this run started, and check that they are gone.
 - Write every brief by `blocks/worker-brief/SKILL.md`. A worker session follows the worker rules of that block, not this one.
-- Under the swarm host, the host reference is `references/host-swarm.md` in this block's folder.
+- Under the swarm host, the host reference is [`references/host-swarm.md`](references/host-swarm.md) in this block's folder.
 - Each runtime adds its own lines; follow the one that the `[agent-runtime: ...]` line names:
   - claude: native background subagents are allowed unless the host contract or the workflow requires a visible pane. Each Workflow `agent()` call pins the model of its named seat role, or Sonnet when it names none. Workflow fan-out allows only Sonnet or Haiku. Refuse any other model and name the role.
   - codex: load the host skill that the `[agent-host: ...]` contract names. Collaboration workers (`spawn_agent`) run in-process as background workers; use them unless the host contract or the workflow requires a visible pane.
   - pi: use Swarm's `subagent` tool for native background workers unless the host contract or the workflow requires a visible pane. Use a visible `swarm launch` pane for Fable or Astra. Claude Code's Workflow tool is not available in Pi.
-  - agy: load the host skill that the `[agent-host: ...]` contract names. Native AGY subagents are allowed unless the host contract or the workflow requires a visible pane. Never pass a prompt as a launch argument; send the first task only after the host sees an input-ready AGY session.
+  - agy: load the host skill that the `[agent-host: ...]` contract names. Native AGY subagents are allowed unless the host contract or the workflow requires a visible pane. Send the first task through the host only after it sees an input-ready AGY session.
 
 ## Example
-Initial state: a council needs three seats, `council.claude`, `council.gpt`, and `council.gemini`.
-Action: run `swarm roles get` for each role, launch three visible panes with unique names, send one brief to each in the same turn, and end the turn. The GPT pane fails to launch twice, so a visible pane on the role's fallback runner replaces it, and the chair tells the user.
-Result: three result files, each confirmed by an inbox message from its seat; at the end `swarm close` runs for the three names this run started, and `swarm agents` no longer lists them.
+- Bad: after two failed pane launches, pick a model outside the role's fallback list.
+- Good: launch the next declared fallback in a visible pane and report the degraded route. Check that the run's panes are gone after close.
 
 ## Check (script)
 - none: seats and their results live in the host's state and the chair's run folder, not in the commit range.
