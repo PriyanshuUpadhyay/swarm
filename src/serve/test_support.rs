@@ -342,11 +342,12 @@ pub(super) async fn row_page(
 ) -> Result<Value, ApiError> {
     transcript_rows(
         State(fixture.app.clone()),
-        Query(TranscriptQuery {
+        Query(RowsQuery {
             session: fixture.session.clone(),
             agent: "chair".into(),
             tail,
             before,
+            older_cursor: None,
         }),
     )
     .await

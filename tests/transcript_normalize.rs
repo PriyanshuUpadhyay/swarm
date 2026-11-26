@@ -15,6 +15,32 @@ fn snapshot(format: NativeFormat, lines: &[Value]) -> Value {
 }
 
 #[test]
+fn claude_shows_one_change_after_the_initial_and_repeated_model_facts() {
+    let assistant = |model, text| {
+        json!({
+            "type": "assistant", "message": {"model": model, "content": [{"type":"text", "text": text}]}
+        })
+    };
+    let result = snapshot(
+        NativeFormat::Claude,
+        &[
+            assistant("first", "before"),
+            assistant("second", "after"),
+            assistant("second", "repeat"),
+        ],
+    );
+    let changes: Vec<_> = result["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["kind"] == "model_change")
+        .collect();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0]["text"], "first → second");
+    assert_eq!(changes[0]["source_ids"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn empty_claude_thinking_keeps_a_thought_row() {
     let result = snapshot(
         NativeFormat::Claude,

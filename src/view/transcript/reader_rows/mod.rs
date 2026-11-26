@@ -29,6 +29,7 @@ pub struct ReaderRows {
     pub last_rows: Vec<Row>,
     pub last_usage: Option<view::ChatUsage>,
     pub usage: view::UsageState,
+    model: Option<String>,
     pub chunks: BTreeMap<usize, ReaderChunk>,
     record_chunks: HashMap<Position, usize>,
     pub dirty: HashSet<usize>,
@@ -71,6 +72,7 @@ impl ReaderRows {
             last_rows: Vec::new(),
             last_usage: None,
             usage: view::UsageState::default(),
+            model: None,
             chunks: BTreeMap::new(),
             record_chunks: HashMap::new(),
             dirty: HashSet::new(),
@@ -139,7 +141,18 @@ impl ReaderRows {
             _ => (),
         }
     }
+    pub fn first_model(&self) -> Option<String> {
+        let ((start, _), _) = self.records.first_key_value()?;
+        if *start != 0 {
+            return None;
+        }
+        self.records
+            .values()
+            .find_map(|record| view::state::model_fact(&record.event))
+            .map(str::to_owned)
+    }
     fn append(&mut self, position: Position) {
+        view::state::track_model(self.records.get_mut(&position).unwrap(), &mut self.model);
         let event = &self.records[&position].event;
         let event_type = view::string(event, "type");
         // Rebuild only a batch with a join participant, including a later canonical copy.

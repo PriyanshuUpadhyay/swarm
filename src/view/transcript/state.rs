@@ -154,6 +154,29 @@ pub fn view_rows(
     view_rows_with_context(records, has_older, is_codex, shown, None)
 }
 /// Context is (prompt_expected, turn_open) immediately before this record slice.
+pub(super) fn model_fact(event: &Value) -> Option<&str> {
+    (string(event, "type") == "session_info" && string(event, "kind") == "model")
+        .then(|| string(event, "value"))
+        .filter(|model| !model.trim().is_empty())
+}
+
+fn prior_model<'a>(record: &'a Record, current: &'a Option<String>) -> Option<&'a str> {
+    let next = model_fact(&record.event)?;
+    current
+        .as_deref()
+        .or(record.prior_model.as_deref())
+        .filter(|old| *old != next)
+}
+
+pub(super) fn track_model(record: &mut Record, current: &mut Option<String>) {
+    if let Some(next) = model_fact(&record.event) {
+        record.prior_model = prior_model(record, current).map(str::to_owned);
+        if current.as_deref() != Some(next) {
+            *current = Some(next.into());
+        }
+    }
+}
+
 pub fn view_rows_with_context(
     records: &[Record],
     has_older: bool,
@@ -161,7 +184,20 @@ pub fn view_rows_with_context(
     shown: &HashSet<String>,
     context: Option<(bool, bool)>,
 ) -> Vec<Row> {
-    let mut result = super::builder::rows_with_context(records, has_older, is_codex, context);
+    let mut tracked = std::borrow::Cow::Borrowed(records);
+    let mut model = None;
+    for (index, record) in records.iter().enumerate() {
+        if let Some(next) = model_fact(&record.event) {
+            let prior = prior_model(record, &model);
+            if prior != record.prior_model.as_deref() {
+                tracked.to_mut()[index].prior_model = prior.map(str::to_owned);
+            }
+            if model.as_deref() != Some(next) {
+                model = Some(next.into());
+            }
+        }
+    }
+    let mut result = super::builder::rows_with_context(&tracked, has_older, is_codex, context);
     clear_boundary(records, &mut result, !has_older && context.is_none());
     result.extend(queued(records));
     for row in &mut result {
