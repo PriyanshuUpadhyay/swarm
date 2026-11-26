@@ -265,8 +265,11 @@
   font-variant-numeric: tabular-nums;
 }
 .needs-you .sidebar-count {
-  background: color-mix(in srgb, var(--status-waiting) 16%, transparent);
-  color: var(--status-waiting);
+  height: 16px;
+  border-radius: 999px;
+  background: var(--selected);
+  font-weight: 600;
+  line-height: 14px;
 }
 .needs-dot {
   flex: 0 0 6px;
@@ -275,8 +278,7 @@
   background: var(--status-waiting);
 }
 .trow.chat-row {
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-block: 6px;
 }
 .trow .chat-title {
   height: 21px;
@@ -301,6 +303,9 @@
   padding-left: 9px;
   font-size: var(--text-sm);
 }
+.trow.sidebar-more .label {
+  font: var(--text-sm)/var(--text-sm--line-height) var(--font-mono);
+}
 .trow.sidebar-more button {
   cursor: pointer;
 }
@@ -309,18 +314,22 @@
   flex: none;
   align-items: center;
   gap: 4px;
-  padding: 0 4px;
+  padding: 0 5px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--muted-foreground);
   font-size: var(--text-xs);
-  line-height: 16px;
+  font-weight: 600;
+  line-height: var(--text-xs--line-height);
 }
 .pr-chip[data-state="draft"] {
+  border-color: var(--pr-draft-border);
   border-style: dashed;
+  color: var(--pr-quiet);
 }
 .pr-chip[data-state="merged"] {
-  background: var(--hover);
+  background: var(--selected);
+  color: var(--pr-quiet);
 }
 .pr-chip:hover {
   color: var(--foreground);
@@ -477,9 +486,12 @@
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+.pr-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
 /* The app's ring, not the browser's, on the header and tab controls a Tab walk reaches. */
 .search-box:focus-visible,
-.pr-chip:focus-visible,
 .tab:focus-visible,
 .tab-close:focus-visible {
   outline: 1px solid var(--ring);
