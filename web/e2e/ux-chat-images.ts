@@ -101,7 +101,9 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
     ...row(id, command, "toolUse"),
     tool: { name: "Bash", input: { command }, command, output, state: "finished", header_title: command },
   });
-  const chunk: TextPreview = { id: "chunk-out", text: "--- a.ts\n+++ a.ts.new\n@@ -1 +1 @@", is_truncated: true, full_lines: 5, full_bytes: 40, hidden_lines: 2 };
+  const header = "--- a.ts\n+++ a.ts.new\n@@ -1,40 +1,40 @@";
+  const full = `${header}\n-old line\n+new line\n${Array.from({ length: 39 }, (_, i) => ` context ${i + 2}`).join("\n")}`;
+  const chunk: TextPreview = { id: "chunk-out", text: header, is_truncated: true, full_lines: 44, full_bytes: full.length, hidden_lines: 41 };
   const fold: Row = {
     ...row("f1", "2 commands", "fold"),
     default_open: false,
@@ -110,13 +112,12 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
   };
   const layout = (text: string): PatchInfo => {
     const kinds = { "-": "del", "+": "add", "@": "hunk" } as const;
-    const lines = text.split("\n").map((t) => ({ kind: t.startsWith("---") || t.startsWith("+++") ? "meta" : (kinds[t[0] as keyof typeof kinds] ?? "ctx"), text: t, ...(t.startsWith("-") && !t.startsWith("---") && { old: 1 }), ...(t.startsWith("+") && !t.startsWith("+++") && { new: 1 }) })) as Extract<PatchInfo, { lines: unknown }>["lines"];
-    const split = lines.length > 3 ? [{ h: 2 }, { l: 3, r: 4 }] : [{ h: 2 }];
+    const lines = text.split("\n").map((t, i) => ({ kind: i < 2 ? "meta" : (kinds[t[0] as keyof typeof kinds] ?? "ctx"), text: i < 3 ? t : t.slice(1), ...(i === 3 && { old: 1 }), ...(i === 4 && { new: 1 }), ...(i > 4 && { old: i - 3, new: i - 3 }) })) as Extract<PatchInfo, { lines: unknown }>["lines"];
+    const split = lines.length > 3 ? [{ h: 2 }, { l: 3, r: 4 }, ...lines.slice(5).map((_, i) => ({ l: i + 5, r: i + 5 }))] : [{ h: 2 }];
     return { lines, split };
   };
   await mockRows(tab, [fold], 0, { "chunk-out": layout(chunk.text) });
   const asked: string[] = [];
-  const full = "--- a.ts\n+++ a.ts.new\n@@ -1 +1 @@\n-old line\n+new line";
   await tab.route("**/api/tool-output?*", (route) => {
     asked.push(new URL(route.request().url()).searchParams.get("diff") ?? "");
     return route.fulfill({ json: { text: full, patch: layout(full) } });
@@ -125,9 +126,20 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
 
   const shown = tab.getByTestId("shown-diff");
   await expect(shown).toContainText("new line");
+  await expect(shown.locator(".diff-head")).toContainText("44 lines");
+  const box = shown.locator(".patch");
+  expect(await box.evaluate((el) => el.clientHeight)).toBeLessThanOrEqual(360);
+  await box.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect(box.getByText("context 40", { exact: true })).toBeInViewport();
+  await box.evaluate((el) => { el.scrollTop = 0; });
   expect(asked).toEqual(["true"]);
   await expect(tab.getByText("a.ts", { exact: true })).toBeHidden();
   await shown.getByRole("button", { name: "Split", exact: true }).click();
   await expect(shown).toHaveAttribute("data-split", "true");
   await expect(shown).toContainText("old line");
+  if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
+    await tab.emulateMedia({ colorScheme: theme });
+    await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
+    await shown.screenshot({ path: `${process.env.DESIGN_B_SHOTS}/shown-diff-${theme}.png`, animations: "disabled" });
+  }
 });

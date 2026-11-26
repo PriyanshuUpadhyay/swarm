@@ -77,13 +77,13 @@ export function patchBoxHeight(info: Extract<PatchInfo, { lines: unknown }>, spl
 }
 
 /** The patch text, while Pierre loads or when the server sent no line layout. */
-function PlainPatch({ patch, height }: { patch: string; height?: number }) {
+function PlainPatch({ patch, height, windowed }: { patch: string; height?: number; windowed?: boolean }) {
   const style = height === undefined ? undefined : { height, overflow: "auto", margin: 0 };
-  return <pre className="out" style={style}>{patch.split("\n").map((text, i, lines) => <span key={i} data-output-line={i}>{text}{i < lines.length - 1 ? "\n" : ""}</span>)}</pre>;
+  return <pre className={`out${windowed ? " scroll-window" : ""}`} style={style}>{patch.split("\n").map((text, i, lines) => <span key={i} data-output-line={i}>{text}{i < lines.length - 1 ? "\n" : ""}</span>)}</pre>;
 }
 
-export function PatchBody({ patch, info, path, split, wrap = false, previewId, fileLabels = false }: { patch: string; info?: PatchInfo; path?: string; split: boolean; wrap?: boolean; previewId?: string; fileLabels?: boolean }) {
-  if (!info || !("lines" in info)) return <PlainPatch patch={patch} />;
+export function PatchBody({ patch, info, path, split, wrap = false, previewId, fileLabels = false, windowed }: { patch: string; info?: PatchInfo; path?: string; split: boolean; wrap?: boolean; previewId?: string; fileLabels?: boolean; windowed?: boolean }) {
+  if (!info || !("lines" in info)) return <PlainPatch patch={patch} windowed={windowed} />;
   return (
     <Suspense fallback={<PlainPatch patch={patch} height={patchBoxHeight(info, split, fileLabels)} />}>
       <PierrePatch info={info} path={path} split={split} wrap={wrap} previewId={previewId} fileLabels={fileLabels} />

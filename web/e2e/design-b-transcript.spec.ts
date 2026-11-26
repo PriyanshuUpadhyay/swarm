@@ -1,0 +1,95 @@
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import { resolve } from "node:path";
+import { mockRows, open, row, rows } from "./ux-helpers";
+import type { Inline } from "../src/core/api";
+
+const lines = (last: string) => Array.from({ length: 16 }, (_, i) => i === 15 ? last : `Check result ${i + 1}`).join("\n");
+
+async function shots(page: Page, target: Locator, name: string) {
+  if (!process.env.DESIGN_B_SHOTS) return;
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
+    await target.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `${name}-${theme}.png`), animations: "disabled" });
+  }
+}
+
+test("an opened saved thought reveals the cut lines on request", async ({ page }) => {
+  await mockRows(page, [row("t1", lines("The saved thought ends here"), "thought")]);
+  await open(page);
+  const thought = page.getByTestId("row").filter({ has: page.getByRole("button", { name: "Thinking", exact: true }) });
+  await thought.getByRole("button", { name: "Thinking", exact: true }).click();
+  await expect(thought.getByTestId("thought-text")).toContainText("Check result 12");
+  await expect(thought).toContainText("+4 lines");
+  await expect(thought.getByText("The saved thought ends here")).not.toBeVisible();
+  await shots(page, thought, "thought-cut");
+  await thought.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(thought.getByTestId("thought-text")).toContainText("The saved thought ends here");
+});
+
+test("Find reveals a cut user message and highlights a match beyond the cut", async ({ page }) => {
+  const last = "Please check the socket timeout";
+  const start = "Keep the worker response with the rest of this long review request";
+  const messageText = lines(last).replace("Check result 1\n", `${start}\n`);
+  const children: Inline[] = messageText.split("\n").flatMap((value, i): Inline[] =>
+    i === 0 ? [{ type: "strong", value: [{ type: "text", value }] }] : [{ type: "break" }, { type: "text", value }]);
+  const result = rows([row("u1", messageText, "user")], 0, {}, { u1: [{ f: "text" }] });
+  result.display = { u1: { blocks: [{ type: "paragraph", value: children }] } };
+  await page.route("**/api/rows?*", (route) => route.fulfill({ json: result }));
+  await open(page);
+  const message = page.locator('[data-id="u1"]');
+  await expect(message.getByRole("button", { name: "Show all", exact: true })).toBeVisible();
+  await expect(message).toContainText("+4 lines");
+  await expect(message.locator("strong")).toHaveText(start);
+  await expect(message).not.toContainText(last);
+  const wide = page.viewportSize()!;
+  await page.setViewportSize({ width: 390, height: wide.height });
+  await expect.poll(() => message.locator("strong").evaluate((el) => el.getClientRects().length)).toBeGreaterThan(1);
+  await expect(message).toContainText("+4 lines");
+  await page.setViewportSize(wide);
+  await shots(page, message, "user-cut");
+  await page.keyboard.press("Meta+f");
+  await page.getByTestId("find-input").fill("socket timeout");
+  await expect(page.getByTestId("find-count")).toHaveText("1 of 1");
+  await expect.poll(() => page.evaluate(() => String(CSS.highlights.get("find-current")?.values().next().value))).toBe("socket timeout");
+  await expect(message).toContainText(last);
+});
+
+test("live thinking shows its last four lines without growing a box", async ({ page }) => {
+  await mockRows(page, [row("live-thought", lines("The current thought"), "thought")]);
+  await open(page);
+  const thought = page.getByTestId("thought-text");
+  await expect(thought).toHaveText("Check result 13\nCheck result 14\nCheck result 15\nThe current thought", { useInnerText: true });
+  const shape = await thought.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return [el.clientHeight / parseFloat(s.lineHeight), s.borderTopWidth];
+  });
+  expect(shape[0]).toBeCloseTo(4, 1);
+  expect(shape[1]).toBe("0px");
+  await shots(page, page.locator('[data-id="live-thought"]'), "thought-live");
+});
+
+test("long code reports its size and scrolls to the last line", async ({ page }) => {
+  const code = Array.from({ length: 41 }, (_, i) => `const check${i + 1} = true;`).join("\n");
+  await mockRows(page, [row("a1", `\`\`\`ts\n${code}\n\`\`\``)]);
+  await open(page);
+  const card = page.locator(".md-code");
+  const box = card.locator("pre");
+  await expect(card.locator(".md-head")).toContainText("41 lines");
+  expect(await box.evaluate((el) => el.clientHeight)).toBeLessThanOrEqual(360);
+  await shots(page, card, "code-window");
+  await box.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  expect(await box.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect(box.getByText("check41", { exact: true })).toBeInViewport();
+});
+
+test("a failed turn presents the original CLI text as one non-interactive row", async ({ page }) => {
+  const source = "API Error: 529 Overloaded";
+  await mockRows(page, [row("e1", source, "error")]);
+  await open(page);
+  const error = page.locator('[data-id="e1"]');
+  await expect(error.getByText(source, { exact: true })).toBeVisible();
+  await expect(error.getByText(source, { exact: true })).toHaveCSS("font-family", /JetBrains Mono/);
+  await expect(error.getByText("Error", { exact: true })).toBeVisible();
+  await expect(error.getByRole("button")).toHaveCount(0);
+  await shots(page, error, "cli-error");
+});

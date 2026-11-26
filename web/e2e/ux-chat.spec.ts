@@ -179,8 +179,14 @@ test("modified Up keeps queued messages", async ({ page: tab }) => {
   let pulls = 0;
   await tab.route("**/api/chat/pull-back", (route) => { pulls++; return route.fulfill({ json: { outcome: "pulled", text: "queued text" } }); });
   await open(tab);
-  // Up pulls back only when the chair can take it; the hint shows that state, so wait for it before the first key.
-  await expect(tab.getByText("↑ to edit queued messages")).toBeVisible();
+  // Up pulls back only when the chair can take it; wait for the queued message and the input hint.
+  const queued = tab.getByTestId("row").filter({ hasText: "queued text" });
+  await expect(queued.getByText("↑", { exact: true })).toBeVisible();
+  await expect(tab.getByTestId("composer-status")).toHaveText("↑ to edit queued messages");
+  if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"]) {
+    await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
+    await queued.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `queue-${theme}.png`), animations: "disabled" });
+  }
   const composer = tab.getByTestId("composer");
   await composer.focus();
   await composer.press("Meta+ArrowUp");

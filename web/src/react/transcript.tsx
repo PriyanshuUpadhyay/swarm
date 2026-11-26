@@ -16,7 +16,7 @@ import { setSplit } from "./transcript-output";
 import { setWrap } from "./patch-body";
 import { findLine } from "./patch-find";
 import { paintRanges, textRanges } from "./find-text";
-import { LineView } from "./transcript-row";
+import { isQueued, LineView } from "./transcript-row";
 
 const readingPlaces = new Map<string, { row: string; offset: number; bottom: boolean }>();
 
@@ -90,6 +90,14 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
         const selected = ranges[match.preview ? match.lineOccurrence ?? 0 : match.occurrence];
         paintRanges("find-matches", textRanges(row, find.query));
         paintRanges("find-current", selected ? [selected] : []);
+        if (selected) {
+          const box = selected.startContainer.parentElement?.closest<HTMLElement>("pre.scroll-window");
+          if (box) {
+            const hit = selected.getBoundingClientRect();
+            const visible = box.getBoundingClientRect();
+            if (hit.top < visible.top || hit.bottom > visible.bottom) box.scrollTop += hit.top - visible.top - box.clientHeight / 2;
+          }
+        }
         const rect = selected?.getBoundingClientRect();
         if (rect && scrollRef.current) handle.current?.scrollToIndex(i, { align: "start", offset: rect.top - row.getBoundingClientRect().top - scrollRef.current.clientHeight / 2 });
       });
@@ -217,6 +225,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
+                      queueStart={isQueued(line.row) && !isQueued(lines[index - 1]?.row)}
                     />
                   )}
                 </Virtualizer>

@@ -90,6 +90,24 @@
   font-size: var(--text-xs);
   color: var(--muted-foreground);
 }
+.cut-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--muted-foreground);
+  font: var(--text-sm)/18px var(--font-mono);
+}
+.cli-error {
+  display: grid;
+  grid-template-columns: 16px auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+.cli-error svg {
+  align-self: start;
+  margin-top: 3px;
+}
 .quiet {
   display: flex;
   align-items: center;
@@ -304,6 +322,12 @@
   font: 14px/1.45 var(--font-mono);
   white-space: pre;
 }
+.md-code pre.scroll-window,
+pre.out.scroll-window {
+  max-height: 360px;
+  overflow: auto;
+  font: var(--text-sm)/18px var(--font-mono);
+}
 .md-scroll {
   overflow-x: auto;
 }
@@ -396,6 +420,16 @@
 .thought {
   color: var(--muted-foreground);
   white-space: pre-wrap;
+}
+.live-thought {
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+  height: 4lh;
+  overflow: hidden;
+}
+.live-thought > div {
+  flex: none;
 }
 .card-body {
   display: grid;

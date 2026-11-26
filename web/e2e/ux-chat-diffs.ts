@@ -21,7 +21,7 @@ test("Find reaches repeated matches in a loaded full patch in Unified and Split 
   const patch = ["@@ -1,1000 +1,1000 @@", ...Array.from({ length: 1000 }, (_, i) => ` ${i === 100 || i === 900 ? "repeated needle" : `line ${i}`}`)].join("\n");
   await tab.route("**/api/tool-output?*", (route) => route.fulfill({ json: { text: patch, patch: { lines: fullLines0.concat(fullLines1, fullLines2), split: fullSplit0 } } }));
   await open(tab);
-  await tab.getByRole("button", { name: "Show full patch", exact: true }).click();
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
   for (const mode of ["Unified", "Split"]) {
     await tab.getByRole("button", { name: mode, exact: true }).click();
     await tab.keyboard.press("Meta+f");

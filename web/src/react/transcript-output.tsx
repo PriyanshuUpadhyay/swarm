@@ -6,11 +6,16 @@ import type { DiffPreview, PatchInfo, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
 import { patchOf, textRows } from "../core/transcript";
 import { copyText } from "./copy";
+import { CutLine, plural } from "./cut-line";
 import { ColoredRow, PatchBody, setSplit, setWrap, useSplit, useWrap } from "./patch-body";
 
-const plural = (n: number, word: string) => `${n.toLocaleString("en-US")} ${word}${n === 1 ? "" : "s"}`;
+function omittedOutput(preview: TextPreview): string {
+  if (preview.hidden_lines) return `+${plural(preview.hidden_lines, "line")}`;
+  const bytes = preview.full_bytes - new TextEncoder().encode(preview.text).length;
+  return bytes > 0 ? `+${plural(bytes, "byte")}` : "Line shortened";
+}
 
-/** The capped preview; Show full output fetches the whole text and shows it in a windowed box. */
+/** The capped preview; Show all fetches the whole text and shows it in a windowed box. */
 function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPreview; full: ReadonlyMap<string, FullText>; title: string }) {
   const f = preview.id ? full.get(preview.id) : undefined;
   const entry = patchOf(preview);
@@ -32,13 +37,7 @@ function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPr
         <pre className="out">{(preview.text || "No output was recorded.").split("\n").map((text, i, lines) => <span key={i} data-output-line={i}>{text}{i < lines.length - 1 ? "\n" : ""}</span>)}</pre>
       )}
       {preview.is_truncated && f?.state !== "ready" && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>… +{plural(preview.hidden_lines, "line")}</span>
-          <button type="button" className="t-link" data-testid="show-full" disabled={f?.state === "loading"} onClick={() => void app.loadFull(preview.id)}>
-            {f?.state === "loading" ? "Loading full output…" : "Show full output"}
-          </button>
-          {f?.state === "error" && <span className="text-failed">{f.error}</span>}
-        </div>
+        <CutLine count={omittedOutput(preview)} testid="show-full" busy={f?.state === "loading"} error={f?.state === "error" ? f.error : undefined} show={() => void app.loadFull(preview.id)} />
       )}
     </div>
   );
@@ -95,7 +94,7 @@ function WrapToggle({ wrap }: { wrap: boolean }) {
   );
 }
 
-/** A patch: Unified or Split, the capped preview, Show full patch, Copy patch, and its counts. */
+/** A patch: Unified or Split, the capped preview, Show all, Copy patch, and its counts. */
 function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: ReadonlyMap<string, FullText> }) {
   const split = useSplit();
   const wrap = useWrap();
@@ -128,15 +127,11 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
       </div>
       <PatchBody patch={patch} info={f?.state === "ready" ? f.patch : patchOf(diff)} path={diff.path} split={split} wrap={wrap} previewId={diff.id} />
       {capped && f?.state !== "ready" && (
-        <div className="flex items-center gap-2 px-2 pb-1.5 text-xs text-muted-foreground">
-          <span>
-            Showing a preview{diff.omitted_lines ? `, ${plural(diff.omitted_lines, "line")} left out` : ""}
-            {diff.shortened_lines ? `, ${plural(diff.shortened_lines, "long line")} cut` : ""}.
-          </span>
-          <button type="button" className="t-link" disabled={f?.state === "loading"} onClick={() => void app.loadFull(diff.id)}>
-            {f?.state === "loading" ? "Loading full patch…" : "Show full patch"}
-          </button>
-          {f?.state === "error" && <span className="text-failed">{f.error}</span>}
+        <div className="px-2 pb-1.5">
+          <CutLine count={[
+            diff.omitted_lines ? `+${plural(diff.omitted_lines, "line")}` : "",
+            diff.shortened_lines ? `${plural(diff.shortened_lines, "line")} shortened` : "",
+          ].filter(Boolean).join(" · ")} busy={f?.state === "loading"} error={f?.state === "error" ? f.error : undefined} show={() => void app.loadFull(diff.id)} />
         </div>
       )}
     </div>
@@ -156,7 +151,7 @@ function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; 
   return (
     <div className="diff" data-testid="shown-diff" data-preview={preview.id} data-split={split}>
       <div className="diff-head">
-        <span className="flex-1" />
+        <span className="flex-1 font-mono text-xs text-muted-foreground">{plural(preview.full_lines, "line")}</span>
         <div className="seg" role="group" aria-label="Diff layout">
           <button type="button" aria-pressed={!split} onClick={() => setSplit(false)}>
             Unified
@@ -170,7 +165,7 @@ function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; 
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>
-      <PatchBody patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} wrap={wrap} previewId={preview.id} fileLabels />
+      <PatchBody patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} wrap={wrap} previewId={preview.id} fileLabels windowed />
       {preview.is_truncated && !ready && <div className="px-2 pb-1.5 text-xs text-muted-foreground">{f?.state === "error" ? <span className="text-failed">{f.error}</span> : "Loading the full patch…"}</div>}
     </div>
   );

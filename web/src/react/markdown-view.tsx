@@ -1,12 +1,15 @@
 import { Fragment, createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Block, Display, Inline } from "../core/api";
 import { HighlightedCode } from "./code-tokens";
+import { plural, sourceLines } from "./cut-line";
 import { ColoredRow, PatchBody, useSplit, useWrap } from "./patch-body";
 
-function Head({ label, what, diff = false }: { label: string; what: "code" | "table"; diff?: boolean }) {
+const WINDOW_LINES = 20;
+
+function Head({ label, what, diff = false, count = 0 }: { label: string; what: "code" | "table"; diff?: boolean; count?: number }) {
   return (
     <div className="md-head">
-      <span>{label}</span>
+      <span>{label}{count > WINDOW_LINES ? ` · ${plural(count, "line")}` : ""}</span>
       {diff && (
         <div className="seg" role="group" aria-label="Diff layout">
           <button type="button" data-diff-layout="0">Unified</button>
@@ -72,22 +75,24 @@ function HunkCode({ label, text, diff }: { label: string; text: string; diff: Ex
   const wrap = useWrap();
   return (
     <div className="md-code" data-raw={text}>
-      <Head label={label} what="code" diff />
+      <Head label={label} what="code" diff count={sourceLines(text).length} />
       <PatchBody patch={text} info={diff} split={split} wrap={wrap} fileLabels />
     </div>
   );
 }
 
 function Code({ value: { label, text, diff } }: { value: Extract<Block, { type: "code" }>["value"] }) {
-  if (label === null) return <><pre><code>{text}</code></pre>{"\n"}</>;
-  if (diff && "lines" in diff) return <HunkCode label={label} text={text} diff={diff} />;
-  if (diff && "prefix" in diff) {
-    return <div className="md-code"><Head label={label} what="code" /><pre><code>{diff.prefix.map((row, i) => <ColoredRow key={i} kind={row.kind}>{row.text}</ColoredRow>)}</code></pre></div>;
-  }
+  const count = sourceLines(text).length;
+  const windowClass = count > WINDOW_LINES ? "scroll-window" : undefined;
+  if (label === null && !windowClass) return <><pre><code>{text}</code></pre>{"\n"}</>;
+  if (label !== null && diff && "lines" in diff) return <HunkCode label={label} text={text} diff={diff} />;
+  const content = diff && "prefix" in diff
+    ? <code>{diff.prefix.map((row, i) => <ColoredRow key={i} kind={row.kind}>{row.text}</ColoredRow>)}</code>
+    : label === null || label === "code" ? <code>{text}</code> : <HighlightedCode text={text} lang={label} />;
   return (
     <div className="md-code">
-      <Head label={label} what="code" />
-      <pre>{label === "code" ? <code>{text}</code> : <HighlightedCode text={text} lang={label} />}</pre>{label === "diff" || label === "patch" ? null : "\n"}
+      <Head label={label ?? "Code"} what="code" count={count} />
+      <pre className={windowClass}>{content}</pre>{diff || label === "patch" ? null : "\n"}
     </div>
   );
 }
@@ -140,6 +145,49 @@ function blocks(nodes: Block[], tight = false): ReactNode[] {
         return null;
     }
   });
+}
+
+/** Cut the rendered tree at its hard breaks and block boundaries, not at viewport wraps.
+ *  A code or table window is one block; its own scrolling and copy still work. */
+export function cutMarkdown(display: Display, limit: number): { display: Display; hidden: number } {
+  let lines = 0;
+  const takeInlines = (nodes: Inline[]): Inline[] => nodes.flatMap((node): Inline[] => {
+    const visible = lines <= limit;
+    switch (node.type) {
+      case "break": return ++lines <= limit ? [node] : [];
+      case "link": {
+        const children = takeInlines(node.value.children);
+        return visible ? [{ ...node, value: { ...node.value, children } }] : [];
+      }
+      case "emphasis": case "strong": case "delete": {
+        const value = takeInlines(node.value);
+        return visible ? [{ ...node, value }] : [];
+      }
+      default: return visible ? [node] : [];
+    }
+  });
+  const takeBlocks = (nodes: Block[]): Block[] => nodes.flatMap((node): Block[] => {
+    if (node.type === "blockquote") {
+      const value = takeBlocks(node.value);
+      return value.length ? [{ ...node, value }] : [];
+    }
+    if (node.type === "list") {
+      const items = node.value.items.map(takeBlocks).filter((item) => item.length > 0);
+      return items.length ? [{ ...node, value: { ...node.value, items } }] : [];
+    }
+    const visible = ++lines <= limit;
+    if (node.type === "paragraph") {
+      const value = takeInlines(node.value);
+      return visible ? [{ ...node, value }] : [];
+    }
+    if (node.type === "heading") {
+      const children = takeInlines(node.value.children);
+      return visible ? [{ ...node, value: { ...node.value, children } }] : [];
+    }
+    return visible ? [node] : [];
+  });
+  const preview = { blocks: takeBlocks(display.blocks) };
+  return { display: preview, hidden: Math.max(0, lines - limit) };
 }
 
 export function MarkdownView({ display }: { display: Display }) {
