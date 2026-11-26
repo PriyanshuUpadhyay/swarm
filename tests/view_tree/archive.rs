@@ -46,7 +46,37 @@ fn a_chat_from_another_adapter_with_a_log_can_be_imported() {
     assert!(owner.imported.is_empty());
 }
 #[test]
-fn archived_chats_fold_in_the_last_row_of_their_project() {
+fn an_archived_workspace_lists_all_its_chats() {
+    let sessions = (1..=6)
+        .map(|n| session(&format!("chat-{n}"), "/repo", n))
+        .collect();
+    let snap = folder_snapshot(sessions, json!({}));
+    let mut owner = OwnerChoices::default();
+    owner.archived.insert("/repo".into());
+
+    let rows = sections(&snap, &owner, &ViewState::default(), true)
+        .remove(0)
+        .rows;
+    let chats: Vec<_> = rows
+        .iter()
+        .filter(|row| row.kind == "chat")
+        .map(|row| row.id.as_str())
+        .collect();
+    assert_eq!(
+        chats,
+        [
+            "chat:chat-6",
+            "chat:chat-5",
+            "chat:chat-4",
+            "chat:chat-3",
+            "chat:chat-2",
+            "chat:chat-1",
+        ]
+    );
+}
+
+#[test]
+fn archived_chats_fold_in_the_last_row_of_the_project() {
     let mut snap = folder_snapshot(vec![session("live", "/repo", 5)], json!({}));
     snap["archived"] = json!([
         {"id":"old-chat-1","cwd":"/repo","workspace":"/repo","chair_provider":"claude","archivedAt":40,"title":"Skills work"},

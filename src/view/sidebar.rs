@@ -253,7 +253,7 @@ impl<'a> Projection<'a> {
                     let mut chats: Vec<_> = w.chats.iter().map(|c| (w, c)).collect();
                     sort_chats(&mut chats);
                     rows.push(self.workspace_row(p, w, &chats));
-                    for (_, chat) in chats.into_iter().take(CHAT_LIMIT) {
+                    for (_, chat) in chats {
                         self.chat_rows(w, chat, Some(w.path.as_str()), &mut rows);
                     }
                 }
