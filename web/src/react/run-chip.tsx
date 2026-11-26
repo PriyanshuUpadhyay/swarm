@@ -6,16 +6,20 @@ import type { App } from "../core/app";
 import { accountCli, accountColor, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
-import { useLife, ErrorLine } from "./lifecycle-shared";
+import { ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
 import { RunPicker, runModel, useRunCatalog } from "./run-picker";
 
-export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
-  const chosen = useLife(app, "switchModel");
-  const handoff = useLife(app, "handoffs")[sessionId];
-  const open = chosen === sessionId && !chair.who && !chair.unreachable;
-  const favorite = useLife(app, "favoritePick");
-  const login = !chair.who && chair.account ? accountCli(chair.provider ?? "", chair.model) : null;
+export function RunChip({ app, sessionId, chair, ended = false }: { app: App; sessionId: string; chair: AgentInput; ended?: boolean }) {
+  const state = useRunState(app);
+  const chosen = state.switchModel;
+  const handoff = state.handoffs[sessionId];
+  const next = state.endedRun?.[sessionId];
+  const resuming = state.resuming?.[sessionId] === true;
+  const open = chosen === sessionId && !chair.who && (ended || !chair.unreachable) && !resuming;
+  const shown = ended && next ? { ...chair, ...next } : chair;
+  const favorite = state.favoritePick;
+  const login = !chair.who && shown.account ? accountCli(shown.provider ?? "", shown.model) : null;
   const [single, setSingle] = useState<string | null>(null);
   useEffect(() => {
     if (!login) return;
@@ -28,7 +32,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const switching = handoff && !isSettled(handoff.phase) ? (handoff.carry === "resume" ? "Restarting…" : "Switching…") : null;
-  const run: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
+  const run: Run = { provider: shown.provider ?? "claude", model: shown.model, effort: shown.effort, account: shown.account };
 
   useEffect(() => {
     const el = pop.current;
@@ -40,9 +44,7 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
     }
     if (!open && el.matches(":popover-open")) el.hidePopover();
   }, [open]);
-  // A closed pane swaps the composer for Resume and Continue chat, which removes this chip with
-  // no toggle event; the open state must not outlive it.
-  // A child's chip never opens, so only the chair's chip closes it.
+  // A child's chip never opens. Leaving a chair's chip closes its popover.
   const own = chair.who === null;
   useEffect(() => () => void (own && app.life.state.switchModel === sessionId && app.life.close("switchModel")), [app, sessionId, own]);
 
@@ -51,16 +53,16 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
       <button
         type="button"
         data-testid="model-chip"
-        className="flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover disabled:pointer-events-none"
-        title={chair.who ? "Change the child from its parent agent." : runTip(run, chair.account && app.life.runs.email(run.provider, chair.account))}
-        disabled={chair.who !== null}
+        className={`flex min-w-0 items-center gap-1 rounded-md px-1.5 py-1 hover:bg-hover disabled:pointer-events-none ${ended ? "border border-menu-border" : ""}`}
+        title={chair.who ? "Change the child from its parent agent." : runTip(run, shown.account && app.life.runs.email(run.provider, shown.account))}
+        disabled={chair.who !== null || !chair.provider || resuming}
         aria-expanded={open}
         style={{ anchorName: anchor } as CSSProperties}
         onClick={() => (open ? app.life.close("switchModel") : app.life.openSwitchModel(sessionId))}
       >
-        {chair.account && multipleAccounts && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(chair.account) }} />}
+        {shown.account && multipleAccounts && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(shown.account) }} />}
         <span className="truncate" data-testid="model-chip-label">
-          {switching ?? runLabel(multipleAccounts ? chair : { ...chair, account: null })}
+          {(ended ? null : switching) ?? runLabel(multipleAccounts ? shown : { ...shown, account: null })}
         </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
@@ -85,20 +87,58 @@ export function RunChip({ app, sessionId, chair }: { app: App; sessionId: string
           style={{ positionAnchor: anchor, positionArea: "top span-right", marginBottom: 6, positionTryFallbacks: "flip-block" } as CSSProperties}
           onToggle={(e) => e.newState === "closed" && app.life.state.switchModel === sessionId && app.life.close("switchModel")}
         >
-          {open && <RunBody app={app} sessionId={sessionId} chair={chair} key={sessionId} />}
+          {open && <RunBody app={app} sessionId={sessionId} chair={chair} ended={ended} key={sessionId} />}
         </div>
       )}
     </>
   );
 }
 
-function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
-  const handoff = useLife(app, "handoffs")[sessionId];
-  const saved = useSyncExternalStore(app.subscribe, () => savedCarry(app.view.tree?.prefs));
+function useRunState(app: App) {
+  const snapshot = () => app.life.state;
+  return useSyncExternalStore(app.life.subscribe, snapshot, snapshot);
+}
+
+function RunSwitchStatus({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
+  const state = useRunState(app);
+  const open = state.switchModel === sessionId;
+  if (chair.who || chair.unreachable || !open || !app.life.runBusy(sessionId)) return null;
+  return <Button type="button" size="sm" variant="ghost" disabled={app.composing.input(sessionId).stopping} onClick={() => void app.composing.interrupt(sessionId)}>Stop</Button>;
+}
+
+function RunSwitchBanner({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
+  const pick = useRunState(app).pendingSwitch?.[sessionId];
+  if (!pick || chair.who || chair.unreachable || app.life.runBusy(sessionId)) return null;
+  return (
+    <div data-testid="switch-pending" className="flex min-w-0 items-center gap-2 rounded-lg border border-menu-border p-1.5 text-xs text-foreground">
+      <span className="min-w-0 flex-1 truncate font-mono" title={pick.model ?? undefined}>Switch to {pick.model}?</span>
+      <Button type="button" size="sm" variant="outline" onClick={() => app.life.confirmSwitch(sessionId)}>Switch now</Button>
+      <Button type="button" size="sm" variant="ghost" onClick={() => app.life.dismissSwitch(sessionId)}>Dismiss</Button>
+    </div>
+  );
+}
+
+RunChip.Status = RunSwitchStatus;
+RunChip.Pending = RunSwitchBanner;
+
+function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string; chair: AgentInput; ended: boolean }) {
+  const state = useRunState(app);
+  const handoff = state.handoffs[sessionId];
+  const saved = useSyncExternalStore(app.subscribe, () => savedCarry(app.view.tree?.prefs), () => savedCarry(app.view.tree?.prefs));
   const current: Run = { provider: chair.provider ?? "claude", model: chair.model, effort: chair.effort, account: chair.account };
-  const [draft, setDraft] = useState<Run>(current);
+  const selected = state.endedRun?.[sessionId];
+  const pending = state.pendingSwitch?.[sessionId];
+  const [local, setDraft] = useState<Run>(current);
+  const draft = (ended ? selected : pending) ?? local;
   const [preview, setPreview] = useState<Run | null>(null);
-  const catalog = useRunCatalog(app, current.provider);
+  const catalog = useRunCatalog(app, ended ? draft.provider : current.provider);
+  const readBusy = () => !ended && app.life.runBusy(sessionId);
+  const busy = useSyncExternalStore(app.subscribe, readBusy, readBusy);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current && !busy && pending && app.life.state.switchModel === sessionId) app.life.close("switchModel");
+    wasBusy.current = busy;
+  }, [app, busy, pending, sessionId]);
   const switching = handoff !== undefined && !isSettled(handoff.phase);
   const proposed = preview ?? draft;
   const { label } = runModel(catalog, proposed);
@@ -108,8 +148,9 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
     app.life.pickRun(sessionId, run);
   };
 
-  const help = outcome !== "none" ? outcomeText(outcome, current, proposed, saved, label)
-    : chair.running ? "Wait for this turn to end, or stop it."
+  const help = busy ? (pending ? `The agent is working. ${pending.model} does not apply until you confirm after the turn.` : "The agent is working. A pick does not apply now.")
+    : ended ? (outcome === "handoff" ? `Resume: ${outcomeText(outcome, current, proposed, saved, label)}` : "A pick sets the run. Resume opens the same chat.")
+    : outcome !== "none" ? outcomeText(outcome, current, proposed, saved, label)
     : "A pick applies now. The next reply may read the whole chat once, so it costs more.";
   return (
     <>
@@ -117,7 +158,10 @@ function RunBody({ app, sessionId, chair }: { app: App; sessionId: string; chair
       <div className="grid gap-2 border-t border-menu-border p-2 text-xs text-muted-foreground">
         {handoff && <SwitchProgress handoff={handoff} />}
         <ErrorLine text={handoff?.error ?? catalog.error} />
-        <span data-testid="run-outcome">{help}</span>
+        <div className="flex items-center justify-between gap-2">
+          <span data-testid="run-outcome" className="h-[3lh] overflow-auto">{help}</span>
+          {busy && <Button type="button" size="sm" variant="outline" disabled={app.composing.input(sessionId).stopping} onClick={() => void app.composing.interrupt(sessionId)}>Stop</Button>}
+        </div>
         {switching && <Button className="justify-self-end" type="button" size="sm" variant="outline" data-testid="run-cancel" disabled={!handoff?.canCancel} onClick={() => void app.life.cancelSwitch(sessionId)}>Cancel switch</Button>}
       </div>
     </>

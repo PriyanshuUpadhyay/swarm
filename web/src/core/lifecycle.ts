@@ -2,7 +2,7 @@
 // composer's place lists, switch model, archive, delete, prune and Archived chats, on the P3a, P3b
 // and S2 routes. Framework-free; the dialogs read `state`, which is a new object after each change.
 
-import { ApiError, sleep } from "./api";
+import { ApiError, sleep, type Snapshot } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 import { RunCatalog } from "./run-catalog";
@@ -176,7 +176,11 @@ export class Lifecycle {
     const live = sessions.map((session) => ({ session, agents: this.liveAgents(session) }));
     const agents = live.reduce((n, l) => n + l.agents.length, 0);
     const run = async () => {
-      for (const { session, agents } of live) for (const agent of agents) await this.api.action("/api/agent/close", { session, agent });
+      for (const { session, agents } of live) {
+        this.clearRunPick("pendingSwitch", session);
+        this.clearRunPick("endedRun", session);
+        for (const agent of agents) await this.api.action("/api/agent/close", { session, agent });
+      }
       if (archive) {
         await this.api.action("/api/sessions/archive", { ids: sessions });
         this.app.navigation.rememberArchived(sessions);
@@ -199,13 +203,60 @@ export class Lifecycle {
     this.set({ switchModel: session, handoffs: h && !isSettled(h.phase) ? this.state.handoffs : rest });
   }
 
+  private isCurrentSource(session: string, snapshot = this.app.snapshot) {
+    return snapshot?.sessions.some((s) => s.id === session) && !snapshot.sessions.some((s) => s.continuation_of === session);
+  }
+
+  reconcileRunPicks(snapshot: Snapshot) {
+    for (const id of Object.keys(this.state.pendingSwitch ?? {})) {
+      if (!this.isCurrentSource(id, snapshot) || this.app.composing.chair(id).unreachable) this.clearRunPick("pendingSwitch", id);
+    }
+    for (const id of Object.keys(this.state.endedRun ?? {})) {
+      if (!this.isCurrentSource(id, snapshot)) this.clearRunPick("endedRun", id);
+    }
+  }
+
+  private clearRunPick(field: "pendingSwitch" | "endedRun", session: string) {
+    const picks = this.state[field];
+    if (!picks?.[session]) return;
+    const { [session]: _, ...rest } = picks;
+    this.set({ [field]: rest });
+  }
+
+  runBusy(session: string) {
+    const chair = this.app.composing.chair(session);
+    return chair.running || (!chair.unreachable && !!chair.disabled) || this.app.composing.input(session).stopping;
+  }
+
   pickRun(session: string, run: Run) {
     const chair = this.app.composing.chair(session);
-    if (!chair.provider || chair.running || !run.model) return;
-    const current: Run = { provider: chair.provider, model: chair.model, effort: chair.effort, account: chair.account };
+    if (!chair.provider || !run.model || !this.isCurrentSource(session) || this.state.resuming?.[session]) return;
+    if (chair.unreachable) {
+      this.set({ endedRun: { ...this.state.endedRun, [session]: run } });
+      return;
+    }
+    const current = { provider: chair.provider, model: chair.model, effort: chair.effort, account: chair.account };
     const outcome = switchOutcome(current, run);
-    if (outcome === "none") return;
+    if (outcome === "none") return this.clearRunPick("pendingSwitch", session);
+    if (this.runBusy(session)) {
+      this.set({ pendingSwitch: { ...this.state.pendingSwitch, [session]: run } });
+      return;
+    }
+    this.clearRunPick("pendingSwitch", session);
     void this.switchModel(session, run.provider, run.model, run.account, run.effort, outcome === "resume" ? "resume" : savedCarry(this.app.tree?.prefs));
+  }
+
+  dismissSwitch(session: string) {
+    this.clearRunPick("pendingSwitch", session);
+  }
+
+  confirmSwitch(session: string) {
+    const run = this.state.pendingSwitch?.[session];
+    if (!run || this.app.openId !== session || !this.isCurrentSource(session) || this.app.composing.chair(session).unreachable) {
+      this.clearRunPick("pendingSwitch", session);
+      return;
+    }
+    if (!this.runBusy(session)) this.pickRun(session, run);
   }
 
   async nextFavorite(session: string) {
@@ -221,7 +272,7 @@ export class Lifecycle {
       const usable = favorites.flatMap((m) => models.filter((listed) => listed.id === m.model));
       const index = usable.findIndex((m) => m.id === model);
       const next = usable[(index + 1) % usable.length];
-      if (!cli || !next || next.id === model) return;
+      if (!cli || !next || next.id === model || !this.isCurrentSource(session)) return;
       const current = { provider, model, effort, account };
       const favoritePick = { session, label: next.label };
       this.set({ favoritePick });
@@ -252,21 +303,43 @@ export class Lifecycle {
       await this.app.refresh();
       // The owner may have moved to another chat, also during the refresh; it stays open.
       if (this.state.switchModel === null && this.app.openId === old) this.app.openChat(done.session);
+      return true;
     } catch (err) {
       const cancelled = err instanceof ApiError && err.message === "model switch cancelled";
       // Only this chat's open popover shows the error; anywhere else it is a notice.
       if (this.state.switchModel !== old) this.app.notice(cancelled ? "Model switch cancelled." : message(err), !cancelled);
       this.setHandoff({ old, phase: cancelled ? "cancelled" : "failed", canCancel: false, error: cancelled ? null : message(err), carry });
+      return false;
     }
   }
 
-  /** Resume: the chat's own CLI session starts again in this chat, with its whole context. */
+  /** An ended chat starts only on Resume, never while picking its next run. */
   async resumeChat(session: string) {
+    if (this.state.resuming?.[session] || !this.isCurrentSource(session)) return;
+    const chair = this.app.composing.chair(session);
+    if (!chair.unreachable) return;
+    const run = this.state.endedRun?.[session];
+    const handoff = run?.model && run.provider !== chair.provider;
+    if (!chair.resumable && !handoff) return;
+    this.set({ resuming: { ...this.state.resuming, [session]: true }, switchModel: null });
     try {
-      await this.api.post("/api/chat/resume", { session });
-      await this.app.refresh();
+      if (handoff && run?.model) {
+        if (!await this.switchModel(session, run.provider, run.model, run.account, run.effort, savedCarry(this.app.tree?.prefs))) return;
+      } else {
+        await this.api.post("/api/chat/resume", {
+          session,
+          ...(run?.model ? { model: run.model } : {}),
+          ...(run?.effort ? { effort: run.effort } : {}),
+          ...(run?.account ? { account: run.account } : {}),
+        });
+        await this.app.refresh();
+      }
+      this.clearRunPick("endedRun", session);
     } catch (err) {
       this.app.notice(message(err), true);
+    } finally {
+      const { [session]: _, ...remaining } = this.state.resuming ?? {};
+      this.set({ resuming: remaining });
     }
   }
 

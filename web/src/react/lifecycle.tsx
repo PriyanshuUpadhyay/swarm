@@ -1,5 +1,5 @@
 // The lifecycle dialogs (S3): Create and Import Project, the
-// project setup script, Switch model with its progress, one confirm dialog, and Archived chats.
+// project setup script, one confirm dialog, and Archived chats.
 // Each reads only its own field of `app.life.state`.
 
 import { LoaderCircleIcon } from "lucide-react";
@@ -8,7 +8,6 @@ import type { App } from "../core/app";
 import { Button } from "../components/ui/button";
 import { useLife, Frame, ErrorLine } from "./lifecycle-shared";
 import { ProjectDialog, SetupScriptDialog } from "./lifecycle-project";
-import { SwitchModelDialog } from "./lifecycle-switch-model";
 import { ClosedDialog, ImportDialog } from "./lifecycle-chats";
 
 export function LifecycleDialogs({ app }: { app: App }) {
@@ -16,7 +15,6 @@ export function LifecycleDialogs({ app }: { app: App }) {
     <>
       <ProjectDialog app={app} />
       <SetupScriptDialog app={app} />
-      <SwitchModelDialog app={app} />
       <ConfirmDialog app={app} />
       <ClosedDialog app={app} />
       <ImportDialog app={app} />

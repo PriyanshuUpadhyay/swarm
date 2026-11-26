@@ -157,7 +157,7 @@ test("an arriving question keeps an active draft and cannot turn a typed digit i
   } finally { writeFileSync(screen, initial); }
 });
 
-test("Continue keeps the prior provider, model and account and supports keyboard model selection", async ({ page: tab }) => {
+test("Ended Resume keeps the prior provider and account and uses the keyboard model pick", async ({ page: tab }) => {
   await tab.route("**/api/snapshot", async (route) => {
     const snap = await (await route.fetch()).json();
     Object.assign(snap.agents[process.env.SWARM_E2E_LIVE!][0], { provider: "codex", account: "work", model: "model-a", alive: false });
@@ -166,16 +166,25 @@ test("Continue keeps the prior provider, model and account and supports keyboard
   await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers: [{ id: "codex", label: "Codex", accounts: true }] } }));
   await tab.route("**/api/models?*", (route) => route.fulfill({ json: { models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] } }));
   await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts: [{ name: "work", email: null }] } }));
+  const resumes: Record<string, unknown>[] = [];
+  await tab.route("**/api/chat/resume", (route) => {
+    resumes.push(route.request().postDataJSON());
+    return route.fulfill({ json: { session: process.env.SWARM_E2E_LIVE } });
+  });
   await open(tab);
-  await tab.getByTestId("continue-chat").click();
-  await expect(tab.getByTestId("sm-provider")).toHaveValue("codex");
-  await expect(tab.getByTestId("sm-account")).toHaveValue("work");
-  await expect(tab.getByTestId("sm-models").locator('[aria-pressed="true"]')).toHaveText("Model A");
-  await tab.getByTestId("sm-query").fill("model-b");
-  await tab.getByTestId("sm-query").press("ArrowDown");
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await expect(picker.getByRole("button", { name: "Codex", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(picker.getByRole("button", { name: "work", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(picker.getByTestId("run-models").locator('[aria-pressed="true"]')).toContainText("Model A");
+  await picker.getByTestId("run-query").fill("model-b");
+  await picker.getByTestId("run-query").press("ArrowDown");
   await tab.keyboard.press("Enter");
-  await expect(tab.getByTestId("sm-models").locator('[aria-pressed="true"]')).toHaveText("Model B");
-  await expect(tab.getByTestId("sm-start")).toBeEnabled();
+  await expect(picker.getByTestId("run-models").locator('[aria-pressed="true"]')).toContainText("Model B");
+  expect(resumes).toEqual([]);
+  await tab.keyboard.press("Escape");
+  await tab.getByTestId("resume-chat").click();
+  await expect.poll(() => resumes).toEqual([{ session: process.env.SWARM_E2E_LIVE, model: "model-b", account: "work" }]);
 });
 
 test("modified Up keeps queued messages", async ({ page: tab }) => {

@@ -96,8 +96,8 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   const custom = q && rail !== "favorites" && list !== undefined && !shown.some((m) => m.id.toLowerCase() === q) ? query.trim() : null;
 
   const modelRun = (provider: string, m: ModelInfo | string) => {
-    const cli = catalog.providers.find((p) => p.id === provider) ?? { id: provider, efforts: [], default_effort: "" };
-    return chooseModel(current, draft, cli, m);
+    const cli = catalog.providers.find((p) => p.id === provider);
+    return chooseModel(current, draft, { id: provider, efforts: cli?.efforts ?? [], default_effort: cli?.default_effort ?? "" }, m);
   };
   const choose = (provider: string, m: ModelInfo | string) => setDraft(modelRun(provider, m));
 

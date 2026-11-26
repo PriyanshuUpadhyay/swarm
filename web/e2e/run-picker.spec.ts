@@ -117,3 +117,109 @@ test("one idle picker opens by shortcut, keeps an unlisted current model and app
   await tab.keyboard.press("Meta+t");
   await expect.poll(() => starts.map((start) => [start.provider, start.model])).toEqual([["codex", "other"]]);
 });
+
+test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const live = process.env.SWARM_E2E_LIVE!;
+  let working = true;
+  let stops = 0;
+  const switches: Record<string, unknown>[] = [];
+  await tab.route("**/api/snapshot", async (route) => {
+    const snap = await (await route.fetch()).json();
+    Object.assign(snap.agents[live][0], { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null });
+    await route.fulfill({ json: snap });
+  });
+  await tab.route("**/api/chat/interrupt", async (route) => {
+    stops++;
+    working = false;
+    await route.continue();
+  });
+  await tab.route("**/api/chat/continue", (route) => {
+    switches.push(route.request().postDataJSON());
+    return route.fulfill({ json: { session: live } });
+  });
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await picker.getByRole("button", { name: "Model B", exact: true }).click();
+  const stop = picker.getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeVisible();
+  await expect(tab.getByTestId("composer-status").getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await shots(tab, 7, "busy-picker");
+  await stop.click();
+  await expect.poll(() => stops).toBe(1);
+  await expect(tab.getByTestId("switch-pending")).toBeVisible();
+  expect(switches).toEqual([]);
+  await shots(tab, 7, "switch-confirmation");
+  await tab.getByRole("button", { name: "Switch now" }).click();
+  await expect.poll(() => switches).toEqual([expect.objectContaining({ old_session: live, model: "model-b", carry: "resume" })]);
+});
+
+test("reload drops a busy pick rather than applying it on the now-idle chat", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const live = process.env.SWARM_E2E_LIVE!;
+  let working = true;
+  let switches = 0;
+  await tab.route("**/api/snapshot", async (route) => {
+    const snap = await (await route.fetch()).json();
+    Object.assign(snap.agents[live][0], { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null });
+    await route.fulfill({ json: snap });
+  });
+  await tab.route("**/api/chat/continue", (route) => {
+    switches++;
+    return route.fulfill({ json: { session: live } });
+  });
+  await open(tab);
+  const row = tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`));
+  await row.click();
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await picker.getByRole("button", { name: "Model B", exact: true }).click();
+  await expect(picker.getByTestId("run-outcome")).toContainText("does not apply until you confirm");
+  working = false;
+  await tab.reload();
+  await row.click();
+  await expect(tab.getByTestId("model-chip-label")).toContainText("model-a");
+  await expect(tab.getByTestId("switch-pending")).toHaveCount(0);
+  expect(switches).toBe(0);
+});
+
+test("an ended chat keeps a foreign-CLI pick until Resume and uses File by default", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const live = process.env.SWARM_E2E_LIVE!;
+  const attempts: Record<string, unknown>[] = [];
+  let release: () => void;
+  const finishing = new Promise<void>((resolve) => { release = resolve; });
+  await tab.route("**/api/snapshot", async (route) => {
+    const snap = await (await route.fetch()).json();
+    Object.assign(snap.agents[live][0], { provider: "claude", model: "model-a", state: "done", alive: false });
+    await route.fulfill({ json: snap });
+  });
+  await tab.route("**/api/tree?*", async (route) => {
+    const tree = await (await route.fetch()).json();
+    delete tree.prefs.switchCarry;
+    await route.fulfill({ json: tree });
+  });
+  await tab.route("**/api/chat/continue", async (route) => {
+    attempts.push(route.request().postDataJSON());
+    await finishing;
+    await route.fulfill({ json: { session: live } });
+  });
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await picker.getByRole("button", { name: "Codex", exact: true }).click();
+  await picker.getByRole("button", { name: "Other model", exact: true }).click();
+  await expect(tab.getByTestId("model-chip-label")).toContainText("other");
+  expect(attempts).toEqual([]);
+  await shots(tab, 7, "ended-pick");
+  const resume = tab.getByTestId("resume-chat");
+  try {
+    await resume.click();
+    await expect(resume).toHaveText("Resuming…");
+    await expect(resume).toBeDisabled();
+    await expect.poll(() => attempts).toEqual([expect.objectContaining({ old_session: live, provider: "codex", model: "other", carry: "file" })]);
+  } finally { release!(); }
+});

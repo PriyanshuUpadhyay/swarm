@@ -1,5 +1,6 @@
 import { TriangleAlertIcon } from "lucide-react";
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
+import { RunChip } from "./run-chip";
 import type { App, Banner, Composer } from "../core/app";
 import { Button } from "../components/ui/button";
 import { ComposerBox } from "./composer";
@@ -13,19 +14,16 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
       <div className="mx-auto grid max-w-[820px] gap-2">
         {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
         {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
-        {/* A child with no pane shows only the reason (ChildColumnView). A chair with none shows
-            only its log; Resume starts its own CLI session again (ADR 0107), and Continue chat
-            starts a new chat from its summary (ADR 0083). */}
+        {!agent.unreachable && <RunChip.Pending app={app} sessionId={id} chair={agent} />}
+        {/* An ended chair can pick its next run without starting it. */}
         {agent.who && agent.unreachable ? (
           <p className="text-xs text-muted-foreground" data-testid="composer-status">
             {agent.disabled}
           </p>
         ) : agent.unreachable ? (
-          <div className="flex justify-center gap-2">
-            {agent.resumable && <ResumeButton app={app} sessionId={id} />}
-            <Button variant="outline" size="sm" data-testid="continue-chat" onClick={() => app.life.openSwitchModel(id)}>
-              Continue chat
-            </Button>
+          <div className="flex items-center justify-center gap-2">
+            <RunChip app={app} sessionId={id} chair={agent} ended />
+            <ResumeButton app={app} sessionId={id} native={agent.resumable} provider={agent.provider} />
           </div>
         ) : (
           <ComposerBox key={id} app={app} composer={composer} />
@@ -35,15 +33,14 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
   );
 }
 
-function ResumeButton({ app, sessionId }: { app: App; sessionId: string }) {
-  const [busy, setBusy] = useState(false);
-  const resume = async () => {
-    setBusy(true);
-    await app.life.resumeChat(sessionId);
-    setBusy(false);
-  };
+function ResumeButton({ app, sessionId, native, provider }: { app: App; sessionId: string; native: boolean; provider: string | null }) {
+  const snapshot = () => app.life.state;
+  const state = useSyncExternalStore(app.life.subscribe, snapshot, snapshot);
+  const run = state.endedRun?.[sessionId];
+  const busy = state.resuming?.[sessionId] === true;
+  if (!native && !(run?.model && run.provider !== provider)) return null;
   return (
-    <Button size="sm" data-testid="resume-chat" disabled={busy} onClick={resume}>
+    <Button size="sm" data-testid="resume-chat" disabled={busy} onClick={() => void app.life.resumeChat(sessionId)}>
       {busy ? "Resuming…" : "Resume"}
     </Button>
   );
