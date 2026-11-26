@@ -30,6 +30,7 @@ import { TabStrip } from "./tabs";
 import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
 import { copyText } from "./copy";
 import { OPEN_BACKGROUND, pickedKey, type OpenBackgroundDetail } from "../core/background";
+import { BackgroundLists } from "./background-line";
 import { writeStore } from "../core/app-types";
 import { watchUpdates } from "./update";
 
@@ -165,23 +166,25 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
   // The ids must be the panels that mount, so each set keeps its own saved layout.
   const layout = useDefaultLayout({ id: "swarm.background", storage: store, panelIds: open ? ["chat-panel", "background-panel"] : ["chat-panel"] });
   return (
-    <ResizablePanelGroup orientation="vertical" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
-      <ResizablePanel id="chat-panel" minSize="160px">
-        <div className="flex h-full min-h-0 flex-col">
-          <PaneStrip app={app} />
-        </div>
-      </ResizablePanel>
-      {open && <ResizableHandle className="h-px w-full after:inset-x-0 after:inset-y-auto after:top-1/2 after:left-0 after:h-[7px] after:w-full after:translate-x-0 after:-translate-y-1/2" />}
-      {open && (
-        <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
-          <LoadFailed key={openId} what="background panel">
-            <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
-              <BackgroundPanel key={pick} app={app} session={openId} focusRequest={focusRequest.session === openId ? focusRequest.seq : 0} />
-            </Suspense>
-          </LoadFailed>
+    <BackgroundLists app={app} session={openId}>
+      <ResizablePanelGroup orientation="vertical" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+        <ResizablePanel id="chat-panel" minSize="160px">
+          <div className="flex h-full min-h-0 flex-col">
+            <PaneStrip app={app} />
+          </div>
         </ResizablePanel>
-      )}
-    </ResizablePanelGroup>
+        {open && <ResizableHandle className="h-px w-full after:inset-x-0 after:inset-y-auto after:top-1/2 after:left-0 after:h-[7px] after:w-full after:translate-x-0 after:-translate-y-1/2" />}
+        {open && (
+          <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
+            <LoadFailed key={openId} what="background panel">
+              <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
+                <BackgroundPanel key={pick} app={app} session={openId} focusRequest={focusRequest.session === openId ? focusRequest.seq : 0} />
+              </Suspense>
+            </LoadFailed>
+          </ResizablePanel>
+        )}
+      </ResizablePanelGroup>
+    </BackgroundLists>
   );
 }
 

@@ -2,6 +2,7 @@ import { TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import type { App, Banner, Composer } from "../core/app";
 import { Button } from "../components/ui/button";
+import { BackgroundLine } from "./background-line";
 import { ComposerBox } from "./composer";
 import { PromptCard } from "./prompt-card";
 import { StatusLine } from "./status-line";
@@ -13,6 +14,7 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
     <div className="chat-input shrink-0 px-6 pt-1 pb-4">
       <div className="mx-auto grid max-w-[760px] gap-2">
         <StatusLine key={id} app={app} composer={composer} />
+        {!agent.who && <BackgroundLine key={`background:${id}`} session={id} />}
         {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
         {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
         {/* A child with no pane shows only the reason (ChildColumnView). A chair with none shows

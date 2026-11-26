@@ -80,14 +80,17 @@ describe("poll", () => {
 });
 
 describe("runningLine", () => {
-  it("names one running task, counts several, and is null with none", () => {
-    const at = { started_at: "2026-11-11T10:00:00Z" };
-    expect(runningLine([task("b1", "chat", "completed")])).toBeNull();
-    expect(runningLine([{ ...task("b1", "chat", "running"), title: "npm run dev", ...at }])).toEqual({ label: "npm run dev", startedAt: Date.parse(at.started_at), key: "task:chat:b1" });
-    // The server lists one agent's tasks after another's, so the newest is by start time.
-    const newer = { ...task("b1", "chat", "running"), started_at: "2026-11-11T10:05:00Z" };
-    const older = { ...task("b2", "worker", "running"), started_at: "2026-11-11T10:00:00Z" };
-    expect(runningLine([newer, older])).toMatchObject({ label: "2 tasks", startedAt: Date.parse(newer.started_at), key: "task:chat:b1" });
+  it("counts running agents and shells once, marks failures, and picks the newest task", () => {
+    const newer = { ...task("b1", "orchestrator", "running"), started_at: "2026-11-11T10:05:00Z" };
+    const older = { ...task("b2", "worker", "running"), kind: "agent" as const, started_at: "2026-11-11T10:00:00Z" };
+    const rows = backgroundRows(session, [
+      agent("orchestrator", { role: "orchestrator", state: "working" }),
+      agent("worker", { state: "working" }),
+    ], [newer, older, task("b3", "worker", "failed")], [
+      { id: "shell-0000000a", command: "zsh" },
+      { id: "shell-0000000b", command: "vim" },
+    ]);
+    expect(runningLine(rows)).toEqual({ agents: 2, shells: 2, failed: 1, startedAt: Date.parse(newer.started_at), key: "task:orchestrator:b1" });
     expect(elapsed(75_000)).toBe("1:15");
   });
 });

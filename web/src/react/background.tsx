@@ -7,24 +7,23 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useEffectEvent, useRef, useState } from "react";
 import type { App } from "../core/app";
 import { ApiError } from "../core/api";
 import { message, readStore, writeStore } from "../core/app-types";
-import { backgroundRows, pickedKey, poll, type BackgroundRow, type WorkspaceShell } from "../core/background";
+import { GROUP_AFTER, pickedKey, type BackgroundRow } from "../core/background";
 import { Button } from "../components/ui/button";
-import { POLL_MS, useBackgroundTasks } from "./background-line";
+import { useBackground } from "./background-line";
 import { StatusGlyph } from "./status";
 import { SurfaceFind } from "./surface-find";
 import { terminalMatches } from "../core/background";
 import { useTheme } from "./appearance";
 
-const readShells = (app: App, session: string) => app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session });
+const GROUP_LABEL = { error: "Failed", working: "Running", blocked: "Waiting", done: "Done", ended: "Ended" };
 
 export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; session: string; focusRequest?: number }) {
-  const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
-  const tasks = useBackgroundTasks(app, session);
-  const [shells, setShells] = useState<WorkspaceShell[]>([]);
+  const { rows, addShell, refreshShells } = useBackground();
+  const grouped = rows.filter((r) => r.type === "task").length > GROUP_AFTER;
   const [shellError, setShellError] = useState<string | null>(null);
   // A shell request in flight: a second click would make a second shell, or close one twice.
   const [busy, setBusy] = useState(false);
@@ -53,27 +52,6 @@ export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; 
     };
   };
 
-  useEffect(() => {
-    let stop = false;
-    // A failed poll keeps the last list, and the next tick tries again.
-    const end = poll(
-      () =>
-        readShells(app, session).then((r) => !stop && setShells(r.shells)),
-      POLL_MS,
-      () => document.hidden,
-    );
-    return () => {
-      stop = true;
-      end();
-    };
-  }, [app, session]);
-
-  const rows = backgroundRows(
-    snapshot?.sessions.find((s) => s.id === session),
-    snapshot?.agents[session],
-    tasks,
-    shells,
-  );
   const row: BackgroundRow | undefined = rows.find((r) => r.key === picked) ?? rows[0];
   useEffect(() => {
     if (!focusRequest || requested.current === focusRequest || !row) return;
@@ -82,7 +60,6 @@ export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; 
     else wanted.current = row.key;
   }, [focusRequest, row?.key]);
   const pickAgent = (agent: string) => choose(`agent:${agent}`);
-  const refreshShells = () => readShells(app, session).then((r) => setShells(r.shells));
   // Every error lands in `shellError`, so the `void` at the click handler loses nothing.
   const newShell = async () => {
     setShellError(null);
@@ -90,7 +67,7 @@ export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; 
     try {
       const { id } = await app.api.post<{ id: string }>("/api/shells", { session });
       choose(`shell:${id}`);
-      setShells((all) => [...all, { id, command: "Starting…" }]);
+      addShell({ id, command: "Starting…" });
       try { await refreshShells(); }
       catch (err) { setShellError(`Shell created. Could not refresh the list: ${message(err)}`); }
     } catch (err) {
@@ -125,20 +102,27 @@ export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; 
   return (
     <div className="flex h-full min-h-0 border-t bg-background" data-testid="background-panel">
       <ul className="w-64 shrink-0 overflow-y-auto border-r py-1 text-sm" aria-label="Agents and background tasks">
-        {rows.map((r) => (
-          <li key={r.key}>
-            <button
-              type="button"
-              aria-current={r.key === row?.key}
-              className={`flex w-full items-center gap-2 py-1 pr-2 text-left hover:bg-accent aria-[current=true]:bg-accent ${r.type === "task" ? "pl-6" : "pl-2"}`}
-              onClick={() => choose(r.key)}
-            >
-              <StatusGlyph status={r.status} />
-              <span className="min-w-0 flex-1 truncate">{r.type === "task" ? r.task.title || r.task.id : r.title}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{r.type === "agent" ? r.detail : r.type === "task" ? r.task.kind : r.shell.command}</span>
-            </button>
-          </li>
-        ))}
+        {rows.map((r, i) => {
+          const prev = rows[i - 1];
+          const startsGroup = grouped && r.type === "task" && (prev?.type !== "task" || prev.agent !== r.agent || prev.status !== r.status);
+          return (
+            <Fragment key={r.key}>
+              {startsGroup && <li className="pl-6 text-xs text-muted-foreground">{GROUP_LABEL[r.status]}</li>}
+              <li>
+                <button
+                  type="button"
+                  aria-current={r.key === row?.key}
+                  className={`flex w-full items-center gap-2 py-1 pr-2 text-left hover:bg-accent aria-[current=true]:bg-accent ${r.type === "task" ? "pl-6" : "pl-2"}`}
+                  onClick={() => choose(r.key)}
+                >
+                  <StatusGlyph status={r.status} />
+                  <span className="min-w-0 flex-1 truncate">{r.type === "task" ? r.task.title || r.task.id : r.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{r.type === "agent" ? r.detail : r.type === "task" ? r.task.kind : r.shell.command}</span>
+                </button>
+              </li>
+            </Fragment>
+          );
+        })}
         {!rows.length && <li className="px-2 py-1 text-muted-foreground">No live agents.</li>}
         <li className="px-2 pt-1">
           <Button variant="ghost" size="sm" data-testid="new-shell" title="A shell in this chat's folder; it keeps running when the panel closes" disabled={busy} onClick={() => void newShell()}>
