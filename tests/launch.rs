@@ -41,16 +41,22 @@ const PERMISSION: &str = "────\n Bash command\n\n   touch probe.txt\n\n 
 /// A chair and a seat that runs `provider`, whose screen is `$HOME/screen`, with `ring` as the
 /// fake adapter's ring verb.
 fn seat_session(home: &Path, provider: &str, ring: &str) -> (String, rusqlite::Connection) {
+    // The default chat profile runs claude; the seat's provider is set after launch.
+    tool(home, "claude", "true");
     std::fs::create_dir_all(home.join(".swarm/adapters")).unwrap();
-    std::fs::write(
-        home.join(".swarm/adapters/fake.conf"),
-        format!(
-            "self = printf chair\nspawn = printf pane\nring = {ring}\n\
-             list = printf 'pane chair\\n'\nclose = true\ncapture = cat \"$HOME/screen\"\n\
-             screen = cat \"$HOME/screen\"\n"
-        ),
-    )
-    .unwrap();
+    let conf = |ring: &str| {
+        std::fs::write(
+            home.join(".swarm/adapters/fake.conf"),
+            format!(
+                "self = printf chair\nspawn = printf pane\nring = {ring}\n\
+                 list = printf 'pane chair\\n'\nclose = true\ncapture = cat \"$HOME/screen\"\n\
+                 screen = cat \"$HOME/screen\"\n"
+            ),
+        )
+        .unwrap();
+    };
+    // The launch rings its own command line into the pane; the test's ring verb starts after it.
+    conf("true");
     let session = swarm(
         home,
         &[("SWARM_ADAPTER", "fake")],
@@ -63,11 +69,12 @@ fn seat_session(home: &Path, provider: &str, ring: &str) -> (String, rusqlite::C
         .to_string();
     for args in [
         &["agent", "add", "orchestrator", "orchestrator"][..],
-        &["spawn", "seat", "coder"],
+        &["launch", "seat", "chat"],
     ] {
         let output = swarm(home, &chair(&session), args);
         assert!(output.status.success(), "{args:?}: {}", stderr(&output));
     }
+    conf(ring);
     let connection = swarm::store::open(&home.join(".swarm/swarm.db")).unwrap();
     swarm::store::set_provider(&connection, &session, "seat", provider).unwrap();
     (session, connection)
