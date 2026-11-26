@@ -155,6 +155,7 @@ async fn resume_chat_route_launches_the_chair_with_resume_in_its_chat() {
 #[tokio::test]
 async fn ended_resume_launches_the_picked_run_in_the_same_session() {
     let fixture = action_fixture();
+
     let response = call_action(
         &fixture,
         "/api/chat/resume",
@@ -185,6 +186,7 @@ async fn recent_models_include_the_model_an_ended_resume_started() {
     let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
     // The stand-in launch does not publish runtime metadata; provide the stores it would update.
     db.execute("UPDATE agent SET provider = 'claude', model = 'sonnet' WHERE session_id = ?1 AND id = 'orchestrator'", [&fixture.session]).unwrap();
+
     let prefs = || {
         choices_store::load(&fixture.app.root, false)
             .unwrap()

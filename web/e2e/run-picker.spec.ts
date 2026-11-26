@@ -51,6 +51,7 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     await expect(tab.getByTestId("tab").and(tab.locator(`[data-session="${leaf}"]`))).toHaveAttribute("data-id", tabId!);
     const transcript = tab.getByTestId("transcript").and(tab.locator(`[data-chat="${leaf}"]`));
     await expect(transcript.getByText("After the CLI switch")).toBeVisible();
+
     const loadOlder = tab.getByTestId("load-older");
     await expect(loadOlder).toBeVisible();
     await loadOlder.click();

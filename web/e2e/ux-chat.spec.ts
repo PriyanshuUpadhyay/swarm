@@ -166,6 +166,7 @@ test("Ended Resume keeps the prior provider and account and uses the keyboard mo
   await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers: [{ id: "codex", label: "Codex", accounts: true }] } }));
   await tab.route("**/api/models?*", (route) => route.fulfill({ json: { models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] } }));
   await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts: [{ name: "work", email: null }] } }));
+
   const resumes: Record<string, unknown>[] = [];
   await tab.route("**/api/chat/resume", (route) => {
     resumes.push(route.request().postDataJSON());

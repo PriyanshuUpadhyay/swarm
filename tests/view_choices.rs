@@ -205,6 +205,7 @@ fn picker_choices_keep_the_four_latest_distinct_models() {
     let agy = json!({"provider":"agy","model":"gemini"});
     let pi = json!({"provider":"pi","model":"openai-codex/gpt-6-sol"});
     let sonnet = json!({"provider":"claude","model":"sonnet"});
+
     for (key, value) in [
         ("switchCarry", json!("file")),
         ("favoriteModels", json!([claude, codex])),
@@ -222,6 +223,7 @@ fn picker_choices_keep_the_four_latest_distinct_models() {
         };
         choices::apply(&mut owner, &mut state, &tree, op, 100).unwrap();
     }
+
     assert_eq!(owner.prefs["switchCarry"], "file");
     assert_eq!(owner.prefs["favoriteModels"], json!([claude, codex]));
     assert_eq!(owner.prefs["newChatModel"], pi);

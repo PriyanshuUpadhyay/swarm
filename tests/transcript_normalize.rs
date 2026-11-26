@@ -21,6 +21,7 @@ fn claude_shows_one_change_after_the_initial_and_repeated_model_facts() {
             "type": "assistant", "message": {"model": model, "content": [{"type":"text", "text": text}]}
         })
     };
+
     let result = snapshot(
         NativeFormat::Claude,
         &[
@@ -35,6 +36,7 @@ fn claude_shows_one_change_after_the_initial_and_repeated_model_facts() {
         .iter()
         .filter(|row| row["kind"] == "model_change")
         .collect();
+
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0]["text"], "first → second");
     assert_eq!(changes[0]["source_ids"].as_array().unwrap().len(), 1);

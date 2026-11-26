@@ -19,6 +19,7 @@ async fn linked_history_pages_across_logs_without_changing_the_leaf_offsets() {
         swarm::store::continue_session(&connection, &leaf, &fixture.session).unwrap();
         leaf
     };
+
     let user = json!({"type":"user","message":{"content":"older"}});
     std::fs::write(&fixture.log, format!("{user}\n")).unwrap();
     let read = |older_cursor: Option<String>| {
