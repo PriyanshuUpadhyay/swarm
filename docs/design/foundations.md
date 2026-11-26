@@ -48,6 +48,8 @@ The design names a role, and `web/src/styles-base.css` holds the CSS variable. T
 - **Instrument Serif appears only as the question on the new-chat screen** (owner). It marks the start of new work.
 - **Every size comes from the scale** (default), because today 34 raw sizes skip it. The scale is 11, 12, 13, 14 and 15 px, plus 44 px for the serif question. The 10 px size of today is dropped (owner).
 
+- **Reply text in the chat is 16 px with a 1.5 line** (owner). Its headings are 1.3 and 1.12 times that size and its code keeps the sizes of that text, because a reading trial found 13 px too small for long text. All other text follows the type scale.
+
 ## Layout
 
 - **Sidebar rows follow "way 4"** (owner). Line 2 ends with the PR chip. Only the selected row adds a third line with the branch and diff stat. Other rows stay two lines high, so the list stays calm.
