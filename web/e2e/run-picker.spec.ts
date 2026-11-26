@@ -5,6 +5,9 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { holdChatStart, open, readTree } from "./lifecycle-helpers";
 
+// Live snapshot reads can still be in flight when the test page closes.
+test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
+
 async function shots(tab: Page, unit: number, name: string) {
   if (!process.env.E2E_SHOTS) return;
   const dir = resolve(import.meta.dirname, `../../tmp/shots/${unit}`);

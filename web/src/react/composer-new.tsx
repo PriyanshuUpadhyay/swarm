@@ -16,6 +16,7 @@ import { hasPendingImage, imagePaths } from "../core/images";
 import { pick, toSend, type MenuRow } from "../core/slash";
 import { dragOverFiles, dropImage, pasteImage, type Draft } from "./composer-image";
 import { Chip, RunMenu, moveOption } from "./composer-new-parts";
+import { CliMark } from "./cli-mark";
 import { PreviewCard, usePreview } from "./composer-new-preview";
 import { ImageThumbs } from "./images";
 import { message } from "./lifecycle-shared";
@@ -313,6 +314,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
               {placeLabel(place, target)}
             </Chip>
             <Chip testid="chip-run" on={menu === "run"} title="Run (⌘/), thinking (⌘⇧/)" onClick={() => setMenu((m) => (m === "run" ? null : "run"))}>
+              {shown && <span className="mr-1.5"><CliMark provider={shown.provider} selected={menu === "run"} /></span>}
               {profile ? `${profile.name} · ` : ""}
               {runText}
             </Chip>

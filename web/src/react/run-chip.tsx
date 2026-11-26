@@ -6,6 +6,7 @@ import type { App } from "../core/app";
 import { accountCli, accountColor, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
+import { CliMark } from "./cli-mark";
 import { ErrorLine } from "./lifecycle-shared";
 import { SwitchProgress } from "./lifecycle-switch-model";
 import { RunPicker, runModel, useRunCatalog } from "./run-picker";
@@ -60,6 +61,7 @@ export function RunChip({ app, sessionId, chair, ended = false }: { app: App; se
         style={{ anchorName: anchor } as CSSProperties}
         onClick={() => (open ? app.life.close("switchModel") : app.life.openSwitchModel(sessionId))}
       >
+        {shown.provider && <CliMark provider={shown.provider} selected={open} />}
         {shown.account && multipleAccounts && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(shown.account) }} />}
         <span className="truncate" data-testid="model-chip-label">
           {(ended ? null : switching) ?? runLabel(multipleAccounts ? shown : { ...shown, account: null })}

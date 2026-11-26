@@ -12,6 +12,7 @@ import { Input } from "../components/ui/input";
 import { message } from "./lifecycle-shared";
 import { modelPickerKey } from "./model-picker";
 import { meterTone } from "./usage-meters";
+import { CliMark } from "./cli-mark";
 
 /** A one-of-N pill that shows its pick with `aria-pressed`. */
 const RAIL = "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-muted-foreground hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
@@ -111,7 +112,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
         <button type="button" data-model-id={missing ? undefined : m.id} aria-pressed={on} disabled={missing} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1.5 text-left" onClick={() => choose(provider, m)}
           onMouseEnter={() => preview?.(modelRun(provider, m))} onFocus={() => preview?.(modelRun(provider, m))}
           onMouseLeave={() => preview?.(null)} onBlur={() => preview?.(null)}>
-          {nameCli && <span className="shrink-0 text-xs text-muted-foreground">{cliName(provider)}</span>}
+          {nameCli && <><CliMark provider={provider} selected={on} /><span className="shrink-0 text-xs text-muted-foreground">{cliName(provider)}</span></>}
           <span className="min-w-0 truncate">{m.label}</span>
           {m.note && <span className="truncate text-xs text-muted-foreground" title={m.note}>{m.note}</span>}
           {missing && <span className="text-xs text-muted-foreground">Unavailable</span>}
@@ -138,6 +139,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
       <div className="grid content-start gap-1 bg-hover p-1.5" aria-label="Model groups" role="group">
         <button type="button" aria-pressed={rail === "favorites"} className={RAIL} onClick={() => setRail("favorites")}><StarIcon className="size-4 shrink-0" /> Favorites</button>
         {providers.map((p) => <button key={p.id} type="button" aria-pressed={rail === p.id} className={RAIL} onClick={() => setRail(p.id)}>
+          <CliMark provider={p.id} selected={rail === p.id} />
           <span className="truncate">{cliName(p.id)}</span>{p.id !== current.provider && <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden />}
         </button>)}
       </div>
