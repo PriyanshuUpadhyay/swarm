@@ -19,7 +19,7 @@ fn a_wrap_up_reply_needs_every_heading() {
     swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
     let full = WRAP_UP.map(|(h, _)| format!("{h}\nnone\n")).concat();
     let check = |connection: &rusqlite::Connection, body: &str| {
-        check_wrap_up_reply(connection, &session, CODER, body).map_err(|e| e.to_string())
+        answers_wrap_up(connection, &session, CODER, body).map_err(|e| e.to_string())
     };
 
     assert!(check(&connection, "a plain reply").is_ok());
@@ -118,6 +118,7 @@ fn close_saves_the_childs_wrap_up_without_ringing_the_orchestrator() {
         ),
     )
     .unwrap();
+
     let seq = finish(&mut connection, &root, "fake", &session, CODER, "result").unwrap();
     assert_eq!(
         swarm::store::inbox(&connection, &session, ORCHESTRATOR).unwrap()[0].seq,

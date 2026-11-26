@@ -199,7 +199,8 @@ pub(crate) fn finish(
 ) -> Result<i64, Box<dyn std::error::Error>> {
     let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let orchestrator = swarm::store::orchestrator_of(&tx, session_id)?;
-    if check_wrap_up_reply(&tx, session_id, agent, body)? {
+
+    if answers_wrap_up(&tx, session_id, agent, body)? {
         let seq = swarm::store::insert_message(
             &tx,
             root,
@@ -209,11 +210,12 @@ pub(crate) fn finish(
             "summary",
             body,
         )?;
-        // Close reads the stored reply itself. Mark it read before any delivery pass can ring it.
+        // Close polls message history for the reply. Mark it read before any delivery pass can ring it.
         swarm::store::ack(&tx, session_id, seq, &orchestrator)?;
         tx.commit()?;
         return Ok(seq);
     }
+
     tx.commit()?;
     deliver(
         connection,
@@ -228,7 +230,7 @@ pub(crate) fn finish(
 }
 
 /// Whether this is a wrap-up reply. Refuse a wrap-up body that misses a heading.
-fn check_wrap_up_reply(
+fn answers_wrap_up(
     connection: &rusqlite::Connection,
     session_id: &str,
     agent: &str,
