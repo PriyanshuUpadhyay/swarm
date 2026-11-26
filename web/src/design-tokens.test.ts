@@ -77,6 +77,7 @@ function block(opening: RegExp, closing: string): Record<string, string> {
   const start = opening.exec(css);
   if (!start) throw new Error(`no block for ${opening}`);
   const end = css.indexOf(closing, start.index);
+  if (end < 0) throw new Error(`no end for ${opening}`);
   const text = css.slice(start.index, end);
   const out: Record<string, string> = {};
   for (const m of text.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)) out[m[1]] = m[2].trim();
