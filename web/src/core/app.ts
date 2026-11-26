@@ -16,8 +16,8 @@ import { Skills } from "./skills";
 import { Notices } from "./notices";
 import { Notes } from "./notes";
 import { NewChat } from "./new-chat";
-import { chatRows, type ChoiceOp, type NavRow, type PaletteItem, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
-import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS, SIDEBAR_VIEW_KEY, readStore } from "./app-types";
+import { chatRows, type ChoiceOp, type NavRow, type PaletteItem, type Tabs, type TreeName, type TreeView } from "./nav";
+import { type Chat, type Input, type Find, type Strip, type View, type Reader, type Ask, NO_FIND, NO_CELLS } from "./app-types";
 import { AppNavigation } from "./app-navigation";
 import { AppSidebar } from "./app-sidebar";
 import { AppReader } from "./app-reader";
@@ -26,7 +26,7 @@ import { AppPanes } from "./app-panes";
 import { AppStream } from "./app-stream";
 import { AppActions } from "./app-actions";
 
-export { TAIL, LRU_SIZE, type FullText, type Banner, type Input, type Composer, type Find, type Pane, type Strip, type View, type Reader, type Ask, SIDEBAR_VIEWS, paneId, PROMPT_JUMP, SENT } from "./app-types";
+export { TAIL, LRU_SIZE, type FullText, type Banner, type Input, type Composer, type Find, type Pane, type Strip, type View, type Reader, type Ask, paneId, PROMPT_JUMP, SENT } from "./app-types";
 
 export class App {
   readonly navigation = new AppNavigation(this);
@@ -63,9 +63,6 @@ export class App {
   openId: string | null = null;
   workspace: string | null = null;
   tabs: Tabs | null = null;
-  sidebarView = readStore(SIDEBAR_VIEW_KEY) === "2" ? 2 : 1;
-  recentMemo: { tree: TreeView | null; snapshot: Snapshot | null; list: RecentChat[] } | null = null;
-  recentSelected: string | null = null;
   /** The choices revision of the last read or write. Writes go one at a time, each on the last. */
   revision: string | null = null;
   writes: Promise<unknown> = Promise.resolve();
@@ -157,8 +154,7 @@ export class App {
     abort.signal.addEventListener("abort", this.settings.subscribe(() => this.navigation.followUrl()));
     void this.navigation.refreshSnapshot().then(() => {
       whenPainted(
-        // The sidebar view is saved, so the page can start on Recent, which has no tree.
-        () => document.querySelector('[data-testid="sidebar"][data-loaded="true"], [data-testid="recent"]') !== null,
+        () => document.querySelector('[data-testid="sidebar"][data-loaded="true"]') !== null,
         () => (window.__swarmReady = true),
       );
     });
@@ -214,14 +210,6 @@ export class App {
     return this.sidebar.clickRow(id, pick);
   }
 
-  clickRecent(session: string) {
-    return this.sidebar.clickRecent(session);
-  }
-
-  dropRecent(session: string, target: string) {
-    return this.sidebar.dropRecent(session, target);
-  }
-
   pin(workspace: string) {
     return this.sidebar.pin(workspace);
   }
@@ -232,10 +220,6 @@ export class App {
 
   setTreeName(name: TreeName) {
     return this.sidebar.setTreeName(name);
-  }
-
-  setSidebarView(n: number) {
-    return this.sidebar.setSidebarView(n);
   }
 
   showHome() {

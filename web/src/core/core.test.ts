@@ -3,6 +3,7 @@ import { takeToken, type Api, type Row, type RowPage, type Snapshot } from "./ap
 import { App } from "./app";
 import { eventKey, installKeys, parseChord, Registry } from "./commands";
 import { paletteSections, type TreeView } from "./nav";
+import { folderFacts } from "./nav-fixtures";
 import { MAX_RECORDS, measure } from "./perf";
 import { SseParser } from "./sse";
 import { FoldChoices, lines, mergeRows, promptIndex, wordAt } from "./transcript";
@@ -231,8 +232,10 @@ describe("openBlocked", () => {
     const chair = (pane: string | null) => ({ id: "orchestrator", role: "orchestrator", state: "blocked", alive: true, pane });
     // The tree lists workspace w with no chat rows, as when it is collapsed or its chats are under
     // "\u2026 more". The archived workspace "gone" is not in it, as the Dock badge skips it.
-    const workspace = { id: "w", kind: "workspace", archived: false, selection: { workspace: "w", chat: null, agentSession: null, agent: null } };
-    (app as unknown as { tree: TreeView }).tree = { view: "workspaces", sections: [{ rows: [workspace] }] } as unknown as TreeView;
+    const workspace = folderFacts("p", "w");
+    const gone = folderFacts("p", "gone", { archived: true });
+    const catalog = { chats: [], workspaces: { w: workspace, gone }, projects: [], sections: [] };
+    (app as unknown as { tree: TreeView }).tree = { ...catalog, view: "workspaces" } as unknown as TreeView;
     (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
       version: 1,
       sessions: [session("archived", "gone"), session("no-pane"), session("asks")],
@@ -242,9 +245,7 @@ describe("openBlocked", () => {
     expect(app.view.openId).toBe("asks");
 
     // The Archived view lists only archived workspaces, and the tree is null before it loads.
-    const gone = { ...workspace, id: "gone", archived: true, selection: { ...workspace.selection, workspace: "gone" } };
-    const goneChat = { id: "chat:archived", kind: "chat", archived: false, fields: [], selection: { workspace: "gone", chat: "archived", agentSession: null, agent: null } };
-    for (const tree of [{ view: "archived", sections: [{ rows: [gone, goneChat] }] }, null]) {
+    for (const tree of [{ ...catalog, view: "archived" }, null]) {
       app.openChat("no-pane");
       (app as unknown as { tree: TreeView | null }).tree = tree as unknown as TreeView | null;
       app.openBlocked();

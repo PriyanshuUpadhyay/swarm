@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, type Api, type Snapshot } from "./api";
 import { App } from "./app";
-import { inOrder, moveTarget, navRows, nextBlocked, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type TreeView } from "./nav";
+import { moveTarget, navRows, nextBlocked, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type TreeView } from "./nav";
 import { row, chat, section, tree, appMain, appFeature, fixRows, fixChild, docs, web, webChat, sample } from "./nav-fixtures";
 
 describe("sidebar lines", () => {
@@ -316,16 +316,5 @@ describe("nextBlocked", () => {
     expect(nextBlocked(["a", "b", "c"], blocked, "c")).toBe("a");
     expect(nextBlocked(["a", "b", "c"], blocked, null)).toBe("a");
     expect(nextBlocked(["a", "b"], (s) => s === "a", "a")).toBeNull();
-  });
-});
-
-describe("inOrder", () => {
-  const chat = (session: string) => ({ session, title: session, project: "", workspace: "", workspacePath: "", age: null, status: null, unread: false });
-  it("keeps the dragged order and puts a new chat on top", () => {
-    const stored = ["b", "gone", "a"];
-    const { list, order } = inOrder([chat("a"), chat("new"), chat("b")], stored);
-    expect(list.map((r) => r.session)).toEqual(["new", "b", "a"]);
-    expect(order).toEqual(["new", "b", "gone", "a"]);
-    expect(inOrder([chat("a"), chat("b")], stored).order).toBe(stored);
   });
 });

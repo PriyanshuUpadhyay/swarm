@@ -1,42 +1,24 @@
-// The sidebar on the Rust tree (P2a) in jean's look: a Workspaces / Recent switch, the project tree,
-// and one Recent list across projects. Rows are plain elements; one context menu, tooltip, hover card
-// and new-chat menu serve the tree (decision 3). Drags use the browser's own drag and drop.
+// The owner can open, pick, fold and drag rows of one server-projected list.
 
 import { ArchiveRestoreIcon, TriangleAlertIcon } from "lucide-react";
-import { useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
-import { SIDEBAR_VIEWS, type App } from "../core/app";
-import { archivedSession, currentRow, type SidebarRow } from "../core/nav";
+import { useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
+import type { App } from "../core/app";
+import { archivedSession, currentRow, workspaceRow, type SidebarRow } from "../core/nav";
 import { canStartIn } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
 import { RowHints, RowMenu } from "./row-overlays";
-import { RecentMenu, RowBar, recentTarget, treeTarget } from "./row-actions";
+import { RowBar, treeTarget } from "./row-actions";
 import { StatusGlyph } from "./status";
-import { RowView, RecentRow } from "./sidebar-row";
+import { RowView } from "./sidebar-row";
 import { SidebarHeader } from "./sidebar-header";
 
 export function Sidebar({ app }: { app: App }) {
-  const sidebarView = useSyncExternalStore(app.subscribe, () => app.view.sidebarView);
-  useLayoutEffect(() => app.sidebar.focusRequestedView());
   return (
     <div className="flex h-full min-w-0 flex-col bg-sidebar">
       <SidebarHeader app={app} />
-      <ViewSwitch app={app} current={sidebarView} />
-      {sidebarView === 2 ? <RecentList app={app} /> : <WorkspaceList app={app} />}
-    </div>
-  );
-}
-
-/** jean's Projects / Recent switch (⌥⌘1, ⌥⌘2). */
-function ViewSwitch({ app, current }: { app: App; current: number }) {
-  return (
-    <div role="tablist" aria-label="Sidebar view" className="view-switch">
-      {SIDEBAR_VIEWS.map((name, i) => (
-        <button key={name} role="tab" aria-selected={current === i + 1} data-testid={`view-${name.toLowerCase()}`} title={`${name} (⌥⌘${i + 1})`} onClick={() => app.setSidebarView(i + 1)}>
-          {name}
-        </button>
-      ))}
+      <WorkspaceList app={app} />
     </div>
   );
 }
@@ -57,9 +39,10 @@ function WorkspaceList({ app }: { app: App }) {
   const [dragging, setDragging] = useState(false);
   const archive = treeName === "archived";
   const hasPinned = tree?.sections.some((s) => s.kind === "pinned") ?? false;
-  const current = currentRow(rows, openId, workspace);
+  const current = currentRow(rows, openId, workspace, archive ? null : tree);
 
   const onClick = (e: MouseEvent) => {
+    if ((e.target as Element).closest("a")) return;
     const el = (e.target as Element).closest<HTMLElement>('[data-testid="tree-row"]');
     const row = el && rows.find((r) => r.id === el.dataset.id);
     if (!row) return;
@@ -127,10 +110,10 @@ function WorkspaceList({ app }: { app: App }) {
         <ContextMenuTrigger asChild>
           <div
             ref={listRef}
-            className="min-h-0 flex-1 overflow-y-auto pt-1 pb-3 outline-none"
+            className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3 outline-none"
             role="tree"
             aria-multiselectable
-            aria-label={archive ? "Archived workspaces" : "Workspaces"}
+            aria-label={archive ? "Archived workspaces" : "Chats"}
             data-testid="sidebar"
             data-loaded={String(loaded)}
             onClick={onClick}
@@ -142,7 +125,9 @@ function WorkspaceList({ app }: { app: App }) {
               </div>
             )}
             {rows.map((row) => (
-              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={row.id === current} archive={archive} canNewIn={!row.row && canStartIn(tree, row.section.path)} />
+              <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={row.id === current}
+                open={!archive && row.kind === "chat" && row.row?.selection?.chat === openId}
+                facts={workspaceRow(tree, row.row?.selection?.workspace ?? null)} archive={archive} canNewIn={!row.row && canStartIn(tree, row.section.path)} />
             ))}
             {!loaded && !error && <SidebarSkeleton />}
             {loaded && rows.length === 0 && <SidebarNote title={archive ? "No archived workspaces" : "No projects yet"} body={archive ? "" : "Import or create a project from the + menu above."} />}
@@ -164,7 +149,7 @@ function WorkspaceList({ app }: { app: App }) {
       <div className="flex shrink-0 flex-wrap items-center gap-x-1 border-t border-border px-2 py-1.5">
         <Button variant="ghost" size="sm" data-testid="archive-toggle" onClick={() => app.setTreeName(archive ? "workspaces" : "archived")}>
           <ArchiveRestoreIcon />
-          {archive ? "Workspaces" : "Archived workspaces"}
+          {archive ? "Back to chats" : "Archive"}
           {!archive && tree?.archivedStatus && <StatusGlyph status={tree.archivedStatus} />}
         </Button>
         {archive && <Button variant="ghost" size="sm" onClick={() => app.life.openClosed()}>Archived chats…</Button>}
@@ -172,72 +157,6 @@ function WorkspaceList({ app }: { app: App }) {
           Hold <Kbd>⌘</Kbd> for actions
         </span>
       </div>
-    </>
-  );
-}
-
-/** Every listed chat across projects (jean's Recent list), in the order the user drags them to.
- *  j/k, arrows and Enter work here as in the tree. */
-function RecentList({ app }: { app: App }) {
-  const recent = useSyncExternalStore(app.subscribe, () => app.view.recent);
-  const selected = useSyncExternalStore(app.subscribe, () => app.view.recentSelected);
-  const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
-  const loaded = useSyncExternalStore(app.subscribe, () => app.view.loaded);
-  const listRef = useRef<HTMLDivElement>(null);
-  const onClick = (e: MouseEvent) => {
-    const session = (e.target as Element).closest<HTMLElement>('[data-testid="recent-row"]')?.dataset.session;
-    if (session) app.clickRecent(session);
-  };
-
-  // Drop a row on another row to move it there.
-  const dragged = useRef<string | null>(null);
-  const rowOf = (e: DragEvent) => (e.target as Element).closest<HTMLElement>('[data-testid="recent-row"]');
-  const clearMark = () => listRef.current?.querySelectorAll("[data-over]").forEach((n) => n.removeAttribute("data-over"));
-  const dragProps = {
-    onDragStart: (e: DragEvent) => {
-      const session = rowOf(e)?.dataset.session;
-      if (!session) return;
-      dragged.current = session;
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", session);
-    },
-    onDragOver: (e: DragEvent) => {
-      const el = rowOf(e);
-      if (!el || !dragged.current || el.dataset.session === dragged.current) return;
-      e.preventDefault();
-      if (!el.hasAttribute("data-over")) {
-        clearMark();
-        el.setAttribute("data-over", "true");
-      }
-    },
-    onDrop: (e: DragEvent) => {
-      const target = rowOf(e)?.dataset.session;
-      const session = dragged.current;
-      clearMark();
-      if (!target || !session || target === session) return;
-      e.preventDefault();
-      app.dropRecent(session, target);
-    },
-    onDragEnd: () => {
-      dragged.current = null;
-      clearMark();
-    },
-  };
-  return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div ref={listRef} role="listbox" aria-label="Recent chats" data-testid="recent" tabIndex={selected ? -1 : 0} className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-3 outline-none" onClick={onClick} {...dragProps}>
-            {recent.map((r) => (
-              <RecentRow key={r.session} r={r} selected={r.session === selected} current={r.session === openId} />
-            ))}
-            {loaded && recent.length === 0 && <SidebarNote title="No chats yet" body="Chats from every project show here. Drag a chat to move it." />}
-            <RowBar listRef={listRef} select='[data-testid="recent-row"]' target={recentTarget(app)} />
-          </div>
-        </ContextMenuTrigger>
-        <RecentMenu app={app} listRef={listRef} />
-      </ContextMenu>
-      <RowHints app={app} listRef={listRef} />
     </>
   );
 }

@@ -28,7 +28,7 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
     // A native listener runs before React's root listener, so Radix opens with the row already set.
     const onContextMenu = (e: MouseEvent) => {
       const target = rowOf(app, e.target as Element);
-      if (!target || ["more", "worktrees", "child", "archived"].includes(target.kind)) {
+      if (!target || (e.target as Element).closest("a") || ["more", "needs-you", "child", "archived"].includes(target.kind)) {
         // Off a row: no menu at all, not an empty one.
         e.preventDefault();
         e.stopPropagation();
@@ -42,8 +42,9 @@ export function RowMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDiv
     // for either, and Chromium none for Shift+F10, so one is sent at the row's corner.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "ContextMenu" && !(e.key === "F10" && e.shiftKey)) return;
-      const row = (e.target as Element).closest<HTMLElement>(ROW);
-      if (!row) return;
+      const target = e.target as Element;
+      const row = target.closest<HTMLElement>(ROW);
+      if (!row || target.closest("a")) return;
       e.preventDefault();
       const r = row.getBoundingClientRect();
       row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 24, clientY: r.bottom, button: 2 }));

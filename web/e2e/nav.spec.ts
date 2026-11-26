@@ -59,41 +59,39 @@ async function selectTabOutside(tab: Page) {
 }
 
 test("a workspace dragged onto the Pinned header is pinned; the menu pins and unpins", async ({ page: tab }) => {
-  // After the other specs the tree is long. WebKit drops a drag that must scroll the list on the
-  // way, so both rows must fit above the usage footer.
   await tab.setViewportSize({ width: 1280, height: 900 });
   const errors = await open(tab);
-  const pinnedIds = async () => (await readTree()).sections.find((s) => s.kind === "pinned")?.rows.filter((r) => r.kind === "workspace").map((r) => r.id) ?? [];
-  const live = (await workspaceRow(tab, "ws-live").getAttribute("data-id"))!;
-  const build = (await workspaceRow(tab, "ws-build").getAttribute("data-id"))!;
-  const menu = async (path: string, item: string) => {
-    await tab.locator(`[data-testid="tree-row"][data-id="${path}"]`).click({ button: "right" });
+  const pinnedRows = async () => (await readTree()).sections.find((s) => s.kind === "pinned")?.rows.map((r) => r.id) ?? [];
+  const live = `chat:${process.env.SWARM_E2E_LIVE}`;
+  const workspace = workspaceRow(tab, "ws-tabs");
+  const workspaceId = (await workspace.getAttribute("data-id"))!;
+  const menu = async (id: string, item: string) => {
+    await tab.locator(`[data-testid="tree-row"][data-id="${id}"]`).click({ button: "right" });
     await tab.getByRole("menuitem", { name: item }).click();
   };
 
   await menu(live, "Pin workspace");
   const header = tab.locator('[data-testid="tree-row"][data-kind="pinned"]');
   await expect(header).toBeVisible();
-  await expect.poll(pinnedIds).toEqual([live]);
+  await expect.poll(pinnedRows).toEqual([live]);
 
-  await workspaceRow(tab, "ws-build").dragTo(header);
-  await expect.poll(pinnedIds).toEqual(expect.arrayContaining([live, build]));
-  // The sidebar lists it under Pinned, before the first project header.
+  await workspace.dragTo(header);
+  await expect.poll(pinnedRows).toEqual(expect.arrayContaining([live, workspaceId]));
   const order = () => tab.getByTestId("tree-row").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-kind") === "project" ? "project" : r.getAttribute("data-id")));
-  await expect.poll(async () => (await order()).indexOf(build) < (await order()).indexOf("project")).toBe(true);
+  await expect.poll(async () => (await order()).indexOf(workspaceId) < (await order()).indexOf("project")).toBe(true);
 
-  await menu(build, "Unpin workspace");
+  await menu(workspaceId, "Unpin workspace");
   await menu(live, "Unpin workspace");
   await expect(header).toBeHidden();
-  await expect.poll(pinnedIds).toEqual([]);
+  await expect.poll(pinnedRows).toEqual([]);
   expect(errors).toEqual([]);
 });
 
 test("Rename workspace… in the context menu saves the name the server then lists", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  const row = workspaceRow(tab, "ws-giant");
+  const row = workspaceRow(tab, "ws-tabs");
   const path = (await row.getAttribute("data-id"))!;
-  const name = `Giant from ${info.project.name}`;
+  const name = `Tabs from ${info.project.name}`;
   await row.click({ button: "right" });
   await tab.getByRole("menuitem", { name: "Rename workspace…" }).click();
   await tab.getByTestId("ask-name").fill(name);
@@ -161,7 +159,7 @@ test("a stale revision shows the error and reloads the tree", async ({ page: tab
   const errors = await open(tab);
   // Another writer changed the choices: the page's revision no longer matches.
   await tab.route("**/api/choices", (route) => route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), revision: "0".repeat(64) }) }), { times: 1 });
-  const row = workspaceRow(tab, "ws-build");
+  const row = tab.locator('[data-testid="tree-row"][data-kind="chat"]').filter({ hasText: "Check the worker inbox and fix the failing build." }).first();
   await row.click({ button: "right" });
   await tab.getByRole("menuitem", { name: "Rename workspace…" }).click();
   await tab.getByTestId("ask-name").fill("never saved");
@@ -187,62 +185,6 @@ test("⌘K finds a chat by a fuzzy query and opens it", async ({ page: tab }) =>
   await expect(option).toBeVisible();
   await option.click();
   await expect(tab.locator(`[data-testid="transcript"][data-chat="${giant}"][data-state="ready"]`)).toBeVisible();
-  expect(errors).toEqual([]);
-});
-
-test("Recent lists chats across projects and opens one in another project from the keyboard", async ({ page: tab }) => {
-  const errors = await open(tab);
-  const sessionIn = async (ws: string) => (await workspaceRow(tab, ws).locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
-  const build = await sessionIn("ws-build");
-  // The ended chats have no composer. Use a live chair to check where focus goes.
-  const live = process.env.SWARM_E2E_LIVE!;
-  await openChat(tab, build);
-  await expect(tab.getByTestId("tab-strip")).toContainText("ws-build");
-
-  await tab.keyboard.press("Alt+Meta+2");
-  const rows = tab.getByTestId("recent-row");
-  await expect(tab.locator(`[data-testid="recent-row"][data-session="${build}"]`)).toHaveAttribute("aria-current", "true");
-  await expect(tab.locator(`[data-testid="recent-row"][data-session="${build}"]`)).toBeFocused();
-  const order = await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-session")));
-
-  const target = order.indexOf(live);
-  expect(target).toBeGreaterThanOrEqual(0);
-  await tab.keyboard.press("Home");
-  await expect(rows.first()).toBeFocused();
-  for (let i = 0; i < target; i++) await tab.keyboard.press("j");
-  const current = tab.locator(`[data-testid="recent-row"][data-session="${live}"]`);
-  await expect(current).toHaveAttribute("aria-selected", "true");
-  const saved = tab.waitForResponse((r) => r.url().endsWith("/api/choices") && r.request().postDataJSON().op === "selected_chat" && r.request().postDataJSON().chat === live);
-  await tab.keyboard.press("Enter");
-  await expect(tab.locator(`[data-testid="transcript"][data-chat="${live}"][data-state="ready"]`)).toBeVisible();
-  await expect(tab.getByTestId("tab-strip")).toContainText("ws-live");
-  const composer = tab.locator(".strip-chat .chat-input").getByTestId("composer");
-  await expect(current).toHaveAttribute("aria-current", "true");
-  await expect(composer).toBeFocused();
-  expect((await saved).ok()).toBe(true);
-
-  await tab.reload();
-  await tab.waitForFunction(() => window.__swarmReady === true);
-  await expect(current).toHaveAttribute("tabindex", "0");
-  await expect(composer).toBeFocused();
-  await tab.keyboard.type("keep going");
-  await expect(composer).toHaveValue("keep going");
-  await tab.keyboard.press("Alt+Meta+1");
-  expect(errors).toEqual([]);
-});
-
-test("a reload keeps the sidebar view the owner picked", async ({ page: tab }) => {
-  const errors = await open(tab);
-  await tab.keyboard.press("Alt+Meta+2");
-  await expect(tab.getByTestId("recent")).toBeVisible();
-  await tab.reload();
-  await tab.waitForFunction(() => window.__swarmReady === true);
-  await expect(tab.getByTestId("recent")).toBeVisible();
-  await tab.keyboard.press("Alt+Meta+1");
-  await tab.reload();
-  await tab.waitForFunction(() => window.__swarmReady === true);
-  await expect(tab.getByTestId("sidebar")).toBeVisible();
-  await expect(tab.getByTestId("recent")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

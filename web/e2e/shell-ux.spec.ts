@@ -7,6 +7,11 @@ async function settings(page: Page, section = "profiles") {
   await page.getByTestId(`settings-page-${section}`).click();
   return page.getByTestId("settings");
 }
+async function showOtherProjects(page: Page) {
+  const row = page.locator('[data-kind="more-projects"]');
+  if (await row.count() && (await row.getAttribute("aria-expanded")) === "false") await row.click();
+}
+
 async function screenshot(page: Page, name: string) {
   await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shell-ux/${name}.png`) });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -77,6 +82,7 @@ test("setup script keeps load errors separate, focuses after Retry, and keeps a 
   await page.route("**/api/choices", (route) => route.request().postDataJSON().op === "setup_script"
     ? route.fulfill({ status: 400, json: { error: "refused write" } }) : route.continue());
   await open(page);
+  await showOtherProjects(page);
   await header(page, "proj-gh").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Setup script…" }).click();
   const dialog = page.getByTestId("setup-script-dialog");
@@ -105,7 +111,9 @@ test("chat pickers filter, move with arrow keys, and refresh imports without clo
   ] } }));
   await open(page);
   await page.getByRole("button", { name: "Add project" }).click();
-  await page.getByRole("menuitem", { name: "Archived chats…" }).click();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("archive-toggle").click();
+  await page.getByRole("button", { name: "Archived chats…" }).click();
   const archive = page.getByTestId("recently-closed");
   const filter = archive.getByRole("searchbox");
   await expect(filter).toBeFocused();
@@ -127,6 +135,7 @@ test("chat pickers filter, move with arrow keys, and refresh imports without clo
 
 test("the composer's project change resets a picked issue to the new project's default place", async ({ page }) => {
   await open(page);
+  await showOtherProjects(page);
   const composer = await compose(page, "proj-gh");
   await composer.getByTestId("chip-place").click();
   await composer.getByTestId("place-kind-issue").click();
@@ -143,6 +152,7 @@ test("the composer's project change resets a picked issue to the new project's d
 
 test("↑ ↓ in the composer's empty prompt and ⌘↑ ⌘↓ with text change the project", async ({ page }) => {
   await open(page);
+  await showOtherProjects(page);
   const composer = await compose(page, "proj-gh");
   const prompt = composer.getByTestId("new-chat-prompt");
   const chip = composer.getByTestId("chip-project");
@@ -168,6 +178,7 @@ test("↑ ↓ in the composer's empty prompt and ⌘↑ ⌘↓ with text change 
 
 test("/ in the composer's prompt lists the CLI's skills with their descriptions, and Enter inserts one", async ({ page }) => {
   await open(page);
+  await showOtherProjects(page);
   const composer = await compose(page, "proj-gh");
   const prompt = composer.getByTestId("new-chat-prompt");
   await prompt.pressSequentially("/swarm");

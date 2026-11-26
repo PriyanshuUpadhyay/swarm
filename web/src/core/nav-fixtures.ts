@@ -1,4 +1,4 @@
-import type { Section, SidebarRow, TreeView } from "./nav";
+import type { Section, SidebarRow, TreeView, WorkspaceFacts } from "./nav";
 
 const sel = (workspace: string | null, chat: string | null = null) => ({ workspace, chat, agentSession: null, agent: null });
 
@@ -35,11 +35,19 @@ export function section(id: string, kind: Section["kind"], rows: SidebarRow[], e
   return { id, kind, path: kind === "project" ? id : null, folder: false, collapseId: kind === "project" ? `project:${id}` : "pinned", expanded: true, title: id.split("/").pop()!, status: null, fields: [], rows, ...extra };
 }
 
+export const folderFacts = (projectPath: string, title: string, extra: Partial<WorkspaceFacts> = {}): WorkspaceFacts => ({
+  projectPath, title, startsChatWorktree: false, newChatEnabled: true, missing: false, archived: false, branch: null, diff: null, pr: null, ...extra,
+});
+
 export const tree = (sections: Section[], view: TreeView["view"] = "workspaces"): TreeView => ({
   version: 1,
   revision: "rev-1",
   view,
   sections,
+  chats: sections.flatMap((s) => s.rows.filter((r) => r.kind === "chat" && !r.archived)),
+  projects: sections.flatMap((s) => s.path ? [{ path: s.path, title: s.title, folder: s.folder }] : []),
+  workspaces: Object.fromEntries(sections.flatMap((s) => s.rows.filter((r) => r.kind === "workspace")
+    .map((r) => [r.id, folderFacts(s.path ?? r.id, r.title, { archived: r.archived, newChatEnabled: r.newChatEnabled })]))),
   selectedRow: null,
   archivedStatus: null,
   choicesError: null,

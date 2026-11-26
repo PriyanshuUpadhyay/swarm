@@ -41,9 +41,11 @@ async function tabs(page: Page) {
 
 test("a folded workspace keeps its chats in Search and Home", async ({ page }) => {
   await load(page);
-  const session = process.env.SWARM_E2E_LIVE!;
-  const chat = (await tree()).chats!.find((item) => item.selection?.chat === session)!;
-  const workspace = page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-live" });
+  const data = await tree();
+  const path = Object.entries(data.workspaces).find(([, facts]) => facts.title === "ws-tabs")![0];
+  const chat = data.chats.find((item) => item.selection?.workspace === path)!;
+  const session = chat.selection!.chat!;
+  const workspace = page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" });
   await workspace.locator('[data-action="toggle"]').click();
   await expect(row(page, session)).toBeHidden();
   await page.keyboard.press("Meta+k");
@@ -54,21 +56,7 @@ test("a folded workspace keeps its chats in Search and Home", async ({ page }) =
   await expect(page.getByTestId("recent-chat").filter({ hasText: chat.title }).first()).toBeVisible();
 });
 
-test("switching to Recent takes the next keys before another animation frame", async ({ page }) => {
-  await load(page);
-  await row(page, process.env.SWARM_E2E_LIVE!).click();
-  await expect(composer(page)).toBeFocused();
-  const start = new Date("2030-01-01T00:00:00Z");
-  await page.clock.install({ time: start });
-  await page.clock.pauseAt(new Date(start.getTime() + 1_000));
-  try {
-    await page.keyboard.press("Alt+Meta+2");
-    await expect(page.locator('[data-testid="recent-row"][aria-current="true"]')).toBeFocused();
-    await page.keyboard.press("Home");
-    await page.keyboard.press("j");
-    await expect(page.getByTestId("recent-row").nth(1)).toHaveAttribute("aria-selected", "true");
-  } finally { await page.clock.resume(); }
-});
+
 
 test("a workspace landing lists chats that its closed tabs can reopen", async ({ page }) => {
   await load(page);
@@ -136,11 +124,9 @@ test("tabs have a keyboard stop, arrows move focus, Enter opens, and middle clic
   await expect(list).toHaveCount(1);
 });
 
-test("Home orders Recent work by activity while the sidebar keeps its dragged order", async ({ page }) => {
+test("Home orders Recent work by activity", async ({ page }) => {
   const data = await tree();
-  // New chats go above the saved order, so seed every known chat before checking a drag order.
-  const sessions = data.chats!.map((chat) => chat.selection!.chat!);
-  await page.addInitScript((order) => localStorage.setItem("swarm.recentOrder", JSON.stringify(order)), sessions);
+  const sessions = data.chats.map((chat) => chat.selection!.chat!);
   await page.route("**/api/snapshot", async (route) => {
     const response = await route.fetch();
     const snapshot = await response.json();
@@ -153,21 +139,4 @@ test("Home orders Recent work by activity while the sidebar keeps its dragged or
   await load(page);
   await page.getByTestId("home-button").click();
   await expect(page.getByTestId("recent-chat").first()).toContainText(data.chats!.find((chat) => chat.selection?.chat === sessions[1])!.title);
-  await page.keyboard.press("Alt+Meta+2");
-  await expect(page.getByTestId("recent-row").first()).toHaveAttribute("data-session", sessions[0]);
-});
-
-
-test("dragged Recent rows lose their hover fill when the pointer leaves", async ({ page }) => {
-  await load(page);
-  await page.keyboard.press("Alt+Meta+2");
-  const rows = page.locator('[data-testid="recent-row"]:not([aria-current])');
-  const [dragged, target, plain] = await Promise.all([0, 1, 2].map(async (i) => page.locator(`[data-testid="recent-row"][data-session="${await rows.nth(i).getAttribute("data-session")}"]`)));
-  const to = (await target.boundingBox())!;
-  // After an accepted drop WebKit keeps `:hover` on the row under the drop point, though the pointer has left.
-  await dragged.dragTo(target);
-  await page.mouse.move(to.x + to.width + 400, to.y + 10, { steps: 3 });
-  const fill = await plain.evaluate((el) => getComputedStyle(el).backgroundColor);
-  await expect(dragged).toHaveCSS("background-color", fill);
-  await expect(target).toHaveCSS("background-color", fill);
 });

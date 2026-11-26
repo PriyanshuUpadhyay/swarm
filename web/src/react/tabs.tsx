@@ -206,7 +206,7 @@ export function TabStrip({ app }: { app: App }) {
         title="New chat (⌘N), or one here with no prompt (⌘T)"
         data-testid="tab-new-chat"
         disabled={ws ? !ws.newChatEnabled : true}
-        onClick={() => ws && app.newChat.open(ws.id)}
+        onClick={() => app.newChat.open(workspace)}
       >
         <PlusIcon />
       </button>

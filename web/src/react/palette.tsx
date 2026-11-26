@@ -90,12 +90,12 @@ export function Palette({ app }: { app: App }) {
 }
 
 function PaletteBody({ app }: { app: App }) {
-  // The items change with the tree, the snapshot (through Recent) and the open chat, not with rows.
+  // The items change with the tree, snapshot and open chat, not with transcript rows.
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
-  const recent = useSyncExternalStore(app.subscribe, () => app.view.recent);
+  const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
   const [query, setQuery] = useState("");
-  const items = useMemo(() => app.paletteItems(), [app, tree, recent, openId]);
+  const items = useMemo(() => app.paletteItems(), [app, tree, snapshot, openId]);
   const sections = paletteSections(items, query);
   const run = (item: PaletteItem) => {
     if (item.disabledReason) return;

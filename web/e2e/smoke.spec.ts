@@ -235,7 +235,9 @@ test("⌘T starts a chat in a hub's main with no prompt and no new worktree", as
   await tab.waitForFunction(() => window.__swarmReady === true);
   const bodies = await holdChatStart(tab);
 
-  await tab.locator(`[data-testid="tree-row"][data-id="${process.env.SWARM_E2E_HUB_MAIN}"]`).click();
+  await tab.getByRole("button", { name: "Command palette" }).click();
+  await tab.getByRole("combobox").fill("proj-hub main");
+  await tab.locator(`[cmdk-item][data-value="workspace:${process.env.SWARM_E2E_HUB_MAIN}"]`).click();
   await expect(tab.getByTestId("workspace-landing")).toBeVisible();
   await tab.locator("body").press("Meta+t");
 

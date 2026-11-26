@@ -1,14 +1,11 @@
 
 
 import { measure, whenPainted } from "./perf";
-import { foldId, moveTarget, archivedSession, navRows, inOrder, recentWork, type NavRow, type RecentChat, type TreeName } from "./nav";
-import { SIDEBAR_VIEWS, SIDEBAR_VIEW_KEY, message, markable, readStore, writeStore } from "./app-types";
-
-const RECENT_ORDER = "swarm.recentOrder";
+import { foldId, moveTarget, archivedSession, navRows, type NavRow, type TreeName } from "./nav";
+import { message, markable } from "./app-types";
 import type { App } from "./app";
 
 export class AppSidebar {
-  private focusView: number | null = null;
   constructor(private readonly app: App) {}
 
   // ---- sidebar ----
@@ -24,7 +21,6 @@ export class AppSidebar {
   }
 
   moveSelection(to: number | "home" | "end", e?: KeyboardEvent) {
-    if (this.app.sidebarView === 2) return this.moveRecent(to, e);
     if (!this.app.rows.length) return;
     const i = this.app.rows.findIndex((r) => r.id === this.app.selected);
     const next = to === "home" ? 0 : to === "end" ? this.app.rows.length - 1 : Math.max(0, Math.min(this.app.rows.length - 1, i + to));
@@ -33,7 +29,6 @@ export class AppSidebar {
 
   /** ← collapses an open row, else moves to its parent. */
   collapse(e?: KeyboardEvent) {
-    if (this.app.sidebarView === 2) return;
     const row = this.app.rows.find((r) => r.id === this.app.selected);
     if (!row) return;
     if (row.expanded) this.toggle(row.id);
@@ -42,7 +37,6 @@ export class AppSidebar {
 
   /** → opens a closed row, else moves to its first child. */
   expand(e?: KeyboardEvent) {
-    if (this.app.sidebarView === 2) return;
     const i = this.app.rows.findIndex((r) => r.id === this.app.selected);
     const row = this.app.rows[i];
     if (!row || row.expanded === null) return;
@@ -64,10 +58,6 @@ export class AppSidebar {
 
   /** Enter: open a chat or a workspace, fold a header, or list a workspace's other chats. */
   activate(e?: KeyboardEvent) {
-    if (this.app.sidebarView === 2) {
-      if (this.app.recentSelected) this.app.navigation.openChat(this.app.recentSelected, e);
-      return;
-    }
     const row = this.app.rows.find((r) => r.id === this.app.selected);
     if (row) this.runRow(row, e);
   }
@@ -119,7 +109,7 @@ export class AppSidebar {
     const row = nav.row;
     if (!row) return this.toggle(nav.id);
     const sel = row.selection ?? { workspace: null, chat: null, agentSession: null, agent: null };
-    // An archived chat folds and unarchives in both views, as its button and menu do.
+    // Archive folds and restores archived chats.
     if (row.kind === "archived") return this.toggle(nav.id);
     if (row.kind === "archived-chat") return this.unarchive(archivedSession(nav.id));
     // The archive view only shows; Restore is in the menu, and an archived workspace takes no selection.
@@ -127,8 +117,6 @@ export class AppSidebar {
       if (row.kind === "chat" && sel.chat) this.app.navigation.openChat(sel.chat, e, { write: false });
       return;
     }
-    // "N more worktrees": the composer on Existing branch, where each hidden worktree is marked open.
-    if (row.kind === "worktrees") return this.app.newChat.open(nav.section.path ?? undefined, { kind: "branch", branch: "" });
     if (row.kind === "more") {
       void this.app.navigation.choose({ op: "expand_list", id: nav.section.collapseId });
     } else if (row.kind === "workspace") void this.app.navigation.selectWorkspace(row.id, e);
@@ -137,61 +125,6 @@ export class AppSidebar {
       if (session) this.app.navigation.openChat(session, e);
       if (sel.agent) this.app.panes.focusPane(sel.agent);
     } else if (sel.chat) this.app.navigation.openChat(sel.chat, e);
-  }
-
-  /** Every chat the tree lists, across projects, in the order the user dragged them; a new chat goes
-   *  on top. Activity does not move a row. */
-  recentList(): RecentChat[] {
-    const m = this.app.recentMemo;
-    if (m && m.tree === this.app.tree && m.snapshot === this.app.snapshot) return m.list;
-    const stored = this.recentOrder();
-    const { list, order } = inOrder(recentWork(this.app.tree, this.app.snapshot, Infinity), stored);
-    if (order !== stored) writeStore(RECENT_ORDER, JSON.stringify(order));
-    this.app.recentMemo = { tree: this.app.tree, snapshot: this.app.snapshot, list };
-    return list;
-  }
-
-  private recentOrder(): string[] {
-    try {
-      const v = JSON.parse(readStore(RECENT_ORDER) ?? "[]");
-      return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-    } catch {
-      return [];
-    }
-  }
-
-  /** A Recent row dropped on another: it takes that row's place. */
-  dropRecent(session: string, target: string) {
-    const order = this.recentOrder().filter((id) => id !== session);
-    const i = order.indexOf(target);
-    if (i < 0) return;
-    const from = this.recentList().findIndex((r) => r.session === session);
-    const to = this.recentList().findIndex((r) => r.session === target);
-    // Dragged down, it lands after the target; dragged up, before it.
-    order.splice(from < to ? i + 1 : i, 0, session);
-    writeStore(RECENT_ORDER, JSON.stringify(order));
-    this.app.recentMemo = null;
-    this.app.notify();
-  }
-
-  moveRecent(to: number | "home" | "end", e?: KeyboardEvent) {
-    const list = this.recentList();
-    if (!list.length) return;
-    const i = list.findIndex((r) => r.session === this.app.recentSelected);
-    const next = to === "home" ? 0 : to === "end" ? list.length - 1 : Math.max(0, Math.min(list.length - 1, i + to));
-    const id = list[next].session;
-    if (id === this.app.recentSelected) return;
-    this.app.recentSelected = id;
-    this.app.notify();
-    const row = () => document.querySelector<HTMLElement>(`[data-testid="recent-row"][data-session="${CSS.escape(id)}"]`);
-    whenPainted(() => row() !== null, () => row()?.focus());
-    if (e) measure("key", id, e.timeStamp, () => this.app.recentSelected !== id || row()?.getAttribute("aria-selected") === "true");
-  }
-
-  /** A click on a Recent row: it becomes the keyboard row, and its chat opens. */
-  clickRecent(session: string) {
-    this.app.recentSelected = session;
-    this.app.navigation.openChat(session);
   }
 
   /** Pin from the menu or a drop on Pinned; a folded Pinned header opens to show it. */
@@ -213,29 +146,6 @@ export class AppSidebar {
     this.app.rows = navRows(name === "archived" ? this.app.archivedTree : this.app.tree, this.app.folds);
     this.app.notify();
     void this.app.navigation.refreshSnapshot();
-  }
-
-  /** ⌥⌘1 Workspaces, ⌥⌘2 Recent. The list takes the keyboard, on the open chat's row. */
-  setSidebarView(n: number) {
-    if (n < 1 || n > SIDEBAR_VIEWS.length) return;
-    this.focusView = n;
-    if (n !== this.app.sidebarView) {
-      this.app.sidebarView = n;
-      writeStore(SIDEBAR_VIEW_KEY, String(n));
-      if (n === 2) this.app.recentSelected = this.app.openId ?? this.recentList()[0]?.session ?? null;
-      this.app.notify();
-    }
-    this.focusRequestedView();
-  }
-
-  /** A new list takes focus during its layout commit, before the next key can reach the old input. */
-  focusRequestedView() {
-    if (this.focusView !== this.app.sidebarView) return;
-    const list = this.focusView === 2 ? '[data-testid="recent"]' : '[data-testid="sidebar"]';
-    const target = document.querySelector<HTMLElement>(`${list} [tabindex="0"]`) ?? document.querySelector<HTMLElement>(list);
-    if (!target) return;
-    this.focusView = null;
-    target.focus();
   }
 
   /** The sessions of the picked chat rows that the tree still lists. */

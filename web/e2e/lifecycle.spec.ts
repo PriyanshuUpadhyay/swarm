@@ -1,7 +1,21 @@
 import { expect, test } from "@playwright/test";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import type { Page } from "@playwright/test";
+import type { TreeView } from "../src/core/nav";
 import { api, header, open, readTree, server, shoot, workspace } from "./lifecycle-helpers";
+
+const catalog = () => api<TreeView>("/api/tree?view=workspaces");
+const chatIn = async (title: string) => {
+  const session = async () => {
+    const tree = await catalog();
+    const project = tree.projects.find((p) => p.title === title);
+    return tree.chats.find((r) => tree.workspaces[r.selection?.workspace ?? ""]?.projectPath === project?.path)?.selection?.chat;
+  };
+  await expect.poll(session).toBeTruthy();
+  return (await session())!;
+};
+const chatRow = (page: Page, session: string) => page.locator(`[data-testid="tree-row"][data-session="${session}"]`);
 
 // New workspace in each mode, setup script output, switch model cancel, archive and delete, and
 // Recently closed (S3), plus the four V1 fixes. Both browsers share one server home, so each case
@@ -9,7 +23,7 @@ import { api, header, open, readTree, server, shoot, workspace } from "./lifecyc
 
 test("Archive chat offers Undo, ⇧⌘T restores its chat, and an empty reopen list opens Archived chats", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
+  const session = await chatIn("ws-edit");
   const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
   try {
     await row.click({ button: "right" });
@@ -38,8 +52,7 @@ test("Archive chat offers Undo, ⇧⌘T restores its chat, and an empty reopen l
 test("⌘-click picks two chats, and the row menu archives both at once", async ({ page: tab }) => {
   const errors = await open(tab);
   // Two chats with ended chairs, so no other case loses a live agent.
-  const chatOf = (ws: string) => workspace(tab, ws).locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session");
-  const sessions = [(await chatOf("ws-build"))!, (await chatOf("ws-edit"))!];
+  const sessions = await Promise.all([chatIn("ws-build"), chatIn("ws-edit")]);
   const rows = sessions.map((s) => tab.locator(`[data-testid="tree-row"][data-session="${s}"]`));
   try {
     await rows[0].click({ modifiers: ["Meta"] });
@@ -59,36 +72,24 @@ test("⌘-click picks two chats, and the row menu archives both at once", async 
   expect(errors).toEqual([]);
 });
 
-test("an archived chat folds under its workspace, and Unarchive opens it again", async ({ page: tab }) => {
+test("Archive opens the archived chat list and restores its chat", async ({ page: tab }) => {
   const errors = await open(tab);
-  const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
-  const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
-  const archived = tab.locator(`[data-testid="tree-row"][data-id="archived-chat:${session}"]`);
+  const session = await chatIn("ws-edit");
+  const row = chatRow(tab, session);
   try {
     await row.click({ button: "right" });
     await tab.getByRole("menuitem", { name: "Archive chat" }).click();
     await expect(row).toBeHidden();
-    const fold = workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='archived']").first();
-    await expect(fold).toHaveText(/Archived · \d+/);
-    // The other browser's run can leave the fold open in the shared choices.
-    if ((await fold.getAttribute("aria-expanded")) === "true") await fold.click();
-    await expect(fold).toHaveAttribute("aria-expanded", "false");
-    await expect(archived).toHaveCount(0);
-    await fold.click();
+    await tab.getByTestId("archive-toggle").click();
+    await tab.getByRole("button", { name: "Archived chats…" }).click();
+    const archived = tab.locator(`[data-testid="closed-chat"][data-session="${session}"]`);
     await expect(archived).toBeVisible();
-    // A click on the row only selects it; the button unarchives.
-    await archived.click();
-    await expect(archived).toBeVisible();
-    await archived.click({ button: "right" });
-    await expect(tab.getByRole("menuitem", { name: "Unarchive chat" })).toBeVisible();
-    await tab.keyboard.press("Escape");
-    // After a long run, headless WebKit hit-tests this scrolled sidebar at stale positions, so a
-    // pointer click lands on the tree; the click goes to the button itself.
-    await archived.hover();
-    await archived.locator('[data-action="unarchive"]').dispatchEvent("click");
-    await expect(row).toBeVisible();
+    await archived.focus();
+    await archived.press("Enter");
     await expect(archived).toHaveCount(0);
     await expect(tab.locator(`[data-testid="transcript"][data-chat="${session}"][data-state="ready"]`)).toBeVisible();
+    await tab.getByTestId("archive-toggle").click();
+    await expect(row).toBeVisible();
   } finally {
     const { sessions } = await api<{ sessions: { id: string }[] }>("/api/sessions/archived");
     if (sessions.some((s) => s.id === session)) await api("/api/sessions/unarchive", { ids: [session] });
@@ -98,7 +99,7 @@ test("an archived chat folds under its workspace, and Unarchive opens it again",
 
 test("A chat whose chair has no pane shows only its log, and Continue chat opens Switch model", async ({ page: tab }) => {
   const errors = await open(tab);
-  const session = (await workspace(tab, "ws-edit").locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
+  const session = await chatIn("ws-edit");
   await tab.locator(`[data-testid="tree-row"][data-session="${session}"]`).click();
   await expect(tab.locator(`[data-testid="transcript"][data-chat="${session}"][data-state="ready"]`)).toBeVisible();
   await expect(tab.getByTestId("composer")).toHaveCount(0);
@@ -193,10 +194,12 @@ test("Create Project on an existing folder offers Import, Import asks about a pl
   await expect(dialog.getByTestId("import-choice")).toContainText("not a Git repository");
   await dialog.getByRole("button", { name: "Use as a plain folder" }).click();
   await expect(dialog).toBeHidden();
-  // A plain folder has no header: its one workspace row stands for the project.
-  const project = workspace(tab, `plain-${info.project.name}`);
+  const project = header(tab, `plain-${info.project.name}`);
+  const others = tab.locator('[data-kind="more-projects"]');
+  await expect(others).toBeVisible();
+  if ((await others.getAttribute("aria-expanded")) === "false") await others.click();
   await expect(project).toBeVisible();
-  await expect(header(tab, `plain-${info.project.name}`)).toHaveCount(0);
+  await expect(workspace(tab, `plain-${info.project.name}`)).toHaveCount(0);
 
   await project.click({ button: "right" });
   await tab.getByRole("menuitem", { name: "Remove Project…" }).click();
@@ -211,7 +214,7 @@ test("Create Project on an existing folder offers Import, Import asks about a pl
 
 test("Shift+F10 and the ContextMenu key open the focused row's menu", async ({ page: tab }) => {
   const errors = await open(tab);
-  const row = workspace(tab, "ws-build");
+  const row = chatRow(tab, await chatIn("ws-build"));
   await row.click();
   for (const key of ["Shift+F10", "ContextMenu"]) {
     await row.focus();
@@ -227,7 +230,7 @@ test("Shift+F10 and the ContextMenu key open the focused row's menu", async ({ p
 
 test("holding ⌘ over a row shows its actions as icons, and releasing ⌘ hides them", async ({ page: tab }) => {
   const errors = await open(tab);
-  const row = workspace(tab, "ws-build");
+  const row = workspace(tab, "ws-tabs");
   const bar = tab.getByTestId("row-bar");
   await expect(tab.getByTestId("row-bar-hint")).toBeVisible();
   // The new chat "+" shows without hover.
@@ -243,9 +246,8 @@ test("holding ⌘ over a row shows its actions as icons, and releasing ⌘ hides
   await tab.keyboard.up("Meta");
   await expect(bar).toBeHidden();
 
-  // The Recent list has the same chat actions, by ⌘ hover and by right click.
-  await tab.getByTestId("view-recent").click();
-  const recent = tab.getByTestId("recent-row").first();
+  // Chats have actions by ⌘ hover and by right click in the same list.
+  const recent = chatRow(tab, await chatIn("ws-build"));
   await recent.hover();
   await tab.keyboard.down("Meta");
   await expect(bar.getByRole("button", { name: "Archive chat" })).toBeVisible();
@@ -254,7 +256,6 @@ test("holding ⌘ over a row shows its actions as icons, and releasing ⌘ hides
   await recent.click({ button: "right" });
   await expect(tab.getByTestId("row-menu").getByRole("menuitem", { name: "Rename chat…" })).toBeVisible();
   await tab.keyboard.press("Escape");
-  await tab.getByTestId("view-workspaces").click();
   expect(errors).toEqual([]);
 });
 
@@ -262,7 +263,7 @@ test("Tab reaches an agent pane's header buttons", async ({ page: tab }, info) =
   const errors = await open(tab);
   // The tree is one Tab stop, and Enter on a focused row button still acts.
   expect(await tab.getByTestId("sidebar").locator("button").evaluateAll((buttons) => buttons.every((button) => button.tabIndex === -1))).toBe(true);
-  await workspace(tab, "ws-build").getByRole("button", { name: "New chat in ws-build", exact: true }).focus();
+  await workspace(tab, "ws-tabs").getByRole("button", { name: "New chat in ws-tabs", exact: true }).focus();
   await tab.keyboard.press("Enter");
   await expect(tab.getByTestId("new-chat-prompt")).toBeFocused();
   await tab.keyboard.press("Escape");
@@ -303,8 +304,7 @@ test("the Search label meets 4.5:1 contrast in both themes", async ({ page: tab 
 
 test("Home's recent rows name the project beside the workspace", async ({ page: tab }) => {
   const errors = await open(tab);
-  const row = workspace(tab, "ws-build");
-  const path = (await row.getAttribute("data-id"))!;
+  const path = (await catalog()).projects.find((p) => p.title === "ws-build")!.path;
   const rename = async (name: string) => {
     const { revision } = await readTree();
     await api("/api/choices", { revision, op: "rename_workspace", workspace: path, name });

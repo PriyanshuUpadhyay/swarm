@@ -232,9 +232,9 @@ test("a chat with no text box offers no Reuse", async ({ page: tab }) => {
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
   // ws-build's chair has no pane, so the chat shows Continue chat in place of the composer.
-  const ws = tab.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ has: tab.locator(".label", { hasText: /^ws-build/ }) });
-  const session = (await ws.locator("xpath=following-sibling::*[@data-kind='chat']").first().getAttribute("data-session"))!;
-  await tab.locator(`[data-testid="tree-row"][data-session="${session}"]`).click();
+  const project = tab.locator('[data-testid="tree-row"][data-kind="project"]').filter({ hasText: "ws-build" });
+  if ((await project.getAttribute("aria-expanded")) === "false") await project.click();
+  await tab.locator('[data-testid="tree-row"][data-kind="chat"]').filter({ hasText: "Check the worker inbox and fix the failing build." }).first().click();
   await expect(tab.getByTestId("continue-chat")).toBeVisible();
   const userRow = tab.locator('[data-testid="row"][data-kind="user"]').first();
   await expect(userRow).toBeVisible();

@@ -1,7 +1,7 @@
 import { ApiError } from "./api";
 import { measure, type PerfKind } from "./perf";
 import { chatPath, resolveChat, shortId } from "./route";
-import { chatRows, currentRow, navRows, shareTree, workspaceOf, type ChoiceOp, type Tab, type Tabs } from "./nav";
+import { chatRows, currentRow, navRows, shareTree, workspaceOf, workspaceRow, type ChoiceOp, type Tab, type Tabs } from "./nav";
 import { message, markable } from "./app-types";
 import type { App } from "./app";
 
@@ -102,7 +102,7 @@ export class AppNavigation {
         }
       }
     }
-    if (!this.app.selected || !this.app.rows.some((r) => r.id === this.app.selected)) this.app.selected = currentRow(this.app.rows, this.app.openId, this.app.workspace) ?? this.app.rows[0]?.id ?? null;
+    if (!this.app.selected || !this.app.rows.some((r) => r.id === this.app.selected)) this.app.selected = currentRow(this.app.rows, this.app.openId, this.app.workspace, this.app.treeName === "workspaces" ? tree : null) ?? this.app.rows[0]?.id ?? null;
     // A picked chat that left the tree (archived, ended elsewhere) must not come back picked.
     const kept = new Set(this.app.rows.filter((r) => this.app.marked.has(r.id) && markable(r)).map((r) => r.id));
     if (kept.size !== this.app.marked.size) this.app.marked = kept;
@@ -110,14 +110,15 @@ export class AppNavigation {
       this.app.restored = true;
       const asked = this.app.urlChat && resolveChat(this.app.urlChat, this.app.chatIds());
       if (this.app.urlChat && !asked) this.app.notice("This chat link is unavailable. The chat may be archived or removed.", true);
-      const row = tree.sections.flatMap((s) => s.rows).find((r) => r.id === tree.selectedRow);
+      const row = chatRows(tree).find((r) => r.id === tree.selectedRow) ??
+        tree.sections.flatMap((s) => s.rows).find((r) => r.id === tree.selectedRow);
       if (asked && !this.app.openId) {
         this.openChat(asked);
         void this.refreshSnapshot();
-      } else if (row && !this.app.openId && !this.app.workspace) {
-        if (row.selection?.chat) this.openChat(row.selection?.chat, undefined, { write: false });
-        else if (row.kind === "workspace") this.app.workspace = row.id;
-        void this.refreshSnapshot();
+      } else if (!this.app.openId && !this.app.workspace) {
+        if (row?.selection?.chat) this.openChat(row.selection.chat, undefined, { write: false });
+        else if (tree.selectedRow && workspaceRow(tree, tree.selectedRow)) this.app.workspace = tree.selectedRow;
+        if (this.app.workspace) void this.refreshSnapshot();
       }
     }
     const tabs = this.app.tabs;
@@ -319,14 +320,13 @@ export class AppNavigation {
     const kind: PerfKind = this.app.lru.includes(sessionId) ? "switch" : "open";
     if (this.app.openId !== sessionId) this.app.panes.leavePanes(sessionId);
     this.app.openId = sessionId;
-    if (this.app.sidebarView === 2 && this.app.recentSelected === null) this.app.recentSelected = sessionId;
     const workspace = workspaceOf(this.app.tree, this.app.snapshot, sessionId);
     const moved = workspace !== null && workspace !== this.app.workspace;
     if (workspace) this.app.workspace = workspace;
     // A restore leaves the keyboard row where it was.
     this.keyboardFollow = null;
     if (opts.write !== false) {
-      const row = currentRow(this.app.rows, sessionId, this.app.workspace);
+      const row = currentRow(this.app.rows, sessionId, this.app.workspace, this.app.treeName === "workspaces" ? this.app.tree : null);
       if (row !== null) {
         this.app.selected = row;
         this.keyboardFollow = { session: sessionId, row };
@@ -334,7 +334,8 @@ export class AppNavigation {
     }
     if (workspace && this.app.revision !== null && opts.write !== false) {
       // Open the tab before selecting it. Only a workspace change opens its project.
-      const section = this.app.tree?.sections.find((s) => s.rows.some((r) => r.id === workspace));
+      const project = workspaceRow(this.app.tree, workspace)?.projectPath;
+      const section = this.app.tree?.sections.find((s) => s.path === project || s.rows.some((r) => r.selection?.workspace === workspace));
       if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
       void this.choose({ op: "open_tab", workspace, chat: sessionId });
       void this.choose({ op: "selected_chat", workspace, chat: sessionId, recording_history: opts.history !== false });
@@ -351,9 +352,12 @@ export class AppNavigation {
     if (e) measure(kind, sessionId, e.timeStamp, () => this.app.reading.transcriptPainted(sessionId));
   }
 
-  /** ⌃⌘↓ / ⌃⌘↑ go to the next or previous workspace row in the sidebar, wrapping. */
+  /** ⌃⌘↓ / ⌃⌘↑ go to the next or previous workspace, wrapping. */
   stepWorkspace(delta: number, e?: KeyboardEvent) {
-    const list = navRows(this.app.tree, this.app.folds).filter((r) => r.kind === "workspace").map((r) => r.id);
+    const tree = this.app.tree;
+    if (!tree) return;
+    const paths = this.app.rows.flatMap((r) => r.row?.selection?.workspace ? [r.row.selection.workspace] : []);
+    const list = [...new Set([...paths, ...Object.keys(tree.workspaces)])].filter((path) => workspaceRow(tree, path)?.archived === false);
     if (!list.length) return;
     const i = this.app.workspace ? list.indexOf(this.app.workspace) : -1;
     const next = i < 0 ? (delta < 0 ? list.length - 1 : 0) : (i + delta + list.length) % list.length;

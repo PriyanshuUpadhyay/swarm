@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { existsSync, realpathSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, realpathSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { ISSUES } from "./serve";
-import { api, compose, header, holdChatStart, open, shoot, workspace } from "./lifecycle-helpers";
+import { api, compose, header, holdChatStart, open, shoot } from "./lifecycle-helpers";
 
 // The cases share one server home with every spec, and a repeat finds the workspaces of the run
 // before, so each name carries the browser and the repeat.
@@ -23,6 +24,8 @@ const setScript = async (tab: Page, script: string) => {
 
 test("⌘Enter makes a worktree named from the prompt and shows each start step and the setup output", async ({ page: tab }, info) => {
   const errors = await open(tab);
+  const inactive = tab.locator('[data-kind="more-projects"]');
+  if (await inactive.count() && (await inactive.getAttribute("aria-expanded")) === "false") await inactive.click();
   const b = runName(info);
   const branch = `swarm/fix-flaky-smoke-${b}`;
   // The marker file holds the script until the case lets it fail, so the live output shows first.
@@ -67,6 +70,8 @@ test("⌘Enter makes a worktree named from the prompt and shows each start step 
 
 test("the place menu sends a branch, a pull request or an issue as the chat's place", async ({ page: tab }, info) => {
   const errors = await open(tab);
+  const inactive = tab.locator('[data-kind="more-projects"]');
+  if (await inactive.count() && (await inactive.getAttribute("aria-expanded")) === "false") await inactive.click();
   const bodies = await holdChatStart(tab);
   const b = runName(info);
   execFileSync("git", ["-C", ghProject(), "branch", `topic-${b}`]);
@@ -115,13 +120,30 @@ test("the place menu sends a branch, a pull request or an issue as the chat's pl
 test("archive asks while agents run and restores; delete asks and removes the folder", async ({ page: tab }, info) => {
   const b = runName(info);
   // proj-pr's main is on its origin, so a fresh branch there has nothing unpushed and may be deleted.
-  await api("/api/workspace/new", { project: realpathSync(join(process.env.SWARM_E2E_DIR!, "proj-pr")), name: `arch-${b}`, mode: "new-branch" });
+  const { workspace: path } = await api<{ workspace: string }>("/api/workspace/new", {
+    project: realpathSync(join(process.env.SWARM_E2E_DIR!, "proj-pr")), name: `arch-${b}`, mode: "new-branch",
+  });
+  // An empty worktree has no sidebar row. Give it one ended fixture chat.
+  const home = process.env.SWARM_E2E_HOME!;
+  const chair = randomUUID();
+  const logs = join(home, ".claude/projects/e2e");
+  const log = join(logs, `${chair}.jsonl`);
+  copyFileSync(join(import.meta.dirname, "../../tests/fixtures/provider-logs/claude-edit.jsonl"), log);
+  const session = execFileSync(process.env.SWARM_E2E_SWARM!, ["session", "new", "lane", "--chair", `claude:${chair}`], {
+    cwd: path, env: { PATH: process.env.PATH, HOME: home, SWARM_HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude") },
+  }).toString().trim().split("\n").pop()!;
+  const sql = (value: string) => `'${value.replaceAll("'", "''")}'`;
+  execFileSync("sqlite3", [join(home, ".swarm/swarm.db"), `
+    UPDATE session SET adapter = 'tmux-swarm' WHERE id = ${sql(session)};
+    INSERT INTO agent (id, session_id, role, provider, created_at, log)
+    VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});
+  `]);
   const errors = await open(tab);
-  const row = workspace(tab, `arch-${b}`);
+  const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
+  const archived = tab.locator(`[data-testid="tree-row"][data-id="${path}"]`);
   await expect(row).toBeVisible();
-  const path = (await row.getAttribute("data-id"))!;
   const menu = async (item: string) => {
-    await tab.locator(`[data-testid="tree-row"][data-id="${path}"]`).click({ button: "right" });
+    await (item === "Restore workspace" ? archived : row).click({ button: "right" });
     await tab.getByRole("menuitem", { name: item }).click();
   };
 
@@ -149,7 +171,8 @@ test("archive asks while agents run and restores; delete asks and removes the fo
   await shoot(tab, "delete-confirm", info.project.name);
   await confirm.getByTestId("confirm-action").click();
   await expect(confirm).toBeHidden();
-  await expect(row).toBeHidden();
   expect(existsSync(path)).toBe(false);
+  await api("/api/sessions/archive", { ids: [session] });
+  await expect(row).toBeHidden();
   expect(errors).toEqual([]);
 });

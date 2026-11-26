@@ -1,12 +1,11 @@
 // A row's actions, for its right-click menu and for the ⌘ bar that shows them as icons while ⌘ is
-// held over the row. The tree and the Recent list share them, so the two cannot drift.
+// held over the row.
 
 import { ArchiveIcon, ArchiveRestoreIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, FolderMinusIcon, MessageSquareIcon, PinIcon, PinOffIcon, PencilIcon, PlusIcon, SquareIcon, TerminalIcon, Trash2Icon, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { App } from "../core/app";
-import { archivedSession, type NavRow } from "../core/nav";
+import { archivedSession, workspaceRow, type NavRow } from "../core/nav";
 import { canStartIn } from "../core/new-chat";
-import { ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "../components/ui/context-menu";
 import { copyText as copy } from "./copy";
 
 export const ROW = '[data-testid="tree-row"]';
@@ -41,41 +40,46 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
       SEP,
       fold,
     ];
-  } else if (!r && row.kind === "pinned") list = [fold];
+  } else if (!r) list = [fold];
   else if (r?.kind === "archived-chat") list = [{ label: "Unarchive chat", icon: ArchiveRestoreIcon, run: () => app.unarchive(archivedSession(r.id)) }];
-  else if (r?.kind === "chat" && !r.archived) list = chatActions(app, r.selection?.chat ?? undefined, fold);
-  else if (r?.kind === "workspace" && (r.archived || archive))
+  else if (r?.kind === "chat" && !r.archived) {
+    list = chatActions(app, r.selection?.chat ?? undefined, fold);
+    const path = r.selection?.workspace;
+    // A single chat stands for its workspace, so the same workspace actions are in its menu.
+    if (!r.parentId && path) list.push(SEP, ...workspaceActions(app, path, row, true));
+  } else if (r?.kind === "workspace" && (r.archived || archive)) {
     list = [
       { label: "Restore workspace", icon: ArchiveRestoreIcon, run: () => app.life.restoreWorkspace(r.id) },
       { label: "Remove worktree…", icon: Trash2Icon, run: () => void app.life.deleteWorkspace(r.id) },
     ];
-  else if (r?.kind === "workspace") {
-    const up = app.workspaceMoveTarget(r.id, -1);
-    const down = app.workspaceMoveTarget(r.id, 1);
-    list = [
-      { label: "New Chat…", icon: PlusIcon, disabled: !r.newChatEnabled, run: () => app.newChat.open(r.id) },
-      r.pinned
-        ? { label: "Unpin workspace", icon: PinOffIcon, run: () => void app.choose({ op: "unpin", workspace: r.id }) }
-        : { label: "Pin workspace", icon: PinIcon, run: () => void app.pin(r.id) },
-      { label: "Rename workspace…", icon: PencilIcon, run: () => app.renameWorkspace(r.id) },
-      { label: "Move Up", disabled: !up, run: () => up && void app.choose({ op: "reorder_workspace", workspace: r.id, target: up }) },
-      { label: "Move Down", disabled: !down, run: () => down && void app.choose({ op: "reorder_workspace", workspace: r.id, target: down }) },
-      { label: "Archive workspace", icon: ArchiveIcon, run: () => void app.life.archiveWorkspace(r.id) },
-      { label: "Remove worktree…", icon: Trash2Icon, run: () => void app.life.deleteWorkspace(r.id) },
-      r.missing && { label: "Prune worktree…", run: () => void app.life.pruneWorkspace(r.id, row.section.title) },
-      // A folder has no header, so its project menu item is here.
-      row.section.folder && { label: "Remove Project…", icon: FolderMinusIcon, run: () => app.life.removeProject(row.section.path ?? "", row.section.title) },
-      SEP,
-      fold,
-      { label: "Copy path", icon: CopyIcon, run: () => void copy(r.id, "path") },
-    ];
+  } else if (r?.kind === "workspace") {
+    list = [...workspaceActions(app, r.id, row), SEP, fold, { label: "Copy path", icon: CopyIcon, run: () => void copy(r.id, "path") }];
   }
   // Drop the gaps, then any separator with nothing on one side of it.
   const out = list.filter((a): a is RowAction | typeof SEP => !!a);
   return out.filter((a, i) => a !== SEP || (i > 0 && i < out.length - 1 && out[i - 1] !== SEP));
 }
 
-/** A chat's actions, in the tree and in the Recent list. */
+function workspaceActions(app: App, path: string, row: NavRow, menuOnly = false): (RowAction | false)[] {
+  const facts = workspaceRow(app.view.tree, path);
+  const up = !menuOnly && app.workspaceMoveTarget(path, -1);
+  const down = !menuOnly && app.workspaceMoveTarget(path, 1);
+  return [
+    { label: "New Chat…", icon: PlusIcon, disabled: !facts?.newChatEnabled, menuOnly, run: () => app.newChat.open(path) },
+    row.row?.pinned
+      ? { label: "Unpin workspace", icon: PinOffIcon, menuOnly, run: () => void app.choose({ op: "unpin", workspace: path }) }
+      : { label: "Pin workspace", icon: PinIcon, menuOnly, run: () => void app.pin(path) },
+    { label: "Rename workspace…", icon: PencilIcon, menuOnly, run: () => app.renameWorkspace(path) },
+    !menuOnly && { label: "Move Up", disabled: !up, run: () => up && void app.choose({ op: "reorder_workspace", workspace: path, target: up }) },
+    !menuOnly && { label: "Move Down", disabled: !down, run: () => down && void app.choose({ op: "reorder_workspace", workspace: path, target: down }) },
+    { label: "Archive workspace", icon: ArchiveIcon, menuOnly, run: () => void app.life.archiveWorkspace(path) },
+    { label: "Remove worktree…", icon: Trash2Icon, menuOnly, run: () => void app.life.deleteWorkspace(path) },
+    facts?.missing === true && { label: "Prune worktree…", menuOnly, run: () => void app.life.pruneWorkspace(path, row.section.title) },
+    row.section.folder && { label: "Remove Project…", icon: FolderMinusIcon, menuOnly, run: () => app.life.removeProject(row.section.path ?? "", row.section.title) },
+  ];
+}
+
+
 function chatActions(app: App, session: string | undefined, fold: RowAction | false = false): (RowAction | typeof SEP | false)[] {
   return [
     { label: "Rename chat…", icon: PencilIcon, disabled: !session, run: () => session && app.renameChat(session) },
@@ -88,54 +92,12 @@ function chatActions(app: App, session: string | undefined, fold: RowAction | fa
   ];
 }
 
-const RECENT = '[data-testid="recent-row"]';
 type Target = { title: string; actions: (RowAction | typeof SEP)[] };
 
 export const treeTarget = (app: App) => (el: Element): Target | undefined => {
   const row = rowOf(app, el);
   return row && { title: row.row?.title ?? row.section.title, actions: rowActions(app, row) };
 };
-
-export const recentTarget = (app: App) => (el: Element): Target | undefined => {
-  const session = el.closest<HTMLElement>(RECENT)?.dataset.session;
-  const chat = session && app.view.recent.find((c) => c.session === session);
-  return chat ? { title: chat.title, actions: chatActions(app, session).filter((a): a is RowAction | typeof SEP => !!a) } : undefined;
-};
-
-/** Content for the Recent list's one ContextMenu: the chat under the right click. */
-export function RecentMenu({ app, listRef }: { app: App; listRef: RefObject<HTMLDivElement | null> }) {
-  const [target, setTarget] = useState<Target | null>(null);
-  useEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const onContextMenu = (e: MouseEvent) => {
-      const t = recentTarget(app)(e.target as Element);
-      if (!t) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      setTarget(t);
-    };
-    list.addEventListener("contextmenu", onContextMenu);
-    return () => list.removeEventListener("contextmenu", onContextMenu);
-  }, [app, listRef]);
-  if (!target) return null;
-  return (
-    <ContextMenuContent data-testid="row-menu">
-      <ContextMenuLabel className="max-w-[260px] truncate normal-case">{target.title}</ContextMenuLabel>
-      {target.actions.map((a, i) =>
-        a === SEP ? (
-          <ContextMenuSeparator key={i} />
-        ) : (
-          <ContextMenuItem key={i} disabled={a.disabled} onSelect={a.run}>
-            {a.icon && <a.icon />} {a.label}
-          </ContextMenuItem>
-        ),
-      )}
-    </ContextMenuContent>
-  );
-}
 
 /** While ⌘ (or Ctrl) is held, the hovered row's actions show as icons over its right end. Like the
  *  other overlays it lives once per list; it sits inside the list so moving onto it keeps the row. */
