@@ -360,7 +360,7 @@
   font-size: var(--text-xs);
   line-height: 18px;
   @apply rounded-full;
-  color: var(--brand-foreground);
+  color: var(--background);
   background: var(--status-done);
 }
 .pr-state.draft,
