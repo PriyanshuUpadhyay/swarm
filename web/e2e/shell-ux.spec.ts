@@ -179,10 +179,9 @@ test("/ in the composer's prompt lists the CLI's skills with their descriptions,
   await expect(composer.getByTestId("slash-menu")).toHaveCount(0);
 });
 
-test("New Chat… in the Add project menu leaves the focus in the composer's prompt", async ({ page }) => {
+test("New chat in the sidebar leaves the focus in the composer's prompt", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "Add project" }).click();
-  await page.getByRole("menuitem", { name: "New Chat…" }).click();
+  await page.getByTestId("sidebar-head").getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page.locator(":focus")).toHaveAttribute("data-testid", "new-chat-prompt");
 });
 

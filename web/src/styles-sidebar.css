@@ -221,19 +221,17 @@
   background: var(--foreground);
 }
 
-/* Sidebar header: jean's search field and its Projects / Recent switch. */
 .search-box {
   display: flex;
-  flex: 1;
+  flex: none;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 26px;
-  margin: 0 4px;
-  padding: 0 6px;
+  height: 32px;
+  padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: transparent;
+  border-radius: var(--radius-lg);
+  background: var(--background);
   font-size: var(--text-sm);
   /* Muted, not faint: an enabled label needs 4.5:1 in both themes. */
   color: var(--muted-foreground);

@@ -20,9 +20,16 @@ async function open(tab: Page) {
   return errors;
 }
 
+async function openSkills(page: Page) {
+  await page.getByRole("button", { name: "Command palette" }).click();
+  const palette = page.getByTestId("palette");
+  await palette.getByRole("combobox").fill("Skills");
+  await palette.getByRole("option", { name: "Skills…" }).click();
+}
+
 test("the Blocks page shows the run tree of a starting plan beside the library, and a library pick finds the block in the tree", async ({ page }, info) => {
   const errors = await open(page);
-  await page.getByTestId("skills-button").click();
+  await openSkills(page);
   const dialog = page.getByTestId("skills");
   const tree = page.getByTestId("skills-tree");
   await expect(dialog).toBeVisible();
@@ -71,7 +78,7 @@ test("the Blocks page shows the run tree of a starting plan beside the library, 
 
 test("the Composer shows live text and graph, and Copy waits for Python to pass the exact text", async ({ page }, info) => {
   const errors = await open(page);
-  await page.getByTestId("skills-button").click();
+  await openSkills(page);
   await page.getByTestId("skills-view-composer").click();
   const copy = page.getByTestId("draft-copy");
   const text = page.getByTestId("draft-text");
@@ -118,7 +125,7 @@ test("the Composer shows live text and graph, and Copy waits for Python to pass 
 
 test("a new skill copies a whole SKILL.md", async ({ page }) => {
   const errors = await open(page);
-  await page.getByTestId("skills-button").click();
+  await openSkills(page);
   await page.getByTestId("skills-view-composer").click();
   await page.getByTestId("draft-from").selectOption("");
   await page.getByTestId("draft-name").fill("triage");
