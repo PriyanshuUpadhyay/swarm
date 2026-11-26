@@ -217,7 +217,7 @@ fn land(root: &Path, wt: &Path, request: &Path) -> Result<(String, String), Stri
 
 fn next(branch: &str, pr: bool) -> String {
     if pr {
-        "the worktree stays; after the PR merges, ask the owner, and after approval run `swarm task sweep --apply` from another folder of the hub (`swarm task drop` refuses until the branch is in the default branch)".into()
+        "the worktree stays; after the PR merges, ask the owner, and after approval run `swarm task sweep --apply` from another folder of the hub (`swarm task drop` refuses a squash or rebase merge; only the owner can run it with `--force`)".into()
     } else {
         format!(
             "the worktree stays; ask the owner, and after approval run `swarm task drop {branch}`"
