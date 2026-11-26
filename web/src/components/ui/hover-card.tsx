@@ -17,7 +17,7 @@ function HoverCardContent({ className, align = "start", sideOffset = 6, ...props
         data-slot="hover-card-content"
         align={align}
         sideOffset={sideOffset}
-        className={cn("z-50 w-72 rounded-xl border border-border-strong bg-popover p-3 text-sm text-popover-foreground shadow-panel outline-none", className)}
+        className={cn("z-50 w-72 rounded-xl border border-border bg-popover p-3 text-sm text-popover-foreground shadow-2 outline-none", className)}
         {...props}
       />
     </HoverCardPrimitive.Portal>

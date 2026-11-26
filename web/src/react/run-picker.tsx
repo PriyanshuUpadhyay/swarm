@@ -157,7 +157,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
                   onClick={() => setDraft({ ...draft, effort: l })}
                 >
                   {levelWord(l)}
-                  {l === defaultLevel && <span className="text-[10px] opacity-70">default</span>}
+                  {l === defaultLevel && <span className="text-xs opacity-70">default</span>}
                 </button>
               ))}
             </div>
@@ -207,5 +207,5 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
 
 /** A radio mark for a pick row; the row's aria-pressed carries the state. */
 function Radio({ on }: { on: boolean }) {
-  return <span aria-hidden className={`size-3 shrink-0 rounded-full border ${on ? "border-[4px] border-foreground" : "border-border-strong"}`} />;
+  return <span aria-hidden className={`size-3 shrink-0 rounded-full border ${on ? "border-[4px] border-foreground" : "border-border"}`} />;
 }

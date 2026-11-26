@@ -102,7 +102,7 @@ function RowBody(ctx: Ctx) {
     return (
       <div className="divider">
         <span>{row.text}</span>
-        {row.detail && <span className="text-faint-foreground">{row.detail}</span>}
+        {row.detail && <span className="text-muted-foreground">{row.detail}</span>}
       </div>
     );
   if (row.system_kind === "working")

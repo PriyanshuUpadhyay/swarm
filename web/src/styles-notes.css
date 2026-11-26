@@ -9,15 +9,15 @@
   @apply rounded-full;
   background: var(--status-waiting);
   color: var(--background);
-  font: 600 11px/1 var(--ui-font);
+  font: 600 var(--text-xs)/1 var(--ui-font);
 }
 .ncard {
   margin: 4px 0 12px;
   max-width: 70ch;
   padding: 8px 10px 10px;
-  font-size: 13px;
+  font-size: var(--text-base);
   background: var(--surface);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
 }
 .ncard:focus-within {
@@ -35,13 +35,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--muted-foreground);
 }
 .nquote {
   margin: 0;
   padding-left: 8px;
-  border-left: 3px solid var(--border-strong);
+  border-left: 3px solid var(--border);
   color: var(--muted-foreground);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -59,14 +59,14 @@
   padding: 6px 8px;
   resize: vertical;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-base);
   color: var(--foreground);
   background: var(--background);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
 .ncard textarea::placeholder {
-  color: var(--faint-foreground);
+  color: var(--muted-foreground);
 }
 .ncard textarea:focus-visible {
   outline: 2px solid var(--ring);
@@ -94,7 +94,7 @@
   margin: 6px 0 2px;
   padding: 8px 10px;
   overflow: auto;
-  font: 12px/18px var(--code-font);
+  font: var(--text-sm)/18px var(--code-font);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   background: var(--code);
@@ -111,10 +111,10 @@
   z-index: 3;
   padding: 1px 10px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted-foreground);
   background: var(--background);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   @apply rounded-full;
 }
 /* The find bar spans the top of the list; the pill gives way, so it never covers the bar's
@@ -137,11 +137,11 @@
   right: 28px;
   padding: 1px 8px;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 16px;
   color: var(--muted-foreground);
   background: var(--background);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   @apply rounded-full;
 }
 .annotating .whole-reply {
@@ -187,7 +187,7 @@
   @apply rounded-full;
   background: var(--status-waiting);
   color: var(--background);
-  font: 600 11px/18px var(--ui-font);
+  font: 600 var(--text-xs)/18px var(--ui-font);
   text-align: center;
   pointer-events: none;
 }

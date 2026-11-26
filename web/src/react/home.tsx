@@ -189,7 +189,7 @@ function AskBody({ app }: { app: App }) {
         value={name}
         onChange={(e) => setName(e.target.value)}
         onFocus={(e) => e.target.select()}
-        className="h-8 rounded-md border border-border-strong bg-background px-2 outline-none focus:border-ring"
+        className="h-8 rounded-md border border-border bg-background px-2 outline-none focus:border-ring"
       />
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={() => app.ask(null)}>

@@ -65,7 +65,7 @@ function Card({ step, duty, at, selected, onSelect }: { step: GraphStep; duty: S
       <span className="mt-1 block [overflow-wrap:anywhere] text-muted-foreground">{step.holds}</span>
       <span className="mt-1.5 flex flex-wrap gap-1">
         {step.blocks.map((b, i) => (
-          <span key={i} className="rounded bg-code px-1 font-mono text-[11px] text-foreground" data-duty={duty.has(b) || undefined} title={duty.has(b) ? "duty: the plan check refuses a plan without it" : undefined}>
+          <span key={i} className="rounded bg-code px-1 font-mono text-xs text-foreground" data-duty={duty.has(b) || undefined} title={duty.has(b) ? "duty: the plan check refuses a plan without it" : undefined}>
             {b}
             {duty.has(b) && <span className="ml-1 font-sans text-muted-foreground">duty</span>}
           </span>
@@ -76,14 +76,14 @@ function Card({ step, duty, at, selected, onSelect }: { step: GraphStep; duty: S
   if (!at) return <div className={`${CARD} border-border`}>{body}</div>;
   if (!onSelect)
     return (
-      <div className={`${CARD} absolute border-border-strong`} style={at} data-step={step.file}>
+      <div className={`${CARD} absolute border-border`} style={at} data-step={step.file}>
         {body}
       </div>
     );
   return (
     <button
       type="button"
-      className={`${CARD} absolute ${selected ? "border-ring ring-1 ring-ring" : "border-border-strong hover:border-ring"} focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none`}
+      className={`${CARD} absolute ${selected ? "border-ring ring-1 ring-ring" : "border-border hover:border-ring"} focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none`}
       style={at}
       data-step={step.file}
       aria-pressed={selected}

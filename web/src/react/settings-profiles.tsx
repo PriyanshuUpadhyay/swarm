@@ -173,7 +173,7 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
         const extras = (["sandbox", "approval", "permission"] as const).filter((k) => r[k]).map((k) => `${k}=${r[k]}`);
         return (
           <div key={i} className="flex flex-wrap items-center gap-1.5" data-testid="runner">
-            <span className="w-4 text-xs text-faint-foreground">{i + 1}</span>
+            <span className="w-4 text-xs text-muted-foreground">{i + 1}</span>
             <select
               className={FIELD}
               aria-label={`Runner ${i + 1} provider`}
@@ -205,7 +205,7 @@ function ProfileEditor({ app, profile, done }: { app: App; profile: Profile; don
             <Button size="icon-sm" variant="ghost" aria-label="Remove runner" onClick={() => setRunners(runners.filter((_, j) => j !== i))}>
               <XIcon />
             </Button>
-            {extras.length > 0 && <span className="font-mono text-xs text-faint-foreground">{extras.join(" ")}</span>}
+            {extras.length > 0 && <span className="font-mono text-xs text-muted-foreground">{extras.join(" ")}</span>}
           </div>
         );
       })}

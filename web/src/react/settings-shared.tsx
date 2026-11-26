@@ -5,7 +5,7 @@ import type { App } from "../core/app";
 import { cliName } from "../core/composer";
 import type { SettingsState } from "../core/settings";
 
-const FIELD = "h-8 min-w-0 rounded-md border border-border-strong bg-background px-2 outline-none focus:border-ring disabled:opacity-60";
+const FIELD = "h-8 min-w-0 rounded-md border border-border bg-background px-2 outline-none focus:border-ring disabled:opacity-60";
 const label = cliName;
 
 function useSettings<K extends keyof SettingsState>(app: App, key: K): SettingsState[K] {

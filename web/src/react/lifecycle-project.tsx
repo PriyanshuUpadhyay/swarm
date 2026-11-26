@@ -182,7 +182,7 @@ function SetupScriptBody({ app, project }: { app: App; project: string }) {
         data-testid="setup-script"
         rows={5}
         disabled={script === null || busy}
-        className="w-full resize-y rounded-md border border-border-strong bg-background p-2 font-mono text-sm outline-none focus:border-ring"
+        className="w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-sm outline-none focus:border-ring"
         placeholder="pnpm install"
         value={script ?? ""}
         onChange={(e) => setScript(e.target.value)}

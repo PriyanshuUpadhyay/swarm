@@ -274,7 +274,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
   return (
     <div className={`grid w-full gap-3 ${overlay ? "max-w-[min(960px,calc(100vw-32px))]" : "max-w-[960px] px-4"}`} data-testid="new-chat-composer" data-cwd={target.cwd} data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
       <div className="grid gap-3 min-[1000px]:grid-cols-[1fr_280px]">
-        <div className="grid gap-2 rounded-2xl border border-border-strong bg-popover p-3 shadow-panel has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring">
+        <div className="grid gap-2 rounded-2xl border border-border bg-popover p-3 shadow-2 has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring">
           <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => prompt.change(text.split(path).join("").replace(/  +/g, " "))} />
           <div className="relative grid">
             <textarea
@@ -283,7 +283,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
               data-testid="new-chat-prompt"
               aria-label="First prompt"
               placeholder={`What should this chat do in ${target.title}?`}
-              className="min-h-[96px] w-full resize-none bg-transparent outline-none"
+              className="min-h-[96px] w-full resize-none bg-transparent text-md outline-none"
               aria-expanded={slash.open}
               aria-controls={slash.open ? slash.listId : undefined}
               aria-activedescendant={slash.open && slash.rows.length ? `${slash.listId}-${slash.current}` : undefined}
