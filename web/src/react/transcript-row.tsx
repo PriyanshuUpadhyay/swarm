@@ -82,8 +82,8 @@ function MessageCut({ row, thought, reveal }: { row: Row; thought?: boolean; rev
   </>;
 }
 
-export function isQueued(row?: Row): boolean {
-  return row?.kind === "queued" || row?.system_kind === "queued_prompt";
+function isQueued(row: Row): boolean {
+  return row.kind === "queued" || row.system_kind === "queued_prompt";
 }
 
 // The level each reply is read at, by row id. Rows remount as the transcript scrolls, so a

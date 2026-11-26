@@ -15,7 +15,7 @@ import { setSplit } from "./transcript-output";
 import { setWrap } from "./patch-body";
 import { findLine } from "./patch-find";
 import { paintRanges, textRanges } from "./find-text";
-import { isQueued, LineView } from "./transcript-row";
+import { LineView } from "./transcript-row";
 
 const readingPlaces = new Map<string, { row: string; offset: number; bottom: boolean }>();
 
@@ -50,7 +50,8 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const atBottom = useRef(true);
   const [away, setAway] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
-  const { lines, id: openId, chatState, find } = view;
+  const { lines, id: openId, chatState, find, composer } = view;
+  const canPullBack = composer && composer.agent.pullBack && !composer.agent.disabled && composer.queued > 0;
   const current = find.open ? find.matches[find.index]?.id : undefined;
   const notes = useTranscriptNotes(app, view, scrollRef);
 
@@ -223,7 +224,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
-                      queueStart={isQueued(line.row) && !isQueued(lines[index - 1]?.row)}
+                      queueStart={!!canPullBack && line.row.kind === "queued" && lines[index - 1]?.row.kind !== "queued"}
                     />
                   )}
                 </Virtualizer>

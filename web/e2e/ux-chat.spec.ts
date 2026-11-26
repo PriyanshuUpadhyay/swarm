@@ -225,6 +225,16 @@ test("Continue keeps the prior provider, model and account and supports keyboard
   await expect(tab.getByTestId("sm-start")).toBeEnabled();
 });
 
+test("only an editable queued message gets the Up hint", async ({ page: tab }) => {
+  const taken = { ...row("taken", "already taken"), system_kind: "queued_prompt" };
+  await mockRows(tab, [taken, row("held", "still in the queue", "queued")]);
+  await open(tab);
+  const saved = tab.locator('[data-id="taken"]');
+  await expect(saved).toContainText("already taken");
+  await expect(saved).not.toContainText("to edit queued messages");
+  await expect(tab.locator('[data-id="held"]')).toContainText("to edit queued messages");
+});
+
 test("modified Up keeps queued messages", async ({ page: tab }) => {
   await mockRows(tab, [...Array.from({ length: 60 }, (_, i) => row(`a${i}`, `message ${i} ` + "paragraph ".repeat(35))), row("q99", "queued text", "queued")]);
   let pulls = 0;
