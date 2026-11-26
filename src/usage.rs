@@ -37,6 +37,7 @@ mod codex;
 mod openusage;
 
 pub use cache::*;
+pub(crate) use claude::claude_keychain_service;
 use claude::fresh_claude;
 use codex::fresh_codex;
 pub use openusage::openusage;

@@ -316,8 +316,8 @@ fn load_inner(
                                     .map_err(NativeReadError::from)
                             }),
                     },
-                    _ => claude_identity(&identity_env, deadline)
-                        .map(|(state, email, org)| (state, email, false, org)),
+                    _ => claude_identity(name, path, &identity_env, deadline)
+                        .map(|(state, email, login)| (state, email, false, login)),
                 })
             })
             .collect();
@@ -482,27 +482,9 @@ fn codex_identity(result: &Value) -> Result<(AuthState, Option<String>), String>
     }
 }
 
-fn claude_identity(
-    env: &BTreeMap<String, String>,
-    deadline: Instant,
-) -> Result<(AuthState, Option<String>, Option<String>), NativeReadError> {
-    let executable = std::env::var("SWARM_CLAUDE_CMD").unwrap_or_else(|_| "claude".into());
-    let value = read_json(&executable, &["auth", "status"], env, deadline)?;
-    match value["loggedIn"].as_bool() {
-        Some(logged_in) => Ok((
-            if logged_in {
-                AuthState::SignedIn
-            } else {
-                AuthState::SignedOut
-            },
-            value["email"].as_str().map(str::to_string),
-            value["orgId"].as_str().map(str::to_string),
-        )),
-        None => Err("Claude identity is unavailable".into()),
-    }
-}
-
+mod claude;
 mod transport;
+use claude::claude_identity;
 pub use transport::{AppServer, read_json};
 
 pub fn deadline(seconds: u64) -> Instant {
