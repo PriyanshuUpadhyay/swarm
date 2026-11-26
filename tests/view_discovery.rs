@@ -1,12 +1,20 @@
 mod sidebar_fixture;
-use serde_json::json;
+use serde_json::{Value, json};
 use sidebar_fixture::ChoicesHome;
-use std::{fs, process::Command};
+use std::{fs, path::Path, process::Command};
 use swarm::view::{
     choices::OwnerChoices,
     discovery::{self, Discovery},
     github, tree,
 };
+
+fn chat_snapshot(cwd: &Path, log: &Path) -> Value {
+    json!({
+        "sessions": [{"id":"chat","cwd":cwd,"chair_log":log,"agents":1,"adapter":"tmux-swarm","chair_provider":"codex","created_at":1}],
+        "agents": {"chat":[{"id":"orchestrator","alive":true,"pane":"fixture","state":"working"}]},
+    })
+}
+
 #[test]
 fn github_remote_identity_rejects_foreign_or_ambiguous_urls() {
     for remote in [
@@ -102,7 +110,7 @@ esac
     }
     let cwd = format!("{home}/repo");
     let log = format!("{home}/chair.jsonl");
-    let mut snapshot = json!({"sessions":[{"id":"chat","cwd":cwd,"chair_log":log,"agents":1,"adapter":"tmux-swarm","chair_provider":"codex","created_at":1}],"agents":{"chat":[{"id":"orchestrator","alive":true,"pane":"fixture","state":"working"}]}});
+    let mut snapshot = chat_snapshot(Path::new(&cwd), Path::new(&log));
     let mut d = Discovery::default();
     let mut owner = OwnerChoices::default();
     owner.project_paths.push(cwd.clone());
@@ -183,6 +191,7 @@ fn branch_totals_count_only_committed_changes_from_the_merge_base() {
     let repo = home.root.join("repo");
     fs::create_dir(&repo).unwrap();
     let repo = fs::canonicalize(repo).unwrap();
+
     let git = |args: &[&str]| {
         let output = Command::new("git")
             .arg("-C")
@@ -204,6 +213,7 @@ fn branch_totals_count_only_committed_changes_from_the_merge_base() {
             String::from_utf8_lossy(&output.stderr)
         );
     };
+
     git(&["init", "-qb", "main"]);
     fs::write(repo.join("lines"), "keep\nremove\n").unwrap();
     git(&["add", "lines"]);
@@ -212,18 +222,20 @@ fn branch_totals_count_only_committed_changes_from_the_merge_base() {
     fs::write(repo.join("lines"), "keep\nadd one\nadd two\n").unwrap();
     git(&["commit", "-qam", "change"]);
     fs::write(repo.join("lines"), "uncommitted\n").unwrap();
+
     let log = home.root.join("chair.jsonl");
     fs::write(
         &log,
         "{\"type\":\"user\",\"message\":{\"content\":\"Change lines\"}}\n",
     )
     .unwrap();
-    let mut snapshot = json!({"sessions":[{"id":"chat","cwd":repo,"chair_log":log,"agents":1,"adapter":"tmux-swarm","chair_provider":"codex","created_at":1}],"agents":{"chat":[{"id":"orchestrator","alive":true,"pane":"fixture","state":"working"}]}});
+    let mut snapshot = chat_snapshot(&repo, &log);
     let mut discovery = Discovery::default();
     let owner = OwnerChoices::default();
     discovery.augment(&mut snapshot, &owner, 100);
     let tree = tree::build(&snapshot, &owner);
     discovery.refresh_fields(&tree, &owner, 100);
+
     assert_eq!(
         serde_json::to_value(discovery.fields.get(repo.to_str().unwrap())).unwrap()["diff"],
         json!({"addedLines":2,"removedLines":1})

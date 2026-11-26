@@ -69,6 +69,7 @@ fn sidebar_prioritizes_real_prompts_and_counts_every_hidden_project_chat() {
         "id":"folder:/notes","path":"/notes","launch_directory":"/notes",
         "workspaces":[{"path":"/notes"}],
     }));
+
     let mut owner = owner();
     owner.project_paths.push("/notes".into());
     let tree = swarm::view::tree::build(&snap, &owner);
@@ -77,6 +78,7 @@ fn sidebar_prioritizes_real_prompts_and_counts_every_hidden_project_chat() {
         swarm::view::tree::sections(&tree, &owner, state, false, now, &Default::default())
     };
     let display = show(&state);
+
     assert_eq!(
         display.iter().map(|s| s.kind).collect::<Vec<_>>(),
         ["needs-you", "project", "more-projects"]
@@ -97,6 +99,7 @@ fn sidebar_prioritizes_real_prompts_and_counts_every_hidden_project_chat() {
             .any(|r| r.id == "chat:asks" || r.id == "chat:old")
     );
     assert_eq!(project.last().unwrap().title, "… 2 more");
+
     state.expanded_lists.insert("project:/repo".into());
     assert!(show(&state)[1].rows.iter().any(|r| r.id == "chat:old"));
 }

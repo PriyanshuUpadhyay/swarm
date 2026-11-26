@@ -123,6 +123,7 @@ test("archive asks while agents run and restores; delete asks and removes the fo
   const { workspace: path } = await api<{ workspace: string }>("/api/workspace/new", {
     project: realpathSync(join(process.env.SWARM_E2E_DIR!, "proj-pr")), name: `arch-${b}`, mode: "new-branch",
   });
+
   // An empty worktree has no sidebar row. Give it one ended fixture chat.
   const home = process.env.SWARM_E2E_HOME!;
   const chair = randomUUID();
@@ -138,10 +139,12 @@ test("archive asks while agents run and restores; delete asks and removes the fo
     INSERT INTO agent (id, session_id, role, provider, created_at, log)
     VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});
   `]);
+
   const errors = await open(tab);
   const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
   const archived = tab.locator(`[data-testid="tree-row"][data-id="${path}"]`);
   await expect(row).toBeVisible();
+
   const menu = async (item: string) => {
     await (item === "Restore workspace" ? archived : row).click({ button: "right" });
     await tab.getByRole("menuitem", { name: item }).click();

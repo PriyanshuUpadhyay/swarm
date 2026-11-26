@@ -41,6 +41,7 @@ test("the counted cut keeps catalog chats in Search and opens by keyboard", asyn
   const session = process.env.SWARM_E2E_GIT!;
   let expanded = false;
   let listId = "";
+
   await page.route("**/api/tree?view=workspaces", async (route) => {
     const response = await route.fetch();
     const tree: TreeView = await response.json();
@@ -60,6 +61,7 @@ test("the counted cut keeps catalog chats in Search and opens by keyboard", asyn
     expanded = true;
     await route.continue();
   });
+
   await load(page);
   const sidebar = page.getByTestId("sidebar");
   const hidden = sidebar.locator(`[data-session="${session}"]`);
@@ -67,6 +69,7 @@ test("the counted cut keeps catalog chats in Search and opens by keyboard", asyn
   await page.getByRole("button", { name: "Command palette" }).click();
   await expect(page.locator(`[cmdk-item][data-value="chat:${session}"]`)).toBeVisible();
   await page.keyboard.press("Escape");
+
   const more = sidebar.getByRole("treeitem").filter({ hasText: "… 1 more" });
   const rows = sidebar.getByRole("treeitem");
   await rows.first().focus();
@@ -80,6 +83,7 @@ test("the counted cut keeps catalog chats in Search and opens by keyboard", asyn
   expect((await written).ok()).toBe(true);
   await expect(hidden).toBeVisible();
   await expect(more).toHaveCount(0);
+
   await page.getByTestId("archive-toggle").click();
   await expect(sidebar).toHaveAttribute("aria-label", "Archived workspaces");
   await page.getByRole("button", { name: "Archived chats…" }).click();
@@ -89,6 +93,7 @@ test("the counted cut keeps catalog chats in Search and opens by keyboard", asyn
 test("a PR chip is a keyboard link and the open chat alone shows its branch line", async ({ page }) => {
   const session = process.env.SWARM_E2E_GIT!;
   const url = "https://github.com/example/project/pull/7";
+
   await page.route("**/api/tree?view=workspaces", async (route) => {
     const response = await route.fetch();
     const tree: TreeView = await response.json();
@@ -99,6 +104,7 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
     await route.fulfill({ response, json: tree });
   });
   await page.context().route(url, (route) => route.fulfill({ body: "Pull request" }));
+
   await load(page);
   await page.getByTestId("home-button").click();
   const sidebar = page.getByTestId("sidebar");
@@ -112,12 +118,14 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   await expect(popup).toHaveURL(url);
   await popup.close();
   await expect(row).not.toHaveAttribute("aria-current", "true");
+
   await row.locator(".chat-title").click();
   await expect(row).toHaveAttribute("aria-current", "true");
   const branch = sidebar.getByTestId("sidebar-branch");
   await expect(branch).toHaveCount(1);
   await expect(branch).toHaveText("feature+31−1");
   await expect(branch.getByLabel("31 lines added, 1 line removed")).toBeVisible();
+
   const strip = page.getByTestId("tab-strip");
   const tab = strip.getByRole("tab", { selected: true });
   const bar = page.getByTestId("branch-bar");
@@ -130,6 +138,7 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   expect(stripBox?.height).toBe(40);
   expect(tabBox).toMatchObject({ width: 224, height: 32 });
   expect(barBox?.height).toBe(36);
+
   for (const colorScheme of ["dark", "light"] as const) {
     await page.emulateMedia({ colorScheme });
     await page.mouse.move(700, 100);
@@ -147,6 +156,7 @@ test("the rail replaces the sidebar only below 1024 px and keeps desktop collaps
   await expect.poll(width).toBe(264);
   await expect(sidebar).toBeVisible();
   await expect(rail).toHaveCount(0);
+
   const handle = page.locator('[data-side] > [data-slot="resizable-handle"]');
   await handle.press("ArrowRight");
   await expect.poll(width).toBeGreaterThan(264);
@@ -155,6 +165,7 @@ test("the rail replaces the sidebar only below 1024 px and keeps desktop collaps
   await expect(rail).toBeVisible();
   await page.setViewportSize({ width: 1024, height: 900 });
   await expect.poll(width).toBe(saved);
+
   await page.keyboard.press("Meta+b");
   await expect.poll(async () => (await sidePanel.boundingBox())?.width).toBe(0);
 
@@ -163,13 +174,16 @@ test("the rail replaces the sidebar only below 1024 px and keeps desktop collaps
   expect((await rail.boundingBox())?.width).toBe(52);
   await expect(sidebar).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1023);
+
   const main = (await page.getByTestId("main-panel").elementHandle())!;
   const live = rail.locator(`[data-session="${process.env.SWARM_E2E_GIT}"]`);
   await live.click();
   await expect(live).toHaveAttribute("aria-current", "true");
+
   await rail.getByRole("button", { name: "New chat" }).click();
   await expect(page.getByTestId("new-chat-prompt")).toBeFocused();
   await page.keyboard.press("Escape");
+
   for (const colorScheme of ["dark", "light"] as const) {
     await page.emulateMedia({ colorScheme });
     await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/U6/rail-${colorScheme}.png`) });
