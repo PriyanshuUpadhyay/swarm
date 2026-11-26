@@ -44,6 +44,23 @@ describe("navigation UX", () => {
     expect(recentWork(catalog, snapshot).map((r) => r.session)).toEqual(["two", "one"]);
     expect(navRows(catalog).some((r) => r.kind === "chat")).toBe(false);
   });
+  it("selects and expands a chat's project even when another chat from it is in Needs you", () => {
+    const app = harness();
+    const project = { ...tree.sections[0], expanded: false };
+    app.tree = { ...tree, sections: [
+      { ...project, id: "needs-you", kind: "needs-you", path: null, collapseId: "needs-you",
+        expanded: true, title: "Needs you", rows: [chat("one")] },
+      project,
+    ] };
+    app.rows = navRows(app.tree);
+    app.workspace = "/other";
+    const choose = vi.spyOn(app.navigation, "choose").mockResolvedValue(true);
+
+    app.openChat("two");
+
+    expect({ selected: app.selected, expansion: choose.mock.calls.find(([op]) => op.op === "expand")?.[0] })
+      .toEqual({ selected: project.id, expansion: { op: "expand", id: project.collapseId } });
+  });
   it("keeps live navigation data when the sidebar shows archives", async () => {
     const app = harness();
     app.restored = true;

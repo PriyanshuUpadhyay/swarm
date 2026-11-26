@@ -219,8 +219,8 @@ export function currentRow(rows: NavRow[], openId: string | null, workspace: str
   const owner = rows.find((r) => r.kind === "workspace" && r.id === workspace);
   if (owner) return owner.id;
   const project = workspaceRow(tree ?? null, workspace)?.projectPath;
-  const header = rows.find((r) => !r.row && (r.section.path === project ||
-    r.section.rows.some((row) => row.selection?.workspace === workspace)));
+  const header = rows.find((r) => !r.row && r.section.path === project) ?? rows.find((r) =>
+    !r.row && r.kind !== "needs-you" && r.section.rows.some((row) => row.selection?.workspace === workspace));
   return header?.id ?? (project && rows.some((r) => r.kind === "more-projects") ? "more-projects" : null);
 }
 

@@ -335,7 +335,9 @@ export class AppNavigation {
     if (workspace && this.app.revision !== null && opts.write !== false) {
       // Open the tab before selecting it. Only a workspace change opens its project.
       const project = workspaceRow(this.app.tree, workspace)?.projectPath;
-      const section = this.app.tree?.sections.find((s) => s.path === project || s.rows.some((r) => r.selection?.workspace === workspace));
+      const sections = this.app.tree?.sections ?? [];
+      const section = sections.find((s) => s.path === project) ?? sections.find((s) =>
+        s.kind !== "needs-you" && s.rows.some((r) => r.selection?.workspace === workspace));
       if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
       void this.choose({ op: "open_tab", workspace, chat: sessionId });
       void this.choose({ op: "selected_chat", workspace, chat: sessionId, recording_history: opts.history !== false });
