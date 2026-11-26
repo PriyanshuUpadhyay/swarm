@@ -125,7 +125,8 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>
-      <PatchBody patch={patch} info={f?.state === "ready" ? f.patch : patchOf(diff)} path={diff.path} split={split} wrap={wrap} previewId={diff.id} />
+      {/* CodeView keeps items with the same id and version. Mount a new window for the full patch. */}
+      <PatchBody key={f?.state === "ready" ? "full" : "preview"} patch={patch} info={f?.state === "ready" ? f.patch : patchOf(diff)} path={diff.path} split={split} wrap={wrap} previewId={diff.id} />
       {capped && f?.state !== "ready" && (
         <div className="px-2 pb-1.5">
           <CutLine count={[
@@ -165,7 +166,7 @@ function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; 
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>
-      <PatchBody patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} wrap={wrap} previewId={preview.id} fileLabels windowed />
+      <PatchBody key={ready ? "full" : "preview"} patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} wrap={wrap} previewId={preview.id} fileLabels windowed />
       {preview.is_truncated && !ready && <div className="px-2 pb-1.5 text-xs text-muted-foreground">{f?.state === "error" ? <span className="text-failed">{f.error}</span> : "Loading the full patch…"}</div>}
     </div>
   );
