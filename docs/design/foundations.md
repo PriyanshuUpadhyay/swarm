@@ -68,6 +68,8 @@ The design names a role, and `web/src/styles-base.css` holds the CSS variable. T
 - **Depth comes from tonal fills and 1 px borders, not shadows** (default). Flat layers keep the surface quiet.
 - **Menus and tooltips use their own fill and a 1 px border** (default). The shadow scale has two steps, shadow-1 for a tooltip and a toast and shadow-2 for a menu, a popover and a dialog.
 
+- **A pane divider and the search box border take the muted text colour on hover** (owner), because a 1 px drag target needs a cue.
+
 ## Shapes
 
 - **Radii run 4, 6, 8, 10, 12 px, plus full for badges** (default). Small parts get small radii, so the parts look like one family. The 14 px step of today is dropped (owner).

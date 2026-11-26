@@ -240,7 +240,7 @@
 }
 .search-box:hover {
   color: var(--foreground);
-  border-color: var(--border);
+  border-color: var(--muted-foreground);
 }
 .search-box svg {
   width: 13px;

@@ -104,7 +104,7 @@
   inset: 3px 0;
 }
 .grip:hover::after {
-  background: var(--border);
+  background: var(--muted-foreground);
 }
 
 /* Find bar, Jump to latest, and the source popover. */
