@@ -2,6 +2,7 @@
 
 @import "./styles-base.css";
 @import "./styles-glyph.css";
+@import "./styles-fonts.css";
 @import "./styles-sidebar.css";
 @import "./styles-transcript.css";
 @import "./styles-panels.css";

@@ -139,12 +139,20 @@ test("the UI and code fonts are owner choices that utility and plain CSS text fo
   await dialog.getByTestId("pref-font-sans").getByRole("radio", { name: "System" }).click();
   await dialog.getByTestId("pref-font-mono").getByRole("radio", { name: "System" }).click();
   await expect.poll(() => choices().prefs).toMatchObject({ fontSans: "system", fontMono: "system" });
+  await expect(tab.locator("html")).toHaveAttribute("data-font-sans", "system");
+  expect((await families())[0]).toMatch(/^-apple-system/);
+  await dialog.getByTestId("pref-font-sans").getByRole("radio", { name: "Swarm (DM Sans)" }).click();
+  await dialog.getByTestId("pref-font-mono").getByRole("radio", { name: "Swarm (JetBrains Mono)" }).click();
+  await expect.poll(() => choices().prefs).toMatchObject({ fontSans: "swarm", fontMono: "swarm" });
   await expect(tab.locator("html")).not.toHaveAttribute("data-font-sans", /./);
   await expect(tab.locator("html")).not.toHaveAttribute("data-font-mono", /./);
+  const [swarmBody, , swarmPlain] = await families();
+  expect(swarmBody).toMatch(/^"?DM Sans/);
+  expect(swarmPlain).toMatch(/^"?JetBrains Mono/);
   expect(errors).toEqual([]);
 });
 
-test("an absent font pref means System, also when this browser kept an older copy", async ({ page: tab }) => {
+test("an absent font pref means the Swarm faces, also when this browser kept an older copy", async ({ page: tab }) => {
   const file = join(home(), ".swarm/choices.json");
   const saved = readFileSync(file, "utf8");
   const { fontSans: _sans, fontMono: _mono, ...prefs } = JSON.parse(saved).prefs ?? {};

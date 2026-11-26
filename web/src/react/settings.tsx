@@ -140,6 +140,7 @@ function AppearancePage({ app }: { app: App }) {
           testid="pref-font-sans"
           value={sans}
           options={[
+            ["swarm", "Swarm (DM Sans)"],
             ["system", "System"],
             ["helvetica", "Helvetica"],
             ["avenir", "Avenir"],
@@ -153,6 +154,7 @@ function AppearancePage({ app }: { app: App }) {
           testid="pref-font-mono"
           value={mono}
           options={[
+            ["swarm", "Swarm (JetBrains Mono)"],
             ["system", "System"],
             ["menlo", "Menlo"],
             ["monaco", "Monaco"],
