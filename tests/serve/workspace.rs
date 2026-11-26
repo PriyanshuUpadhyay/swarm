@@ -2,21 +2,26 @@
 
 use super::*;
 
+fn git_command(server: &Server) -> Command {
+    let mut command = Command::new("/usr/bin/git");
+    command
+        .arg("-C")
+        .arg(server.dir.join("project"))
+        .env("GIT_CEILING_DIRECTORIES", &server.dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null");
+    command
+}
+
+fn git(server: &Server, args: &[&str]) {
+    let output = git_command(server).args(args).output().unwrap();
+    assert!(output.status.success(), "{:?}", output);
+}
+
 #[test]
 fn changes_routes_read_a_large_file_in_both_modes() {
     let server = Server::configured(false, true);
     let project = server.dir.join("project");
-    let git = |args: &[&str]| {
-        let output = Command::new("/usr/bin/git")
-            .arg("-C")
-            .arg(&project)
-            .args(args)
-            .env("GIT_CEILING_DIRECTORIES", &server.dir)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{:?}", output);
-    };
+    let git = |args: &[&str]| git(&server, args);
     git(&["config", "user.name", "Fixture"]);
     git(&["config", "user.email", "fixture@example.com"]);
     fs::write(project.join("large.txt"), "base\n").unwrap();
@@ -53,21 +58,11 @@ fn changes_routes_read_a_large_file_in_both_modes() {
 fn full_changes_rejects_output_over_cap_without_changing_the_preview() {
     let server = Server::configured(false, true);
     let project = server.dir.join("project");
-    let run = |args: &[&str]| {
-        assert!(
-            Command::new("/usr/bin/git")
-                .arg("-C")
-                .arg(&project)
-                .args(args)
-                .status()
-                .unwrap()
-                .success()
-        );
-    };
     let path = project.join("large.txt");
     fs::write(&path, "old\n").unwrap();
-    run(&["add", "large.txt"]);
+    git(&server, &["add", "large.txt"]);
     fs::write(&path, "x".repeat(2_097_152)).unwrap();
+
     let url = format!(
         "/api/changes/diff?workspace={}&path=large.txt&layer=unstaged",
         project.display()
@@ -82,8 +77,8 @@ fn full_changes_rejects_output_over_cap_without_changing_the_preview() {
     assert_eq!(status, 413, "{body}");
     assert!(body.contains("2 MiB"), "{body}");
 
-    let mut git = Command::new("/usr/bin/git");
-    git.arg("-C").arg(project).args(["diff", "--", "large.txt"]);
+    let mut git = git_command(&server);
+    git.args(["diff", "--", "large.txt"]);
     let cap = 2_097_152;
     let (output, overflow) = swarm::view::discovery::run_command_capped(&mut git, 5, cap).unwrap();
     assert!(output.status.success() && overflow);

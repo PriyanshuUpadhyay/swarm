@@ -139,12 +139,14 @@ test("Show all windows the full diff, finds its tail and sends a range note", as
       await tab.getByTestId("diff-pane").screenshot({ path: join(shots, `changes-full-${theme}.png`) });
     }
   }
+
   await find.press("Escape");
   await (await lineNumber(tab, "generated line 19999")).click();
   const last = await lineNumber(tab, "generated line 20000");
   await last.click({ modifiers: ["Shift"] });
   await expect(tab.locator(`${DIFF_ROWS}[data-selected-line]`)).toHaveCount(2);
   await expect(last).toHaveCSS("box-shadow", /2px 0px 0px 0px inset/);
+
   await tab.getByTestId("comment-input").fill("Check the final two lines.");
   await tab.getByTestId("comment-add").click();
   await expect(tab.getByTestId("comment-card")).toContainText("Check the final two lines.");
@@ -164,6 +166,7 @@ test("a late full diff cannot replace the newly selected file", async ({ page: t
     if (isFull(route.request().url())) { start(); await held; }
     await route.continue();
   });
+
   await tab.getByTestId("show-changes").click();
   await row(tab, "big.txt").click();
   await tab.getByRole("button", { name: "Show all", exact: true }).click();
@@ -174,6 +177,7 @@ test("a late full diff cannot replace the newly selected file", async ({ page: t
   await (await reply).finished();
   await tab.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   await expect(diffPath(tab)).toHaveText("README.md");
+
   await expect(tab.locator(DIFF_ROWS).filter({ hasText: "A test repository, changed." })).toBeVisible();
 });
 

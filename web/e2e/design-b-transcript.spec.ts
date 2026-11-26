@@ -41,12 +41,14 @@ test("Find reveals a cut user message and highlights a match beyond the cut", as
   await expect(message).toContainText("+4 lines");
   await expect(message.locator("strong")).toHaveText(start);
   await expect(message).not.toContainText(last);
+
   const wide = page.viewportSize()!;
   await page.setViewportSize({ width: 390, height: wide.height });
   await expect.poll(() => message.locator("strong").evaluate((el) => el.getClientRects().length)).toBeGreaterThan(1);
   await expect(message).toContainText("+4 lines");
   await page.setViewportSize(wide);
   await shots(page, message, "user-cut");
+
   await page.keyboard.press("Meta+f");
   await page.getByTestId("find-input").fill("socket timeout");
   await expect(page.getByTestId("find-count")).toHaveText("1 of 1");

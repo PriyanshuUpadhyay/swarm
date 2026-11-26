@@ -129,6 +129,7 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
 test("stream loss keeps the last list and accepted update, then clears after hello", async ({ page: tab }) => {
   const session = process.env.SWARM_E2E_LIVE!;
   await tab.setViewportSize({ width: 960, height: 540 });
+
   await tab.route("**/api/snapshot", async (route) => {
     const snapshot = await (await route.fetch()).json() as Snapshot;
     snapshot.agents[session][0].state = "working";
@@ -153,15 +154,18 @@ test("stream loss keeps the last list and accepted update, then clears after hel
       return Promise.resolve(new Response(body, { headers }));
     };
   });
+
   await tab.clock.setFixedTime(new Date("2030-01-01T14:02:00Z"));
   await open(tab);
   const status = tab.getByTestId("chat-status-line");
   await expect(status.locator('svg[data-form="working"]')).toBeVisible();
+
   const accepted = "2030-01-01T14:02:10.000Z";
   await tab.clock.setFixedTime(new Date(accepted));
   const read = tab.waitForResponse("**/api/snapshot");
   await tab.evaluate(() => (window as unknown as { fixtureFrame: (type: string, data: unknown) => void }).fixtureFrame("snapshot", { version: 0 }));
   await read;
+
   await tab.clock.setFixedTime(new Date("2030-01-01T14:02:30Z"));
   await tab.evaluate(() => {
     const scope = window as unknown as { fixtureFrame: (type: string, data: unknown) => void; dropFixtureStream: () => void };
@@ -180,6 +184,7 @@ test("stream loss keeps the last list and accepted update, then clears after hel
     await tab.emulateMedia({ colorScheme: theme });
     await tab.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `offline-${theme}.png`), animations: "disabled" });
   }
+
   await tab.evaluate(() => (window as unknown as { restoreFixtureStream: () => void }).restoreFixtureStream());
   await expect(banner).toHaveCount(0);
   await expect(status.locator('svg[data-form="working"]')).toBeVisible();

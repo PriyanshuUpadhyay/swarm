@@ -127,6 +127,7 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
   const shown = tab.getByTestId("shown-diff");
   await expect(shown).toContainText("new line");
   await expect(shown.locator(".diff-head")).toContainText("44 lines");
+
   const box = shown.locator(".patch");
   expect(await box.evaluate((el) => el.clientHeight)).toBeLessThanOrEqual(360);
   await box.evaluate((el) => { el.scrollTop = el.scrollHeight; });
@@ -134,9 +135,11 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
   await box.evaluate((el) => { el.scrollTop = 0; });
   expect(asked).toEqual(["true"]);
   await expect(tab.getByText("a.ts", { exact: true })).toBeHidden();
+
   await shown.getByRole("button", { name: "Split", exact: true }).click();
   await expect(shown).toHaveAttribute("data-split", "true");
   await expect(shown).toContainText("old line");
+
   if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
     await tab.emulateMedia({ colorScheme: theme });
     await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);

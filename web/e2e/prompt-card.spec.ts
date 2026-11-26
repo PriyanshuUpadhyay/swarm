@@ -184,6 +184,7 @@ test("a permission command opens in a scroll window without moving its choices o
   const start = existsSync(actions) ? readFileSync(actions, "utf8").length : 0;
   const command = Array.from({ length: 27 }, (_, i) => `│ Command line ${i + 1}`).join("\n");
   const session = process.env.SWARM_E2E_LIVE!;
+
   // Extend the displayed command while keeping the real prompt ID and answer route.
   await tab.route("**/api/snapshot", async (route) => {
     const response = await route.fetch();
@@ -196,6 +197,7 @@ test("a permission command opens in a scroll window without moving its choices o
   await openChat(tab, session);
   const composer = tab.locator(".strip-chat").getByTestId("composer");
   await expect(composer).toBeEnabled();
+
   try {
     writeFileSync(screen, waiting);
     const card = tab.getByTestId("prompt-card");
@@ -206,6 +208,7 @@ test("a permission command opens in a scroll window without moving its choices o
     await expect(card).toContainText("23 more");
     const preview = card.getByTestId("permission-command");
     await expect(preview).toHaveText("Command line 1\nCommand line 2\nCommand line 3\nCommand line 4", { useInnerText: true });
+
     await show.click();
     await expect(preview).toContainText("Command line 27");
     expect(await preview.evaluate((el) => {
@@ -213,6 +216,7 @@ test("a permission command opens in a scroll window without moving its choices o
       return el.scrollTop > 0 && el.clientHeight <= 20 * parseFloat(getComputedStyle(el).lineHeight);
     })).toBe(true);
     await expect(card.getByRole("button", { name: /^3 No$/ })).toBeInViewport();
+
     const shots = process.env.DESIGN_B_SHOTS;
     if (shots) {
       mkdirSync(shots, { recursive: true });
@@ -221,6 +225,7 @@ test("a permission command opens in a scroll window without moving its choices o
         await card.screenshot({ path: join(shots, `permission-${theme}.png`) });
       }
     }
+
     await expect(preview).toBeFocused();
     await tab.keyboard.press("3");
     await expect.poll(() => existsSync(actions) ? readFileSync(actions, "utf8").slice(start) : "").toContain("key fixture-chair 3\n");

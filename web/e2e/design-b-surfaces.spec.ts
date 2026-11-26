@@ -106,8 +106,10 @@ test("the usage percentage uses the same state color as the bar of what is left"
     used_pct: 100 - percent, reset_time_seconds: null, state: "fresh", reason: null, reason_code: null, as_of_seconds: null,
   }));
   await page.route("**/api/usage", (route) => route.fulfill({ json: { meters } }));
+
   await open(page);
   const accounts = (await settings(page, "accounts")).getByTestId("accounts-claude");
+
   for (const [i, tone] of ["foreground", "waiting", "failed"].entries()) {
     const row = accounts.getByTestId("meter").nth(i);
     const label = row.getByText(`${left[i]}%`, { exact: true });

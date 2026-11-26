@@ -35,11 +35,13 @@ test("a group shows observed states, expands after five and opens the chosen chi
       ],
     },
   } satisfies Row & { subagent: NonNullable<Row["subagent"]> & { children: unknown[] } };
+
   await page.route("**/api/rows?*", (route) => {
     const agent = new URL(route.request().url()).searchParams.get("agent");
     return route.fulfill({ json: rows(agent === "chair~sub~fixture-call.6" ? [row("a1", "Keyboard fixes are ready")] : [batch]) });
   });
   await open(page);
+
   const card = page.getByTestId("subagent-row");
   await expect(card).toContainText("1 failed");
   await expect(card).toContainText("2 unknown");
@@ -48,10 +50,12 @@ test("a group shows observed states, expands after five and opens the chosen chi
   await expect(child).toHaveCount(0);
   await card.getByRole("button", { name: "Show all", exact: true }).click({ timeout: 3000 });
   await expect(child).toBeVisible();
+
   if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await card.screenshot({ path: `${process.env.DESIGN_B_SHOTS}/subagents-${theme}.png`, animations: "disabled" });
   }
+
   await child.click();
   await expect(page.getByTestId("subagent-chat")).toContainText("Keyboard fixes are ready");
 });

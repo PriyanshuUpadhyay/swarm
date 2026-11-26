@@ -34,6 +34,7 @@ fn pi_background_children_update_an_earlier_group_without_a_reload() {
             r#"{"type":"message","id":"c","message":{"role":"assistant","content":[{"type":"text","text":"Waiting"}],"stopReason":"stop"}}"#,
         ],
     );
+
     let mut live = ReaderRows::empty(100, false);
     live.ingest(100, 200, &initial);
     let children = |upsert: &[Row]| {
@@ -41,6 +42,7 @@ fn pi_background_children_update_an_earlier_group_without_a_reload() {
         serde_json::to_value(run).unwrap()["children"].clone()
     };
     assert_eq!(children(&live.delta().upsert)[0]["state"], "started");
+
     let settled = inline_fixture(
         "pi",
         &[
@@ -48,6 +50,7 @@ fn pi_background_children_update_an_earlier_group_without_a_reload() {
         ],
     );
     live.ingest(200, 300, &settled);
+
     assert_eq!(
         children(&live.delta().upsert),
         json!([

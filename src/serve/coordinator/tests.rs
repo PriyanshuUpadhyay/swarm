@@ -265,6 +265,7 @@ fn answering_a_block_keeps_the_web_turn_start() {
     let fixture = Fixture::new();
     let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
     let mut previous = BTreeMap::new();
+
     for (state, at) in [("working", 100), ("blocked", 200), ("working", 300)] {
         swarm::store::set_state(
             &connection,
@@ -278,6 +279,7 @@ fn answering_a_block_keeps_the_web_turn_start() {
         )
         .unwrap();
     }
+
     let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
     let row = &snapshot[&fixture.session][0];
     assert_eq!(row["state_at_s"], 300);

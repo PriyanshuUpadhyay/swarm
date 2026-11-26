@@ -160,12 +160,14 @@ test("Cmd+J groups nine tasks by state under their owners with the panels open",
     })),
   } }));
   await tab.route(/\/api\/shells\?/, (route) => route.fulfill({ json: { shells: [{ id: "shell-mock", command: "vim" }] } }));
+
   await openChat(tab, info);
   await tab.keyboard.press("Meta+j");
   await tab.getByTestId("show-changes").click();
   const panel = tab.getByRole("list", { name: "Agents and background tasks" });
   await expect(panel.getByRole("button", { name: /Check job 8/ })).toBeVisible();
   await expect(panel.getByRole("button", { name: /Shell 1/ })).toBeVisible();
+
   const order = await panel.getByRole("button").allTextContents();
   const index = (title: string) => order.findIndex((text) => text.includes(title));
   expect(index("reviewer")).toBeGreaterThan(index("Chat"));
@@ -175,11 +177,13 @@ test("Cmd+J groups nine tasks by state under their owners with the panels open",
   expect(index("Check job 8")).toBeGreaterThan(index("tester"));
   expect(index("Check job 5")).toBeGreaterThan(index("Check job 8"));
   expect(index("Shell 1")).toBeGreaterThan(index("Check job 5"));
+
   await expect(panel.getByText("Failed", { exact: true })).toHaveCount(2);
   await expect(tab.getByTestId("background-line")).toContainText("8 shells");
   await expect(tab.getByTestId("background-line")).toContainText("2 failed");
   await expect(tab.locator(".chat-input").filter({ has: tab.getByTestId("background-line") }).getByTestId("composer")).toBeInViewport();
   await expect(tab.getByTestId("workspace-panel")).toBeInViewport();
+
   if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
     await tab.emulateMedia({ colorScheme: theme });
     await tab.screenshot({ path: `${process.env.DESIGN_B_SHOTS}/panels-${theme}.png`, animations: "disabled" });
