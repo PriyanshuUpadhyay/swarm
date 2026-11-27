@@ -103,6 +103,31 @@ test("one idle picker opens by shortcut, keeps an unlisted current model and app
   await expect.poll(() => starts.map((start) => [start.provider, start.model])).toEqual([["codex", "other"]]);
 });
 
+test("two quick star clicks keep both favorites", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const saved: { provider: string; model: string }[][] = [];
+  await patchTreePrefs(tab, (prefs) => { prefs.favoriteModels = saved.at(-1) ?? []; });
+  let release!: () => void;
+  const firstSave = new Promise<void>((resolve) => { release = resolve; });
+  await tab.route("**/api/choices", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.op !== "pref" || body.key !== "favoriteModels") return route.continue();
+    saved.push(body.value);
+    if (saved.length === 1) await firstSave;
+    await route.fulfill({ json: { revision: body.revision } });
+  });
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByTestId("model-chip").click();
+  const star = (model: string) => tab.locator(`[data-model-id="${model}"]`).locator("..").getByRole("button", { name: /favorites/i });
+  try {
+    await star("model-a").click();
+    await expect.poll(() => saved.length).toBe(1);
+    await star("model-b").click();
+  } finally { release(); }
+  await expect.poll(() => saved.at(-1)?.map((m) => m.model)).toEqual(["model-a", "model-b"]);
+});
+
 test("a typed model stays available in the new-chat picker", async ({ page: tab }) => {
   await pickerCatalog(tab);
   await open(tab);

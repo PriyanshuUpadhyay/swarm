@@ -208,6 +208,17 @@ export class Settings {
 
   // ---- preferences ----
 
+  private favoriteWrites = Promise.resolve();
+
+  toggleFavorite(pair: import("./nav").ModelChoice) {
+    this.favoriteWrites = this.favoriteWrites.then(async () => {
+      const favorites = this.app.tree?.prefs.favoriteModels ?? [];
+      const same = (item: typeof pair) => item.provider === pair.provider && item.model === pair.model;
+      await this.setPref("favoriteModels", favorites.some(same) ? favorites.filter((item) => !same(item)) : [...favorites, pair]);
+    });
+    return this.favoriteWrites;
+  }
+
   async setPref(key: string, value: Extract<import("./nav").ChoiceOp, { op: "pref" }>["value"]): Promise<boolean> {
     const saved = await this.app.choose({ op: "pref", key, value });
     if (saved && (key === "favoriteModels" || key === "newChatModel" || key === "switchCarry")) await this.app.refresh();

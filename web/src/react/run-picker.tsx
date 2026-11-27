@@ -123,7 +123,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
         </button>
         {!missing && <>
           {/* Choice writes report failures as app notices. */}
-          <button type="button" title={starred ? "Remove from favorites" : "Add to favorites"} aria-label={starred ? `Remove ${m.label} from favorites` : `Add ${m.label} to favorites`} aria-pressed={starred} className={`rounded p-0.5 hover:bg-menu-hover focus-visible:opacity-100 ${starred ? "" : "opacity-0 group-hover:opacity-100"}`} onClick={() => void app.settings.setPref("favoriteModels", starred ? favorites.filter((f) => f.provider !== provider || f.model !== m.id) : [...favorites, pair])}>
+          <button type="button" title={starred ? "Remove from favorites" : "Add to favorites"} aria-label={starred ? `Remove ${m.label} from favorites` : `Add ${m.label} to favorites`} aria-pressed={starred} className={`rounded p-0.5 hover:bg-menu-hover focus-visible:opacity-100 ${starred ? "" : "opacity-0 group-hover:opacity-100"}`} onClick={() => void app.settings.toggleFavorite(pair)}>
             <StarIcon className="size-3.5" fill={starred ? "currentColor" : "none"} />
           </button>
           <button type="button" className="rounded px-1 text-xs text-muted-foreground opacity-0 hover:bg-menu-hover focus-visible:opacity-100 group-hover:opacity-100" onClick={() => void app.settings.setPref("newChatModel", pair)}>
