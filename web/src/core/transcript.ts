@@ -125,6 +125,7 @@ export function mapCutContainer<T extends Block | Inline>(
       const value = inlines(node.value);
       return keepEmpty || value.length ? { ...node, value } : null;
     }
+
     case "blockquote": {
       const value = blocks(node.value);
       return keepEmpty || value.length ? { ...node, value } : null;
@@ -133,6 +134,7 @@ export function mapCutContainer<T extends Block | Inline>(
       const children = inlines(node.value.children);
       return keepEmpty || children.length ? { ...node, value: { ...node.value, children } } : null;
     }
+
     case "list": {
       const groups = items(node.value.items);
       return keepEmpty || groups.length ? { ...node, value: { ...node.value, items: groups } } : null;
