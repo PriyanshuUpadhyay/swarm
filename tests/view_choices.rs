@@ -59,7 +59,8 @@ fn a_background_recent_does_not_invalidate_an_owner_choice() {
     let home = ChoicesHome::new();
     let tab = choices_store::load(&home.root, true).unwrap();
     choices_store::update(&home.root, None, |owner, _| {
-        owner.remember_model("claude".into(), "sonnet".into())
+        owner.remember_model("claude".into(), "sonnet".into())?;
+        Ok(())
     })
     .unwrap();
 
