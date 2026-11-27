@@ -321,9 +321,10 @@ test("a Changes refresh during Add reports that the comment was not added", asyn
   });
 
   try {
-    const pending = tab.waitForRequest("**/api/changes/comment-range");
-    await addReadmeComment(tab, "Add while the diff refreshes.");
-    await pending;
+    await Promise.all([
+      tab.waitForRequest("**/api/changes/comment-range"),
+      addReadmeComment(tab, "Add while the diff refreshes."),
+    ]);
     await tab.route("**/api/changes/diff?**", async (route) => {
       const response = await route.fetch();
       await route.fulfill({ response, json: { ...await response.json(), added: 700 } });
