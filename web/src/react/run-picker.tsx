@@ -17,6 +17,7 @@ import { CliMark } from "./cli-mark";
 const RAIL = "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-muted-foreground hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
 /** A one-of-N pill that shows its pick with `aria-pressed`. */
+const ROW_ACTION = "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100";
 export const PRESSED_PILL = "rounded-md border border-menu-border px-2 py-1 text-xs hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
 export type Catalog = { providers: ProviderInfo[]; models: Record<string, ModelInfo[] | string>; error: string | null };
@@ -43,7 +44,7 @@ export function useRunCatalog(app: App, provider: string): Catalog {
       (err) => {
         if (!live) return;
         // The chat's own CLI still lists its models, and a typed id still works.
-        setError(`Could not read the CLIs: ${message(err)}`);
+        setError(`Could not read the CLIs: ${message(err)}. Type a model id for this CLI.`);
         void read(provider);
       },
     );
@@ -94,6 +95,8 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null, summary: null }, ...accounts] : accounts;
   const list = catalog.models[rail];
   const shown = Array.isArray(list) ? list : [];
+  const modelStatus = list === undefined ? "Reading models…" : typeof list === "string" ? list
+    : shown.length ? `${shown.length} ${shown.length === 1 ? "model" : "models"} listed.` : "No models listed. Type a model id.";
   const selected = current ?? draft;
   const unlisted = rail === selected.provider && Array.isArray(list) && selected.model && !shown.some((m) => m.id === selected.model) ? selected.model : null;
   const custom = q && rail !== "favorites" && list !== undefined && (current || unlisted?.toLowerCase() !== q) && !shown.some((m) => m.id.toLowerCase() === q) ? query.trim() : null;
@@ -123,10 +126,10 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
         </button>
         {!missing && <>
           {/* Choice writes report failures as app notices. */}
-          <button type="button" title={starred ? "Remove from favorites" : "Add to favorites"} aria-label={starred ? `Remove ${m.label} from favorites` : `Add ${m.label} to favorites`} aria-pressed={starred} className={`rounded p-0.5 hover:bg-menu-hover focus-visible:opacity-100 ${starred ? "" : "opacity-0 group-hover:opacity-100"}`} onClick={() => void app.settings.toggleFavorite(pair)}>
+          <button type="button" title={starred ? "Remove from favorites" : "Add to favorites"} aria-label={`Favorites: ${m.label}`} aria-pressed={starred} className={`rounded p-0.5 hover:bg-menu-hover ${starred ? "" : ROW_ACTION}`} onClick={() => void app.settings.toggleFavorite(pair)}>
             <StarIcon className="size-3.5" fill={starred ? "currentColor" : "none"} />
           </button>
-          <button type="button" className="rounded px-1 text-xs text-muted-foreground opacity-0 hover:bg-menu-hover focus-visible:opacity-100 group-hover:opacity-100" onClick={() => void app.settings.setPref("newChatModel", pair)}>
+          <button type="button" className={`rounded px-1 text-xs text-muted-foreground hover:bg-menu-hover ${ROW_ACTION}`} onClick={() => void app.settings.setPref("newChatModel", pair)}>
             {prefs?.newChatModel?.provider === provider && prefs.newChatModel.model === m.id ? "New chat default" : "Use for new chats"}
           </button>
         </>}
@@ -151,14 +154,15 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
         <div className="grid min-w-0 gap-1 p-2" onKeyDown={(e) => modelPickerKey(e, query)}>
           <div className="relative">
             <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input className={`w-full pl-7 ${current ? "pr-14" : ""}`} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <Input className={`w-full pl-7 [@media(pointer:coarse)]:text-[16px] ${current ? "pr-14" : ""}`} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
             {current && <kbd aria-hidden className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border border-border px-1 font-mono text-xs text-muted-foreground">⇧⌘M</kbd>}
           </div>
           {prefs?.newChatModel && <div className="flex min-w-0 items-center gap-1 px-1 text-xs text-muted-foreground">
             <span className="min-w-0 flex-1 truncate">Default: {cliName(prefs.newChatModel.provider)} · <span className="font-mono">{prefs.newChatModel.model}</span></span>
             <button type="button" className="shrink-0 rounded px-1 hover:bg-menu-hover" aria-label="Reset new chat default" onClick={() => void app.settings.setPref("newChatModel", null)}>Reset</button>
           </div>}
-          <div data-testid="run-models" className="max-h-[min(300px,38vh)] overflow-y-auto">
+          <span aria-live="polite" className="sr-only" data-testid="run-model-status">{rail === "favorites" ? "" : modelStatus}</span>
+          <div data-testid="run-models" className="h-[min(300px,38vh)] overflow-y-auto">
             {rail !== "favorites" && !!prefs?.recentModels?.length && <div data-testid="run-recent">
               <p className="px-2 pt-1 text-xs text-muted-foreground">Recent</p>
               {prefs.recentModels.slice(0, 4).map(savedRow)}
@@ -167,10 +171,8 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
               <p className="px-2 py-1 text-xs text-muted-foreground">{rail === "favorites" ? "Favorites" : cliName(rail)}</p>
               {rail === "favorites" ? favorites.map(savedRow) : shown.map((m) => modelRow(rail, m, false))}
               {unlisted && modelRow(rail, { id: unlisted, label: unlisted }, false, current !== undefined)}
-              {rail !== "favorites" && list === undefined && <p className="px-2 text-xs text-muted-foreground">Reading models…</p>}
-              {rail !== "favorites" && Array.isArray(list) && !list.length && <p className="px-2 text-xs text-muted-foreground">No models listed. Type a model id.</p>}
+              {rail !== "favorites" && !shown.length && <p className={`line-clamp-2 px-2 text-xs ${typeof list === "string" ? "text-failed" : "text-muted-foreground"}`}>{modelStatus}</p>}
               {rail === "favorites" && !favorites.length && <p className="px-2 text-xs text-muted-foreground">Star a model to see it here.</p>}
-              {typeof list === "string" && <p className="line-clamp-2 px-2 text-xs text-failed">{list}</p>}
               {custom && <button type="button" data-model-id={custom} data-testid={`run-custom-${rail}`} className="w-full truncate rounded-md px-2 py-1 text-left hover:bg-menu-hover" onClick={() => choose(rail, custom)}>Use “<span className="font-mono">{custom}</span>”</button>}
             </div>
           </div>

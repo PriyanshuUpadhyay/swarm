@@ -154,7 +154,8 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
   const selected = state.endedRun?.[sessionId];
   const pending = state.pendingSwitch?.[sessionId];
   const [local, setDraft] = useState<Run>(current);
-  const draft = (ended ? selected : pending) ?? local;
+  const switching = handoff !== undefined && !isSettled(handoff.phase);
+  const draft = (ended ? selected : pending) ?? (switching ? local : current);
   const [preview, setPreview] = useState<Run | null>(null);
   const catalog = useRunCatalog(app, ended ? draft.provider : current.provider);
 
@@ -165,11 +166,11 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
     if (wasBusy.current && !busy && pending && app.life.state.switchModel === sessionId) app.life.close("switchModel");
     wasBusy.current = busy;
   }, [app, busy, pending, sessionId]);
-  const switching = handoff !== undefined && !isSettled(handoff.phase);
   const proposed = preview ?? draft;
   const { label } = runModel(catalog, proposed);
   const outcome = switchOutcome(current, proposed);
   const pick = (run: Run) => {
+    setPreview(null);
     setDraft(run);
     app.life.pickRun(sessionId, run);
   };

@@ -212,7 +212,7 @@ export class Lifecycle {
       if (!this.isCurrentSource(id, snapshot) || this.app.composing.chair(id).unreachable) this.clearRunPick("pendingSwitch", id);
     }
     for (const id of Object.keys(this.state.endedRun ?? {})) {
-      if (!this.isCurrentSource(id, snapshot)) this.clearRunPick("endedRun", id);
+      if (!this.isCurrentSource(id, snapshot) || !this.app.composing.chair(id).unreachable) this.clearRunPick("endedRun", id);
     }
   }
 

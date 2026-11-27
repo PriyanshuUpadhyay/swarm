@@ -149,6 +149,57 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
   }
 });
 
+test("a refused live switch restores the current highlight", async ({ page: tab }) => {
+  await patchLiveChair(tab, (chair) => Object.assign(chair, { provider: "claude", model: "model-a", state: "done", prompt: null }));
+  await mockRunCatalog(tab, { providers: [{ id: "claude" }, { id: "codex" }], models: (cli) => cli === "claude" ? [{ id: "model-a", label: "Model A" }] : [{ id: "model-b", label: "Model B" }] });
+  await tab.route("**/api/chat/continue", (route) => route.fulfill({ status: 409, json: { error: "The switch was refused" } }));
+  await open(tab);
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await picker.getByRole("button", { name: "Codex", exact: true }).click();
+  const picked = picker.getByRole("button", { name: "Model B", exact: true });
+  await picked.click();
+  await expect(picker.getByRole("alert")).toHaveText("The switch was refused");
+  await expect(picked).toHaveAttribute("aria-pressed", "false");
+});
+
+test.describe("picker on a touch screen", () => {
+  test.use({ hasTouch: true });
+
+  test("favorite and default controls show before touch", async ({ page: tab }) => {
+    await mockRunCatalog(tab, { providers: [{ id: "claude" }], models: [{ id: "model-a", label: "Model A" }] });
+    await open(tab);
+    await tab.getByTestId("model-chip").tap();
+    const picker = tab.getByTestId("run-popover");
+    const row = picker.locator('[data-model-id="model-a"]').locator("..");
+    await expect(row.getByRole("button", { name: /favorite/i })).toHaveCSS("opacity", "1");
+    await expect(row.getByRole("button", { name: "Use for new chats" })).toHaveCSS("opacity", "1");
+    await expect(picker.getByTestId("run-query")).toHaveCSS("font-size", "16px");
+  });
+});
+
+test("the cold picker keeps its search field still and announces the catalog", async ({ page: tab }) => {
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => { release = resolve; });
+  await mockRunCatalog(tab, { providers: [{ id: "claude" }], models: [] });
+  await tab.route("**/api/models?**", async (route) => {
+    await ready;
+    await route.fulfill({ json: { models: Array.from({ length: 24 }, (_, i) => ({ id: `model-${i}`, label: `Model ${i}` })) } });
+  });
+  await open(tab);
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  const search = picker.getByTestId("run-query");
+  try {
+    await expect(picker.getByTestId("run-models").getByText("Reading models…")).toBeVisible();
+    const y = (await search.boundingBox())!.y;
+    release();
+    await expect(picker.getByRole("button", { name: "Model 0", exact: true })).toBeVisible();
+    expect((await search.boundingBox())!.y).toBe(y);
+    await expect(picker.getByTestId("run-model-status")).toHaveText("24 models listed.");
+  } finally { release(); }
+});
+
 test("stream loss shows Reconnecting and clears it after hello", async ({ page: tab }, info) => {
   await tab.route("**/api/stream", (route) => route.fulfill({ contentType: "text/event-stream", body: "" }));
   await open(tab);

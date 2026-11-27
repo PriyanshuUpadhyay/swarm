@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "./api";
+import { ApiError, type Session } from "./api";
 import type { App } from "./app";
 import { Lifecycle } from "./lifecycle";
 
@@ -69,6 +69,21 @@ describe("chats", () => {
     expect(await group.life.confirmed()).toBeNull();
     expect(group.calls).toContain('/api/sessions/archive {"ids":["chat-1","chat-2"]}');
     expect(group.calls.filter((c) => c.startsWith("leave"))).toEqual(["leave chat-1", "leave chat-2"]);
+  });
+
+  it("drops an ended pick when the chair returns in another window", () => {
+    const { life } = fakeApp(async () => ({}));
+    const app = (life as unknown as { app: App }).app;
+    const snap = { version: 1, sessions: [{ id: "chat-1" } as Session], agents: {} };
+    app.snapshot = snap;
+    let unreachable = true;
+    Object.assign(app, { composing: { chair: () => ({ provider: "claude", unreachable }) } });
+    const run = { provider: "claude", model: "sonnet", effort: null, account: null };
+    life.pickRun("chat-1", run);
+    expect(life.state.endedRun?.["chat-1"]).toEqual(run);
+    unreachable = false;
+    life.reconcileRunPicks(snap);
+    expect(life.state.endedRun?.["chat-1"]).toBeUndefined();
   });
 
   it("marks a refused switch as cancelled only for the server's cancel text", async () => {
