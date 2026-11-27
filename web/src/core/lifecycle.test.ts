@@ -287,6 +287,22 @@ describe("linked chat draft and notes", () => {
     reload.streaming.applySnapshot(linked);
     expect(reload.notes.list("leaf").map((item) => item.text)).toEqual(["Edited note"]);
   });
+
+  it.each(["remove", "add to message"])("does not restore a note after a failed move and %s", (action) => {
+    mockStorage();
+    const tab = new App(new Api("test"));
+    tab.notes.add("root", { kind: "reply", rowId: "row-1", quote: "An earlier reply" });
+    blocked = true;
+    tab.streaming.applySnapshot(linked);
+    const [note] = tab.notes.list("leaf");
+
+    blocked = false;
+    if (action === "remove") tab.notes.remove("leaf", note.id);
+    else tab.notes.toBox("leaf", "append");
+    const reload = new App(new Api("test"));
+    reload.streaming.applySnapshot(linked);
+    expect(reload.notes.list("leaf")).toEqual([]);
+  });
 });
 
 describe("linked chat reader", () => {
