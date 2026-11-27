@@ -1,6 +1,16 @@
-import { expect, test } from "@playwright/test";
-import type { Snapshot } from "../src/core/api";
+import { expect, test, type Page } from "@playwright/test";
+import type { Agent, Snapshot } from "../src/core/api";
 import { captureThemes, mockRows, mockStream, open, row, streamFrame, waitFrames } from "./ux-helpers";
+
+function mockStatusSnapshot(page: Page, session: string, read: () => Partial<Agent> & { version?: number }) {
+  return page.route("**/api/snapshot", async (route) => {
+    const snapshot = await (await route.fetch()).json() as Snapshot;
+    const { version, ...agent } = read();
+    if (version !== undefined) snapshot.version = version;
+    Object.assign(snapshot.agents[session][0], agent);
+    await route.fulfill({ json: snapshot });
+  });
+}
 
 test("the status line names the work and keeps the turn clock outside the log", async ({ page }) => {
   const session = process.env.SWARM_E2E_LIVE!;
@@ -10,17 +20,11 @@ test("the status line names the work and keeps the turn clock outside the log", 
   let state = "done";
   let version = 0;
 
-  await page.route("**/api/snapshot", async (route) => {
-    const snapshot = await (await route.fetch()).json() as Snapshot;
-    snapshot.version = version;
-    Object.assign(snapshot.agents[session][0], {
-      state,
-      state_at_s: startS,
-      turn_start_time_s: state === "done" ? undefined : startS - 65,
-      turn_clock_time_s: state === "done" ? undefined : startS,
-    });
-    await route.fulfill({ json: snapshot });
-  });
+  await mockStatusSnapshot(page, session, () => ({
+    version, state, state_at_s: startS,
+    turn_start_time_s: state === "done" ? undefined : startS - 65,
+    turn_clock_time_s: state === "done" ? undefined : startS,
+  }));
   await mockStream(page, "status");
 
   await mockRows(page, [{
@@ -84,17 +88,11 @@ test("a slow sidebar read does not delay the turn clock sample", async ({ page }
   await page.clock.install();
   await mockStream(page, "slow-sidebar");
 
-  await page.route("**/api/snapshot", async (route) => {
-    const snapshot = await (await route.fetch()).json() as Snapshot;
-    snapshot.version = hold ? 700 : 699;
-    Object.assign(snapshot.agents[session][0], {
-      state: hold ? "working" : "done",
-      alive: true,
-      turn_start_time_s: hold ? serverS - 65 : undefined,
-      turn_clock_time_s: hold ? serverS : undefined,
-    });
-    await route.fulfill({ json: snapshot });
-  });
+  await mockStatusSnapshot(page, session, () => ({
+    version: hold ? 700 : 699, state: hold ? "working" : "done", alive: true,
+    turn_start_time_s: hold ? serverS - 65 : undefined,
+    turn_clock_time_s: hold ? serverS : undefined,
+  }));
   await page.route("**/api/tree?view=workspaces", async (route) => {
     if (hold) await held;
     await route.continue();
@@ -130,13 +128,9 @@ test("a reopened working chat counts from the accepted snapshot", async ({ page 
 
   try {
     await mockStream(page, "clock-age");
-    await page.route("**/api/snapshot", async (route) => {
-      const snapshot = await (await route.fetch()).json() as Snapshot;
-      Object.assign(snapshot.agents[session][0], {
-        state: "working", alive: true, turn_start_time_s: serverS - 65, turn_clock_time_s: serverS,
-      });
-      await route.fulfill({ json: snapshot });
-    });
+    await mockStatusSnapshot(page, session, () => ({
+      state: "working", alive: true, turn_start_time_s: serverS - 65, turn_clock_time_s: serverS,
+    }));
     await mockRows(page, [row("reply", "Last reply")]);
     await open(page);
     const now = await page.evaluate(() => Date.now());
