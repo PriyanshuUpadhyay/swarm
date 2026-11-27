@@ -24,14 +24,21 @@ pub(super) async fn prepare_carry(
             let chain = read_connection(&app.root)
                 .and_then(|db| swarm::store::continuation_logs(&db, old))
                 .map_err(actions::history_read_error)?;
+
             let mut budget = ROWS_FIND_LIMIT as u64;
             let mut text = String::new();
             for row in chain {
                 let log = match resolve_link_log(&row) {
                     Ok(log) => log,
-                    Err(err) if err.0 == StatusCode::NOT_FOUND => continue,
+                    Err(err) if err.0 == StatusCode::NOT_FOUND => {
+                        if row.path.as_deref().is_none_or(str::is_empty) {
+                            continue;
+                        }
+                        return Err(unreadable_handoff_log());
+                    }
                     Err(err) => return Err(err),
                 };
+
                 let size = std::fs::metadata(&log.path)
                     .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
                     .len();

@@ -140,13 +140,15 @@ pub(super) fn continue_phase(app: &App, old: &str, phase: &'static str) -> Resul
     Ok(())
 }
 pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiError> {
-    let log = resolve_log(&app.root, old, "chair").map_err(|_| {
-        error(
-            StatusCode::CONFLICT,
-            "The current chat has no readable transcript to carry forward",
-        )
-    })?;
+    let log = resolve_log(&app.root, old, "chair").map_err(|_| unreadable_handoff_log())?;
     read_handoff_log(app, old, &log, None).await
+}
+
+fn unreadable_handoff_log() -> ApiError {
+    error(
+        StatusCode::CONFLICT,
+        "The current chat has no readable transcript to carry forward",
+    )
 }
 
 async fn read_handoff_log(
