@@ -240,7 +240,8 @@ fn requested_paths_and_independent_cache_intervals() {
 fn a_timed_out_pr_read_keeps_the_facts_and_retries_first() {
     let tree = tree();
     let owner = owner();
-    let path = "/repo/wt/main";
+    let slow = "/repo/wt/feature";
+    let next = "/repo/wt/main";
     let mut cache = FieldReader::default();
     let pr = json!({
         "number": 7, "state": "OPEN", "url": "https://github.com/example/repo/pull/7",
@@ -255,39 +256,35 @@ fn a_timed_out_pr_read_keeps_the_facts_and_retries_first() {
         |_, _, _| Ok(Some(pr.clone())),
         |_, _, _| None,
     );
-    let facts = cache.fields[path].clone();
+    let facts = cache.fields[slow].clone();
 
-    cache.refresh_fields_with(
-        &tree,
-        &owner,
-        121,
-        |_, _| None,
-        |workspace, _, _| {
-            if workspace == path {
-                Err(DeadlineExpired)
-            } else {
-                Ok(None)
-            }
-        },
-        |_, _, _| None,
-    );
+    for (at, order) in [
+        (121, &[slow][..]),
+        (122, &[slow][..]),
+        (123, &[next, slow][..]),
+    ] {
+        let mut reads = Vec::new();
+        cache.refresh_fields_with(
+            &tree,
+            &owner,
+            at,
+            |_, _| None,
+            |path, _, _| {
+                reads.push(path.to_owned());
 
-    assert_eq!(cache.fields[path], facts);
+                if path == slow {
+                    Err(DeadlineExpired)
+                } else {
+                    Ok(None)
+                }
+            },
+            |_, _, _| None,
+        );
 
-    let mut retried = Vec::new();
-    cache.refresh_fields_with(
-        &tree,
-        &owner,
-        122,
-        |_, _| None,
-        |workspace, _, _| {
-            retried.push(workspace.to_owned());
-            Ok(None)
-        },
-        |_, _, _| None,
-    );
-    assert_eq!(retried, [path]);
-    assert!(cache.fields[path].pr_fact.is_none());
+        assert_eq!(reads, order, "lookup order at {at}");
+        assert_eq!(cache.fields[slow], facts);
+    }
+    assert!(cache.fields[next].pr_fact.is_none());
 }
 
 #[test]

@@ -395,6 +395,7 @@ pub struct FieldReader {
     github_at: BTreeMap<String, (i64, Option<String>)>,
     diff_at: BTreeMap<String, (i64, String)>,
     cursor: Option<String>,
+    cut_path: Option<String>,
     selected: Option<String>,
 }
 
@@ -508,10 +509,19 @@ impl FieldReader {
             }
 
             if read_github {
+                let retry = self
+                    .cut_path
+                    .take_if(|cut| cut.as_str() == path.as_str())
+                    .is_some();
                 let Ok(request) = lookup(path, branch.map(String::as_str), deadline) else {
-                    // Leave the cursor before this input so the next pass starts here.
+                    if retry {
+                        self.cursor = Some(path.clone());
+                    } else {
+                        self.cut_path = Some(path.clone());
+                    }
                     break;
                 };
+
                 self.github_at.insert(path.clone(), (at, branch.cloned()));
                 let fields = request.as_ref().map(github_fields).unwrap_or_default();
                 let current = self.fields.entry(path.clone()).or_default();
