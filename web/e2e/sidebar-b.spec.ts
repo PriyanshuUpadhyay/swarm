@@ -17,7 +17,7 @@ test("head B puts Home and project controls above New chat and palette search", 
   const add = head.getByRole("button", { name: "Add project" });
   const settings = head.getByRole("button", { name: "Settings" });
   const chat = head.getByRole("button", { name: "New chat", exact: true });
-  const search = head.getByRole("button", { name: "Command palette" });
+  const search = head.getByRole("button", { name: "Search", exact: true });
   await expect(home).toHaveText("Swarm");
   const boxes = await Promise.all([home, add, settings, chat, search].map((control) => control.boundingBox()));
   const [homeBox, addBox, settingsBox, chatBox, searchBox] = boxes.map((box) => box!);
@@ -67,7 +67,7 @@ test("the counted cut keeps catalog chats in Search and opens by keyboard", asyn
   const sidebar = page.getByTestId("sidebar");
   const hidden = sidebar.locator(`[data-session="${session}"]`);
   await expect(hidden).toHaveCount(0);
-  await page.getByRole("button", { name: "Command palette" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.locator(`[cmdk-item][data-value="chat:${session}"]`)).toBeVisible();
   await page.keyboard.press("Escape");
 

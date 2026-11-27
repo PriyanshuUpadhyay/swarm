@@ -21,7 +21,7 @@ async function open(tab: Page) {
 }
 
 async function openSkills(page: Page) {
-  await page.getByRole("button", { name: "Command palette" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   const palette = page.getByTestId("palette");
   await palette.getByRole("combobox").fill("Skills");
   await palette.getByRole("option", { name: "Skills…" }).click();
@@ -29,6 +29,7 @@ async function openSkills(page: Page) {
 
 test("the Blocks page shows the run tree of a starting plan beside the library, and a library pick finds the block in the tree", async ({ page }, info) => {
   const errors = await open(page);
+  await expect(page.getByTestId("sidebar-head").locator(".search-box")).toHaveAccessibleName("Search");
   await openSkills(page);
   const dialog = page.getByTestId("skills");
   const tree = page.getByTestId("skills-tree");

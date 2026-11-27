@@ -259,7 +259,7 @@ const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { 
           data-action="children"
           className={`fld rounded-sm px-1 hover:bg-hover ${tab.children.blocked ? "text-waiting" : ""}`}
           title={tab.children.blocked ? "Show first waiting child" : "Show chat"}
-          aria-label={`${tab.title}, ${tab.children.count} agents${tab.children.blocked ? `, ${tab.children.blocked} waiting` : ""}`}
+          aria-label={`${tab.title}, ${tab.children.count} ${tab.children.count === 1 ? "agent" : "agents"}${tab.children.blocked ? `, ${tab.children.blocked} waiting` : ""}`}
         >
           {tab.children.text}
         </button>

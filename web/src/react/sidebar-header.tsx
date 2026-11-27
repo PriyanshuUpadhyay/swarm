@@ -41,7 +41,7 @@ export function SidebarHeader({ app }: { app: App }) {
         </Tooltip>
       </div>
       <Button type="button" onClick={() => app.newChat.open()}>New chat</Button>
-      <button type="button" className="search-box" aria-label="Command palette" onClick={() => app.setPalette(true)}>
+      <button type="button" className="search-box" aria-label="Search" onClick={() => app.setPalette(true)}>
         <SearchIcon />
         <span className="flex-1 text-left">Search…</span>
         <Kbd>⌘K</Kbd>
