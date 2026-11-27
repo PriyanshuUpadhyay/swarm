@@ -45,6 +45,18 @@ test("Settings is visible, invalid usage has a range, runner drafts survive Esca
   await screenshot(page, "profile-draft");
 });
 
+test("Notifications lists a project even when it is folded out of the sidebar", async ({ page }) => {
+  await open(page);
+  const more = page.locator('[data-kind="more-projects"]');
+  await expect(more).toBeVisible();
+  if (await more.getAttribute("aria-expanded") === "true") await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(header(page, "proj-hub")).toHaveCount(0);
+
+  const dialog = await settings(page, "notifications");
+  await expect(dialog.getByLabel("Mute proj-hub", { exact: true })).toBeVisible();
+});
+
 test("a scrolled Settings confirmation stays visible and focuses Cancel", async ({ page }) => {
   await open(page);
   const dialog = await settings(page);
