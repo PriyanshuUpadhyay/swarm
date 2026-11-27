@@ -127,7 +127,8 @@ test("Show all windows the full diff, finds its tail and sends a range note", as
   await tab.keyboard.press("Meta+f");
   const find = tab.getByRole("textbox", { name: "Find in diff" });
   await find.fill("generated line 20000");
-  await expect(tab.getByRole("search", { name: "Find in diff" })).toContainText("1 of 1");
+  const result = tab.getByRole("search", { name: "Find in diff" }).getByRole("status");
+  await expect(result).toHaveText("1 of 1", { timeout: 2_000 });
   await expect(tab.locator(DIFF_ROWS).filter({ hasText: "generated line 20000" })).toBeVisible();
   expect(await tab.locator(DIFF_ROWS).count()).toBeLessThan(200);
 
