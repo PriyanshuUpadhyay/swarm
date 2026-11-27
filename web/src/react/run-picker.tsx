@@ -107,10 +107,11 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   };
   const choose = (provider: string, m: ModelInfo | string) => setDraft(modelRun(provider, m));
 
-  const modelRow = (provider: string, m: ModelInfo, nameCli: boolean, missing = false) => {
+  const modelRow = (provider: string, m: ModelInfo, nameCli: boolean, availability: "listed" | "unlisted" | "unavailable" = "listed") => {
     const on = draft.provider === provider && draft.model === m.id;
     const pair = { provider, model: m.id };
     const starred = favorites.some((f) => f.provider === provider && f.model === m.id);
+    const missing = availability === "unavailable";
 
     if (q && ![m.label, m.id].some((text) => text.toLowerCase().includes(q))) return null;
     return (
@@ -129,16 +130,18 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
           <button type="button" title={starred ? "Remove from favorites" : "Add to favorites"} aria-label={`Favorites: ${m.label}`} aria-pressed={starred} className={`rounded p-0.5 hover:bg-menu-hover ${starred ? "" : ROW_ACTION}`} onClick={() => void app.settings.toggleFavorite(pair)}>
             <StarIcon className="size-3.5" fill={starred ? "currentColor" : "none"} />
           </button>
-          <button type="button" className={`rounded px-1 text-xs text-muted-foreground hover:bg-menu-hover ${ROW_ACTION}`} onClick={() => void app.settings.setPref("newChatModel", pair)}>
+          {availability === "listed" && <button type="button" className={`rounded px-1 text-xs text-muted-foreground hover:bg-menu-hover ${ROW_ACTION}`} onClick={() => void app.settings.setPref("newChatModel", pair)}>
             {prefs?.newChatModel?.provider === provider && prefs.newChatModel.model === m.id ? "New chat default" : "Use for new chats"}
-          </button>
+          </button>}
         </>}
       </div>
     );
   };
   const savedRow = ({ provider, model }: { provider: string; model: string }) => {
     const models = catalog.models[provider];
-    return modelRow(provider, (Array.isArray(models) && models.find((m) => m.id === model)) || { id: model, label: model }, provider !== current?.provider, provider === "pi" && /\s/.test(model));
+    const listed = Array.isArray(models) ? models.find((m) => m.id === model) : undefined;
+    const availability = provider === "pi" && /\s/.test(model) ? "unavailable" : listed ? "listed" : "unlisted";
+    return modelRow(provider, listed ?? { id: model, label: model }, provider !== current?.provider, availability);
   };
 
   return (
@@ -171,7 +174,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
             <div data-provider={rail}>
               <p className="px-2 py-1 text-xs text-muted-foreground">{rail === "favorites" ? "Favorites" : cliName(rail)}</p>
               {rail === "favorites" ? favorites.map(savedRow) : shown.map((m) => modelRow(rail, m, false))}
-              {unlisted && modelRow(rail, { id: unlisted, label: unlisted }, false, current !== undefined)}
+              {unlisted && modelRow(rail, { id: unlisted, label: unlisted }, false, current ? "unavailable" : "unlisted")}
               {rail !== "favorites" && !shown.length && <p className={`line-clamp-2 px-2 text-xs ${typeof list === "string" ? "text-failed" : "text-muted-foreground"}`}>{modelStatus}</p>}
               {rail === "favorites" && !favorites.length && <p className="px-2 text-xs text-muted-foreground">Star a model to see it here.</p>}
               {custom && <button type="button" data-model-id={custom} data-testid={`run-custom-${rail}`} className="w-full truncate rounded-md px-2 py-1 text-left hover:bg-menu-hover" onClick={() => choose(rail, custom)}>Use “<span className="font-mono">{custom}</span>”</button>}

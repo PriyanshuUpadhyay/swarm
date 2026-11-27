@@ -10,7 +10,7 @@ import { captureRunPost, holdChatStart, mockRunCatalog, open, patchLiveChair, pa
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
 
-const shots = (tab: Page, unit: number | "fix1" | "fix2" | "fix3", name: string) =>
+const shots = (tab: Page, unit: number | "fix1" | "fix2" | "fix3" | "fix4", name: string) =>
   shootThemes(tab, resolve(import.meta.dirname, `../../tmp/shots/${unit}/${name}`));
 
 test("the same tab pages both CLI logs and reads tool output from its original session", async ({ page: tab }) => {
@@ -190,6 +190,8 @@ test("a typed model stays available in the new-chat picker", async ({ page: tab 
   const row = tab.getByTestId("run-models").getByRole("button", { name: "custom-model", exact: true });
   await expect(row).toBeEnabled();
   await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row.locator("..").getByRole("button", { name: "Use for new chats" })).toHaveCount(0);
+  await shots(tab, "fix4", "typed-model");
 });
 
 test("the new-chat picker gives a catalog error space inside its footer", async ({ page: tab }) => {
