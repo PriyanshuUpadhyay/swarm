@@ -28,6 +28,9 @@ const PACKAGE_HOSTS: &[&str] = &[
     "**.hf.co",
 ];
 
+/// Internal launch option for a new linked chair with no model to carry forward.
+pub const CLI_DEFAULT_MODEL_FLAG: &str = "--cli-default-model";
+
 pub fn argv(
     agent_id: &str,
     role: &str,
@@ -35,18 +38,57 @@ pub fn argv(
     swarm_home: &str,
     cwd: &std::path::Path,
 ) -> Result<Vec<String>, String> {
+    launch_argv(
+        agent_id,
+        role,
+        resolved,
+        swarm_home,
+        cwd,
+        Some(&resolved.model),
+    )
+}
+
+pub fn argv_with_cli_default(
+    agent_id: &str,
+    role: &str,
+    resolved: &crate::config::Runner,
+    swarm_home: &str,
+    cwd: &std::path::Path,
+) -> Result<Vec<String>, String> {
+    launch_argv(agent_id, role, resolved, swarm_home, cwd, None)
+}
+
+fn launch_argv(
+    agent_id: &str,
+    role: &str,
+    resolved: &crate::config::Runner,
+    swarm_home: &str,
+    cwd: &std::path::Path,
+    model: Option<&str>,
+) -> Result<Vec<String>, String> {
     let provider = resolved.provider;
     let effort = resolved.effort.as_str();
-    let model = resolved.model.as_str();
+
+    // In tmux-swarm, `swarm pty` answers Pi's program-status probe (ADR 0123).
+    // The environment setting also lets Pi send it on other hosts.
+    let mut args = if provider == Provider::Pi {
+        vec![
+            "env".into(),
+            "PI_PROGRAM_STATUS=1".into(),
+            provider.id().into(),
+        ]
+    } else {
+        vec![provider.id().into()]
+    };
+    if let Some(model) = model
+        .filter(|model| *model != "default" || !matches!(provider, Provider::Agy | Provider::Pi))
+    {
+        args.extend(["--model".into(), model.into()]);
+    }
+
     match provider {
         Provider::Claude => {
-            let mut args = vec![
-                provider.id().into(),
-                "--model".into(),
-                model.into(),
-                "--effort".into(),
-                effort.into(),
-            ];
+            args.extend(["--effort".into(), effort.into()]);
             if let Some(permission) = &resolved.permission {
                 args.extend(["--permission-mode".into(), permission.clone()]);
             }
@@ -54,10 +96,7 @@ pub fn argv(
             Ok(args)
         }
         Provider::Codex => {
-            let mut args = vec![
-                provider.id().into(),
-                "--model".into(),
-                model.into(),
+            args.extend([
                 "-c".into(),
                 format!("model_reasoning_effort=\"{}\"", effort),
                 // Codex asks "Update available! 1. Update now 2. Skip" before it reads anything,
@@ -69,7 +108,7 @@ pub fn argv(
                 // swarm build. The pane already holds the login environment.
                 "-c".into(),
                 "allow_login_shell=false".into(),
-            ];
+            ]);
             match resolved.sandbox.as_deref() {
                 // `--sandbox workspace-write` keeps `.git` read-only, so a seat cannot commit. A
                 // permissions profile opens `.git` and keeps its hooks and config, `.codex` and
@@ -217,11 +256,7 @@ pub fn argv(
             Ok(args)
         }
         Provider::Agy => {
-            let mut args = vec![provider.id().into()];
-            if model != "default" {
-                args.extend(["--model".into(), model.into()]);
-            }
-            if agy_takes_effort(model) {
+            if model.is_none_or(agy_takes_effort) {
                 args.extend(["--effort".into(), effort.into()]);
             }
             if let Some(permission) = &resolved.permission {
@@ -234,16 +269,6 @@ pub fn argv(
             Ok(args)
         }
         Provider::Pi => {
-            // pi sends OSC 7501 only to a terminal that answers its probe. `swarm pty` answers it
-            // in a tmux-swarm pane (ADR 0123), and the variable makes pi send on any other host.
-            let mut args = vec![
-                "env".into(),
-                "PI_PROGRAM_STATUS=1".into(),
-                provider.id().into(),
-            ];
-            if model != "default" {
-                args.extend(["--model".into(), model.into()]);
-            }
             args.extend(["--thinking".into(), effort.into()]);
             Ok(args)
         }

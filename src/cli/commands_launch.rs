@@ -2,6 +2,7 @@
 
 use super::*;
 use rusqlite::OptionalExtension;
+use swarm::bus::CLI_DEFAULT_MODEL_FLAG;
 
 pub(super) mod pi;
 
@@ -33,9 +34,10 @@ pub(crate) fn commands_launch(
         let resume = options.iter().any(|arg| arg == "--resume");
         // `--force` lets the role's own flags through in the extra args (ADR 0163).
         let force = options.iter().any(|arg| arg == "--force");
+        let cli_default = options.iter().any(|arg| arg == CLI_DEFAULT_MODEL_FLAG);
         let options: Vec<String> = options
             .iter()
-            .filter(|arg| *arg != "--resume" && *arg != "--force")
+            .filter(|arg| *arg != "--resume" && *arg != "--force" && *arg != CLI_DEFAULT_MODEL_FLAG)
             .cloned()
             .collect();
         let (mut account, mut cwd, mut requested_provider, mut requested_model, mut effort) =
@@ -52,6 +54,19 @@ pub(crate) fn commands_launch(
                 _ => return Err(USAGE.into()),
             }
         }
+
+        if cli_default
+            && (resume
+                || force
+                || !extra.is_empty()
+                || agent_id != "orchestrator"
+                || role != "chat"
+                || requested_provider.is_none()
+                || requested_model.is_some())
+        {
+            return Err(USAGE.into());
+        }
+
         let resume = match resume {
             false => None,
             true if agent_id != "orchestrator"
@@ -111,7 +126,10 @@ pub(crate) fn commands_launch(
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let (mut runner, probe): (swarm::config::Runner, Probe) = match requested_model {
+
+        // A linked start with no recorded model keeps one-off provider settings, not a role's model.
+        let model = requested_model.or(cli_default.then_some("default"));
+        let (mut runner, probe): (swarm::config::Runner, Probe) = match model {
             // A one-off model runs exactly that runner, with no fallback (ADR 0033). It keeps the
             // role's runner for that provider, so its sandbox and permission stay (ADR 0163).
             Some(model) => {
@@ -144,7 +162,8 @@ pub(crate) fn commands_launch(
         };
         // A switch keeps the chat and changes only its run, so the effort is the owner's pick.
         // pi's `default` hides which login it runs on, so the chat shows no account to switch.
-        if runner.provider == Provider::Pi
+        if !cli_default
+            && runner.provider == Provider::Pi
             && runner.model == "default"
             && let Some(model) = swarm::providers::pi_default_model()
         {
@@ -160,7 +179,13 @@ pub(crate) fn commands_launch(
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, &runner.model) {
             return Err(reason.into());
         }
-        let mut command = swarm::bus::argv(agent_id, role, &runner, &swarm::paths::home()?, &cwd)?;
+
+        let argv = if cli_default {
+            swarm::bus::argv_with_cli_default
+        } else {
+            swarm::bus::argv
+        };
+        let mut command = argv(agent_id, role, &runner, &swarm::paths::home()?, &cwd)?;
         let kind = runner.provider;
         let mut extra = swarm::bus::extra_args(kind, extra, force)?;
         if let Some((_, id)) = &resume {

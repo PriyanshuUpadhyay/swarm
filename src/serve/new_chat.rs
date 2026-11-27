@@ -39,6 +39,7 @@ pub(super) async fn new_chat_now(app: &App, body: NewChat) -> Result<Value, ApiE
         launch.account.as_deref(),
         cwd,
         &session,
+        launch.body.model.is_none(),
     )
     .await
     {
@@ -287,7 +288,7 @@ async fn start_chair(
         warning = found;
     }
 
-    launch_chair(app, body, role, account, cwd, session).await?;
+    launch_chair(app, body, role, account, cwd, session, false).await?;
     remember_started_model(app, session).await;
     Ok(warning)
 }
@@ -299,12 +300,16 @@ async fn launch_chair(
     account: Option<&str>,
     cwd: &str,
     session: &str,
+    cli_default_model: bool,
 ) -> Result<(), ApiError> {
     let mut call = chat_call(cwd, Some(session));
     call.args = vec!["launch".into(), "orchestrator".into(), role.to_owned()];
 
     if let Some(provider) = &body.provider {
         call.args.extend(["--provider".into(), provider.clone()]);
+    }
+    if cli_default_model {
+        call.args.push(swarm::bus::CLI_DEFAULT_MODEL_FLAG.into());
     }
     append_run_flags(
         &mut call,

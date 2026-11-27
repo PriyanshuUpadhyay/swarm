@@ -128,6 +128,7 @@ async fn linked_start_without_a_model_leaves_the_cli_default() {
         .find(|line| line.contains("launch orchestrator"))
         .unwrap();
     assert!(launch.contains("--provider codex"), "{launch}");
+    assert!(launch.contains("--cli-default-model"), "{launch}");
     assert!(!launch.contains("--model"), "{launch}");
 }
 
