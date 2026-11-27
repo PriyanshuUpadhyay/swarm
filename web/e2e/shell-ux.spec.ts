@@ -1,17 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
-import { compose, header, open } from "./lifecycle-helpers";
+import { compose, header, open, showOtherProjects } from "./lifecycle-helpers";
 
 async function settings(page: Page, section = "profiles") {
   await page.getByTestId("settings-button").click();
   await page.getByTestId(`settings-page-${section}`).click();
   return page.getByTestId("settings");
 }
-async function showOtherProjects(page: Page) {
-  const row = page.locator('[data-kind="more-projects"]');
-  if (await row.count() && (await row.getAttribute("aria-expanded")) === "false") await row.click();
-}
-
 async function screenshot(page: Page, name: string) {
   await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shell-ux/${name}.png`) });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

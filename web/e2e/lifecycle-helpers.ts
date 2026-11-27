@@ -65,3 +65,8 @@ async function holdChatStart(tab: Page) {
 }
 
 export { server, api, readTree, open, header, workspace, shoot, holdChatStart, compose };
+
+export async function showOtherProjects(page: Page) {
+  const row = page.locator('[data-kind="more-projects"]');
+  if (await row.count() && (await row.getAttribute("aria-expanded")) === "false") await row.click();
+}

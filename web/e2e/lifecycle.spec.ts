@@ -3,7 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import type { TreeView } from "../src/core/nav";
-import { api, header, open, readTree, server, shoot, workspace } from "./lifecycle-helpers";
+import { api, header, open, readTree, server, shoot, showOtherProjects, workspace } from "./lifecycle-helpers";
 
 const catalog = () => api<TreeView>("/api/tree?view=workspaces");
 const chatIn = async (title: string) => {
@@ -197,7 +197,7 @@ test("Create Project on an existing folder offers Import, Import asks about a pl
   const project = header(tab, `plain-${info.project.name}`);
   const others = tab.locator('[data-kind="more-projects"]');
   await expect(others).toBeVisible();
-  if ((await others.getAttribute("aria-expanded")) === "false") await others.click();
+  await showOtherProjects(tab);
   await expect(project).toBeVisible();
   await expect(workspace(tab, `plain-${info.project.name}`)).toHaveCount(0);
 

@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, realpathSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { ISSUES } from "./serve";
-import { api, compose, header, holdChatStart, open, shoot } from "./lifecycle-helpers";
+import { api, compose, header, holdChatStart, open, shoot, showOtherProjects } from "./lifecycle-helpers";
 
 // The cases share one server home with every spec, and a repeat finds the workspaces of the run
 // before, so each name carries the browser and the repeat.
@@ -24,8 +24,7 @@ const setScript = async (tab: Page, script: string) => {
 
 test("⌘Enter makes a worktree named from the prompt and shows each start step and the setup output", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  const inactive = tab.locator('[data-kind="more-projects"]');
-  if (await inactive.count() && (await inactive.getAttribute("aria-expanded")) === "false") await inactive.click();
+  await showOtherProjects(tab);
   const b = runName(info);
   const branch = `swarm/fix-flaky-smoke-${b}`;
   // The marker file holds the script until the case lets it fail, so the live output shows first.
@@ -70,8 +69,7 @@ test("⌘Enter makes a worktree named from the prompt and shows each start step 
 
 test("the place menu sends a branch, a pull request or an issue as the chat's place", async ({ page: tab }, info) => {
   const errors = await open(tab);
-  const inactive = tab.locator('[data-kind="more-projects"]');
-  if (await inactive.count() && (await inactive.getAttribute("aria-expanded")) === "false") await inactive.click();
+  await showOtherProjects(tab);
   const bodies = await holdChatStart(tab);
   const b = runName(info);
   execFileSync("git", ["-C", ghProject(), "branch", `topic-${b}`]);
