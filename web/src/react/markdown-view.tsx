@@ -1,5 +1,6 @@
 import { Fragment, createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Block, Display, Inline } from "../core/api";
+import { mapCutContainer } from "../core/transcript";
 import { HighlightedCode } from "./code-tokens";
 import { plural, sourceLines } from "./cut-line";
 import { ColoredRow, PatchBody, SCROLL_WINDOW_LINES, scrollWindowStyle, useSplit, useWrap } from "./patch-body";
@@ -153,38 +154,21 @@ export function cutMarkdown(display: Display, limit: number): { display: Display
 
   const takeInlines = (nodes: Inline[]): Inline[] => nodes.flatMap((node): Inline[] => {
     const visible = lines <= limit;
-    switch (node.type) {
-      case "break": return ++lines <= limit ? [node] : [];
-      case "link": {
-        const children = takeInlines(node.value.children);
-        return visible ? [{ ...node, value: { ...node.value, children } }] : [];
-      }
-      case "emphasis": case "strong": case "delete": {
-        const value = takeInlines(node.value);
-        return visible ? [{ ...node, value }] : [];
-      }
-      default: return visible ? [node] : [];
-    }
+    if (node.type === "break") return ++lines <= limit ? [node] : [];
+    const next = container(node, true);
+    return visible && next ? [next] : [];
   });
 
   const takeBlocks = (nodes: Block[]): Block[] => nodes.flatMap((node): Block[] => {
-    if (node.type === "blockquote") {
-      const value = takeBlocks(node.value);
-      return value.length ? [{ ...node, value }] : [];
-    }
-    if (node.type === "list") {
-      const items = node.value.items.map(takeBlocks).filter((item) => item.length > 0);
-      return items.length ? [{ ...node, value: { ...node.value, items } }] : [];
+    if (node.type === "blockquote" || node.type === "list") {
+      const next = container(node);
+      return next ? [next] : [];
     }
 
     const visible = ++lines <= limit;
-    if (node.type === "paragraph") {
-      const value = takeInlines(node.value);
-      return visible ? [{ ...node, value }] : [];
-    }
-    if (node.type === "heading") {
-      const children = takeInlines(node.value.children);
-      return visible ? [{ ...node, value: { ...node.value, children } }] : [];
+    if (node.type === "paragraph" || node.type === "heading") {
+      const next = container(node, true);
+      return visible && next ? [next] : [];
     }
     if (!visible) {
       if (node.type === "code") hiddenBlockLines += Math.max(0, sourceLines(node.value.text).length - 1);
@@ -193,6 +177,9 @@ export function cutMarkdown(display: Display, limit: number): { display: Display
     return visible ? [node] : [];
   });
 
+  const container = <T extends Block | Inline>(node: T, keepEmpty = false) => mapCutContainer(
+    node, takeBlocks, takeInlines, (items) => items.map(takeBlocks).filter((item) => item.length > 0), keepEmpty,
+  );
   const preview = { blocks: takeBlocks(display.blocks) };
   return { display: preview, hidden: Math.max(0, lines - limit) + hiddenBlockLines };
 }

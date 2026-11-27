@@ -112,6 +112,35 @@ export function units(d: Display): string {
   return read(d.blocks);
 }
 
+/** Rebuild a nested node without changing its kind. Callers own the cut budget. */
+export function mapCutContainer<T extends Block | Inline>(
+  node: T,
+  blocks: (nodes: Block[]) => Block[],
+  inlines: (nodes: Inline[]) => Inline[],
+  items: (nodes: Block[][]) => Block[][],
+  keepEmpty = false,
+): T | null {
+  switch (node.type) {
+    case "paragraph": case "emphasis": case "strong": case "delete": {
+      const value = inlines(node.value);
+      return keepEmpty || value.length ? { ...node, value } : null;
+    }
+    case "blockquote": {
+      const value = blocks(node.value);
+      return keepEmpty || value.length ? { ...node, value } : null;
+    }
+    case "heading": case "link": {
+      const children = inlines(node.value.children);
+      return keepEmpty || children.length ? { ...node, value: { ...node.value, children } } : null;
+    }
+    case "list": {
+      const groups = items(node.value.items);
+      return keepEmpty || groups.length ? { ...node, value: { ...node.value, items: groups } } : null;
+    }
+    default: return node;
+  }
+}
+
 /** Keeps the first n visible units; containers before the cut keep their positions. */
 export function cut(d: Display, n: number): Display {
   if (n >= units(d).length) return d;
@@ -148,32 +177,10 @@ export function cut(d: Display, n: number): Display {
           out.push(node);
           left--;
           break;
-        case "paragraph":
-        case "emphasis":
-        case "strong":
-        case "delete": {
-          const value = take(node.value);
-          if (value.length) out.push({ ...node, value });
-          break;
-        }
-        case "blockquote": {
-          const value = take(node.value);
-          if (value.length) out.push({ ...node, value });
-          break;
-        }
-        case "heading": {
-          const children = take(node.value.children);
-          if (children.length) out.push({ ...node, value: { ...node.value, children } });
-          break;
-        }
-        case "link": {
-          const children = take(node.value.children);
-          if (children.length) out.push({ ...node, value: { ...node.value, children } });
-          break;
-        }
-        case "list": {
-          const items = takeGroups(node.value.items);
-          if (items.length) out.push({ ...node, value: { ...node.value, items } });
+        case "paragraph": case "emphasis": case "strong": case "delete":
+        case "blockquote": case "heading": case "link": case "list": {
+          const next = mapCutContainer(node, take, take, takeGroups);
+          if (next) out.push(next);
           break;
         }
         case "table": {
