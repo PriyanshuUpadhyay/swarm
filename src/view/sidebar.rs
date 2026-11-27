@@ -10,6 +10,8 @@ use std::{
     path::Path,
 };
 
+mod lists;
+
 pub(super) const NEEDS_YOU: &str = "needs-you";
 pub(super) const PINNED: &str = "pinned";
 pub(super) const MORE_PROJECTS: &str = "more-projects";
@@ -41,58 +43,11 @@ pub fn sections(
         cache,
     };
     let mut sections = Vec::new();
-    let mut promoted = BTreeSet::new();
-
-    if !archive {
-        let mut asks: Vec<_> = view
-            .live_workspaces(tree)
-            .flat_map(|w| {
-                w.chats
-                    .iter()
-                    .filter(|c| prompt(c).is_some())
-                    .map(move |c| (w, c))
-            })
-            .collect();
-        sort_chats(&mut asks);
-        let count = asks.len();
-        if count > 0 {
-            promoted.extend(asks.iter().map(|(_, chat)| chat.id.as_str()));
-            if !state.expanded_lists.contains(NEEDS_YOU) {
-                asks.truncate(CHAT_LIMIT);
-            }
-            let hidden = count - asks.len();
-            let mut rows = Vec::new();
-            for (w, chat) in asks {
-                view.chat_rows(w, chat, None, &mut rows);
-            }
-            if hidden > 0 {
-                rows.push(more(NEEDS_YOU, hidden));
-            }
-            sections.push(Section {
-                count: Some(count),
-                ..view.group(NEEDS_YOU, "Needs you".into(), rows, true)
-            });
-        }
-
-        let mut pinned = Vec::new();
-        for project in &tree.projects {
-            for w in &project.workspaces {
-                if !owner.archived.contains(&w.path) && owner.pinned.contains(&w.path) {
-                    let mut chats: Vec<_> = w
-                        .chats
-                        .iter()
-                        .filter(|c| !promoted.contains(c.id.as_str()))
-                        .map(|chat| (w, chat))
-                        .collect();
-                    sort_chats(&mut chats);
-                    view.grouped_rows(project, &chats, &chats, &mut pinned);
-                }
-            }
-        }
-        if !pinned.is_empty() {
-            sections.push(view.group(PINNED, "Pinned".into(), pinned, !state.is_collapsed(PINNED)));
-        }
-    }
+    let promoted = if archive {
+        BTreeSet::new()
+    } else {
+        lists::append(&view, tree, &mut sections)
+    };
 
     let mut names = BTreeMap::new();
     for project in &tree.projects {
