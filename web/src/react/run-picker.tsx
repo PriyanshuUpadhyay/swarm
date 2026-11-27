@@ -16,8 +16,8 @@ import { CliMark } from "./cli-mark";
 
 const RAIL = "flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-muted-foreground hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
-/** A one-of-N pill that shows its pick with `aria-pressed`. */
 const ROW_ACTION = "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100";
+/** A one-of-N pill that shows its pick with `aria-pressed`. */
 export const PRESSED_PILL = "rounded-md border border-menu-border px-2 py-1 text-xs hover:bg-menu-hover aria-pressed:bg-menu-selected aria-pressed:text-foreground";
 
 export type Catalog = { providers: ProviderInfo[]; models: Record<string, ModelInfo[] | string>; error: string | null };
@@ -159,6 +159,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
           </div>
           {prefs?.newChatModel && <div className="flex min-w-0 items-center gap-1 px-1 text-xs text-muted-foreground">
             <span className="min-w-0 flex-1 truncate">Default: {cliName(prefs.newChatModel.provider)} · <span className="font-mono">{prefs.newChatModel.model}</span></span>
+            {/* The preference writer reports a refusal as an app notice. */}
             <button type="button" className="shrink-0 rounded px-1 hover:bg-menu-hover" aria-label="Reset new chat default" onClick={() => void app.settings.setPref("newChatModel", null)}>Reset</button>
           </div>}
           <span aria-live="polite" className="sr-only" data-testid="run-model-status">{rail === "favorites" ? "" : modelStatus}</span>

@@ -122,13 +122,6 @@ pub fn continuation_logs(
     Ok(chain)
 }
 
-pub fn continuation_chain(connection: &Connection, leaf: &str) -> rusqlite::Result<Vec<String>> {
-    Ok(continuation_logs(connection, leaf)?
-        .into_iter()
-        .map(|row| row.id)
-        .collect())
-}
-
 /// Links new session `new_id` as a branch of `old_id` in the same folder, with the chair session
 /// cut from the old one. A chat that already has a chair, a link, or an archive is refused, and so
 /// is a parent that is archived, in another folder, or not older. Ids are UUID v7, so `old.id <
