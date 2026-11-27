@@ -101,11 +101,17 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
   const asked: string[] = [];
   await tab.route("**/api/tool-output?*", (route) => {
     asked.push(new URL(route.request().url()).searchParams.get("diff") ?? "");
+    if (asked.length === 1) return route.fulfill({ status: 503, json: { error: "Temporary failure" } });
     return route.fulfill({ json: { text: full, patch: layout(full) } });
   });
   await open(tab);
 
   const shown = tab.getByTestId("shown-diff");
+  const retry = shown.getByRole("button", { name: "Retry", exact: true });
+  await expect(retry).toBeVisible({ timeout: 2000 });
+  expect(asked).toEqual(["true"]);
+  await captureThemes(tab, shown, "shown-diff-error");
+  await retry.click();
   await expect(shown).toContainText("new line");
   await expect(shown.locator(".diff-head")).toContainText("44 lines");
 
@@ -114,7 +120,7 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
   await box.evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await expect(box.getByText("context 40", { exact: true })).toBeInViewport();
   await box.evaluate((el) => { el.scrollTop = 0; });
-  expect(asked).toEqual(["true"]);
+  expect(asked).toEqual(["true", "true"]);
   await expect(tab.getByText("a.ts", { exact: true })).toBeHidden();
 
   await shown.getByRole("button", { name: "Split", exact: true }).click();

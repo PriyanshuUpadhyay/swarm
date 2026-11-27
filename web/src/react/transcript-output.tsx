@@ -15,6 +15,8 @@ function omittedOutput(preview: TextPreview): string {
   return bytes > 0 ? `+${plural(bytes, "byte")}` : "Line shortened";
 }
 
+const FULL_OUTPUT_ERROR = "Could not load the full output.";
+
 /** The capped preview; Show all fetches the whole text and shows it in a windowed box. */
 function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPreview; full: ReadonlyMap<string, FullText>; title: string }) {
   const f = preview.id ? full.get(preview.id) : undefined;
@@ -37,7 +39,7 @@ function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPr
         <pre className="out">{(preview.text || "No output was recorded.").split("\n").map((text, i, lines) => <span key={i} data-output-line={i}>{text}{i < lines.length - 1 ? "\n" : ""}</span>)}</pre>
       )}
       {preview.is_truncated && f?.state !== "ready" && (
-        <CutLine count={omittedOutput(preview)} testid="show-full" busy={f?.state === "loading"} error={f?.state === "error" ? f.error : undefined} show={() => void app.loadFull(preview.id)} />
+        <CutLine count={omittedOutput(preview)} testid="show-full" busy={f?.state === "loading"} error={f?.state === "error" ? FULL_OUTPUT_ERROR : undefined} show={() => void app.loadFull(preview.id)} />
       )}
     </div>
   );
@@ -132,7 +134,7 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
           <CutLine count={[
             diff.omitted_lines ? `+${plural(diff.omitted_lines, "line")}` : "",
             diff.shortened_lines ? `${plural(diff.shortened_lines, "line")} shortened` : "",
-          ].filter(Boolean).join(" · ")} busy={f?.state === "loading"} error={f?.state === "error" ? f.error : undefined} show={() => void app.loadFull(diff.id)} />
+          ].filter(Boolean).join(" · ")} busy={f?.state === "loading"} error={f?.state === "error" ? FULL_OUTPUT_ERROR : undefined} show={() => void app.loadFull(diff.id)} />
         </div>
       )}
     </div>
@@ -167,7 +169,12 @@ function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; 
         </button>
       </div>
       <PatchBody key={ready ? "full" : "preview"} patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} wrap={wrap} previewId={preview.id} fileLabels windowed />
-      {preview.is_truncated && !ready && <div className="px-2 pb-1.5 text-xs text-muted-foreground">{f?.state === "error" ? <span className="text-failed">{f.error}</span> : "Loading the full patch…"}</div>}
+      {preview.is_truncated && !ready && <div className="px-2 pb-1.5 text-xs text-muted-foreground">
+        {f?.state === "error" ? <>
+          <span role="status" className="text-failed">{FULL_OUTPUT_ERROR}</span>{" "}
+          <button type="button" className="t-link min-h-6 min-w-6" onClick={() => void app.loadFull(preview.id)}>Retry</button>
+        </> : "Loading the full patch…"}
+      </div>}
     </div>
   );
 }
