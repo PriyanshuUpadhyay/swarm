@@ -266,6 +266,14 @@
   height: 21px;
   color: var(--foreground);
 }
+.chat-title:has(button.sidebar-count),
+.chat-row:has(button.sidebar-count) .chat-sub:has(.pr-chip) {
+  min-height: 24px;
+}
+button.sidebar-count {
+  min-width: 24px;
+  min-height: 24px;
+}
 .chat-mark {
   display: grid;
   flex: none;

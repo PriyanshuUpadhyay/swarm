@@ -235,6 +235,15 @@ test("the PR chip responds to a click within its 24 px hit area", async ({ page 
   await page.unrouteAll({ behavior: "wait" });
 });
 
+test("the chat agent count has a 24 px click area", async ({ page }) => {
+  const row = await withChatFacts(page, (_tree, row) => { row.childrenSummary = "1"; });
+  const count = row.locator("button.sidebar-count");
+  const box = (await count.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(24);
+  expect(box.width).toBeGreaterThanOrEqual(24);
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page }) => {
   await load(page);
   await page.getByTestId("home-button").click();
