@@ -170,6 +170,58 @@ fn needs_you_can_return_to_the_saved_five_chat_cut() {
 }
 
 #[test]
+fn the_first_shown_chat_stands_for_its_workspace_without_a_workspace_row() {
+    use swarm::view::tree;
+    let now = 10 * 86_400;
+    let main = "/repo/wt/main";
+    let feature = "/repo/wt/feature";
+    let flat = "/repo/wt/empty";
+    let mut waiting = agent("orchestrator", "blocked");
+    waiting["prompt"] = json!({"id":"choose","question":"Approve?","choices":["Yes","No"]});
+
+    let sessions = vec![
+        session("main-first", main, now),
+        session("main-second", main, now - 1),
+        session("feature-waiting", feature, now),
+        session("feature-old", feature, 1),
+        session("flat-recent", flat, now),
+        session("flat-old", flat, 1),
+    ];
+    let agents =
+        json!({"main-first":[waiting], "main-second":[waiting], "feature-waiting":[waiting]});
+    let owner = owner();
+    let tree = tree::build(&snapshot(sessions, agents), &owner);
+    let mut state = ViewState::default();
+
+    let show = |state: &ViewState| {
+        tree::sections(&tree, &owner, state, false, now, &BTreeMap::new())
+            .into_iter()
+            .flat_map(|section| section.rows)
+            .collect::<Vec<_>>()
+    };
+
+    let stands = |rows: &[tree::SidebarRow]| {
+        rows.iter()
+            .filter(|r| r.stands_for_workspace)
+            .map(|r| r.id.clone())
+            .collect::<Vec<_>>()
+    };
+    let cut = show(&state);
+    let expected = [
+        "chat:feature-waiting",
+        "chat:main-first",
+        "chat:flat-recent",
+    ];
+    assert_eq!(stands(&cut), expected);
+    assert!(!cut.iter().any(|r| r.id == "chat:feature-old"));
+
+    state.expanded_lists.insert("project:/repo".into());
+    let all = show(&state);
+    assert_eq!(stands(&all), expected);
+    assert!(all.iter().any(|r| r.id == "chat:flat-old"));
+}
+
+#[test]
 fn pinned_cuts_only_the_chats_it_can_reveal() {
     use swarm::view::tree;
     let folded = "/repo/wt/main";

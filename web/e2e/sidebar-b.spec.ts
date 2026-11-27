@@ -176,7 +176,7 @@ test("Prune names the project for a pinned worktree", async ({ page }) => {
     facts.missing = true;
     tree.sections = [
       { id: "pinned", kind: "pinned", path: null, folder: false, expanded: true, collapseId: "pinned",
-        title: "Pinned", status: null, fields: [], rows: [{ ...chat, pinned: true, parentId: null }] },
+        title: "Pinned", status: null, fields: [], rows: [{ ...chat, pinned: true, parentId: null, standsForWorkspace: true }] },
     ];
     await route.fulfill({ response, json: tree });
   });

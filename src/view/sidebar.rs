@@ -91,7 +91,61 @@ pub fn sections(
             }
         }
     }
+    if !archive {
+        mark_standalone_chats(tree, &mut sections);
+    }
     sections
+}
+
+fn mark_standalone_chats(tree: &Tree, sections: &mut [Section]) {
+    let shown: Vec<_> = sections
+        .iter_mut()
+        .filter(|s| s.expanded || s.folder)
+        .collect();
+    let mut represented: BTreeSet<_> = shown
+        .iter()
+        .flat_map(|s| &s.rows)
+        .filter(|row| row.kind == "workspace")
+        .map(|row| row.id.clone())
+        .collect();
+
+    let workspaces: BTreeMap<_, _> = tree
+        .projects
+        .iter()
+        .flat_map(|project| &project.workspaces)
+        .map(|workspace| (workspace.path.as_str(), workspace))
+        .collect();
+
+    for row in shown
+        .into_iter()
+        .flat_map(|s| &mut s.rows)
+        .filter(|row| row.kind == "chat")
+    {
+        let Some(selection) = &row.selection else {
+            continue;
+        };
+        let Some(workspace) = workspaces.get(selection.workspace.as_str()) else {
+            continue;
+        };
+        if !represented.insert(selection.workspace.clone()) {
+            continue;
+        }
+
+        row.stands_for_workspace = true;
+        for mark in [
+            workspace.missing.then_some("folder missing"),
+            workspace.mark.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            row.fields.push(FieldValue {
+                field: "mark".into(),
+                text: mark.into(),
+                status: None,
+            });
+        }
+    }
 }
 
 pub fn chat_catalog(
@@ -111,7 +165,7 @@ pub fn chat_catalog(
         .flat_map(|w| {
             w.chats
                 .iter()
-                .map(|chat| view.chat_row(w, chat, None, false, w.chats.len() == 1))
+                .map(|chat| view.chat_row(w, chat, None, false))
         })
         .collect()
 }
@@ -232,7 +286,7 @@ impl<'a> Projection<'a> {
                     sort_chats(&mut chats);
                     rows.push(self.workspace_row(p, w, &chats));
                     for (_, chat) in chats {
-                        self.chat_rows(w, chat, Some(w.path.as_str()), false, &mut rows);
+                        self.chat_rows(w, chat, Some(w.path.as_str()), &mut rows);
                     }
                 }
                 let name =
@@ -350,7 +404,7 @@ impl<'a> Projection<'a> {
                 .get(w.path.as_str())
                 .filter(|group| has_workspace_row(group.len()))
             else {
-                self.chat_rows(w, chat, None, true, out);
+                self.chat_rows(w, chat, None, out);
                 continue;
             };
 
@@ -360,7 +414,7 @@ impl<'a> Projection<'a> {
                 out.push(row);
                 if expanded {
                     for chat in shown {
-                        self.chat_rows(w, chat, Some(w.path.as_str()), false, out);
+                        self.chat_rows(w, chat, Some(w.path.as_str()), out);
                     }
                 }
             }
@@ -450,7 +504,6 @@ impl<'a> Projection<'a> {
         c: &Chat,
         parent: Option<&str>,
         show_prompt: bool,
-        stands_for_workspace: bool,
     ) -> SidebarRow {
         let id = c.row_id();
         let children = c.children();
@@ -499,21 +552,9 @@ impl<'a> Projection<'a> {
                 .unwrap_or_default()
         };
 
-        let mut fields = context
+        let fields = context
             .with_status(c.status)
             .values(&self.owner.fields.chat);
-        if stands_for_workspace {
-            for mark in [w.missing.then_some("folder missing"), w.mark.as_deref()]
-                .into_iter()
-                .flatten()
-            {
-                fields.push(FieldValue {
-                    field: "mark".into(),
-                    text: mark.into(),
-                    status: None,
-                });
-            }
-        }
 
         SidebarRow {
             expanded: !self.state.is_collapsed(&id),
@@ -537,7 +578,6 @@ impl<'a> Projection<'a> {
             pinned: self.owner.pinned.contains(&w.path),
             archived: self.owner.archived.contains(&w.path),
             missing: w.missing,
-            stands_for_workspace,
             fields,
             selection: Some(Selection {
                 workspace: w.path.clone(),
@@ -549,15 +589,8 @@ impl<'a> Projection<'a> {
         }
     }
 
-    fn chat_rows(
-        &self,
-        w: &Workspace,
-        c: &Chat,
-        parent: Option<&str>,
-        stands_for_workspace: bool,
-        out: &mut Vec<SidebarRow>,
-    ) {
-        let row = self.chat_row(w, c, parent, true, stands_for_workspace);
+    fn chat_rows(&self, w: &Workspace, c: &Chat, parent: Option<&str>, out: &mut Vec<SidebarRow>) {
+        let row = self.chat_row(w, c, parent, true);
         let expanded = row.expanded;
         let depth = row.depth + 1;
         let id = row.id.clone();

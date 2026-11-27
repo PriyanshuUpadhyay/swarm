@@ -33,7 +33,7 @@ pub(super) fn append<'a>(
         let hidden = count.saturating_sub(CHAT_LIMIT);
         let mut rows = Vec::new();
         for (w, chat) in asks {
-            view.chat_rows(w, chat, None, w.chats.len() == 1, &mut rows);
+            view.chat_rows(w, chat, None, &mut rows);
         }
         if hidden > 0 {
             rows.push(more(NEEDS_YOU, if expanded { 0 } else { hidden }));
