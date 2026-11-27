@@ -128,6 +128,27 @@ test("Show all keeps an unfinished range comment on the same lines", async ({ pa
   await expect(diff.locator('[data-content] > [data-line][data-selected-line]')).toHaveText("generated line 1");
 });
 
+test("removing a saved Changes comment asks first", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="README.md"]').click();
+  await tab.getByTestId("diff-body").press("j");
+  await tab.getByTestId("diff-body").press("Enter");
+  await tab.getByTestId("comment-input").fill("Keep this until I confirm.");
+  await tab.getByTestId("comment-add").click();
+  const comment = tab.getByTestId("comment-card");
+  const remove = comment.getByRole("button", { name: "Remove comment" });
+  const dialog = tab.getByRole("dialog", { name: "Remove this comment?" });
+  await remove.click();
+  await expect(dialog).toBeVisible({ timeout: 2000 });
+  await captureThemes(tab, dialog, "remove-comment");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(comment).toContainText("Keep this until I confirm.");
+  await remove.click();
+  await dialog.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(comment).toHaveCount(0);
+});
+
 test("an oversized Changes range keeps the note and asks for fewer lines", async ({ page: tab }) => {
   await openChat(tab, process.env.SWARM_E2E_GIT!);
   await tab.route("**/api/changes/diff?**", (route) => {
