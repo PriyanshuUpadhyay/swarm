@@ -207,6 +207,13 @@ export class NewChat {
     if (useSavedDefault) run = { ...run, run: saved };
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
+    const models = saved?.model ? this.app.life.runs.loadedModels(saved.provider) : undefined;
+    if (models?.length && !models.some((model) => model.id === saved?.model)) {
+      if (!fromComposer) this.open(cwd, place);
+      this.app.notice("The default model for new chats is no longer listed. Reset it in the run picker or pick a new model.", true);
+      return false;
+    }
+
     this.posting = true;
     // Read before the wait: a move during the POST then shows the start in the old workspace's
     // strip and not over the view the owner moved to.
@@ -218,14 +225,6 @@ export class NewChat {
 
     let id: string;
     try {
-      if (saved?.model) {
-        const catalog = await this.app.life.runs.models(saved.provider).catch(() => null);
-        if (catalog?.models.length && !catalog.models.some((model) => model.id === saved.model)) {
-          if (!fromComposer && nav === this.app.navSeq) this.open(cwd, place);
-          this.app.notice("The default model for new chats is no longer listed. Reset it in the run picker or pick a new model.", true);
-          return false;
-        }
-      }
       ({ start: id } = await this.app.api.post<{ start: string }>("/api/chat/new", startBody(cwd, prompt, place, run), AbortSignal.timeout(START_TIMEOUT_MS)));
     } catch (err) {
       // The server may have started the chat before the wait ended, so the notice says to look first.

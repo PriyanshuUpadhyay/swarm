@@ -7,8 +7,10 @@ import type { AccountList, ProviderInfo } from "./settings";
  *  level the CLI picks for it. */
 export type ModelInfo = { id: string; label: string; efforts?: string[]; note?: string; default_effort?: string };
 
+type ModelRead = { read: Promise<{ models: ModelInfo[] }>; models?: ModelInfo[] };
+
 export class RunCatalog {
-  private reads = new Map<string, Promise<{ models: ModelInfo[] }>>();
+  private reads = new Map<string, ModelRead>();
   /** Each account's email from the last accounts read, by `provider/name`, for the chip's tooltip. */
   private emails = new Map<string, string>();
 
@@ -21,13 +23,17 @@ export class RunCatalog {
   /** `efforts` lists the levels one model takes; absent means the provider's list. */
   models(provider: string): Promise<{ models: ModelInfo[] }> {
     // Each read runs the CLI (AGY takes about 5 s), so a list is read once per app run.
-    let read = this.reads.get(provider);
-    if (!read) {
-      read = this.api().get<{ models: ModelInfo[] }>("/api/models", { provider });
-      read.catch(() => this.reads.delete(provider));
-      this.reads.set(provider, read);
-    }
-    return read;
+    const cached = this.reads.get(provider);
+    if (cached) return cached.read;
+
+    const entry: ModelRead = { read: this.api().get("/api/models", { provider }) };
+    entry.read.then(({ models }) => { entry.models = models; }, () => this.reads.delete(provider));
+    this.reads.set(provider, entry);
+    return entry.read;
+  }
+
+  loadedModels(provider: string): readonly ModelInfo[] | undefined {
+    return this.reads.get(provider)?.models;
   }
 
   async accounts(provider: string): Promise<AccountList> {

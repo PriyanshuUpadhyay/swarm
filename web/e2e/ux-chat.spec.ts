@@ -138,6 +138,12 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
     await mockRunCatalog(tab, { providers: [{ id: "codex" }], models: [{ id: "model-b", label: "Model B" }] });
     const starts = await holdChatStart(tab);
     await open(tab);
+    await tab.getByTestId("model-chip").click();
+    const picker = tab.getByTestId("run-popover");
+    await picker.getByRole("button", { name: "Codex", exact: true }).click();
+    await expect(picker.getByRole("button", { name: "Model B", exact: true })).toBeVisible();
+    await tab.keyboard.press("Escape");
+
     await tab.keyboard.press("Meta+t");
     await expect(tab.getByText(/The default model for new chats is no longer listed/)).toBeVisible();
     expect(starts).toEqual([]);

@@ -197,6 +197,25 @@ describe("chats", () => {
   });
 });
 
+describe("automatic starts", () => {
+  it("posts the start at once when the default model list has not loaded", async () => {
+    const requests: string[] = [];
+    const app = new App(new Api("test", async (request) => {
+      const path = String(request);
+      requests.push(path);
+      return Response.json(path === "/api/chat/new" ? { start: "pending" } : { models: [] });
+    }));
+    app.tree = {
+      version: 1, revision: "test", view: "workspaces", sections: [], selectedRow: null,
+      archivedStatus: null, choicesError: null, prefs: { newChatModel: { provider: "agy", model: "model-a" } },
+    };
+
+    const start = app.newChat.start("/work", "", { kind: "here" }, { run: null });
+    expect(requests).toEqual(["/api/chat/new"]);
+    expect(await start).toBe(true);
+  });
+});
+
 describe("linked chat draft and notes", () => {
   const session = { cwd: "/work", created_at: 1, chair_provider: "claude", adapter: null, project: null, workspace: null };
   const linked: Snapshot = {
