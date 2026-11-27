@@ -324,7 +324,7 @@ pub(super) async fn remember_started_model(app: &App, session: &str) {
     let root = app.root.clone();
     let session = session.to_owned();
 
-    let saved = tokio::task::spawn_blocking(move || -> Result<(), String> {
+    let saved = tokio::task::spawn_blocking(move || -> Result<bool, String> {
         let db = read_connection(&root).map_err(|err| err.to_string())?;
         let pair = db
             .query_row(
@@ -340,17 +340,22 @@ pub(super) async fn remember_started_model(app: &App, session: &str) {
             .optional()
             .map_err(|err| err.to_string())?;
 
+        let mut changed = false;
         if let Some((Some(provider), Some(model))) = pair {
             choices_store::update(&root, None, |owner, _| {
-                owner.remember_model(provider, model)
+                let before = owner.prefs["recentModels"].clone();
+                owner.remember_model(provider, model)?;
+                changed = owner.prefs["recentModels"] != before;
+                Ok(())
             })
             .map_err(|err| err.to_string())?;
         }
-        Ok(())
+        Ok(changed)
     })
     .await;
     match saved {
-        Ok(Ok(())) => {}
+        Ok(Ok(true)) => app.hub.lock().unwrap().bump(),
+        Ok(Ok(false)) => {}
         Ok(Err(err)) => eprintln!("swarm: could not record the recent model: {err}"),
         Err(err) => eprintln!("swarm: recent model task failed: {err}"),
     }

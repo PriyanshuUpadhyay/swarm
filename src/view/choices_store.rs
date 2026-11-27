@@ -121,9 +121,17 @@ fn decode(choices: Vec<u8>, state: Vec<u8>) -> Result<Saved, StoreError> {
     } else {
         serde_json::from_slice(&state).map_err(|e| StoreError::Failed(e.to_string()))?
     };
+    // Recent records a successful run, not an owner choice. Hash the remaining choices in
+    // one form so the first automatic save does not invalidate an open tab either.
+    let mut conflict = owner.clone();
+    if let Some(prefs) = conflict.prefs.as_object_mut() {
+        prefs.remove("recentModels");
+    }
+    let conflict =
+        serde_json::to_vec(&conflict).map_err(|err| StoreError::Failed(err.to_string()))?;
     let mut hash = Sha256::new();
-    hash.update((choices.len() as u64).to_le_bytes());
-    hash.update(&choices);
+    hash.update((conflict.len() as u64).to_le_bytes());
+    hash.update(&conflict);
     hash.update(&state);
     Ok(Saved {
         owner,

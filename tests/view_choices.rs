@@ -55,6 +55,24 @@ fn round_trip_preserves_shared_format_and_foreign_keys() {
     assert!(home.root.join("view-state.json").exists());
 }
 #[test]
+fn a_background_recent_does_not_invalidate_an_owner_choice() {
+    let home = ChoicesHome::new();
+    let tab = choices_store::load(&home.root, true).unwrap();
+    choices_store::update(&home.root, None, |owner, _| {
+        owner.remember_model("claude".into(), "sonnet".into())
+    })
+    .unwrap();
+
+    let saved = choices_store::update(&home.root, Some(&tab.revision), |owner, _| {
+        owner.pinned.insert("/repo".into());
+        Ok(())
+    })
+    .unwrap();
+    assert!(saved.owner.pinned.contains("/repo"));
+    assert_eq!(saved.owner.prefs["recentModels"][0]["model"], "sonnet");
+}
+
+#[test]
 fn stale_revision_changes_no_bytes() {
     let home = ChoicesHome::new();
     let before = choices_store::load(&home.root, true).unwrap();
