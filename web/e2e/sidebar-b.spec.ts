@@ -246,21 +246,26 @@ test("the chat agent count has a 24 px click area", async ({ page }) => {
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("the rail caps the chat buttons and opens Search for the rest", async ({ page }) => {
-  let hidden = 0;
-  await withChatFacts(page, (tree, row) => {
-    const extra = Array.from({ length: 12 }, (_, i): SidebarRow => ({
-      ...row, id: `chat:rail-${i}`, title: `Rail chat ${i}`, selection: { ...row.selection!, chat: `rail-${i}` },
-    }));
-    tree.chats = [...tree.chats, ...extra];
-    hidden = tree.chats.length - 8;
-  });
-  await page.setViewportSize({ width: 900, height: 900 });
-  const rail = page.getByTestId("sidebar-rail");
-  await expect(rail.getByTestId("rail-chat")).toHaveCount(8);
-  await rail.getByRole("button", { name: `Search ${hidden} more chats` }).click();
-  await expect(page.getByRole("combobox")).toBeFocused();
-  await page.unrouteAll({ behavior: "wait" });
+test("the rail caps the chat buttons and opens Search for one more chat", async ({ page }) => {
+  try {
+    await withChatFacts(page, (tree, row) => {
+      if (!row.selection) throw new Error("Rail fixture chat has no selection");
+      const selection = row.selection;
+      tree.chats = Array.from({ length: 9 }, (_, i): SidebarRow => ({
+        ...row, id: `chat:rail-${i}`, title: `Rail chat ${i}`, selection: { ...selection, chat: `rail-${i}` },
+      }));
+    });
+
+    await page.setViewportSize({ width: 900, height: 900 });
+    const rail = page.getByTestId("sidebar-rail");
+    await expect(rail.getByTestId("rail-chat")).toHaveCount(8);
+    const more = rail.getByRole("button", { name: /^Search / });
+    await expect(more).toHaveAccessibleName("Search 1 more chat");
+    await more.click();
+    await expect(page.getByRole("combobox")).toBeFocused();
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 test("the rail shows initial loading and a failed workspace list", async ({ page }) => {

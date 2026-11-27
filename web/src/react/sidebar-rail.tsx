@@ -1,6 +1,7 @@
 import { LoaderCircleIcon, MessageSquareIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import type { App } from "../core/app";
+import { plural } from "../core/lifecycle-state";
 import { chatRows } from "../core/nav";
 import { Glyph } from "./glyph";
 import { StatusGlyph } from "./status";
@@ -25,6 +26,7 @@ export function SidebarRail({ app }: { app: App }) {
   const current = order.findIndex((row) => row.selection?.chat === openId);
   if (current >= CHAT_LIMIT) shown[CHAT_LIMIT - 1] = order[current];
   const hidden = order.length - shown.length;
+  const overflowLabel = `Search ${plural(hidden, "more chat")}`;
   const notice = error ? (order.length ? "Offline. Showing the last list." : "Could not load the workspaces") :
     tree?.choicesError ? `Choices: ${tree.choicesError}` : !loaded ? "Loading workspaces…" : !order.length ? "No chats" : null;
 
@@ -49,7 +51,7 @@ export function SidebarRail({ app }: { app: App }) {
           );
         })}
       </div>
-      {hidden > 0 && <button type="button" className="text-xs tabular-nums" aria-label={`Search ${hidden} more chats`} title={`Search ${hidden} more chats`} onClick={() => app.setPalette(true)}>
+      {hidden > 0 && <button type="button" className="text-xs tabular-nums" aria-label={overflowLabel} title={overflowLabel} onClick={() => app.setPalette(true)}>
         <span className="max-w-full truncate">+{hidden}</span>
       </button>}
     </nav>
