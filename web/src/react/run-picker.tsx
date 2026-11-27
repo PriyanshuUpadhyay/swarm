@@ -107,11 +107,12 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   };
   const choose = (provider: string, m: ModelInfo | string) => setDraft(modelRun(provider, m));
 
-  const modelRow = (provider: string, m: ModelInfo, nameCli: boolean, availability: "listed" | "unlisted" | "unavailable" = "listed") => {
+  const modelRow = (provider: string, m: ModelInfo, nameCli: boolean, availability: "listed" | "unlisted" | "saved-unlisted" | "unavailable" = "listed") => {
     const on = draft.provider === provider && draft.model === m.id;
     const pair = { provider, model: m.id };
     const starred = favorites.some((f) => f.provider === provider && f.model === m.id);
     const missing = availability === "unavailable";
+    const canSetDefault = availability === "listed";
 
     if (q && ![m.label, m.id].some((text) => text.toLowerCase().includes(q))) return null;
     return (
@@ -132,7 +133,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
             <StarIcon className="size-3.5" fill={starred ? "currentColor" : "none"} />
           </button>
           {/* The preference writer reports a refusal as an app notice. */}
-          {availability === "listed" && <button type="button" className={`rounded px-1 text-xs text-muted-foreground hover:bg-menu-hover ${ROW_ACTION}`} onClick={() => void app.settings.setPref("newChatModel", pair)}>
+          {(canSetDefault || availability === "saved-unlisted") && <button type="button" disabled={!canSetDefault} className={`rounded px-1 text-xs text-muted-foreground hover:bg-menu-hover ${canSetDefault ? ROW_ACTION : "invisible"}`} onClick={() => void app.settings.setPref("newChatModel", pair)}>
             {prefs?.newChatModel?.provider === provider && prefs.newChatModel.model === m.id ? "New chat default" : "Use for new chats"}
           </button>}
         </>}
@@ -142,7 +143,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   const savedRow = ({ provider, model }: { provider: string; model: string }) => {
     const models = catalog.models[provider];
     const listed = Array.isArray(models) ? models.find((m) => m.id === model) : undefined;
-    const availability = provider === "pi" && /\s/.test(model) ? "unavailable" : listed ? "listed" : "unlisted";
+    const availability = provider === "pi" && /\s/.test(model) ? "unavailable" : listed ? "listed" : "saved-unlisted";
     return modelRow(provider, listed ?? { id: model, label: model }, provider !== current?.provider, availability);
   };
 

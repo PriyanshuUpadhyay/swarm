@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { row, rows, open, mockRows } from "./ux-helpers";
-import { api, captureRunPost, holdChatStart, mockRunCatalog, patchLiveChair, readTree, shootThemes } from "./lifecycle-helpers";
+import { api, captureRunPost, holdChatStart, mockRunCatalog, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
 import type { Prefs } from "../src/core/nav";
 
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
@@ -214,7 +214,10 @@ test.describe("picker on a touch screen", () => {
   });
 });
 
-test("the cold picker keeps its search field still and announces the catalog", async ({ page: tab }) => {
+test("the cold picker keeps its rows still and announces the catalog", async ({ page: tab }) => {
+  await patchLiveChair(tab, (chair) => Object.assign(chair, { provider: "claude", model: "model-1" }));
+  await patchTreePrefs(tab, (prefs) => { prefs.recentModels = [{ provider: "claude", model: "model-1" }]; });
+
   let release!: () => void;
   const ready = new Promise<void>((resolve) => { release = resolve; });
   await mockRunCatalog(tab, { providers: [{ id: "claude" }], models: [] });
@@ -229,8 +232,14 @@ test("the cold picker keeps its search field still and announces the catalog", a
   try {
     await expect(picker.getByTestId("run-models").getByText("Reading models…")).toBeVisible();
     const y = (await search.boundingBox())!.y;
+    const recent = picker.getByTestId("run-recent");
+    const controls = [recent.getByRole("button", { name: /favorites/i }), recent.getByText("now", { exact: true })];
+    const positions = () => Promise.all(controls.map(async (item) => (await item.boundingBox())!.x));
+    const before = await positions();
+
     release();
     await expect(picker.getByRole("button", { name: "Model 0", exact: true })).toBeVisible();
+    expect(await positions()).toEqual(before);
     expect((await search.boundingBox())!.y).toBe(y);
     await expect(picker.getByTestId("run-model-status")).toHaveText("24 models listed.");
   } finally { release(); }
