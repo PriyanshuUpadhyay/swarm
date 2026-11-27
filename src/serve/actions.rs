@@ -325,21 +325,25 @@ pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
 }
 
 pub(super) fn history_read_error(err: rusqlite::Error) -> ApiError {
-    let (status, message) = match err {
-        rusqlite::Error::QueryReturnedNoRows => (
-            StatusCode::NOT_FOUND,
+    map_history_error(
+        err,
+        [
             "Chat not found. Open a chat from the sidebar.",
-        ),
-        rusqlite::Error::InvalidQuery => (
-            StatusCode::CONFLICT,
             "This chat has an invalid history link. Open a different chat.",
-        ),
-        _ => (
-            StatusCode::INTERNAL_SERVER_ERROR,
             "Could not read this chat's history. Try again.",
-        ),
-    };
-    error(status, message)
+        ],
+    )
+}
+
+pub(super) fn map_history_error(
+    err: rusqlite::Error,
+    [missing, invalid, failed]: [&str; 3],
+) -> ApiError {
+    match err {
+        rusqlite::Error::QueryReturnedNoRows => error(StatusCode::NOT_FOUND, missing),
+        rusqlite::Error::InvalidQuery => error(StatusCode::CONFLICT, invalid),
+        _ => error(StatusCode::INTERNAL_SERVER_ERROR, failed),
+    }
 }
 
 #[cfg(test)]

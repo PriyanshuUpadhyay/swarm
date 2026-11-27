@@ -105,13 +105,15 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
     let chain = if query.agent == "chair" {
         let db = read_connection(root)
             .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
-        swarm::store::continuation_logs(&db, &query.session).map_err(|err| match err {
-            rusqlite::Error::QueryReturnedNoRows => error(StatusCode::NOT_FOUND, "unknown session"),
-            rusqlite::Error::InvalidQuery => error(StatusCode::CONFLICT, "invalid chat history"),
-            _ => error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "chat history read failed",
-            ),
+        swarm::store::continuation_logs(&db, &query.session).map_err(|err| {
+            actions::map_history_error(
+                err,
+                [
+                    "unknown session",
+                    "invalid chat history",
+                    "chat history read failed",
+                ],
+            )
         })?
     } else {
         Vec::new()
