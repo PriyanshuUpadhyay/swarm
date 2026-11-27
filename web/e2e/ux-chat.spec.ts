@@ -126,6 +126,21 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
   await tab.screenshot({ path: info.outputPath("model-picker.png") });
 });
 
+test("a malformed first hello does not subscribe the open chat", async ({ page: tab }) => {
+  const subscriptions: string[] = [];
+  await mockStream(tab, "accepted-hello", { build: "fixture" });
+  await tab.route("**/api/subscribe", (route) => {
+    subscriptions.push(route.request().postDataJSON().stream);
+    return route.fulfill({ json: { ok: true } });
+  });
+  await mockRows(tab, [row("a1", "The chat is ready")]);
+  await open(tab);
+  await expect(tab.getByText("The chat is ready", { exact: true })).toBeVisible();
+
+  await streamFrame(tab, "hello", { stream: "accepted-hello", build: "fixture" });
+  await expect.poll(() => subscriptions, { timeout: 3000 }).toEqual(["accepted-hello"]);
+});
+
 test("stream loss keeps the last list and accepted update, then clears after hello", async ({ page: tab }) => {
   const session = process.env.SWARM_E2E_LIVE!;
   await tab.setViewportSize({ width: 960, height: 540 });
