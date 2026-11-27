@@ -59,6 +59,31 @@ test("the background list reports a task read failure", async ({ page: tab }, in
   }
 });
 
+test("a background read failure does not move the panel rows", async ({ page: tab }, info) => {
+  let fail = false;
+  await tab.clock.install();
+  await tab.route("**/api/background?*", (route) => fail
+    ? route.fulfill({ status: 503, json: { error: "Unavailable" } }) : route.continue());
+
+  try {
+    await openChat(tab, info);
+    await tab.keyboard.press("Meta+j");
+    const panel = tab.getByTestId("background-panel").last();
+    const reviewer = panel.getByRole("button", { name: /reviewer/ });
+    const top = () => reviewer.evaluate((el) => el.getBoundingClientRect().top);
+    await expect(reviewer).toBeVisible();
+    const before = await top();
+
+    fail = true;
+    await tab.clock.runFor(3_100);
+    await expect(panel.getByRole("alert")).toHaveText("Could not load background tasks.", { timeout: 2_000 });
+    expect(await top()).toBeCloseTo(before, 1);
+    await captureThemes(tab, panel, "background-read-error-spacing");
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("a resized panel keeps its height when Meta+J hides and shows it", async ({ page: tab }, info) => {
   await openChat(tab, info);
   // The library also puts the panel id on its own element as a test id; the last one is ours.
