@@ -45,6 +45,23 @@ test("the next queued message does not inherit Show all", async ({ page }) => {
   }
 });
 
+test("Show all stays open when another message is queued", async ({ page }) => {
+  const last = "The original queued message ends here.";
+  const first = page.locator('[data-id="queue-0"]');
+  try {
+    const update = await queuedChat(page, [lines(last)]);
+    await first.getByRole("button", { name: "Show all", exact: true }).click();
+    await expect(first).toContainText(last);
+
+    await update([lines(last), "Newly queued text"]);
+    await expect(page.locator('[data-id="queue-1"]')).toContainText("Newly queued text");
+    await expect(first).toContainText(last, { timeout: 2_000 });
+    await captureThemes(page, first, "queue-keeps-open");
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("typing the first draft letter does not move the next queued row", async ({ page }) => {
   const hint = page.locator('[data-id="queue-0"]').getByText("to edit queued messages");
   const editor = page.getByTestId("composer");

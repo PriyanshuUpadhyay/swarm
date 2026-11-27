@@ -35,17 +35,27 @@ export class AppStream {
         detail: q.detail,
         order: [Number.MAX_SAFE_INTEGER, i],
       }));
-      if (JSON.stringify(queue) === JSON.stringify(chat.queue)
-        && queue.every((_, i) => JSON.stringify(items[i].images ?? []) === JSON.stringify(imagesOf(chat.queue[i]))
-          && JSON.stringify(items[i].display ?? null) === JSON.stringify(displayOf(chat.queue[i]) ?? null)
-          && (items[i].body ?? null) === bodyModeOf(chat.queue[i]))) continue;
-      chat.queue = queue;
+      const previous = chat.queue;
+      // A shorter queue can shift messages into the positions of ones that left.
+      const growsOrStays = queue.length >= previous.length;
       queue.forEach((row, i) => {
-        noteImages([row], { [row.id]: items[i].images ?? [] });
-        noteBody([row], { [row.id]: items[i].body ?? null });
-        const display = items[i].display;
-        if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
+        const old = previous[i];
+        const item = items[i];
+        if (growsOrStays && old && old.id === row.id && old.text === row.text && old.detail === row.detail
+          && JSON.stringify(item.images ?? []) === JSON.stringify(imagesOf(old))
+          && JSON.stringify(item.display ?? null) === JSON.stringify(displayOf(old) ?? null)
+          && (item.body ?? null) === bodyModeOf(old)) {
+          queue[i] = old;
+          return;
+        }
+
+        noteImages([row], { [row.id]: item.images ?? [] });
+        noteBody([row], { [row.id]: item.body ?? null });
+        if (item.display !== undefined) noteDisplay([row], item.display === null ? {} : { [row.id]: item.display });
       });
+
+      if (queue.length === previous.length && queue.every((row, i) => row === previous[i])) continue;
+      chat.queue = queue;
       chat.version++;
     }
     // A chair's and a child's log can show up after the chat opens.
