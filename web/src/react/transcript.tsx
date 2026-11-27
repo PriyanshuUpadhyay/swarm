@@ -50,6 +50,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const atBottom = useRef(true);
   const [away, setAway] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
+  const [shownMessages] = useState(() => new Set<string>());
   const { lines, id: openId, chatState, find, canPullBack } = view;
   const current = find.open ? find.matches[find.index]?.id : undefined;
   const notes = useTranscriptNotes(app, view, scrollRef);
@@ -219,6 +220,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       key={line.id}
                       app={app}
                       line={line}
+                      cutState={{ shown: shownMessages, key: `${openId}\0${line.id}` }}
                       index={index}
                       full={view.full}
                       // An unreachable agent shows no text box, so its rows offer no Reuse.

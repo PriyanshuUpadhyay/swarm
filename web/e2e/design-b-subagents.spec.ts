@@ -56,3 +56,38 @@ test("a group shows observed states, expands after five and opens the chosen chi
   await child.click();
   await expect(page.getByTestId("subagent-chat")).toContainText("Keyboard fixes are ready");
 });
+
+test("a child message stays expanded after its log refreshes and the row remounts", async ({ page }) => {
+  const batch: Row = {
+    ...row("sub1", "Review the release", "subagent"),
+    subagent: { call_id: "child-cut", agent_type: "subagent", description: "Review the release", state: "waiting" },
+  };
+  const previous = Array.from({ length: 60 }, (_, i) => row(`a${i + 1}`, `Previous result ${i + 1} ${"check the result ".repeat(35)}`));
+  const messageText = Array.from({ length: 16 }, (_, i) => `Review request ${i + 1}`).join("\n\n");
+  let polls = 0;
+  await page.route("**/api/rows?*", (route) => {
+    const agent = new URL(route.request().url()).searchParams.get("agent");
+    if (agent !== "chair~sub~child-cut") return route.fulfill({ json: rows([batch]) });
+    const message = row("u100", messageText, "user");
+    const messages = [...previous, message];
+    if (++polls > 1) messages.push({ ...row("r101", "Done", "result"), ends_turn: true });
+    return route.fulfill({ json: rows(messages) });
+  });
+  await page.clock.install();
+  await open(page);
+  await page.getByTestId("subagent-row").getByRole("button").click();
+  const chat = page.getByTestId("subagent-chat");
+  const transcript = chat.getByTestId("pane-transcript");
+  const message = transcript.locator('[data-id="u100"]');
+  await message.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(message).toContainText("Review request 16");
+  await page.clock.runFor(3000);
+  await expect(transcript.locator('[data-id="r101"]')).toContainText("Turn finished");
+  // Let the refresh's scroll-to-bottom settle before requiring a virtual row to unmount.
+  await expect.poll(async () => {
+    await transcript.evaluate((el) => { el.scrollTop = 0; });
+    return message.count();
+  }, { timeout: 2000 }).toBe(0);
+  await transcript.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect(message).toContainText("Review request 16", { timeout: 2000 });
+});

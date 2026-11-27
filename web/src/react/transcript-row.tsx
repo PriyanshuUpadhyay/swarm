@@ -15,9 +15,10 @@ import { PlanRow, TodoRow } from "./transcript-todo";
 import { SubagentRow } from "./subagent-chat";
 import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
-type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean; match?: string };
+type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; cutState?: { shown: Set<string>; key: string }; composerId?: string; branches?: boolean; match?: string };
 
-function LineView({ app, line, index, full, match, composerId, branches, queueStart }: Ctx & { index: number; queueStart?: boolean }) {
+function LineView({ index, queueStart, ...ctx }: Ctx & { index: number; queueStart?: boolean }) {
+  const { app, line, match } = ctx;
   const { row } = line;
 
   return (
@@ -31,7 +32,7 @@ function LineView({ app, line, index, full, match, composerId, branches, queueSt
     >
       <ImageLoader.Provider value={app.imageUrl}>
         {queueStart && <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground"><Kbd>↑</Kbd> to edit queued messages</div>}
-        <RowBody app={app} line={line} full={full} composerId={composerId} branches={branches} match={match} />
+        <RowBody {...ctx} />
       </ImageLoader.Provider>
     </div>
   );
@@ -60,14 +61,13 @@ function MdBody({ row }: { row: Row }) {
 }
 
 const CUT_AT = 12;
-const shownMessages = new WeakSet<Row>();
 
-function MessageCut({ row, thought, reveal }: { row: Row; thought?: boolean; reveal: boolean }) {
-  const [showAll, setShowAll] = useState(() => shownMessages.has(row));
+function MessageCut({ line: { row }, cutState, match, thought }: Pick<Ctx, "line" | "cutState" | "match"> & { thought?: boolean }) {
+  const [showAll, setShowAll] = useState(() => cutState?.shown.has(cutState.key) ?? false);
 
   const body = thought ? null : paintBodyOf(row);
-  const open = showAll || reveal;
-  const show = () => { shownMessages.add(row); setShowAll(true); };
+  const open = showAll || !!match;
+  const show = () => { if (cutState) cutState.shown.add(cutState.key); setShowAll(true); };
 
   if (body?.kind === "tree") {
     const cut = open ? null : cutMarkdown(body.display, CUT_AT);
@@ -179,7 +179,7 @@ function RowBody(ctx: Ctx) {
         reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
         branch={row.kind === "user" && ctx.branches && app.branch ? () => app.branch?.(row.id) : undefined}
       >
-        <MessageCut row={row} reveal={!!ctx.match} />
+        <MessageCut {...ctx} />
         <ImageThumbs paths={imagesOf(row)} load={app.imageUrl} />
       </Bubble>
     );
@@ -216,7 +216,7 @@ function RowBody(ctx: Ctx) {
       return (
         <Disclosure app={app} line={line} title={LABEL.thought ?? row.kind}>
           <div className="pl-[18px]">
-            <MessageCut row={row} thought reveal={!!ctx.match} />
+            <MessageCut {...ctx} thought />
           </div>
         </Disclosure>
       );
