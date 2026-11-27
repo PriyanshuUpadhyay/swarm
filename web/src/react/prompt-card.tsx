@@ -62,17 +62,20 @@ export function PromptCard({
     setExpanded(commandId);
     commandWindow.current?.focus({ preventScroll: true });
   };
+
   const pick = (i: number) => {
     if (commandCut) showCommand();
     // App state shows the answer result, so the picker does not wait here.
     else void app.answer(sessionId, prompt, i);
   };
+
   // The CLI's input row is one line, so the text goes as one line.
   const line = text.replace(/\s+/g, " ").trim();
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (line && busy === null) void app.answer(sessionId, prompt, { text: line });
   };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (prompt.screen || e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !/^[1-9]$/.test(e.key)) return;
     const i = Number(e.key) - 1;
@@ -81,6 +84,7 @@ export function PromptCard({
     // Holding a digit must not both reveal the command and answer the prompt.
     if (!command || !e.repeat) pick(i);
   };
+
   const answerAfterChoices = !prompt.screen && prompt.choices.length > 0;
   const answer = prompt.input && (
     <form className="flex min-w-0 items-center gap-2" onSubmit={submit}>
@@ -97,6 +101,7 @@ export function PromptCard({
         onChange={(e) => setTyped({ prompt: prompt.id, text: e.target.value })}
         className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm pointer-coarse:text-[16px] outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
       />
+
       <button
         type="submit"
         data-testid="prompt-send"
