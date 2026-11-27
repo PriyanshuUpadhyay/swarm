@@ -230,6 +230,12 @@ export class Changes {
     // The shown file stays when it is still changed; else the first file shows.
     const still = files.find((f) => fileKey(f) === this.selected);
     if (automatic && (still || next.state !== "ready") && (this.full.state === "loading" || this.full.state === "ready")) return this.notify();
+
+    if (automatic && this.full.state === "error" && this.full.rangeMismatch && this.diff.state === "ready") {
+      const { path, layer = "branch" } = this.diff.data;
+      if (this.editor(path, layer)?.open) return this.notify();
+    }
+
     if (still) void this.select(still, true, automatic);
     else if (files.length) void this.select(files[0]);
     else {
@@ -267,12 +273,15 @@ export class Changes {
     const seq = ++this.seq.diff;
     this.full = LOADING;
     this.notify();
+
     try {
       const data = await this.app.api.get<FileDiff>("/api/changes/diff", this.query({ path, layer, full: "1" }));
       if (seq !== this.seq.diff) return;
       const editor = this.editor(path, layer);
       const range = (d: FileDiff) => editor && JSON.stringify(d.display?.lines.slice(Math.min(editor.anchor, editor.cursor), 1 + Math.max(editor.anchor, editor.cursor)));
-      this.full = range(preview) === range(data) ? { state: "ready", data } : { state: "error", error: "The selected lines changed. The preview stays open." };
+      this.full = range(preview) === range(data) ? { state: "ready", data } : {
+        state: "error", rangeMismatch: true, error: "The selected lines changed. The preview stays open.",
+      };
       this.notify();
     } catch (err) {
       if (seq !== this.seq.diff) return;

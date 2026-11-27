@@ -45,7 +45,7 @@ export type PullRequest = {
 };
 export type PrView = { pullRequest: PullRequest | null; checks: Check[] | null; differsFromLocalHead?: boolean };
 
-export type Load<T> = { state: "idle" } | { state: "loading" } | { state: "ready"; data: T } | { state: "error"; error: string; capped?: boolean };
+export type Load<T> = { state: "idle" } | { state: "loading" } | { state: "ready"; data: T } | { state: "error"; error: string; capped?: boolean; rangeMismatch?: boolean };
 
 /** One draft comment on a diff: the file, the line range label, the quoted lines with their +/-
  *  marks, and the owner's text. `at` is the display line it shows under. */

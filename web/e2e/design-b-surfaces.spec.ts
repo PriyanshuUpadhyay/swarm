@@ -221,6 +221,46 @@ test("Show all does not open a comment for a keyboard selection", async ({ page:
   await expect(input).toHaveCount(0, { timeout: 2_000 });
 });
 
+test("a refused expansion keeps the draft preview through a focus refresh", async ({ page: tab }) => {
+  let replace = false;
+  await tab.route("**/api/changes/diff?**", async (route) => {
+    const response = await route.fetch();
+    if (!replace) return route.fulfill({ response });
+
+    const data = await response.json();
+    const first = data.display.lines.find((line: { text: string }) => line.text === "generated line 1");
+    first.text = "replaced line 1";
+    first.quote = "+replaced line 1";
+    data.patch = data.patch.replace("+generated line 1\n", "+replaced line 1\n");
+    await route.fulfill({ response, json: data });
+  });
+
+  try {
+    await openChanges(tab, "big.txt");
+    const diff = tab.getByTestId("diff-body");
+    await diff.locator('[data-gutter] > [data-column-number="1"]').click();
+    const input = tab.getByTestId("comment-input");
+    await input.fill("Do not move this draft.");
+    replace = true;
+    const cut = tab.getByTestId("diff-capped");
+    await cut.getByRole("button", { name: "Show all", exact: true }).click();
+    await expect(cut.getByRole("status")).toHaveText("The selected lines changed. The preview stays open.");
+
+    const readsPreview = tab.waitForRequest((req) => {
+      const url = new URL(req.url());
+      return url.pathname === "/api/changes/diff" && !url.searchParams.has("full");
+    }, { timeout: 1_000 }).then(() => true, () => false);
+    const refreshed = tab.waitForResponse((res) => new URL(res.url()).pathname === "/api/changes");
+    await tab.evaluate(() => dispatchEvent(new Event("focus")));
+    expect((await refreshed).ok()).toBe(true);
+    expect(await readsPreview).toBe(false);
+    await expect(diff).toContainText("generated line 1");
+    await expect(input).toHaveValue("Do not move this draft.");
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("the 680 px new-chat composer uses the display face only for its question", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page);
