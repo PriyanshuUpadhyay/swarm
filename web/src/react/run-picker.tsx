@@ -140,7 +140,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
 
   return (
     <fieldset disabled={disabled} className="grid min-w-0 grid-cols-[min(136px,30%)_minmax(0,1fr)] overflow-hidden rounded-[inherit]">
-      <div className="grid content-start gap-1 bg-hover p-1.5" aria-label="Model groups" role="group">
+      <div className="grid content-start gap-1 bg-surface p-1.5" aria-label="Model groups" role="group">
         <button type="button" aria-pressed={rail === "favorites"} className={RAIL} onClick={() => setRail("favorites")}><StarIcon className="size-4 shrink-0" /> Favorites</button>
         {providers.map((p) => <button key={p.id} type="button" aria-pressed={rail === p.id} className={RAIL} onClick={() => setRail(p.id)}>
           <CliMark provider={p.id} selected={rail === p.id} />
