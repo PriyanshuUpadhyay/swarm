@@ -73,6 +73,21 @@ fn a_background_recent_does_not_invalidate_an_owner_choice() {
 }
 
 #[test]
+fn recent_keeps_the_exact_id_of_a_started_pi_model_with_spaces() {
+    let mut owner = OwnerChoices::default();
+    owner
+        .remember_model("pi".into(), "local/My Model".into())
+        .unwrap();
+    owner
+        .remember_model("claude".into(), "sonnet".into())
+        .unwrap();
+    assert_eq!(
+        owner.prefs["recentModels"][1],
+        json!({"provider":"pi","model":"local/My Model"})
+    );
+}
+
+#[test]
 fn stale_revision_changes_no_bytes() {
     let home = ChoicesHome::new();
     let before = choices_store::load(&home.root, true).unwrap();

@@ -135,7 +135,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   };
   const savedRow = ({ provider, model }: { provider: string; model: string }) => {
     const models = catalog.models[provider];
-    return modelRow(provider, (Array.isArray(models) && models.find((m) => m.id === model)) || { id: model, label: model }, provider !== current?.provider);
+    return modelRow(provider, (Array.isArray(models) && models.find((m) => m.id === model)) || { id: model, label: model }, provider !== current?.provider, provider === "pi" && /\s/.test(model));
   };
 
   return (

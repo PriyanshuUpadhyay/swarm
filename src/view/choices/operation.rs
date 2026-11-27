@@ -369,7 +369,7 @@ pub fn apply(
 
 impl OwnerChoices {
     pub fn remember_model(&mut self, provider: String, model: String) -> Result<(), String> {
-        if !valid_model_names(&provider, &model) {
+        if !valid_recent_names(&provider, &model) {
             return Err("invalid value for recentModels".into());
         }
         let value = serde_json::json!({ "provider": provider, "model": model });
@@ -381,7 +381,9 @@ impl OwnerChoices {
 fn put_recent(prefs: &mut serde_json::Map<String, Value>, value: Value) {
     let mut models = vec![value];
     if let Some(old) = prefs.get("recentModels").and_then(Value::as_array) {
-        for model in old.iter().filter(|model| valid_model_choice(model)) {
+        for model in old.iter().filter(|model| {
+            model_choice(model).is_some_and(|(provider, model)| valid_recent_names(provider, model))
+        }) {
             if !models.contains(model) {
                 models.push(model.clone());
             }
@@ -393,12 +395,21 @@ fn put_recent(prefs: &mut serde_json::Map<String, Value>, value: Value) {
     prefs.insert("recentModels".into(), Value::Array(models));
 }
 
+fn model_choice(value: &Value) -> Option<(&str, &str)> {
+    (value.as_object()?.len() == 2).then_some(())?;
+    value["provider"].as_str().zip(value["model"].as_str())
+}
+
 fn valid_model_choice(value: &Value) -> bool {
-    value.as_object().is_some_and(|entry| entry.len() == 2)
-        && value["provider"]
-            .as_str()
-            .zip(value["model"].as_str())
-            .is_some_and(|(provider, model)| valid_model_names(provider, model))
+    model_choice(value).is_some_and(|(provider, model)| valid_model_names(provider, model))
+}
+
+fn valid_recent_names(provider: &str, model: &str) -> bool {
+    valid_model_names(provider, model)
+        // Already-started Pi settings can name an ID with spaces. Recent shows it, but
+        // a choice from the browser must still pass the launch's one-word guard.
+        || (provider == "pi" && model.contains(' ') && !model.trim().is_empty()
+            && !model.starts_with('-') && !model.chars().any(char::is_control))
 }
 
 fn valid_model_names(provider: &str, model: &str) -> bool {

@@ -20,7 +20,7 @@ pub struct UsageState {
 }
 impl UsageState {
     pub fn ingest(&mut self, event: &Value) {
-        if let Some(model) = model_value(event) {
+        if let Some(model) = model_fact(event) {
             if self.model.as_ref().is_some_and(|old| old != model) {
                 self.context = None;
             }
