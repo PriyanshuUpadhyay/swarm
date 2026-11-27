@@ -45,7 +45,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
             </>
           ) : (
             <>
-              {archive && <span className="avatar" aria-hidden>{s.title.slice(0, 1)}</span>}
+              {archive && <span className="avatar" aria-hidden>{Array.from(s.title)[0]}</span>}
               {s.fields.map((f, i) =>
                 f.field === "status" ? folded && s.status ? <StatusGlyph key={i} status={s.status} /> : null : <FieldView key={i} f={f} row={null} />,
               )}
