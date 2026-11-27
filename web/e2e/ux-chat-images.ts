@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockRows, open, row, rows } from "./ux-helpers";
+import { mockRows, mockStream, open, row, rows, streamFrame } from "./ux-helpers";
 import type { PatchInfo, Row, TextPreview } from "../src/core/api";
 
 // The served paths differ from the raw text, so a browser reparse cannot pass.
@@ -26,20 +26,7 @@ test("images paint served paths on pages, older rows, upserts and snapshot queue
     ];
     await route.fulfill({ json: snapshot });
   });
-  await tab.route("**/api/subscribe", route => route.fulfill({ json: { ok: true } }));
-  await tab.addInitScript(() => {
-    const fetch = window.fetch.bind(window);
-    const scope = window as unknown as { s8dFrame?: (event: string, data: unknown) => void };
-    window.fetch = async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (!url.endsWith("/api/stream")) return fetch(input, init);
-      const body = new ReadableStream<Uint8Array>({ start(controller) {
-        scope.s8dFrame = (event, data) => controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-        scope.s8dFrame("hello", { stream: "s8d", build: "fixture" });
-      } });
-      return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
-    };
-  });
+  await mockStream(tab, "s8d");
   await open(tab);
   const names = (id: string) => tab.locator(`[data-testid="row"][data-id="${id}"]`).getByTestId("image-thumb").locator("img");
   const previews = (id: string, expected: string[]) => expect.poll(() => names(id).evaluateAll(els => els.map(el => el.getAttribute("alt")))).toEqual(expected);
@@ -53,19 +40,13 @@ test("images paint served paths on pages, older rows, upserts and snapshot queue
   if (await earlier.isVisible()) await earlier.click();
   await previews("u0", [bName]);
   const key = `${process.env.SWARM_E2E_LIVE!}:chair`;
-  const send = (upsert: ReturnType<typeof row>[], images?: Record<string, string[]>) => tab.evaluate(({ key, upsert, images }) => {
-    const scope = window as unknown as { s8dFrame: (event: string, data: unknown) => void };
-    scope.s8dFrame("rows", { key, upsert, images, end_offset: 600 });
-  }, { key, upsert, images });
+  const send = (upsert: ReturnType<typeof row>[], images?: Record<string, string[]>) => streamFrame(tab, "rows", { key, upsert, images, end_offset: 600 });
   await send([row("u1", a, "user")], { u1: [b] });
   await previews("u1", [bName]);
   await send([row("u1", a, "user")]);
   await previews("u1", []);
   queueImages = [b, a];
-  await tab.evaluate(() => {
-    const scope = window as unknown as { s8dFrame: (event: string, data: unknown) => void };
-    scope.s8dFrame("snapshot", {});
-  });
+  await streamFrame(tab, "snapshot", {});
   await previews("served-queue", [bName, aName]);
   expect([...new Set(requested)].sort()).toEqual([aName, bName]);
   await tab.screenshot({ path: info.outputPath("s8d-served-images.png") });

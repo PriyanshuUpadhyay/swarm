@@ -59,3 +59,39 @@ export async function open(tab: Page, session = process.env.SWARM_E2E_LIVE!) {
 export async function mockRows(tab: Page, items: Row[], older = 0, patch: Record<string, PatchInfo> = {}, find: Record<string, FindPart[]> = {}) {
   await tab.route("**/api/rows?*", (route) => route.fulfill({ json: rows(items, older, patch, find) }));
 }
+
+export type StreamFixture = {
+  send: (event: string, data: unknown) => void;
+  drop: () => void;
+  restore: () => void;
+};
+
+export async function mockStream(tab: Page, stream: string, first: unknown = { stream, build: "fixture" }) {
+  await tab.route("**/api/subscribe", (route) => route.fulfill({ json: { ok: true } }));
+  await tab.addInitScript((first) => {
+    const fetch = window.fetch.bind(window);
+    const scope = window as unknown as { swarmStream: StreamFixture };
+    let down = false;
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.endsWith("/api/stream")) return fetch(input, init);
+      const headers = { "Content-Type": "text/event-stream" };
+      if (down) return new Response("", { headers });
+      const body = new ReadableStream<Uint8Array>({ start(controller) {
+        const encoder = new TextEncoder();
+        const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        scope.swarmStream = {
+          send,
+          drop: () => { down = true; controller.close(); },
+          restore: () => { down = false; },
+        };
+        send("hello", first);
+      } });
+      return new Response(body, { headers });
+    };
+  }, first);
+}
+
+export function streamFrame(tab: Page, event: string, data: unknown) {
+  return tab.evaluate(({ event, data }) => (window as unknown as { swarmStream: StreamFixture }).swarmStream.send(event, data), { event, data });
+}

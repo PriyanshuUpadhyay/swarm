@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Snapshot } from "../src/core/api";
-import { mockRows, open, row } from "./ux-helpers";
+import { mockRows, mockStream, open, row, streamFrame } from "./ux-helpers";
 
 test("the status line names the work and keeps the turn clock outside the log", async ({ page }) => {
   const session = process.env.SWARM_E2E_LIVE!;
@@ -15,21 +15,7 @@ test("the status line names the work and keeps the turn clock outside the log", 
     Object.assign(snapshot.agents[session][0], { state, state_at_s: startS, turn_start_time_s: startS - 65 });
     await route.fulfill({ json: snapshot });
   });
-  await page.route("**/api/subscribe", (route) => route.fulfill({ json: { ok: true } }));
-  await page.addInitScript(() => {
-    const fetch = window.fetch.bind(window);
-    const scope = window as unknown as { statusSnapshot: (version: number) => void };
-    window.fetch = (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (!url.endsWith("/api/stream")) return fetch(input, init);
-      const body = new ReadableStream({ start(controller) {
-        const send = (type: string, data: unknown) => controller.enqueue(new TextEncoder().encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
-        scope.statusSnapshot = (version) => send("snapshot", { version });
-        send("hello", { stream: "status", build: "fixture" });
-      } });
-      return Promise.resolve(new Response(body, { headers: { "Content-Type": "text/event-stream" } }));
-    };
-  });
+  await mockStream(page, "status");
 
   await mockRows(page, [{
     ...row("f1", "Ran tests", "fold"),
@@ -42,7 +28,7 @@ test("the status line names the work and keeps the turn clock outside the log", 
 
   const change = async (next: string) => {
     state = next;
-    await page.evaluate((version) => (window as unknown as { statusSnapshot: (version: number) => void }).statusSnapshot(version), ++version);
+    await streamFrame(page, "snapshot", { version: ++version });
   };
   const status = page.getByTestId("chat-status-line");
   const send = page.getByTestId("send");
