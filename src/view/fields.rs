@@ -391,9 +391,14 @@ pub struct FieldReader {
     github_at: BTreeMap<String, (i64, Option<String>)>,
     diff_at: BTreeMap<String, (i64, String)>,
     cursor: Option<String>,
+    selected: Option<String>,
 }
 
 impl FieldReader {
+    pub fn select(&mut self, workspace: Option<&str>) {
+        self.selected = workspace.map(str::to_owned);
+    }
+
     /// Reserve before a read, including failures. The field worker owns this cache.
     pub fn refresh_fields(&mut self, tree: &Tree, owner: &OwnerChoices, at: i64) -> bool {
         self.refresh_fields_with(
@@ -459,6 +464,17 @@ impl FieldReader {
 
         self.fields
             .retain(|path, _| dirty.contains(path) || github.contains(path));
+        if let Some(path) = self.selected.as_deref()
+            && let Some(&branch) = branches.get(path)
+            && self
+                .diff_at
+                .get(path)
+                .is_none_or(|(last, _)| at - last >= 10)
+        {
+            self.diff_at.insert(path.into(), (at, branch.into()));
+            self.fields.entry(path.into()).or_default().diff = totals(path, branch, deadline);
+        }
+
         let paths: Vec<_> = dirty.union(&github).collect();
         let next = self
             .cursor
@@ -490,16 +506,6 @@ impl FieldReader {
                 current.pr = fields.pr;
                 current.ci = fields.ci;
                 current.pr_fact = fields.pr_fact;
-            }
-            if time_left()
-                && let Some(&branch) = branches.get(path.as_str())
-                && self
-                    .diff_at
-                    .get(path)
-                    .is_none_or(|(last, _)| at - last >= 10)
-            {
-                self.diff_at.insert(path.clone(), (at, branch.into()));
-                self.fields.entry(path.clone()).or_default().diff = totals(path, branch, deadline);
             }
         }
         previous != self.fields

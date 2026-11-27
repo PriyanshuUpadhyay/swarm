@@ -235,6 +235,27 @@ fn requested_paths_and_independent_cache_intervals() {
     assert_eq!(fields::requested_paths("dirty", &t, &o.fields).len(), 3);
 }
 #[test]
+fn only_the_selected_workspace_reads_branch_totals() {
+    let tree = tree();
+    let owner = owner();
+    let mut cache = FieldReader::default();
+    cache.select(Some("/repo/wt/feature"));
+    let mut reads = Vec::new();
+    cache.refresh_fields_with(
+        &tree,
+        &owner,
+        100,
+        |_, _| None,
+        |_, _, _| None,
+        |path, _, _| {
+            reads.push(path.to_owned());
+            None
+        },
+    );
+    assert_eq!(reads, ["/repo/wt/feature"]);
+}
+
+#[test]
 fn check_states() {
     for (checks, expected) in [
         (json!([]), None),

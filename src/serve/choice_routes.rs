@@ -165,12 +165,17 @@ pub(super) fn refresh_tree(app: &App) -> Result<Value, ApiError> {
 }
 
 pub(super) fn refresh_tree_fields(app: &App, reader: &mut fields::FieldReader) {
-    let (snapshot, owner) = {
+    let (snapshot, owner, selected) = {
         let cache = app.tree_cache.lock().unwrap();
         let Some(saved) = &cache.saved else { return };
-        (cache.snapshot.clone(), saved.owner.clone())
+        (
+            cache.snapshot.clone(),
+            saved.owner.clone(),
+            saved.state.selected_workspace.clone(),
+        )
     };
     let tree = tree::build(&snapshot, &owner);
+    reader.select(selected.as_deref());
     reader.refresh_fields(&tree, &owner, discovery::now());
     let fields = reader
         .fields

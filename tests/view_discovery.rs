@@ -240,6 +240,7 @@ fn branch_totals_count_only_committed_changes_from_the_merge_base() {
     discovery.augment(&mut snapshot, &owner, 100);
     let tree = tree::build(&snapshot, &owner);
     let mut reader = FieldReader::default();
+    reader.select(repo.to_str());
     reader.refresh_fields(&tree, &owner, 100);
 
     assert_eq!(
