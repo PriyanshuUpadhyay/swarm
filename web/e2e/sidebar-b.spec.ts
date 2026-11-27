@@ -1,14 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { resolve } from "node:path";
 import type { SidebarRow, TreeView } from "../src/core/nav";
-
-async function shoot(page: Page, browser: string, name: string) {
-  if (!process.env.E2E_SHOTS || browser !== "webkit") return;
-  for (const colorScheme of ["dark", "light"] as const) {
-    await page.emulateMedia({ colorScheme });
-    await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/${name}-${colorScheme}.png`) });
-  }
-}
+import { shoot } from "./lifecycle-helpers";
 
 async function load(page: Page) {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -35,7 +27,7 @@ test("head B puts Home and project controls above New chat and palette search", 
   expect(chatBox.y + chatBox.height).toBeLessThan(searchBox.y);
   expect(searchBox.height).toBe(32);
 
-  await shoot(page, browserName, "U2/head");
+  await shoot(page, "sidebar-head", browserName);
 
   await search.click();
   await page.getByRole("combobox").fill("Skills");
@@ -147,7 +139,7 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   expect(barBox?.height).toBe(36);
 
   await page.mouse.move(700, 100);
-  await shoot(page, browserName, "U5/chrome");
+  await shoot(page, "sidebar-chrome", browserName);
 });
 
 test("the menu on a waiting chat in a shared worktree has only chat actions", async ({ page }) => {
@@ -331,7 +323,7 @@ test("the rail replaces the sidebar only below 1024 px and keeps desktop collaps
   await expect(page.getByTestId("new-chat-prompt")).toBeFocused();
   await page.keyboard.press("Escape");
 
-  await shoot(page, browserName, "U6/rail");
+  await shoot(page, "sidebar-rail", browserName);
 
   await page.setViewportSize({ width: 1024, height: 900 });
   await expect(rail).toHaveCount(0);
