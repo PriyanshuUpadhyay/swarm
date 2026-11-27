@@ -102,12 +102,10 @@ fn invalid_cursor() -> ApiError {
 }
 
 fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError> {
-    let connection = (query.agent == "chair")
-        .then(|| read_connection(root))
-        .transpose()
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
-    let chain = if let Some(connection) = &connection {
-        swarm::store::continuation_chain(connection, &query.session).map_err(|err| match err {
+    let chain = if query.agent == "chair" {
+        let db = read_connection(root)
+            .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "database read failed"))?;
+        swarm::store::continuation_logs(&db, &query.session).map_err(|err| match err {
             rusqlite::Error::QueryReturnedNoRows => error(StatusCode::NOT_FOUND, "unknown session"),
             rusqlite::Error::InvalidQuery => error(StatusCode::CONFLICT, "invalid chat history"),
             _ => error(
@@ -116,20 +114,20 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
             ),
         })?
     } else {
-        vec![query.session.clone()]
+        Vec::new()
     };
     let linked = chain.len() > 1;
     if (linked && query.before.is_some()) || (!linked && query.older_cursor.is_some()) {
         return Err(invalid_cursor());
     }
 
-    let mut index = chain.len() - 1;
+    let mut index = chain.len().saturating_sub(1);
     let mut before = query.before;
     if let Some(cursor) = &query.older_cursor {
         let (source, offset) = cursor.split_once(':').ok_or_else(invalid_cursor)?;
         index = chain
             .iter()
-            .position(|id| id == source)
+            .position(|row| row.id == source)
             .ok_or_else(invalid_cursor)?;
         let offset = offset.parse::<u64>().map_err(|_| invalid_cursor())?;
         // At byte zero the next page is at the end of the preceding log.
@@ -141,8 +139,13 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
     }
     let mut joins = Vec::new();
     loop {
-        let session = &chain[index];
-        let log = match resolve_log(root, session, &query.agent) {
+        let segment = chain.get(index);
+        let session = segment.map_or(&query.session, |row| &row.id);
+        let resolved = match segment {
+            Some(row) => resolve_link_log(row),
+            None => resolve_log(root, session, &query.agent),
+        };
+        let log = match resolved {
             Ok(log) => Some(log),
             Err(err) if linked && err.0 == StatusCode::NOT_FOUND => {
                 if before.is_some() {
@@ -162,20 +165,11 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
         }
         if (before.is_none() || start == 0)
             && index > 0
-            && let Some(connection) = &connection
+            && let Some(from) = provider_id(chain[index - 1].provider.as_deref())
+            && let Some(to) = provider_id(chain[index].provider.as_deref())
+            && from != to
         {
-            let (from, to) =
-                swarm::store::continuation_providers(connection, session).map_err(|_| {
-                    error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "chat history read failed",
-                    )
-                })?;
-            if let (Some(from), Some(to)) = (provider_id(from), provider_id(to))
-                && from != to
-            {
-                joins.push((session.clone(), to.to_owned()));
-            }
+            joins.push((session.clone(), to.to_owned()));
         }
         if linked && end == 0 && index > 0 {
             index -= 1;
@@ -196,8 +190,8 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
     }
 }
 
-fn provider_id(name: Option<String>) -> Option<&'static str> {
-    swarm::providers::Provider::parse(name.as_deref()?).map(|provider| provider.id())
+fn provider_id(name: Option<&str>) -> Option<&'static str> {
+    swarm::providers::Provider::parse(name?).map(|provider| provider.id())
 }
 
 pub(super) async fn transcript_rows(

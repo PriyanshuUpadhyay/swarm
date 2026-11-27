@@ -65,41 +65,68 @@ pub fn continue_session(
     Ok(())
 }
 
-pub fn continuation_providers(
-    connection: &Connection,
-    id: &str,
-) -> rusqlite::Result<(Option<String>, Option<String>)> {
-    connection.query_row(
-        "SELECT old.chair_provider, new.chair_provider FROM session AS new
-         JOIN session AS old ON old.id = new.continuation_of WHERE new.id = ?1",
-        [id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )
+pub struct ContinuationLog {
+    pub id: String,
+    pub provider: Option<String>,
+    pub native_id: Option<String>,
+    pub path: Option<String>,
+    pub archived: bool,
+    pub days: [String; 3],
 }
 
-/// Reads the existing predecessor chain, oldest first. Every link moves forward in one folder.
-pub fn continuation_chain(connection: &Connection, leaf: &str) -> rusqlite::Result<Vec<String>> {
-    let mut read =
-        connection.prepare_cached("SELECT cwd, continuation_of FROM session WHERE id = ?1")?;
-    let mut chain = Vec::new();
-    let mut id = leaf.to_owned();
-    let mut cwd = None;
-
-    loop {
-        let (folder, parent): (String, Option<String>) =
-            read.query_row([&id], |row| Ok((row.get(0)?, row.get(1)?)))?;
-        if cwd.as_ref().is_some_and(|cwd| *cwd != folder)
-            || parent.as_ref().is_some_and(|parent| *parent >= id)
-        {
-            return Err(rusqlite::Error::InvalidQuery);
+/// Reads each predecessor and its chair log location in one query, oldest first.
+pub fn continuation_logs(
+    connection: &Connection,
+    leaf: &str,
+) -> rusqlite::Result<Vec<ContinuationLog>> {
+    let mut read = connection.prepare_cached(
+        "WITH RECURSIVE chain(id, cwd, predecessor) AS (
+           SELECT id, cwd, continuation_of FROM session WHERE id = ?1
+           UNION ALL
+           SELECT s.id, s.cwd, s.continuation_of FROM chain
+           JOIN session s ON s.id = chain.predecessor AND s.id < chain.id AND s.cwd = chain.cwd
+         )
+         SELECT s.id, s.continuation_of, s.chair_provider, s.chair_id, s.chair_log,
+                s.archived_at IS NOT NULL,
+                strftime('%Y/%m/%d', s.created_at - 86400, 'unixepoch'),
+                strftime('%Y/%m/%d', s.created_at, 'unixepoch'),
+                strftime('%Y/%m/%d', s.created_at + 86400, 'unixepoch')
+         FROM chain JOIN session s ON s.id = chain.id ORDER BY s.id",
+    )?;
+    let mut rows = read.query([leaf])?;
+    let first = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+    if let Some(missing) = first.get::<_, Option<String>>(1)? {
+        if missing < first.get::<_, String>(0)? {
+            connection.query_row(
+                "SELECT 1 FROM session WHERE id = ?1",
+                [&missing],
+                |_| Ok(()),
+            )?;
         }
-        cwd = Some(folder);
-        chain.push(id);
-        let Some(parent) = parent else { break };
-        id = parent;
+        return Err(rusqlite::Error::InvalidQuery);
     }
-    chain.reverse();
+    let log = |row: &rusqlite::Row<'_>| -> rusqlite::Result<ContinuationLog> {
+        Ok(ContinuationLog {
+            id: row.get(0)?,
+            provider: row.get(2)?,
+            native_id: row.get(3)?,
+            path: row.get(4)?,
+            archived: row.get(5)?,
+            days: [row.get(6)?, row.get(7)?, row.get(8)?],
+        })
+    };
+    let mut chain = vec![log(first)?];
+    while let Some(row) = rows.next()? {
+        chain.push(log(row)?);
+    }
     Ok(chain)
+}
+
+pub fn continuation_chain(connection: &Connection, leaf: &str) -> rusqlite::Result<Vec<String>> {
+    Ok(continuation_logs(connection, leaf)?
+        .into_iter()
+        .map(|row| row.id)
+        .collect())
 }
 
 /// Links new session `new_id` as a branch of `old_id` in the same folder, with the chair session

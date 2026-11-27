@@ -70,16 +70,44 @@ pub(super) fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log
             .flatten()
             .map(|path| path.to_string_lossy().into_owned())
     });
+    checked_log(path.map(Into::into), format.as_deref())
+}
+
+pub(super) fn resolve_link_log(row: &swarm::store::ContinuationLog) -> Result<Log, ApiError> {
+    let format = row.provider.as_deref();
+    let path = row
+        .path
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            let id = row.native_id.as_deref()?;
+            if format == Some("pi") {
+                return crate::pi_chair_log(id);
+            }
+            if row.archived || !crate::valid_chair_id(id) {
+                return None;
+            }
+            match format {
+                Some("claude") => crate::claude_chair_log(id),
+                Some("codex") => crate::codex_chair_log(id, &row.days),
+                _ => None,
+            }
+        });
+    checked_log(path, format)
+}
+
+fn checked_log(path: Option<PathBuf>, format: Option<&str>) -> Result<Log, ApiError> {
     let path = path.ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript log"))?;
     let format = format
-        .filter(|format| swarm::view::transcript::LOG_FORMATS.contains(&format.as_str()))
+        .filter(|format| swarm::view::transcript::LOG_FORMATS.contains(format))
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript format"))?;
-    if !Path::new(&path).is_file() {
+    if !path.is_file() {
         return Err(error(StatusCode::NOT_FOUND, "transcript log unavailable"));
     }
     Ok(Log {
-        path: path.into(),
-        format,
+        path,
+        format: format.to_owned(),
     })
 }
 

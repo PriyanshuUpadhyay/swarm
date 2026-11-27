@@ -372,12 +372,12 @@ async fn prepare_carry(
         Carry::Clean => Ok(None),
         Carry::File => {
             let chain = read_connection(&app.root)
-                .and_then(|db| swarm::store::continuation_chain(&db, old))
+                .and_then(|db| swarm::store::continuation_logs(&db, old))
                 .map_err(super::actions::history_read_error)?;
             let mut budget = ROWS_FIND_LIMIT as u64;
             let mut text = String::new();
-            for id in chain {
-                let log = match resolve_log(&app.root, &id, "chair") {
+            for row in chain {
+                let log = match resolve_link_log(&row) {
                     Ok(log) => log,
                     Err(err) if err.0 == StatusCode::NOT_FOUND => continue,
                     Err(err) => return Err(err),
@@ -386,7 +386,7 @@ async fn prepare_carry(
                     .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
                     .len();
                 budget = budget.checked_sub(size).ok_or_else(file_carry_limit)?;
-                let rows = read_handoff_log(app, &id, &log, Some(size)).await?;
+                let rows = read_handoff_log(app, &row.id, &log, Some(size)).await?;
                 if !handoff::append_chat_text(&mut text, &rows, ROWS_FIND_LIMIT) {
                     return Err(file_carry_limit());
                 }
