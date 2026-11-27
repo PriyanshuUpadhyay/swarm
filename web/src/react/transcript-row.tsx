@@ -215,7 +215,9 @@ function RowBody(ctx: Ctx) {
       if (!row.text.trim()) return <div className="quiet">{LABEL.thought}</div>;
       return (
         <Disclosure app={app} line={line} title={LABEL.thought ?? row.kind}>
-          <MessageCut row={row} thought reveal={!!ctx.match} />
+          <div className="pl-[18px]">
+            <MessageCut row={row} thought reveal={!!ctx.match} />
+          </div>
         </Disclosure>
       );
     case "diff":
