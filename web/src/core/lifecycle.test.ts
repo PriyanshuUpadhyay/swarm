@@ -234,15 +234,17 @@ describe("automatic starts", () => {
 });
 
 describe("linked chat draft and notes", () => {
-  const session = { cwd: "/work", created_at: 1, chair_provider: "claude", adapter: null, project: null, workspace: null };
+  const linkedSession = (id: string, continuation_of?: string) => session({
+    id, continuation_of, cwd: "/work", created_at: 1, adapter: null, workspace: null,
+  });
   const linked: Snapshot = {
-    version: 1, agents: {},
-    sessions: [{ ...session, id: "root" }, { ...session, id: "leaf", continuation_of: "root" }],
+    version: 1, agents: {}, sessions: [linkedSession("root"), linkedSession("leaf", "root")],
   };
 
-  function blockStorageWrites() {
+  let blocked = false;
+  function mockStorage() {
+    blocked = false;
     const store = new Map<string, string>();
-    let blocked = false;
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, value: string) => {
@@ -251,21 +253,20 @@ describe("linked chat draft and notes", () => {
       },
       removeItem: (key: string) => store.delete(key),
     });
-    return (value: boolean) => { blocked = value; };
   }
 
   afterEach(() => vi.unstubAllGlobals());
 
   it("does not append the original draft again after a failed move, an edit, and reload", () => {
-    const block = blockStorageWrites();
+    mockStorage();
     const tab = new App(new Api("test"));
     tab.setDraft("root", "Earlier draft");
     tab.setDraft("leaf", "Later draft");
-    block(true);
+    blocked = true;
     tab.streaming.applySnapshot(linked);
     expect(tab.draft("leaf")).toBe("Earlier draft\n\nLater draft");
 
-    block(false);
+    blocked = false;
     tab.setDraft("leaf", "Changed the earlier part\n\nLater draft");
     const reload = new App(new Api("test"));
     reload.streaming.applySnapshot(linked);
@@ -273,14 +274,14 @@ describe("linked chat draft and notes", () => {
   });
 
   it("does not duplicate an edited note after a failed move and reload", () => {
-    const block = blockStorageWrites();
+    mockStorage();
     const tab = new App(new Api("test"));
     tab.notes.add("root", { kind: "reply", rowId: "row-1", quote: "An earlier reply" });
-    block(true);
+    blocked = true;
     tab.streaming.applySnapshot(linked);
     const [note] = tab.notes.list("leaf");
 
-    block(false);
+    blocked = false;
     tab.notes.setText("leaf", note.id, "Edited note");
     const reload = new App(new Api("test"));
     reload.streaming.applySnapshot(linked);
