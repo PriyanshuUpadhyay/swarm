@@ -491,7 +491,8 @@ fn folding_project_resets_its_expanded_chat_list() {
         &mut state,
         &tree,
         ChoiceOp::ExpandList {
-            id: project.clone(),
+            id: Some(project.clone()),
+            workspace: None,
         },
         0,
     )

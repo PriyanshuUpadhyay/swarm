@@ -145,6 +145,28 @@ async fn tree_handler_keeps_last_good_choices_on_busy_or_invalid_state() {
 }
 
 #[tokio::test]
+async fn old_expand_list_requests_open_the_workspaces_project() {
+    let fixture = action_fixture();
+    let workspace = env!("CARGO_MANIFEST_DIR");
+    refresh_tree(&fixture.app).unwrap();
+    let saved = choices_store::load(&fixture.app.root, true).unwrap();
+    let body = serde_json::from_value(json!({
+        "revision": saved.revision, "op": "expand_list", "workspace": workspace,
+    }))
+    .unwrap();
+    choice_write(State(fixture.app.clone()), Ok(Json(body)))
+        .await
+        .unwrap();
+    let saved = choices_store::load(&fixture.app.root, true).unwrap();
+    let (tree, _, _) = loaded_tree(&fixture.app).unwrap();
+    let (project, _) = tree.workspace(workspace).unwrap();
+    assert_eq!(
+        saved.state.expanded_lists,
+        std::collections::BTreeSet::from([format!("project:{}", project.path)])
+    );
+}
+
+#[tokio::test]
 async fn expand_list_rejects_an_unknown_project_without_a_write() {
     let fixture = action_fixture();
     refresh_tree(&fixture.app).unwrap();
