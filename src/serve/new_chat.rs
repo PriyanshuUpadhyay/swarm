@@ -67,6 +67,7 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
 
     let project_of = tokio::task::spawn_blocking(move || {
         let target = chat_target(&snapshot_app, &allowed_cwd, true)?;
+
         if let Some(common) = &target.worktree_only {
             match &place {
                 None | Some(Place::Here) => return Err(read_only_error("chat")),
@@ -203,6 +204,7 @@ fn chat_call(cwd: &str, session: Option<&str>) -> CliCall {
 async fn open_session(app: &App, cwd: &str) -> Result<String, ApiError> {
     let call = chat_call(cwd, None);
     let _create = app.chat_create.lock().await;
+
     let root = app.root.clone();
     let cwd = cwd.to_owned();
     // Existing-branch starts may resolve to a different folder than the request named.
@@ -215,6 +217,7 @@ async fn open_session(app: &App, cwd: &str) -> Result<String, ApiError> {
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))??;
+
     run_cli(app, call.args(&["init"]), None).await?;
     let output = run_cli(app, call.args(&["session", "new", "lane"]), None).await?;
     let session = output.trim();

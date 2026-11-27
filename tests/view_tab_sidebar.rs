@@ -114,6 +114,7 @@ fn needs_you_sends_one_cut_question_and_keeps_the_full_prompt() {
         vec![session("ask", "/repo/wt/feature", 1)],
         json!({"ask":[waiting]}),
     );
+
     let mut owner = owner();
     owner.fields.chat.push("question".into());
     let tree = tree::build(&snap, &owner);
@@ -124,6 +125,7 @@ fn needs_you_sends_one_cut_question_and_keeps_the_full_prompt() {
     assert!(row.detail.starts_with("Keep all of this?") && row.detail.ends_with('…'));
     assert!(row.detail.chars().count() <= 80);
     assert!(!row.fields.iter().any(|f| f.field == "question"));
+
     let catalog = tree::chat_catalog(&tree, &owner, &state, 100, &fields);
     assert!(catalog[0].detail.is_empty());
     assert!(!catalog[0].fields.iter().any(|f| f.field == "question"));
@@ -146,6 +148,7 @@ fn needs_you_can_return_to_the_saved_five_chat_cut() {
             session(&id, "/repo/wt/main", i)
         })
         .collect();
+
     let mut owner = owner();
     let tree = tree::build(&snapshot(sessions, json!(agents)), &owner);
     let mut state = ViewState::default();
@@ -157,6 +160,7 @@ fn needs_you_can_return_to_the_saved_five_chat_cut() {
             .last()
             .is_some_and(|r| r.kind == "more" && r.expanded)
     );
+
     let op = serde_json::from_value(json!({"op":"expand_list","id":"needs-you","expanded":false}))
         .unwrap();
     choices::apply(&mut owner, &mut state, &tree, op, 100).unwrap();

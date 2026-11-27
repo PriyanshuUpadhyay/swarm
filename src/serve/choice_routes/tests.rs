@@ -157,6 +157,7 @@ async fn old_expand_list_requests_open_the_workspaces_project() {
     let reply = choice_write(State(fixture.app.clone()), Ok(Json(body)))
         .await
         .unwrap();
+
     let saved = choices_store::load(&fixture.app.root, true).unwrap();
     assert_eq!(reply.0["revision"], saved.revision);
     let (tree, _, _) = loaded_tree(&fixture.app).unwrap();

@@ -10,6 +10,7 @@ pub(super) fn append<'a>(
     let owner = view.owner;
     let state = view.state;
     let mut promoted = BTreeSet::new();
+
     let mut asks: Vec<_> = view
         .live_workspaces(tree)
         .flat_map(|w| {
@@ -20,6 +21,7 @@ pub(super) fn append<'a>(
         })
         .collect();
     sort_chats(&mut asks);
+
     let count = asks.len();
     if count > 0 {
         promoted.extend(asks.iter().map(|(_, chat)| chat.id.as_str()));
@@ -27,6 +29,7 @@ pub(super) fn append<'a>(
         if !expanded {
             asks.truncate(CHAT_LIMIT);
         }
+
         let hidden = count.saturating_sub(CHAT_LIMIT);
         let mut rows = Vec::new();
         for (w, chat) in asks {
@@ -55,6 +58,7 @@ pub(super) fn append<'a>(
                     .map(|chat| (w, chat))
                     .collect();
                 sort_chats(&mut chats);
+
                 let folded = has_workspace_row(chats.len()) && state.is_collapsed(&w.path);
                 let shown: Vec<_> = chats
                     .iter()
@@ -69,10 +73,12 @@ pub(super) fn append<'a>(
                         expanded || !beyond_cut
                     })
                     .collect();
+
                 view.grouped_rows(project, &shown, &chats, &mut pinned);
             }
         }
     }
+
     if hidden > 0 {
         pinned.push(more(PINNED, if expanded { 0 } else { hidden }));
     }

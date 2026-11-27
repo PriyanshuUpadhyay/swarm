@@ -174,6 +174,7 @@ pub(super) fn refresh_tree_fields(app: &App, reader: &mut fields::FieldReader) {
             saved.state.selected_workspace.clone(),
         )
     };
+
     let tree = tree::build(&snapshot, &owner);
     reader.select(selected.as_deref());
     reader.refresh_fields(&tree, &owner, discovery::now());
@@ -185,6 +186,7 @@ pub(super) fn refresh_tree_fields(app: &App, reader: &mut fields::FieldReader) {
             Some((path.clone(), (workspace.branch.clone(), fields.clone())))
         })
         .collect();
+
     let mut cache = app.tree_cache.lock().unwrap();
     if fields != cache.fields {
         cache.fields = fields;

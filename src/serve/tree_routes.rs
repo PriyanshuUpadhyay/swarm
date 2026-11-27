@@ -56,6 +56,7 @@ pub(super) fn loaded_tree(
     };
     let tree = tree::build(&snapshot, &saved.owner);
     saved.state.record_first_sight(&tree);
+
     let fields = cache
         .fields
         .iter()
@@ -65,6 +66,7 @@ pub(super) fn loaded_tree(
                 .then(|| (path.clone(), facts.clone()))
         })
         .collect();
+
     Ok((tree, saved, fields))
 }
 

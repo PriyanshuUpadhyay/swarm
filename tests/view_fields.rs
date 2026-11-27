@@ -241,6 +241,7 @@ fn only_the_selected_workspace_reads_branch_totals() {
     let mut cache = FieldReader::default();
     cache.select(Some("/repo/wt/feature"));
     let mut reads = Vec::new();
+
     cache.refresh_fields_with(
         &tree,
         &owner,

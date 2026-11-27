@@ -66,6 +66,7 @@ async fn an_archived_git_root_can_start_only_in_a_new_worktree() {
     std::fs::create_dir(&repo).unwrap();
     let repo = std::fs::canonicalize(repo).unwrap();
     let cwd = repo.to_str().unwrap();
+
     lifecycle::check_git(cwd, &["init", "-qb", "main"]).unwrap();
     lifecycle::check_git(
         cwd,
@@ -82,6 +83,7 @@ async fn an_archived_git_root_can_start_only_in_a_new_worktree() {
         ],
     )
     .unwrap();
+
     choices_store::update(&fixture.app.root, None, |owner, _| {
         owner.project_paths.push(cwd.into());
         owner.archived.insert(cwd.into());

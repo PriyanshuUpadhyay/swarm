@@ -19,6 +19,7 @@ test("head B puts Home and project controls above New chat and palette search", 
   const chat = head.getByRole("button", { name: "New chat", exact: true });
   const search = head.getByRole("button", { name: "Search", exact: true });
   await expect(home).toHaveText("Swarm");
+
   const boxes = await Promise.all([home, add, settings, chat, search].map((control) => control.boundingBox()));
   const [homeBox, addBox, settingsBox, chatBox, searchBox] = boxes.map((box) => box!);
   expect(addBox.height).toBe(24);
@@ -153,6 +154,7 @@ test("the menu on a waiting chat in a shared worktree has only chat actions", as
     ];
     await route.fulfill({ response, json: tree });
   });
+
   await load(page);
   const row = page.getByTestId("sidebar").locator('[data-kind="chat"]');
   await row.click({ button: "right" });
@@ -179,6 +181,7 @@ test("Prune names the project for a pinned worktree", async ({ page }) => {
     await route.fulfill({ response, json: tree });
   });
   await page.route("**/api/workspace/impact?*", (route) => route.fulfill({ json: { prunePaths: ["/missing"] } }));
+
   await load(page);
   const row = page.getByTestId("sidebar").locator(`[data-session="${session}"]`);
   await row.click({ button: "right" });
@@ -273,6 +276,7 @@ test("the rail shows initial loading and a failed workspace list", async ({ page
     await pending;
     await route.fulfill({ status: 503, json: { error: "Unavailable" } });
   });
+
   await page.setViewportSize({ width: 900, height: 900 });
   await page.goto(`${url.origin}/${url.hash}`);
   const status = page.getByTestId("sidebar-rail").getByRole("status");

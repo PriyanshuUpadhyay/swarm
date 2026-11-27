@@ -153,6 +153,7 @@ fn more(group: &str, count: usize) -> SidebarRow {
     } else {
         format!("… {count} more")
     };
+
     SidebarRow {
         id: format!("more:{group}"),
         kind: "more",
@@ -164,6 +165,7 @@ fn more(group: &str, count: usize) -> SidebarRow {
             "Show all chats"
         }
         .into(),
+
         fields: vec![FieldValue {
             field: "title".into(),
             text: title,
@@ -475,11 +477,13 @@ impl<'a> Projection<'a> {
         if let Some(text) = &summary {
             context.text.insert("children".into(), text.clone());
         }
+
         let branch_parent = c
             .sessions
             .iter()
             .find_map(|s| s["branch_of"].as_str())
             .and_then(|parent| w.chats.iter().find(|c| c.contains(parent)));
+
         let detail = if let Some(question) = prompt(c) {
             context.text.remove("question");
             if show_prompt {
@@ -494,6 +498,7 @@ impl<'a> Projection<'a> {
                 .map(one_line)
                 .unwrap_or_default()
         };
+
         let mut fields = context
             .with_status(c.status)
             .values(&self.owner.fields.chat);
@@ -518,6 +523,7 @@ impl<'a> Projection<'a> {
             parent_id: parent.map(str::to_owned),
             has_children: !children.is_empty(),
             children_summary: summary,
+
             title: c.title.clone(),
             detail,
             status: c.status,
@@ -527,6 +533,7 @@ impl<'a> Projection<'a> {
                 || format!("{}\n{}", c.title, w.path),
                 |parent| format!("{}\nBranched from {}\n{}", c.title, parent.title, w.path),
             ),
+
             pinned: self.owner.pinned.contains(&w.path),
             archived: self.owner.archived.contains(&w.path),
             missing: w.missing,

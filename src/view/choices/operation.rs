@@ -200,6 +200,7 @@ pub fn apply(
             validate_fold(tree, &id)?;
             state.fold(&id, false);
         }
+
         ChoiceOp::ExpandList {
             id,
             workspace,
@@ -214,6 +215,7 @@ pub fn apply(
                 {
                     id
                 }
+
                 (None, Some(workspace)) => {
                     let Some((project, _)) = tree.workspace(&workspace) else {
                         return Ok(());
@@ -222,12 +224,14 @@ pub fn apply(
                 }
                 _ => return Err("unknown list id".into()),
             };
+
             if expanded.unwrap_or(true) {
                 state.expanded_lists.insert(id);
             } else {
                 state.expanded_lists.remove(&id);
             }
         }
+
         ChoiceOp::RenameWorkspace { workspace, name } => {
             tree.workspace(&workspace).ok_or("unknown workspace")?;
             rename(&mut owner.names, workspace, name);

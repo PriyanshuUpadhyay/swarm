@@ -135,6 +135,7 @@ fn lone_active_chat_rows_keep_worktree_marks() {
             .unwrap()
             .push(fact);
     }
+
     let owner = owner();
     let tree = tree::build(&snap, &owner);
     let rows: Vec<_> = tree::sections(
@@ -154,6 +155,7 @@ fn lone_active_chat_rows_keep_worktree_marks() {
             .iter()
             .any(|r| r.id == "chat:older" || r.id == "/repo/wt/locked")
     );
+
     for (mark, path, _) in entries {
         let row = rows
             .iter()

@@ -62,6 +62,7 @@ fn an_archived_workspace_lists_all_its_chats() {
         .filter(|row| row.kind == "chat")
         .map(|row| row.id.as_str())
         .collect();
+
     assert_eq!(
         chats,
         [

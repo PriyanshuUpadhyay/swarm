@@ -429,6 +429,7 @@ impl FieldReader {
             })
             .filter_map(|w| Some((w.path.as_str(), w.branch.as_deref()?)))
             .collect();
+
         let dirty: BTreeSet<_> = requested_paths("dirty", tree, &owner.fields)
             .into_iter()
             .map(str::to_owned)
@@ -439,6 +440,7 @@ impl FieldReader {
             .chain(branches.keys().copied())
             .map(str::to_owned)
             .collect();
+
         let previous = self.fields.clone();
         let deadline = Instant::now() + super::github::LOOKUP_TIMEOUT;
         let time_left = || super::discovery::command_seconds_left(deadline).is_some();
@@ -454,6 +456,7 @@ impl FieldReader {
             }
             keep
         });
+
         self.diff_at.retain(|path, (_, branch)| {
             let keep = branches.get(path.as_str()).copied() == Some(branch.as_str());
             if !keep && let Some(fields) = self.fields.get_mut(path) {
@@ -480,6 +483,7 @@ impl FieldReader {
             .cursor
             .as_ref()
             .map_or(0, |last| paths.partition_point(|path| *path <= last));
+
         for path in paths[next..].iter().chain(&paths[..next]).copied() {
             if !time_left() {
                 break;
@@ -592,6 +596,7 @@ pub fn github_fields(request: &Value) -> WorkspaceFields {
         }
         .into()
     });
+
     WorkspaceFields {
         pr: (!merged).then(|| format!("PR #{number}")),
         ci: ci_text,
