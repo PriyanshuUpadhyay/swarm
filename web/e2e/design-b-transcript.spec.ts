@@ -84,6 +84,45 @@ test("typing the first draft letter does not move the next queued row", async ({
   }
 });
 
+for (const place of ["away", "bottom"] as const) {
+  test(`a kept Find hit does not move the reader (${place})`, async ({ page }) => {
+    const items = Array.from({ length: 40 }, (_, i) => row(`a${i + 1}`, i === 19 ? "unique needle" : `Paragraph ${i} ${"Some long ordinary text. ".repeat(32)}`));
+    const transcript = page.getByTestId("transcript");
+    const position = () => transcript.evaluate((el, where) => where === "bottom"
+      ? el.scrollHeight - el.clientHeight - el.scrollTop : el.scrollTop, place);
+
+    try {
+      await mockStream(page, "find-does-not-follow");
+      await mockRows(page, items, 0, {}, { a20: [{ f: "text" }] });
+      await open(page);
+      await page.keyboard.press("Meta+f");
+      await page.getByTestId("find-input").fill("unique needle");
+      await expect.poll(() => page.evaluate(() => String(CSS.highlights.get("find-current")?.values().next().value))).toBe("unique needle");
+
+      const limit = place === "bottom" ? 8 : await position() - 500;
+      await transcript.hover();
+      await expect.poll(async () => {
+        await page.mouse.wheel(0, place === "bottom" ? 20_000 : -2_000);
+        await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+        return position();
+      }, { timeout: 3_000 }).toBeLessThan(limit);
+      const before = await position();
+      expect(before).toBeLessThan(limit);
+      await streamFrame(page, "rows", {
+        key: `${process.env.SWARM_E2E_LIVE!}:chair`,
+        upsert: [row("a41", "Another unique needle")],
+        find: { a41: [{ f: "text" }] },
+        end_offset: 501,
+      });
+      await expect(page.getByTestId("find-count")).toContainText("of 2");
+      await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => done())))));
+      expect(Math.abs(await position() - before)).toBeLessThan(5);
+    } finally {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+    }
+  });
+}
+
 test("an opened saved thought reveals the cut lines on request", async ({ page }) => {
   await mockRows(page, [row("t1", lines("The saved thought ends here"), "thought")]);
   await open(page);

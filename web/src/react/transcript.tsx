@@ -56,6 +56,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const { lines, id: openId, chatState, find, canPullBack } = view;
   const selectedMatch = find.open ? find.matches[find.index] : undefined;
   const current = selectedMatch?.id;
+  const findStep = useRef<number | null>(null);
   const notes = useTranscriptNotes(app, view, scrollRef);
 
   // A new chat, or its first page: start at the newest row.
@@ -78,31 +79,37 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   // A find step brings its match into view. Declared after the follow effect, so it wins.
   useLayoutEffect(() => {
     if (!current || !selectedMatch) return;
-    const i = lines.findIndex((l) => l.id === current);
+    const step = findStep.current !== find.seq;
+    findStep.current = find.seq;
+    const i = step ? lines.findIndex((l) => l.id === current) : -1;
     if (i >= 0) handle.current?.scrollToIndex(i, { align: "center" });
+
     let frame = 0;
     const timer = requestAnimationFrame(() => {
       const match = selectedMatch;
       const row = scrollRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(current)}"]`);
-      if (match?.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
+      if (step && match.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
       frame = requestAnimationFrame(() => {
-        if (!row) return;
+        if (!row) {
+          paintRanges("find-matches", []);
+          paintRanges("find-current", []);
+          return;
+        }
         const target = match.preview ? (match.line == null ? null : findLine(match.preview, match.line)) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] [data-output-line="${match.line}"]`) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] .patch`) ?? row : row;
         const ranges = textRanges(target, find.query);
         const selected = ranges[match.preview ? match.lineOccurrence ?? 0 : match.occurrence];
         paintRanges("find-matches", textRanges(row, find.query));
         paintRanges("find-current", selected ? [selected] : []);
 
-        if (selected) {
-          const box = selected.startContainer.parentElement?.closest<HTMLElement>("pre.scroll-window");
-          if (box) {
-            const hit = selected.getBoundingClientRect();
-            const visible = box.getBoundingClientRect();
-            if (hit.top < visible.top || hit.bottom > visible.bottom) box.scrollTop += hit.top - visible.top - box.clientHeight / 2;
-          }
+        if (i < 0 || !selected) return;
+        const box = selected.startContainer.parentElement?.closest<HTMLElement>("pre.scroll-window");
+        if (box) {
+          const hit = selected.getBoundingClientRect();
+          const visible = box.getBoundingClientRect();
+          if (hit.top < visible.top || hit.bottom > visible.bottom) box.scrollTop += hit.top - visible.top - box.clientHeight / 2;
         }
 
-        const rect = selected?.getBoundingClientRect();
+        const rect = selected.getBoundingClientRect();
         if (rect && scrollRef.current) handle.current?.scrollToIndex(i, { align: "start", offset: rect.top - row.getBoundingClientRect().top - scrollRef.current.clientHeight / 2 });
       });
     });
