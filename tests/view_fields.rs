@@ -3,8 +3,9 @@ use serde_json::json;
 use sidebar_fixture::*;
 use swarm::view::{
     choices::ViewState,
-    discovery::{DeadlineExpired, dirty_count, parse_worktrees},
+    discovery::{dirty_count, parse_worktrees},
     fields::{self, FieldReader, RowFieldLists},
+    github::LookupError,
     tree,
 };
 #[test]
@@ -273,7 +274,7 @@ fn a_timed_out_pr_read_keeps_the_facts_and_retries_first() {
                 reads.push(path.to_owned());
 
                 if path == slow {
-                    Err(DeadlineExpired)
+                    Err(LookupError::Deadline)
                 } else {
                     Ok(None)
                 }

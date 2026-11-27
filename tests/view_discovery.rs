@@ -166,7 +166,21 @@ esac
         fs::read_to_string(format!("{home}/gh-calls")).unwrap(),
         ghcalls
     );
-    for (at, marker) in [(250, "ambiguous"), (370, "foreign"), (490, "fail")] {
+    let pr_before_error = d.fields[&cwd].clone();
+    let fail = format!("{home}/fail");
+    fs::write(&fail, "").unwrap();
+    d.refresh_fields(&t, &owner, 250);
+    assert_eq!(d.fields[&cwd], pr_before_error);
+    fs::remove_file(fail).unwrap();
+
+    let after_error = fs::read_to_string(format!("{home}/gh-calls")).unwrap();
+    d.refresh_fields(&t, &owner, 251);
+    assert_eq!(
+        fs::read_to_string(format!("{home}/gh-calls")).unwrap(),
+        after_error
+    );
+
+    for (at, marker) in [(370, "ambiguous"), (490, "foreign")] {
         let flag = format!("{home}/{marker}");
         fs::write(&flag, "").unwrap();
         d.refresh_fields(&t, &owner, at);

@@ -1,5 +1,5 @@
 //! PR identity checks from the Swift GitHubInspection boundary.
-use super::discovery::{DeadlineExpired, run_before};
+use super::discovery::run_before;
 use serde_json::Value;
 use std::{
     cell::Cell,
@@ -8,6 +8,12 @@ use std::{
 };
 
 pub(super) const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Copy, Debug)]
+pub enum LookupError {
+    Deadline,
+    CommandFailed,
+}
 
 pub fn repository(remote: &str) -> Option<String> {
     let path = remote
@@ -42,7 +48,7 @@ pub(super) fn lookup_for_chip(
     path: &str,
     branch: Option<&str>,
     deadline: Instant,
-) -> Result<Option<Value>, DeadlineExpired> {
+) -> Result<Option<Value>, LookupError> {
     lookup_bounded(path, deadline, true, branch)
 }
 
@@ -51,24 +57,24 @@ fn lookup_bounded(
     deadline: Instant,
     include_merged: bool,
     expected_branch: Option<&str>,
-) -> Result<Option<Value>, DeadlineExpired> {
-    let timed_out = Cell::new(false);
+) -> Result<Option<Value>, LookupError> {
+    let failure = Cell::new(None);
     let command = |program: &str, args: &[&str]| {
-        if timed_out.get() {
+        if failure.get().is_some() {
             return None;
         }
-        run_before(program, args, deadline)
-            .inspect_err(|_| timed_out.set(true))
-            .ok()
-            .flatten()
+
+        let output = run_before(program, args, deadline);
+        failure.set(match &output {
+            Err(_) => Some(LookupError::Deadline),
+            Ok(None) if program == "gh" => Some(LookupError::CommandFailed),
+            _ => None,
+        });
+        output.ok().flatten()
     };
 
     let response = lookup_matching(path, include_merged, expected_branch, command);
-    if timed_out.get() {
-        Err(DeadlineExpired)
-    } else {
-        Ok(response)
-    }
+    failure.get().map_or(Ok(response), Err)
 }
 
 fn lookup_matching(

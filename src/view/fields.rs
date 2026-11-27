@@ -3,7 +3,8 @@ pub use github::github_fields;
 
 use super::{
     choices::{OwnerChoices, ViewState},
-    discovery::{DeadlineExpired, command_seconds_left},
+    discovery::command_seconds_left,
+    github::LookupError,
     tree::{AgentStatus, Chat, Tree, Workspace, age},
 };
 use serde::{Deserialize, Serialize};
@@ -422,7 +423,7 @@ impl FieldReader {
         owner: &OwnerChoices,
         at: i64,
         mut inspect: impl FnMut(&str, Instant) -> Option<usize>,
-        mut lookup: impl FnMut(&str, Option<&str>, Instant) -> Result<Option<Value>, DeadlineExpired>,
+        mut lookup: impl FnMut(&str, Option<&str>, Instant) -> Result<Option<Value>, LookupError>,
         mut totals: impl FnMut(&str, &str, Instant) -> Option<LineTotals>,
     ) -> bool {
         let branches: BTreeMap<_, _> = tree
@@ -513,21 +514,24 @@ impl FieldReader {
                     .cut_path
                     .take_if(|cut| cut.as_str() == path.as_str())
                     .is_some();
-                let Ok(request) = lookup(path, branch.map(String::as_str), deadline) else {
+                let result = lookup(path, branch.map(String::as_str), deadline);
+                if matches!(result, Err(LookupError::Deadline)) {
                     if retry {
                         self.cursor = Some(path.clone());
                     } else {
                         self.cut_path = Some(path.clone());
                     }
                     break;
-                };
+                }
 
                 self.github_at.insert(path.clone(), (at, branch.cloned()));
-                let fields = request.as_ref().map(github_fields).unwrap_or_default();
-                let current = self.fields.entry(path.clone()).or_default();
-                current.pr = fields.pr;
-                current.ci = fields.ci;
-                current.pr_fact = fields.pr_fact;
+                if let Ok(request) = result {
+                    let fields = request.as_ref().map(github_fields).unwrap_or_default();
+                    let current = self.fields.entry(path.clone()).or_default();
+                    current.pr = fields.pr;
+                    current.ci = fields.ci;
+                    current.pr_fact = fields.pr_fact;
+                }
             }
             self.cursor = Some(path.clone());
         }
