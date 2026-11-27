@@ -295,7 +295,7 @@ test("a branch name does not move the row after the open chat", async ({ page, b
     }, true);
     await shoot(page, "sidebar-branchless", browserName);
     await publish();
-    await expect(row.getByTestId("sidebar-branch")).toHaveText("feature");
+    await expect(row.getByTestId("sidebar-branch").locator(".label")).toHaveText("feature");
     expect(await top()).toBe(before);
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
