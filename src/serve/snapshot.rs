@@ -13,10 +13,12 @@ pub(super) fn read_connection(root: &Path) -> rusqlite::Result<rusqlite::Connect
 
 pub(super) async fn snapshot(State(app): State<App>) -> Result<Json<Value>, ApiError> {
     tokio::task::spawn_blocking(move || {
-        snapshot_value(&app).map(Json).map_err(|err| {
+        let mut reply = snapshot_value(&app).map_err(|err| {
             eprintln!("swarm serve: {err}");
             error(StatusCode::INTERNAL_SERVER_ERROR, "snapshot failed")
-        })
+        })?;
+        stamp_turn_clocks(&mut reply["agents"], discovery::now());
+        Ok(Json(reply))
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "snapshot task failed"))?
@@ -76,12 +78,16 @@ pub(super) fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::
             sessions.push(session);
         }
     }
-    let (version, mut agents) = {
+
+    let (version, agents) = {
         let hub = app.hub.lock().unwrap();
         (hub.version, hub.agents.clone())
     };
-    // A changing clock belongs to each reply, not the agent cache or its revision.
-    let now = discovery::now();
+    Ok(json!({"version": version, "sessions": sessions, "archived": archived, "agents": agents}))
+}
+
+// A changing clock belongs to the HTTP reply, not the tree cache or its revision.
+fn stamp_turn_clocks(agents: &mut Value, now: i64) {
     for rows in agents
         .as_object_mut()
         .into_iter()
@@ -96,7 +102,6 @@ pub(super) fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::
             }
         }
     }
-    Ok(json!({"version": version, "sessions": sessions, "archived": archived, "agents": agents}))
 }
 
 #[cfg(test)]
