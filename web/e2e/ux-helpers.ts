@@ -81,6 +81,7 @@ export type StreamFixture = {
 
 export async function mockStream(tab: Page, stream: string, first: unknown = { stream, build: "fixture" }) {
   await tab.route("**/api/subscribe", (route) => route.fulfill({ json: { ok: true } }));
+
   await tab.addInitScript((first) => {
     const fetch = window.fetch.bind(window);
     const scope = window as unknown as { swarmStream: StreamFixture };
@@ -90,6 +91,7 @@ export async function mockStream(tab: Page, stream: string, first: unknown = { s
       if (!url.endsWith("/api/stream")) return fetch(input, init);
       const headers = { "Content-Type": "text/event-stream" };
       if (down) return new Response("", { headers });
+
       const body = new ReadableStream<Uint8Array>({ start(controller) {
         const encoder = new TextEncoder();
         const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
