@@ -6,12 +6,13 @@ export function sourceLines(text: string): string[] {
   return lines;
 }
 
-export function CutLine({ count, show, busy, error, testid }: { count: string; show: () => void; busy?: boolean; error?: string; testid?: string }) {
+/** Pass null for a pending error message, or omit error when the caller owns the status. */
+export function CutLine({ count, show, busy, error, testid }: { count: string; show: () => void; busy?: boolean; error?: string | null; testid?: string }) {
   return (
     <div className="cut-line">
       <span>… {count}</span>
       <button type="button" className="t-link" data-testid={testid} disabled={busy} onClick={show}>{busy ? "Loading…" : "Show all"}</button>
-      <span role="status" className="text-failed empty:absolute">{error}</span>
+      {error !== undefined && <span role="status" className="text-failed empty:absolute">{error}</span>}
     </div>
   );
 }
