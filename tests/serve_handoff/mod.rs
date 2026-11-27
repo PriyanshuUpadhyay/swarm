@@ -47,6 +47,17 @@ esac
     };
     (fixture, body)
 }
+fn new_handoff_session(db: &rusqlite::Connection, chair: Option<(&str, &str)>) -> String {
+    swarm::store::create_session(
+        db,
+        "lane",
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        chair,
+        Some("tmux-swarm"),
+    )
+    .unwrap()
+}
+
 fn handoff_phases(fixture: &Fixture) -> Vec<String> {
     fixture.app.hub.lock().unwrap().streams["progress"]
         .queue
@@ -88,14 +99,7 @@ async fn handoff_refuses_an_archived_source_with_an_unarchive_step() {
 async fn handoff_file_refuses_an_invalid_history_link() {
     let (fixture, mut body) = handoff_fixture();
     let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-    let newer = swarm::store::create_session(
-        &db,
-        "lane",
-        Path::new(env!("CARGO_MANIFEST_DIR")),
-        None,
-        Some("tmux-swarm"),
-    )
-    .unwrap();
+    let newer = new_handoff_session(&db, None);
     db.execute(
         "UPDATE session SET continuation_of = ?1 WHERE id = ?2",
         (&newer, &fixture.session),
@@ -112,19 +116,9 @@ async fn handoff_file_refuses_an_invalid_history_link() {
 #[test]
 fn handoff_link_conflict_points_to_the_newer_chat() {
     let db = swarm::store::open(Path::new(":memory:")).unwrap();
-    let new_session = || {
-        swarm::store::create_session(
-            &db,
-            "lane",
-            Path::new(env!("CARGO_MANIFEST_DIR")),
-            None,
-            Some("tmux-swarm"),
-        )
-        .unwrap()
-    };
-    let old = new_session();
-    let first = new_session();
-    let losing = new_session();
+    let old = new_handoff_session(&db, None);
+    let first = new_handoff_session(&db, None);
+    let losing = new_handoff_session(&db, None);
     swarm::store::continue_session(&db, &first, &old).unwrap();
 
     let err = swarm::store::continue_session(&db, &losing, &old).unwrap_err();
@@ -229,14 +223,7 @@ async fn handoff_successful_handoff() {
 async fn handoff_file_carries_older_text_when_the_leaf_has_no_log() {
     let (fixture, mut body) = handoff_fixture();
     let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-    let leaf = swarm::store::create_session(
-        &db,
-        "lane",
-        Path::new(env!("CARGO_MANIFEST_DIR")),
-        Some(("pi", "leaf")),
-        Some("tmux-swarm"),
-    )
-    .unwrap();
+    let leaf = new_handoff_session(&db, Some(("pi", "leaf")));
     swarm::store::continue_session(&db, &leaf, &fixture.session).unwrap();
     body.old_session = leaf.clone();
     body.carry = Carry::File;

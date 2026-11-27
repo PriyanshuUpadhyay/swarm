@@ -26,17 +26,15 @@ export class AppStream {
       const known = new Set(previous?.sessions.filter((session) => session.continuation_of).map((session) => session.id));
       // A reconnect can discover several links at once. Move oldest first so notes and text
       // reach the active leaf without changing the stored chat-link order.
-      const added = snap.sessions.filter((session) => session.continuation_of && !known.has(session.id));
-      const links: [string, string][] = [];
-      for (const { id, continuation_of: from } of added.sort((a, b) => a.id.localeCompare(b.id))) {
-        if (!from) continue;
-        this.app.composing.continueDraft(from, id);
-        links.push([from, id]);
-      }
+      const links = snap.sessions.flatMap<[string, string]>(({ id, continuation_of: from }) =>
+        from && !known.has(id) ? [[from, id]] : [],
+      ).sort((a, b) => a[1].localeCompare(b[1]));
+
+      for (const [from, to] of links) this.app.composing.continueDraft(from, to);
       this.app.notes.continueNotes(links);
     }
-    const life = this.app.life;
-    if (Object.keys(life?.state.pendingSwitch ?? {}).length || Object.keys(life?.state.endedRun ?? {}).length) life.reconcileRunPicks(snap);
+
+    this.app.life?.reconcileRunPicks(snap);
     // A card stays busy until its question goes; the same question shown again is a new ask.
     for (const [id, input] of this.app.inputs)
       if (input.answering && this.app.composing.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;

@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { row, rows, open, mockRows } from "./ux-helpers";
 import { api, captureRunPost, holdChatStart, mockRunCatalog, patchLiveChair, readTree, shootThemes } from "./lifecycle-helpers";
-import type { Prefs, TreeView } from "../src/core/nav";
+import type { Prefs } from "../src/core/nav";
 
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
@@ -127,11 +127,10 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
 });
 
 test("a removed new-chat default blocks the start and can be reset", async ({ page: tab }) => {
-  const tree = () => api<TreeView>("/api/tree?view=workspaces");
   const setDefault = async (model: Prefs["newChatModel"] | null) => api("/api/choices", {
     revision: (await readTree()).revision, op: "pref", key: "newChatModel", value: model,
   });
-  const previous = (await tree()).prefs.newChatModel ?? null;
+  const previous = (await readTree()).prefs.newChatModel ?? null;
   const dropped = { provider: "codex", model: "dropped-model" };
   await setDefault(dropped);
   try {
@@ -156,7 +155,7 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
     const reset = tab.getByRole("button", { name: "Reset new chat default" });
     await reset.click();
     await expect(reset).toHaveCount(0);
-    await expect.poll(async () => (await tree()).prefs.newChatModel).toBeUndefined();
+    await expect.poll(async () => (await readTree()).prefs.newChatModel).toBeUndefined();
     await expect.poll(async () => (await first.boundingBox())?.y).toBe(top);
     await shootThemes(tab, resolve(import.meta.dirname, "../../tmp/shots/fix4/default-row-empty"));
   } finally {

@@ -192,7 +192,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     if (sending || hasPendingImage(text)) return;
     if (!ready) return setMenu("place");
     setSending(true);
-    const changed = run && !sameRun(run, base) ? run : !run ? appDefault : null;
+    const changed = run && !sameRun(run, base) ? run : null;
     // pi runs a skill only at the message's start, so the first prompt goes as the chat box sends it.
     const first = provider ? (await toSend(text, provider, slash.list, () => app.newChat.commands(target.cwd, provider))).text : text;
     const ok = await app.newChat.start(target.cwd, first, place, { role: profile?.name ?? role, run: changed }, {

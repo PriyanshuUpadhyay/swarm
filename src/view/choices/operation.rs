@@ -370,17 +370,16 @@ pub fn apply(
 }
 
 impl OwnerChoices {
-    pub fn remember_model(&mut self, provider: String, model: String) -> Result<(), String> {
+    pub fn remember_model(&mut self, provider: String, model: String) -> Result<bool, String> {
         if !valid_recent_names(&provider, &model) {
             return Err("invalid value for recentModels".into());
         }
         let value = serde_json::json!({ "provider": provider, "model": model });
-        put_recent(prefs_object(&mut self.prefs, None)?, value);
-        Ok(())
+        Ok(put_recent(prefs_object(&mut self.prefs, None)?, value))
     }
 }
 
-fn put_recent(prefs: &mut serde_json::Map<String, Value>, value: Value) {
+fn put_recent(prefs: &mut serde_json::Map<String, Value>, value: Value) -> bool {
     let mut models = vec![value];
     if let Some(old) = prefs.get("recentModels").and_then(Value::as_array) {
         for model in old.iter().filter(|model| {
@@ -394,11 +393,19 @@ fn put_recent(prefs: &mut serde_json::Map<String, Value>, value: Value) {
             }
         }
     }
-    prefs.insert("recentModels".into(), Value::Array(models));
+    let next = Value::Array(models);
+    if prefs.get("recentModels") == Some(&next) {
+        return false;
+    }
+    prefs.insert("recentModels".into(), next);
+    true
 }
 
 fn model_choice(value: &Value) -> Option<(&str, &str)> {
-    (value.as_object()?.len() == 2).then_some(())?;
+    if value.as_object()?.len() != 2 {
+        return None;
+    }
+
     value["provider"].as_str().zip(value["model"].as_str())
 }
 

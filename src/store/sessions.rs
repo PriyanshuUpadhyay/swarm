@@ -20,6 +20,9 @@ pub fn create_session(
     Ok(id)
 }
 
+pub const CHAT_CONTINUED_MESSAGE: &str =
+    "This chat continued in a newer session. Open the newer chat.";
+
 const LIVE_CONTINUATION: &str =
     "SELECT 1 FROM session WHERE continuation_of = :source AND archived_at IS NULL";
 
@@ -58,7 +61,7 @@ pub fn continue_session(
             |row| row.get(0),
         )?;
         if continued {
-            return Err("This chat continued in a newer session. Open the newer chat.".into());
+            return Err(CHAT_CONTINUED_MESSAGE.into());
         }
         return Err("sessions cannot be linked as one chat".into());
     }

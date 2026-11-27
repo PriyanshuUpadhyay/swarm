@@ -5,6 +5,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DRAFT_PREFIX } from "../src/core/app-types";
 import { STORE_KEY, savedNotes } from "../src/core/notes";
+import type { ModelChoice } from "../src/core/nav";
 import { captureRunPost, fixtureSql, holdChatStart, mockRunCatalog, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
 
 // Live snapshot reads can still be in flight when the test page closes.
@@ -131,7 +132,7 @@ test("one idle picker opens by shortcut, keeps an unlisted current model and app
 
 test("two quick star clicks keep both favorites", async ({ page: tab }) => {
   await pickerCatalog(tab);
-  const saved: { provider: string; model: string }[][] = [];
+  const saved: ModelChoice[][] = [];
   await patchTreePrefs(tab, (prefs) => { prefs.favoriteModels = saved.at(-1) ?? []; });
   let release!: () => void;
   const firstSave = new Promise<void>((resolve) => { release = resolve; });

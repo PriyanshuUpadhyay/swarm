@@ -90,7 +90,9 @@ fn read_budget() -> Result<Budget, ApiError> {
     Budget::new(Duration::from_secs(10)).map_err(|_| invalid())
 }
 
-pub(super) fn lines(value: &Value) -> Result<Vec<(u64, u64, Vec<Value>)>, ApiError> {
+type WindowLines = Vec<(u64, u64, Vec<Value>)>;
+
+pub(super) fn lines(value: &Value) -> Result<WindowLines, ApiError> {
     value["lines"]
         .as_array()
         .ok_or_else(invalid)?
@@ -106,6 +108,21 @@ pub(super) fn lines(value: &Value) -> Result<Vec<(u64, u64, Vec<Value>)>, ApiErr
         })
         .collect()
 }
+async fn window_lines(
+    source: &Lease,
+    start: u64,
+    end: u64,
+    budget: Budget,
+) -> Result<WindowLines, ApiError> {
+    let payload = source
+        .read_in(Operation::Window { start, end }, budget)
+        .await?;
+    if payload["start_byte"] != start || payload["end_byte"] != end {
+        return Err(invalid());
+    }
+    lines(&payload)
+}
+
 pub(super) async fn window(
     app: &App,
     key: &str,
@@ -116,14 +133,8 @@ pub(super) async fn window(
 ) -> Result<LiveRows, ApiError> {
     let source = acquire(app, key, log).await?;
     let budget = read_budget()?;
-    let payload = source
-        .read_in(Operation::Window { start, end }, budget)
-        .await?;
-    if payload["start_byte"] != start || payload["end_byte"] != end {
-        return Err(invalid());
-    }
+    let lines = window_lines(&source, start, end, budget).await?;
     let mut state = LiveRows::empty(start, log.format == "codex");
-    let lines = lines(&payload)?;
     if seed_model
         && lines
             .iter()
@@ -148,14 +159,7 @@ async fn model_before(source: &Lease, log: &Log, boundary: u64, budget: Budget) 
         if read_end != end || start >= end || boundary - start > ROWS_FIND_LIMIT as u64 {
             return None;
         }
-        let payload = source
-            .read_in(Operation::Window { start, end }, budget)
-            .await
-            .ok()?;
-        if payload["start_byte"] != start || payload["end_byte"] != end {
-            return None;
-        }
-        let lines = lines(&payload).ok()?;
+        let lines = window_lines(source, start, end, budget).await.ok()?;
         if let Some(model) = lines
             .iter()
             .rev()

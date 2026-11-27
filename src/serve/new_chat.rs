@@ -343,9 +343,7 @@ pub(super) async fn remember_started_model(app: &App, session: &str) {
         let mut changed = false;
         if let Some((Some(provider), Some(model))) = pair {
             choices_store::update(&root, None, |owner, _| {
-                let before = owner.prefs["recentModels"].clone();
-                owner.remember_model(provider, model)?;
-                changed = owner.prefs["recentModels"] != before;
+                changed = owner.remember_model(provider, model)?;
                 Ok(())
             })
             .map_err(|err| err.to_string())?;

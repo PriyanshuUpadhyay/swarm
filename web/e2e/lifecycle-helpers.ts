@@ -21,8 +21,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-type Tree = { revision: string; sections: { kind: string; path: string | null; title: string; rows: { id: string; kind: string; title: string; selection: { chat: string | null } }[] }[] };
-const readTree = (view = "workspaces") => api<Tree>(`/api/tree?view=${view}`);
+const readTree = (view = "workspaces") => api<TreeView>(`/api/tree?view=${view}`);
 
 export const fixtureSql = (statement: string) =>
   execFileSync("sqlite3", ["-cmd", ".timeout 5000", process.env.SWARM_E2E_DB!, statement]);

@@ -318,7 +318,7 @@ pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
     if continued {
         return Err(error(
             StatusCode::CONFLICT,
-            "This chat continued in a newer session. Open the newer chat.",
+            swarm::store::CHAT_CONTINUED_MESSAGE,
         ));
     }
     Ok(call)
