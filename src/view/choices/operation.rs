@@ -393,6 +393,7 @@ fn put_recent(prefs: &mut serde_json::Map<String, Value>, value: Value) -> bool 
             }
         }
     }
+
     let next = Value::Array(models);
     if prefs.get("recentModels") == Some(&next) {
         return false;

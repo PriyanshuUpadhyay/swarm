@@ -42,6 +42,7 @@ async fn file_carry_refuses_a_link_whose_stored_log_is_gone() {
     )
     .unwrap();
     swarm::store::continue_session(&db, &leaf, &fixture.session).unwrap();
+
     db.execute(
         "UPDATE session SET chair_log = ?1 WHERE id = ?2",
         [fixture.dir.join("missing.jsonl").to_str().unwrap(), &leaf],

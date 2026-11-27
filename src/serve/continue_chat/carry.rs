@@ -50,6 +50,7 @@ pub(super) async fn prepare_carry(
                     "The current chat has no messages to carry forward",
                 ));
             }
+
             let path = chat_file(app, old, text.join("\n\n")).await?;
             Ok(Some(handoff::file_message(&path.to_string_lossy())))
         }
@@ -60,6 +61,7 @@ pub(super) async fn prepare_carry(
                     "The old agent is not running to write a summary",
                 ));
             }
+
             let baseline = handoff_rows(app, old).await?.len();
             continue_phase(app, old, "summarizing")?;
             let deadline = tokio::time::Instant::now() + summary_wait;
@@ -70,6 +72,7 @@ pub(super) async fn prepare_carry(
                     Some(handoff::REQUEST.into()),
                 )
                 .await?;
+
                 loop {
                     tokio::time::sleep(poll).await;
                     if let Ok(rows) = handoff_rows(app, old).await
@@ -91,6 +94,7 @@ pub(super) async fn prepare_carry(
                     "Timed out waiting for a chat summary",
                 )
             })??;
+
             Ok(Some(handoff::summary_message(&context)))
         }
         Carry::Resume => unreachable!("native resume does not carry chat context"),

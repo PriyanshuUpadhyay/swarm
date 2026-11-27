@@ -39,7 +39,6 @@ function EndedControls({ app, sessionId, chair }: { app: App; sessionId: string;
   const carry = app.life.endedRunCarry(sessionId, run?.provider ?? chair.provider);
   const label = saved === "summary" && carry === "file" ? "Resume with File" : "Resume";
 
-
   return (
     <div className="grid justify-items-center gap-2">
       <div className="flex items-center gap-2">
