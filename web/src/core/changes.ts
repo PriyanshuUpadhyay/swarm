@@ -226,10 +226,10 @@ export class Changes {
     }
     if (seq !== this.seq.list || workspace !== this.workspace) return;
     this.list = next;
-    if (automatic && (this.full.state === "loading" || this.full.state === "ready")) return this.notify();
     const files = next.state === "ready" ? next.data.files : [];
     // The shown file stays when it is still changed; else the first file shows.
     const still = files.find((f) => fileKey(f) === this.selected);
+    if (automatic && (still || next.state !== "ready") && (this.full.state === "loading" || this.full.state === "ready")) return this.notify();
     if (still) void this.select(still, true, automatic);
     else if (files.length) void this.select(files[0]);
     else {
