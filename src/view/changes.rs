@@ -401,23 +401,20 @@ fn read_patch(
             Some(source),
         )
     } else {
+        let files = local_changes(&bytes(
+            &read,
+            &[
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--no-renames",
+                "--untracked-files=all",
+                "--",
+                path,
+            ],
+        )?)?;
 
-        (
-            local_changes(&bytes(
-                &read,
-                &[
-                    "status",
-                    "--porcelain=v1",
-                    "-z",
-                    "--no-renames",
-                    "--untracked-files=all",
-                    "--",
-                    path,
-                ],
-            )?)?,
-
-            None,
-        )
+        (files, None)
     };
 
     let mut candidates: Vec<_> = candidates
