@@ -106,6 +106,7 @@ for (const place of ["away", "bottom"] as const) {
         await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
         return position();
       }, { timeout: 3_000 }).toBeLessThan(limit);
+
       const before = await position();
       expect(before).toBeLessThan(limit);
       await streamFrame(page, "rows", {
