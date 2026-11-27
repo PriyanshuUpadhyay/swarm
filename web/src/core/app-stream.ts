@@ -21,7 +21,19 @@ export class AppStream {
   constructor(private readonly app: App) {}
 
   applySnapshot(snap: Snapshot) {
+    const previous = this.app.snapshot;
     this.app.snapshot = snap;
+    if (hasLinkedHistory(snap)) {
+      const known = new Set(previous?.sessions.filter((session) => session.continuation_of).map((session) => session.id));
+      // A reconnect can discover several links at once. Move oldest first so notes and text
+      // reach the active leaf without changing the stored chat-link order.
+      const added = snap.sessions.filter((session) => session.continuation_of && !known.has(session.id));
+      for (const { id, continuation_of: from } of added.sort((a, b) => a.id.localeCompare(b.id))) {
+        if (!from) continue;
+        this.app.composing.continueDraft(from, id);
+        this.app.notes.continueNotes(from, id);
+      }
+    }
     const life = this.app.life;
     if (Object.keys(life?.state.pendingSwitch ?? {}).length || Object.keys(life?.state.endedRun ?? {}).length) life.reconcileRunPicks(snap);
     // A card stays busy until its question goes; the same question shown again is a new ask.

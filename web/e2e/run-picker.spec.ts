@@ -3,6 +3,8 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { DRAFT_PREFIX } from "../src/core/app-types";
+import { STORE_KEY, savedNotes } from "../src/core/notes";
 import { captureRunPost, holdChatStart, mockRunCatalog, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
 
 // Live snapshot reads can still be in flight when the test page closes.
@@ -39,6 +41,10 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     const transcript = tab.getByTestId("transcript").and(tab.locator(`[data-chat="${leaf}"]`));
     await row.click();
     await expect(transcript.getByText("After the CLI switch")).toBeVisible();
+    const note = { id: 1, kind: "item" as const, rowId: "raw-0-0", quote: "The earlier reply", text: "Review this", at: 1 };
+    await tab.evaluate((pairs) => {
+      for (const [key, value] of pairs) localStorage.setItem(key, value);
+    }, [[DRAFT_PREFIX + root, "Earlier draft"], [DRAFT_PREFIX + leaf, "Later draft"], [STORE_KEY, savedNotes([[root, [note]]])]]);
 
     call("session", "continue", leaf, root);
     await expect.poll(async () => (await readTree()).sections.flatMap((s) => s.rows).some((row) => row.selection?.chat === leaf)).toBe(true);
@@ -46,6 +52,9 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     await row.click();
     await expect(tab.getByTestId("tab").and(tab.locator(`[data-session="${leaf}"]`))).toHaveAttribute("data-id", tabId!);
     await expect(transcript.getByText("After the CLI switch")).toBeVisible();
+    await expect.poll(() => tab.evaluate(([draftKey, noteKey]) => [localStorage.getItem(draftKey), localStorage.getItem(noteKey)], [DRAFT_PREFIX + leaf, STORE_KEY])).toEqual([
+      "Earlier draft\n\nLater draft", savedNotes([[leaf, [{ ...note, rowId: `${root}:${note.rowId}` }]]]),
+    ]);
 
     const loadOlder = tab.getByTestId("load-older");
     await expect(loadOlder).toBeVisible();

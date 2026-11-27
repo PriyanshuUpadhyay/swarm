@@ -18,6 +18,7 @@ import {
 import type { App } from "./app";
 
 export class AppComposer {
+  private readonly unsavedDrafts = new Set<string>();
   private captionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly app: App) {}
@@ -80,13 +81,17 @@ export class AppComposer {
   draftPicks(sessionId: string): SkillPick[] {
     let picks = this.app.picks.get(sessionId);
     if (!picks) {
-      try {
-        const stored = JSON.parse(readStore(PICKS_PREFIX + sessionId) ?? "[]");
-        picks = validPicks(this.draft(sessionId), Array.isArray(stored) ? stored : []);
-      } catch { picks = []; }
+      picks = this.storedPicks(sessionId, this.draft(sessionId));
       this.app.picks.set(sessionId, picks);
     }
     return picks;
+  }
+
+  private storedPicks(sessionId: string, text: string): SkillPick[] {
+    try {
+      const stored = JSON.parse(readStore(PICKS_PREFIX + sessionId) ?? "[]");
+      return validPicks(text, Array.isArray(stored) ? stored : []);
+    } catch { return []; }
   }
 
   /** The box calls this on each edit; it does not render. */
@@ -94,8 +99,32 @@ export class AppComposer {
     const next = picks ? validPicks(text, picks) : editPicks(this.draft(sessionId), text, this.draftPicks(sessionId));
     this.app.drafts.set(sessionId, text);
     this.app.picks.set(sessionId, next);
-    writeStore(DRAFT_PREFIX + sessionId, text);
-    writeStore(PICKS_PREFIX + sessionId, next.length ? JSON.stringify(next) : "");
+    const savedText = writeStore(DRAFT_PREFIX + sessionId, text);
+    const savedPicks = writeStore(PICKS_PREFIX + sessionId, next.length ? JSON.stringify(next) : "");
+    if (savedText && savedPicks) this.unsavedDrafts.delete(sessionId);
+    else this.unsavedDrafts.add(sessionId);
+    return savedText && savedPicks;
+  }
+
+  continueDraft(from: string, to: string) {
+    const read = (id: string) => {
+      if (this.unsavedDrafts.has(id)) return { text: this.draft(id), picks: this.draftPicks(id) };
+      const text = readStore(DRAFT_PREFIX + id) ?? "";
+      return { text, picks: this.storedPicks(id, text) };
+    };
+    const old = read(from);
+    const next = read(to);
+    if (old.text) {
+      const prefix = old.text + (next.text ? "\n\n" : "");
+      const picks = [...old.picks, ...next.picks.map((pick) => ({ ...pick, start: pick.start + prefix.length }))];
+      if (this.setDraft(to, prefix + next.text, picks)) this.setDraft(from, "", []);
+      else this.app.notice("The browser could not save the moved draft. The original draft was not deleted.", true);
+    } else if (this.app.drafts.has(to) && !this.unsavedDrafts.has(to)) {
+      // Another tab can move the stored draft first; replace this tab's cached copy.
+      this.app.drafts.set(to, next.text);
+      this.app.picks.set(to, next.picks);
+    } else return;
+    this.update(to, { draftRev: this.input(to).draftRev + 1 });
   }
 
   /** History is per workspace, so a new chat recalls the prompts of the workspace's other chats. */

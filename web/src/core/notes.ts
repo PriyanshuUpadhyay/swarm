@@ -4,6 +4,7 @@
 
 import { readStore, writeStore } from "./app-types";
 import type { App } from "./app";
+import { scopedRowId } from "./transcript";
 
 const KINDS = ["text", "item", "reply"] as const;
 /** `rowId` only finds the row on screen; the agent never sees it. `quote` is the full text.
@@ -95,6 +96,33 @@ export class Notes {
     const ok = writeStore(STORE_KEY, chats.length ? savedNotes(chats) : "");
     if (!ok && !this.saveRefused) this.app.notice("The browser did not save the notes, maybe because its storage is full. They stay in this tab until it closes.", true);
     this.saveRefused = !ok;
+  }
+
+  continueNotes(from: string, to: string) {
+    const saved = readNotes();
+    const old = saved.get(from) ?? (this.saveRefused ? this.list(from) : NO_NOTES);
+    const next = saved.get(to) ?? this.list(to);
+    if (!old.length) {
+      if (saved.has(to)) this.chats.set(to, [...next]);
+      return;
+    }
+
+    const ids = new Set(next.map((note) => note.id));
+    this.seq = Math.max(this.seq, ...old.map((note) => note.id), ...ids);
+    const moved = old.map((note) => ({
+      ...note,
+      id: ids.has(note.id) ? ++this.seq : note.id,
+      rowId: scopedRowId(note.rowId) ? note.rowId : `${from}:${note.rowId}`,
+    }));
+    const merged = [...moved, ...next];
+    saved.delete(from);
+    saved.set(to, merged);
+    const ok = writeStore(STORE_KEY, savedNotes([...saved]));
+    this.chats.set(to, merged);
+    if (ok) this.chats.delete(from);
+    else if (!this.saveRefused) this.app.notice("The browser could not save the moved notes. The original notes were not deleted.", true);
+    this.saveRefused = !ok;
+    this.changed();
   }
 
   /** Where the notes of chat `id` live: a child's column keeps them in its main chat, under
