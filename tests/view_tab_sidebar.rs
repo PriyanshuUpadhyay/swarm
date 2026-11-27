@@ -166,6 +166,25 @@ fn needs_you_can_return_to_the_saved_five_chat_cut() {
 }
 
 #[test]
+fn pinned_shows_the_cut_and_can_reveal_all_its_chats() {
+    use swarm::view::tree;
+    let sessions = (0..7)
+        .map(|i| session(&format!("pinned-{i}"), "/repo/wt/main", i))
+        .collect();
+    let mut owner = owner();
+    owner.pinned.insert("/repo/wt/main".into());
+    let tree = tree::build(&snapshot(sessions, json!({})), &owner);
+    let mut state = ViewState::default();
+    let cut = tree::sections(&tree, &owner, &state, false, 100, &BTreeMap::new());
+    assert_eq!(cut[0].rows.iter().filter(|r| r.kind == "chat").count(), 5);
+    assert_eq!(cut[0].rows.last().unwrap().title, "… 2 more");
+    let op = serde_json::from_value(json!({"op":"expand_list","id":"pinned"})).unwrap();
+    choices::apply(&mut owner, &mut state, &tree, op, 100).unwrap();
+    let all = tree::sections(&tree, &owner, &state, false, 100, &BTreeMap::new());
+    assert_eq!(all[0].rows.iter().filter(|r| r.kind == "chat").count(), 7);
+}
+
+#[test]
 fn every_chat_shows_in_the_sidebar_whether_or_not_its_tab_is_open() {
     let tree = tree();
     let mut owner = owner();

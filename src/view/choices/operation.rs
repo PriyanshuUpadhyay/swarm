@@ -207,7 +207,7 @@ pub fn apply(
         } => {
             let id = match (id, workspace) {
                 (Some(id), None)
-                    if id == NEEDS_YOU
+                    if matches!(id.as_str(), NEEDS_YOU | PINNED)
                         || id
                             .strip_prefix("project:")
                             .is_some_and(|path| tree.projects.iter().any(|p| p.path == path)) =>

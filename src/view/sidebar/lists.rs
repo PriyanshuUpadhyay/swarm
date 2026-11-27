@@ -42,6 +42,9 @@ pub(super) fn append<'a>(
     }
 
     let mut pinned = Vec::new();
+    let expanded = state.expanded_lists.contains(PINNED);
+    let mut seen = 0;
+    let mut hidden = 0;
     for project in &tree.projects {
         for w in &project.workspaces {
             if !owner.archived.contains(&w.path) && owner.pinned.contains(&w.path) {
@@ -52,9 +55,22 @@ pub(super) fn append<'a>(
                     .map(|chat| (w, chat))
                     .collect();
                 sort_chats(&mut chats);
-                view.grouped_rows(project, &chats, &chats, &mut pinned);
+                let shown: Vec<_> = chats
+                    .iter()
+                    .copied()
+                    .filter(|(_, chat)| {
+                        seen += 1;
+                        let beyond_cut = seen > CHAT_LIMIT && !urgent(chat);
+                        hidden += usize::from(beyond_cut);
+                        expanded || !beyond_cut
+                    })
+                    .collect();
+                view.grouped_rows(project, &shown, &chats, &mut pinned);
             }
         }
+    }
+    if hidden > 0 {
+        pinned.push(more(PINNED, if expanded { 0 } else { hidden }));
     }
     if !pinned.is_empty() {
         sections.push(view.group(PINNED, "Pinned".into(), pinned, !state.is_collapsed(PINNED)));
