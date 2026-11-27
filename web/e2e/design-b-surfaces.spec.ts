@@ -3,13 +3,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Meter } from "../src/core/settings-types";
 import { open, settings } from "./settings-helpers";
-import { captureThemes, changeRow, open as openChat } from "./ux-helpers";
-
-async function openChanges(tab: Page, path: string) {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
-  await tab.getByTestId("show-changes").click();
-  await changeRow(tab, path).click();
-}
+import { captureThemes, changeRow, openChanges } from "./ux-helpers";
 
 async function addReadmeComment(tab: Page, text: string) {
   await openChanges(tab, "README.md");
