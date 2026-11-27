@@ -1,9 +1,12 @@
-import { Fragment, createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
+import { Fragment, createContext, createElement, useContext, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { Block, Display, Inline } from "../core/api";
 import { mapCutContainer } from "../core/transcript";
 import { HighlightedCode } from "./code-tokens";
 import { plural, sourceLines } from "./cut-line";
-import { ColoredRow, PatchBody, SCROLL_WINDOW_LINES, scrollWindowStyle, useSplit, useWrap } from "./patch-body";
+import { ColoredRow, PatchBody, useSplit, useWrap } from "./patch-body";
+
+const SCROLL_WINDOW_LINES = 20;
+const scrollWindowStyle = { "--scroll-window-lines": SCROLL_WINDOW_LINES } as CSSProperties;
 
 function Head({ label, what, diff = false, count = 0 }: { label: string; what: "code" | "table"; diff?: boolean; count?: number }) {
   return (

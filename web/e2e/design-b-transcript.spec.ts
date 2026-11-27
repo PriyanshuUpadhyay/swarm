@@ -78,7 +78,6 @@ test("an opened saved thought reveals the cut lines on request", async ({ page }
   const x = await thought.evaluate((el) => [
     el.querySelector(".disclosure span"), el.querySelector("[data-testid=thought-text]"), el.querySelector(".cut-line span"),
   ].map((part) => part!.getBoundingClientRect().x));
-  console.log("Saved thought x (label, body, cut):", x);
   expect(x[1]).toBeCloseTo(x[0], 1);
   expect(x[2]).toBeCloseTo(x[0], 1);
   await captureThemes(page, thought, "thought-cut");

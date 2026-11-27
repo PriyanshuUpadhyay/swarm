@@ -172,6 +172,7 @@ function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; 
       {preview.is_truncated && !ready && <div className="px-2 pb-1.5 text-xs text-muted-foreground">
         {f?.state === "error" ? <>
           <span role="status" className="text-failed">{FULL_OUTPUT_ERROR}</span>{" "}
+          {/* The full-text map records failures, so the retry handler does not wait. */}
           <button type="button" className="t-link min-h-6 min-w-6" onClick={() => void app.loadFull(preview.id)}>Retry</button>
         </> : "Loading the full patch…"}
       </div>}

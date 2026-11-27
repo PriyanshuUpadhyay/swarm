@@ -186,6 +186,7 @@ test("Home and End pick the first or last selectable diff line", async ({ page: 
 test("an oversized Changes range keeps the note and asks for fewer lines", async ({ page: tab }) => {
   await tab.route("**/api/changes/diff?**", (route) => {
     if (new URL(route.request().url()).searchParams.get("full") !== "1") return route.continue();
+    // The two quoted lines together exceed the 64 KiB request limit.
     const lines = ["x", "y"].map((ch, i) => ({ kind: "add", text: ch.repeat(36_000), new: i + 1 }));
     return route.fulfill({ json: { path: "big.txt", layer: "untracked", patch: "full patch", display: { lines }, added: 2, removed: 0 } });
   });

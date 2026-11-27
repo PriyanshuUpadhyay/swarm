@@ -342,8 +342,7 @@ pub fn patch(
     base: Option<&str>,
     layer: Option<&str>,
 ) -> Result<Value> {
-    read_patch(root, path, mode, base, layer, false)?
-        .ok_or_else(|| Error::Failed("Preview did not fit".into()))
+    Ok(read_patch(root, path, mode, base, layer, false)?.expect("uncapped preview"))
 }
 
 /// `None` means the full patch did not fit; the preview is still available.

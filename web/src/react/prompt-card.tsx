@@ -64,6 +64,7 @@ export function PromptCard({
   };
   const pick = (i: number) => {
     if (commandCut) showCommand();
+    // App state shows the answer result, so the picker does not wait here.
     else void app.answer(sessionId, prompt, i);
   };
   // The CLI's input row is one line, so the text goes as one line.

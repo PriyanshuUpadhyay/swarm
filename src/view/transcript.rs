@@ -28,8 +28,6 @@ pub use events::row;
 pub(super) use events::{pi_child_facts, subagent_run};
 pub use records::Record;
 pub(super) use shell::shell_row;
-const SUBAGENT_TOOL: &str = "subagent";
-const PI_CHILD_SLOTS: usize = 4;
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run, strip_terminal};
 pub use state::{
     ChatUsage, UsageState, clear_boundary, queued, usage, view_rows, view_rows_with_context,
@@ -66,6 +64,9 @@ pub struct CommandChip {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<TextPreview>,
 }
+const SUBAGENT_TOOL: &str = "subagent";
+const PI_CHILD_SLOTS: usize = 4;
+
 /// A subagent call: who it is, what it was asked, how far it got, and what it returned.
 /// `call_id` names the child log to the server (ADR 0140).
 #[derive(Clone, Debug, PartialEq, Serialize)]

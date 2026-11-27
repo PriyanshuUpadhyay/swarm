@@ -328,8 +328,7 @@
   font: 14px/1.45 var(--font-mono);
   white-space: pre;
 }
-.md-code pre.scroll-window,
-pre.out.scroll-window {
+.md-code pre.scroll-window {
   max-height: calc(var(--scroll-window-lines) * 18px);
   overflow: auto;
   line-height: 18px;
