@@ -6,7 +6,7 @@ import type { App } from "../core/app";
 import { type Changes, type DiffComment, type FileDiff, type Load } from "../core/changes";
 import { Button } from "../components/ui/button";
 import { SurfaceFind } from "./surface-find";
-import { textRanges, paintRanges } from "./find-text";
+import { textRangeAt, textRanges, paintRanges } from "./find-text";
 import { PIERRE, indexOf, patchText, spotOf } from "./pierre-patch";
 import { plural } from "./changes-shared";
 import { CutLine } from "./cut-line";
@@ -26,21 +26,6 @@ type WindowRef = RefObject<CodeViewHandle<Note, undefined> | null>;
 function rowAt(root: Element | null, spot: NonNullable<ReturnType<typeof spotOf>>) {
   const type = spot.side === "deletions" ? '[data-line-type="change-deletion"]' : ':not([data-line-type="change-deletion"])';
   return root?.querySelector("diffs-container")?.shadowRoot?.querySelector(`[data-content] > [data-line="${spot.lineNumber}"]${type}`);
-}
-
-function paintHit(row: Element, offset: number, length: number) {
-  const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
-  const range = document.createRange();
-  let start = false;
-  for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
-    if (!start && offset < node.length) { range.setStart(node, offset); start = true; }
-    if (start && offset + length <= node.length) {
-      range.setEnd(node, offset + length);
-      paintRanges("surface-find", [range]);
-      break;
-    }
-    offset -= node.length;
-  }
 }
 
 function DiffPane({ app, changes }: { app: App; changes: Changes }) {
@@ -81,7 +66,8 @@ function DiffPane({ app, changes }: { app: App; changes: Changes }) {
         viewer?.scrollTo({ type: "line", id: ITEM_ID, ...hit.spot, align: "center", behavior: "instant" });
         paint.current = requestAnimationFrame(() => {
           const row = viewer === window.current && rowAt(surface.current, hit.spot);
-          if (row) paintHit(row, offset, q.length);
+          const range = row ? textRangeAt(row, offset, q.length) : undefined;
+          if (range) paintRanges("surface-find", [range]);
         });
       }
       return count ? `${i + 1} of ${count}` : q ? "No matches" : "";
