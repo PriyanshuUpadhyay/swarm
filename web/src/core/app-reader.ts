@@ -2,10 +2,9 @@
 
 import type { Usage } from "./composer";
 import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, sourceLocator, wantsLayout, type Line } from "./transcript";
-import { ApiError, type Row, type RowPage } from "./api";
+import { ApiError, hasLinkedHistory, type Row, type RowPage } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
-import { hasLinkedHistory } from "./app-panes";
 
 const nextOlder = ({ page }: RowPage) => page.older_cursor ?? page.start_offset;
 

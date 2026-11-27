@@ -19,6 +19,10 @@ export type Agent = { id: string; role: string; state: string | null; alive: boo
 
 export type Snapshot = { version: number; sessions: Session[]; agents: Record<string, Agent[]> };
 
+export function hasLinkedHistory(snapshot: Snapshot | null, id?: string): boolean {
+  return snapshot?.sessions.some((s) => !!s.continuation_of && (id === undefined || s.id === id)) ?? false;
+}
+
 export type Page = { start_offset: number; end_offset: number; older_cursor?: string | null };
 
 // Row wire types from `src/view` (P0-U1). An absent field means null, false or [].

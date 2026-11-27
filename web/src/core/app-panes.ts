@@ -5,11 +5,7 @@ import { movePane, paneCells, type Direction, type PaneCell } from "./panes";
 
 import { type Chat, type Pane, type Strip, type View, paneId, NO_FIND, WORKING, NO_PANE, NO_CELLS } from "./app-types";
 import type { App } from "./app";
-import type { Snapshot } from "./api";
-
-export function hasLinkedHistory(snapshot: Snapshot | null, id?: string): boolean {
-  return snapshot?.sessions.some((s) => !!s.continuation_of && (id === undefined || s.id === id)) ?? false;
-}
+import { hasLinkedHistory } from "./api";
 
 export class AppPanes {
   constructor(private readonly app: App) {}

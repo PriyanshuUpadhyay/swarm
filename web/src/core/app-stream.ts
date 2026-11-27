@@ -1,10 +1,9 @@
-import { sleep, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
+import { hasLinkedHistory, sleep, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import type { Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { bodyModeOf, displayOf, imagesOf, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, units } from "./transcript";
 import { MAX_KEYS, type Chat, paneId } from "./app-types";
 import type { App } from "./app";
-import { hasLinkedHistory } from "./app-panes";
 
 /** How often live text types out, and in how many steps it catches up with the screen. */
 const TYPE_MS = 30;
