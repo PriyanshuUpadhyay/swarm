@@ -149,6 +149,21 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
   }
 });
 
+test("a model preview changes the visible outcome but not its announcement", async ({ page: tab }) => {
+  await patchLiveChair(tab, (chair) => Object.assign(chair, { provider: "claude", model: "model-a", state: "done", prompt: null }));
+  await mockRunCatalog(tab, { providers: [{ id: "claude" }], models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] });
+  try {
+    await open(tab);
+    await tab.getByTestId("model-chip").click();
+    const picker = tab.getByTestId("run-popover");
+    const status = picker.getByRole("status");
+    const before = (await status.textContent())!;
+    await picker.getByRole("button", { name: "Model B", exact: true }).hover();
+    await expect(picker.getByTestId("run-outcome")).toContainText("Model B");
+    await expect(status).toHaveText(before);
+  } finally { await tab.unrouteAll({ behavior: "ignoreErrors" }); }
+});
+
 test("a refused live switch restores the current highlight", async ({ page: tab }) => {
   await patchLiveChair(tab, (chair) => Object.assign(chair, { provider: "claude", model: "model-a", state: "done", prompt: null }));
   await mockRunCatalog(tab, { providers: [{ id: "claude" }, { id: "codex" }], models: (cli) => cli === "claude" ? [{ id: "model-a", label: "Model A" }] : [{ id: "model-b", label: "Model B" }] });

@@ -166,26 +166,30 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
     if (wasBusy.current && !busy && pending && app.life.state.switchModel === sessionId) app.life.close("switchModel");
     wasBusy.current = busy;
   }, [app, busy, pending, sessionId]);
-  const proposed = preview ?? draft;
-  const { label } = runModel(catalog, proposed);
-  const outcome = switchOutcome(current, proposed);
+
   const pick = (run: Run) => {
     setPreview(null);
     setDraft(run);
     app.life.pickRun(sessionId, run);
   };
 
-  const help = busy ? (pending ? `The agent is working. ${pending.model} does not apply until you confirm after the turn.` : "The agent is working. A pick does not apply now.")
-    : ended ? (outcome === "handoff" ? `Resume: ${outcomeText(outcome, current, proposed, endedCarry(saved), label)}` : "A pick sets the run. Resume opens the same chat.")
-    : outcome !== "none" ? outcomeText(outcome, current, proposed, saved, label)
-    : "A pick applies now. The next reply may read the whole chat once, so it costs more.";
+  const help = (proposed: Run) => {
+    const { label } = runModel(catalog, proposed);
+    const outcome = switchOutcome(current, proposed);
+    return busy ? (pending ? `The agent is working. ${pending.model} does not apply until you confirm after the turn.` : "The agent is working. A pick does not apply now.")
+      : ended ? (outcome === "handoff" ? `Resume: ${outcomeText(outcome, current, proposed, endedCarry(saved), label)}` : "A pick sets the run. Resume opens the same chat.")
+      : outcome !== "none" ? outcomeText(outcome, current, proposed, saved, label)
+      : "A pick applies now. The next reply may read the whole chat once, so it costs more.";
+  };
+
   return (
     <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={pick} disabled={switching} preview={setPreview} foot={
       <div className="grid gap-2 p-2">
         {handoff && <SwitchProgress handoff={handoff} />}
         <ErrorLine text={handoff?.error ?? catalog.error} />
         <div className="flex items-center justify-between gap-2">
-          <span role="status" data-testid="run-outcome" className="h-[3lh] overflow-auto">{help}</span>
+          <span role="status" className="sr-only">{help(draft)}</span>
+          <span aria-hidden data-testid="run-outcome" className="h-[3lh] overflow-auto">{help(preview ?? draft)}</span>
           {busy && <StopRun app={app} sessionId={sessionId} variant="outline" />}
         </div>
         {/* cancelSwitch posts a refusal as an app notice. */}
