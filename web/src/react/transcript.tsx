@@ -111,7 +111,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
         }
 
         const rect = selected.getBoundingClientRect();
-        if (rect && scrollRef.current) handle.current?.scrollToIndex(i, { align: "start", offset: rect.top - row.getBoundingClientRect().top - scrollRef.current.clientHeight / 2 });
+        if (scrollRef.current) handle.current?.scrollToIndex(i, { align: "start", offset: rect.top - row.getBoundingClientRect().top - scrollRef.current.clientHeight / 2 });
       });
     });
     return () => { cancelAnimationFrame(timer); cancelAnimationFrame(frame); };
