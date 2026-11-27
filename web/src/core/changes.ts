@@ -232,9 +232,10 @@ export class Changes {
       next = { state: "error", error: message(err) };
     }
     if (seq !== this.seq.list || workspace !== this.workspace) return;
+    const previousIndex = this.list.state === "ready"
+      ? this.list.data.files.findIndex((file) => fileKey(file) === this.selected) : -1;
     this.list = next;
     const files = next.state === "ready" ? next.data.files : [];
-    // The shown file stays when it is still changed; else the first file shows.
     const still = files.find((f) => fileKey(f) === this.selected);
     if (automatic && (still || next.state !== "ready") && (this.full.state === "loading" || this.full.state === "ready")) return this.notify();
 
@@ -244,7 +245,7 @@ export class Changes {
     }
 
     if (still) void this.select(still, true, automatic);
-    else if (files.length) void this.select(files[0]);
+    else if (files.length) void this.select(files[Math.max(0, Math.min(previousIndex, files.length - 1))]);
     else {
       this.clearFile();
       this.notify();

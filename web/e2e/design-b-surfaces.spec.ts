@@ -72,23 +72,27 @@ test("focus refresh resumes after Show all is refused without repeating the full
   expect(fullReads).toBe(1);
 });
 
-test("Changes closes a full diff when its file leaves the list", async ({ page: tab }) => {
-  await openChanges(tab, "big.txt");
-  const cut = tab.getByTestId("diff-capped");
-  await cut.getByRole("button", { name: "Show all", exact: true }).click();
-  await expect(cut).toBeHidden();
-
+test("Changes selects the next file when a full diff leaves the list", async ({ page: tab }) => {
+  let removed = false;
   await tab.route("**/api/changes?**", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
-    data.files = data.files.filter((file: { path: string }) => file.path === "README.md");
-    await route.fulfill({ response, json: data });
+    const paths = removed ? ["README.md", "notes.md"] : ["README.md", "big.txt", "notes.md"];
+    await route.fulfill({ response, json: {
+      ...data, files: paths.map((path) => data.files.find((file: { path: string }) => file.path === path)),
+    } });
   });
 
   try {
+    await openChanges(tab, "big.txt");
+    const cut = tab.getByTestId("diff-capped");
+    await cut.getByRole("button", { name: "Show all", exact: true }).click();
+    await expect(cut).toBeHidden();
+
+    removed = true;
     await tab.evaluate(() => dispatchEvent(new Event("focus")));
     await expect(changeRow(tab, "big.txt")).toHaveCount(0, { timeout: 2_000 });
-    await expect(tab.getByTestId("diff-path")).toHaveText("README.md", { timeout: 2_000 });
+    await expect(tab.getByTestId("diff-path")).toHaveText("notes.md", { timeout: 2_000 });
     await expect(cut).toBeHidden();
   } finally {
     await tab.unrouteAll({ behavior: "ignoreErrors" });
