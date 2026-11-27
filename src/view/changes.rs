@@ -53,7 +53,7 @@ impl<'a> ReadCommands<'a> {
             .saturating_duration_since(Instant::now())
             .as_secs();
         if seconds == 0 {
-            Err(Error::Failed("The workspace read timed out".into()))
+            Err(Error::Read("The workspace read timed out".into()))
         } else {
             Ok(seconds)
         }
@@ -77,10 +77,10 @@ fn git_bytes(read: &ReadCommands<'_>, args: &[&str], capped: bool) -> Result<(Ve
     } else {
         discovery::run_command(&mut command, seconds).map(|output| (output, false))
     }
-    .map_err(Error::Failed)?;
+    .map_err(Error::Read)?;
 
     if !overflow && !output.status.success() {
-        return Err(Error::Failed(
+        return Err(Error::Read(
             String::from_utf8_lossy(&output.stderr).trim().into(),
         ));
     }

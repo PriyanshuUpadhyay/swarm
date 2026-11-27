@@ -22,6 +22,7 @@ pub enum Error {
     Forbidden,
     Invalid(String),
     Failed(String),
+    Read(String),
     /// A new branch's name is taken: by a worktree at `path`, or by a branch with none.
     Exists {
         branch: String,
@@ -37,7 +38,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Forbidden => f.write_str("path is outside the allowed project or workspace"),
-            Self::Invalid(message) | Self::Failed(message) => f.write_str(message),
+            Self::Invalid(m) | Self::Failed(m) | Self::Read(m) => f.write_str(m),
             Self::Exists { branch, path } => match path {
                 Some(path) => write!(f, "The branch {branch} is already open at {path}"),
                 None => write!(f, "The branch {branch} already exists, with no worktree"),

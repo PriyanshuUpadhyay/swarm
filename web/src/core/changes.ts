@@ -292,7 +292,8 @@ export class Changes {
     } catch (err) {
       if (seq !== this.seq.diff) return;
       const capped = err instanceof ApiError && err.status === 413;
-      this.full = { state: "error", capped, error: capped ? message(err) : "Could not load the full diff." };
+      const hasReadError = err instanceof ApiError && (capped || err.status === 500);
+      this.full = { state: "error", capped, error: hasReadError ? message(err) : "Could not load the full diff." };
       this.notify();
     }
   }

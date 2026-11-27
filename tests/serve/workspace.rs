@@ -48,6 +48,24 @@ fn changes_routes_read_a_large_file_in_both_modes() {
 }
 
 #[test]
+fn changes_diff_reports_a_failed_git_read_as_a_server_error() {
+    let server = Server::configured(false, true);
+    let project = server.dir.join("project");
+    fs::write(project.join("tracked.txt"), "old\n").unwrap();
+    git(&server, &["add", "tracked.txt"]);
+    fs::write(project.join(".git/index"), "broken index").unwrap();
+
+    let url = format!(
+        "/api/changes/diff?workspace={}&path=tracked.txt&layer=staged",
+        project.display()
+    );
+    let (status, _, body) = server.request("GET", &url, "", "", true);
+    assert_eq!(status, 500, "{body}");
+    let error: Value = serde_json::from_str(&body).unwrap();
+    assert!(error["error"].as_str().unwrap().contains("index"));
+}
+
+#[test]
 fn full_changes_rejects_output_over_cap_without_changing_the_preview() {
     let server = Server::configured(false, true);
     let project = server.dir.join("project");
