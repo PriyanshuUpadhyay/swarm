@@ -312,8 +312,14 @@ test("unfinished comment text survives Escape and reload", async ({ page: tab })
     await body.press("Enter");
   };
 
-  await openEditor();
+  const gutter = body.locator('[data-gutter] > [data-column-number="1"]').first();
+  await gutter.click();
   await input.fill(draft);
+  await gutter.click();
+  await expect(input).toHaveCount(0);
+  await gutter.click();
+  await expect(input).toHaveValue(draft, { timeout: 2_000 });
+
   await input.press("Escape");
   await expect(input).toHaveCount(0);
   await openEditor();
