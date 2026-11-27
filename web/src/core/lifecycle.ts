@@ -6,7 +6,7 @@ import { ApiError, hasLinkedHistory, sleep, type Snapshot } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 import { RunCatalog } from "./run-catalog";
-import { chooseModel, endedCarry, savedCarry, switchOutcome, type Run, type SwitchCarry } from "./composer";
+import { chooseModel, endedCarry, savedCarry, switchOutcome, type Carry, type Run, type SwitchCarry } from "./composer";
 import {
   type NewOptions,
   type Issue,
@@ -315,7 +315,7 @@ export class Lifecycle {
     }
   }
 
-  endedRunCarry(session: string, provider: string | null): SwitchCarry {
+  endedRunCarry(session: string, provider: string | null): Carry {
     const chair = this.app.composing.chair(session);
     if (provider === chair.provider) return "clean";
     if (!chair.resumable && !this.app.panes.chairHasLog(session) && !hasLinkedHistory(this.app.snapshot, session)) return "clean";
