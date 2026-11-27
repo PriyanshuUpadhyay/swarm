@@ -23,16 +23,17 @@ pub(super) fn append<'a>(
     let count = asks.len();
     if count > 0 {
         promoted.extend(asks.iter().map(|(_, chat)| chat.id.as_str()));
-        if !state.expanded_lists.contains(NEEDS_YOU) {
+        let expanded = state.expanded_lists.contains(NEEDS_YOU);
+        if !expanded {
             asks.truncate(CHAT_LIMIT);
         }
-        let hidden = count - asks.len();
+        let hidden = count.saturating_sub(CHAT_LIMIT);
         let mut rows = Vec::new();
         for (w, chat) in asks {
             view.chat_rows(w, chat, None, &mut rows);
         }
         if hidden > 0 {
-            rows.push(more(NEEDS_YOU, hidden));
+            rows.push(more(NEEDS_YOU, if expanded { 0 } else { hidden }));
         }
         sections.push(Section {
             count: Some(count),

@@ -143,12 +143,23 @@ fn urgent(chat: &Chat) -> bool {
 }
 
 fn more(group: &str, count: usize) -> SidebarRow {
-    let title = format!("… {count} more");
+    let expanded = count == 0;
+    let title = if expanded {
+        "Show fewer".into()
+    } else {
+        format!("… {count} more")
+    };
     SidebarRow {
         id: format!("more:{group}"),
         kind: "more",
+        expanded,
         title: title.clone(),
-        help: "Show all chats".into(),
+        help: if expanded {
+            "Show fewer chats"
+        } else {
+            "Show all chats"
+        }
+        .into(),
         fields: vec![FieldValue {
             field: "title".into(),
             text: title,

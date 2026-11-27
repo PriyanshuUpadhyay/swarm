@@ -118,7 +118,7 @@ export class AppSidebar {
       return;
     }
     if (row.kind === "more") {
-      void this.app.navigation.choose({ op: "expand_list", id: nav.section.collapseId });
+      void this.app.navigation.choose({ op: "expand_list", id: nav.section.collapseId, ...(row.expanded ? { expanded: false } : {}) });
     } else if (row.kind === "workspace") void this.app.navigation.selectWorkspace(row.id, e);
     else if (row.kind === "child") {
       const session = sel.agentSession ?? sel.chat;

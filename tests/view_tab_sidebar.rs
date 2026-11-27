@@ -134,6 +134,38 @@ fn needs_you_sends_one_cut_question_and_keeps_the_full_prompt() {
 }
 
 #[test]
+fn needs_you_can_return_to_the_saved_five_chat_cut() {
+    use swarm::view::tree;
+    let mut waiting = agent("orchestrator", "blocked");
+    waiting["prompt"] = json!({"id":"choose","question":"Approve?","choices":["Yes","No"]});
+    let mut agents = serde_json::Map::new();
+    let sessions = (0..6)
+        .map(|i| {
+            let id = format!("waiting-{i}");
+            agents.insert(id.clone(), json!([waiting]));
+            session(&id, "/repo/wt/main", i)
+        })
+        .collect();
+    let mut owner = owner();
+    let tree = tree::build(&snapshot(sessions, json!(agents)), &owner);
+    let mut state = ViewState::default();
+    state.expanded_lists.insert("needs-you".into());
+    let expanded = tree::sections(&tree, &owner, &state, false, 100, &BTreeMap::new());
+    assert!(
+        expanded[0]
+            .rows
+            .last()
+            .is_some_and(|r| r.kind == "more" && r.expanded)
+    );
+    let op = serde_json::from_value(json!({"op":"expand_list","id":"needs-you","expanded":false}))
+        .unwrap();
+    choices::apply(&mut owner, &mut state, &tree, op, 100).unwrap();
+    assert!(!state.expanded_lists.contains("needs-you"));
+    let cut = tree::sections(&tree, &owner, &state, false, 100, &BTreeMap::new());
+    assert_eq!(cut[0].rows.last().unwrap().title, "… 1 more");
+}
+
+#[test]
 fn every_chat_shows_in_the_sidebar_whether_or_not_its_tab_is_open() {
     let tree = tree();
     let mut owner = owner();

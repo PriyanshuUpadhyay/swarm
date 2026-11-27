@@ -36,6 +36,7 @@ pub enum ChoiceOp {
     ExpandList {
         id: Option<String>,
         workspace: Option<String>,
+        expanded: Option<bool>,
     },
     RenameWorkspace {
         workspace: String,
@@ -199,7 +200,11 @@ pub fn apply(
             validate_fold(tree, &id)?;
             state.fold(&id, false);
         }
-        ChoiceOp::ExpandList { id, workspace } => {
+        ChoiceOp::ExpandList {
+            id,
+            workspace,
+            expanded,
+        } => {
             let id = match (id, workspace) {
                 (Some(id), None)
                     if id == NEEDS_YOU
@@ -217,7 +222,11 @@ pub fn apply(
                 }
                 _ => return Err("unknown list id".into()),
             };
-            state.expanded_lists.insert(id);
+            if expanded.unwrap_or(true) {
+                state.expanded_lists.insert(id);
+            } else {
+                state.expanded_lists.remove(&id);
+            }
         }
         ChoiceOp::RenameWorkspace { workspace, name } => {
             tree.workspace(&workspace).ok_or("unknown workspace")?;

@@ -67,8 +67,8 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
     return (
       <div {...common} className="trow sidebar-more">
         <div className="tline">
-          <span className="label">{r.title}</span>
-          <button type="button" tabIndex={-1} className="fld link">Show all</button>
+          {!r.expanded && <span className="label">{r.title}</span>}
+          <button type="button" tabIndex={-1} className="fld link">{r.expanded ? "Show fewer" : "Show all"}</button>
         </div>
       </div>
     );

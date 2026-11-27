@@ -135,7 +135,7 @@ export type TabsView = { version: number; revision: string; view: Tabs };
 export type ChoiceOp =
   | { op: "pin" | "unpin"; workspace: string }
   | { op: "collapse" | "expand"; id: string }
-  | { op: "expand_list"; id: string }
+  | { op: "expand_list"; id: string; expanded?: boolean }
   | { op: "rename_workspace"; workspace: string; name: string }
   | { op: "rename_chat"; workspace: string; chat: string; name: string }
   | { op: "rename_project"; project: string; name: string }
