@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { pierreUnloadNoise } from "./console-noise";
 import { join, resolve } from "node:path";
+import type { TreeView } from "../src/core/nav";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 const token = () => new URLSearchParams(server().hash.slice(1)).get("token")!;
@@ -16,8 +17,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-type Tree = { revision: string; sections: { kind: string; path: string | null; title: string; rows: { id: string; kind: string; title: string; selection: { chat: string | null } }[] }[] };
-const readTree = (view = "workspaces") => api<Tree>(`/api/tree?view=${view}`);
+const readTree = (view = "workspaces") => api<TreeView>(`/api/tree?view=${view}`);
 
 async function open(tab: Page) {
   const errors: string[] = [];

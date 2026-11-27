@@ -2,13 +2,11 @@ import { expect, test } from "@playwright/test";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import type { TreeView } from "../src/core/nav";
 import { api, header, open, readTree, server, shoot, showOtherProjects, workspace } from "./lifecycle-helpers";
 
-const catalog = () => api<TreeView>("/api/tree?view=workspaces");
 const chatIn = async (title: string) => {
   const session = async () => {
-    const tree = await catalog();
+    const tree = await readTree();
     const project = tree.projects.find((p) => p.title === title);
     return tree.chats.find((r) => tree.workspaces[r.selection?.workspace ?? ""]?.projectPath === project?.path)?.selection?.chat;
   };
@@ -304,7 +302,7 @@ test("the Search label meets 4.5:1 contrast in both themes", async ({ page: tab 
 
 test("Home's recent rows name the project beside the workspace", async ({ page: tab }) => {
   const errors = await open(tab);
-  const path = (await catalog()).projects.find((p) => p.title === "ws-build")!.path;
+  const path = (await readTree()).projects.find((p) => p.title === "ws-build")!.path;
   const rename = async (name: string) => {
     const { revision } = await readTree();
     await api("/api/choices", { revision, op: "rename_workspace", workspace: path, name });
