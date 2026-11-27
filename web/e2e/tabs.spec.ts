@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Tab, TabsView, TreeView } from "../src/core/nav";
 
@@ -55,18 +55,37 @@ for (const pending of ["empty", null] as const) {
 }
 
 test("the tab child button names one agent in the singular", async ({ page }) => {
-  await page.route("**/api/tabs?*", async (route) => {
-    const response = await route.fetch();
-    const body = await response.json() as TabsView;
-    const tab = body.view.tabs[0];
-    if (tab) tab.children = { count: 1, blocked: 0, firstBlocked: null, text: "1" };
-    await route.fulfill({ response, json: body });
+  const fixtureHome = process.env.SWARM_E2E_HOME;
+  if (!fixtureHome) throw new Error("Missing the shared test home");
+  const saved = ["choices.json", "view-state.json"].map((name) => {
+    const path = join(fixtureHome, ".swarm", name);
+    return { path, before: existsSync(path) ? readFileSync(path) : null };
   });
-  await page.goto(`${server().origin}/${server().hash}`);
-  await page.waitForFunction(() => window.__swarmReady === true);
-  await page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" }).click();
-  const child = page.getByTestId("tab-strip").locator('[data-action="children"]').first();
-  await expect(child).toHaveAccessibleName(/, 1 agent$/);
+
+  try {
+    await page.route("**/api/tabs?*", async (route) => {
+      const response = await route.fetch();
+      const body = await response.json() as TabsView;
+      const tab = body.view.tabs[0];
+      if (tab) tab.children = { count: 1, blocked: 0, firstBlocked: null, text: "1" };
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto(`${server().origin}/${server().hash}`);
+    await page.waitForFunction(() => window.__swarmReady === true);
+
+    const selected = page.waitForResponse((res) => res.url().endsWith("/api/choices") && res.request().postDataJSON().op === "selected_chat");
+    await page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" }).click();
+    expect((await selected).status()).toBe(200);
+    const child = page.getByTestId("tab-strip").locator('[data-action="children"]').first();
+    await expect(child).toHaveAccessibleName(/, 1 agent$/);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.close();
+    for (const { path, before } of saved) {
+      if (before) writeFileSync(path, before);
+      else rmSync(path, { force: true });
+    }
+  }
 });
 
 test("archiving the last open sidebar chat shows the workspace landing", async ({ page: tab }, info) => {
