@@ -3,6 +3,7 @@ import { Api, ApiError, type Session, type Snapshot } from "./api";
 import { App } from "./app";
 import { session } from "./chat-fixtures";
 import { Lifecycle } from "./lifecycle";
+import { STORE_KEY as NOTES_STORE } from "./notes";
 
 /** An App stand-in that records what Lifecycle asks of it. `post` answers by path. */
 function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<unknown>, agents: { id: string; alive: boolean; state?: string }[] = [], importable: { id: string; workspace: string }[] = []) {
@@ -302,6 +303,17 @@ describe("linked chat draft and notes", () => {
     const reload = new App(new Api("test"));
     reload.streaming.applySnapshot(linked);
     expect(reload.notes.list("leaf")).toEqual([]);
+  });
+
+  it("moves notes through a batch of links with one storage write", () => {
+    mockStorage();
+    const tab = new App(new Api("test"));
+    tab.notes.add("root", { kind: "reply", rowId: "row-1", quote: "An earlier reply" });
+    const write = vi.spyOn(localStorage, "setItem");
+    tab.streaming.applySnapshot({ ...linked, sessions: [...linked.sessions, linkedSession("next", "leaf")] });
+
+    expect(write.mock.calls.filter(([key]) => key === NOTES_STORE)).toHaveLength(1);
+    expect(new App(new Api("test")).notes.list("next").map((note) => note.quote)).toEqual(["An earlier reply"]);
   });
 });
 

@@ -94,17 +94,17 @@ export class Notes {
     const notes = this.list(chat);
     if (notes.length) saved.set(chat, [...notes]);
     else saved.delete(chat);
-    this.persist(saved, chat, "The browser did not save the notes, maybe because its storage is full. They stay in this tab until it closes.");
+    this.persist(saved, [chat], "The browser did not save the notes, maybe because its storage is full. They stay in this tab until it closes.");
   }
 
-  private persist(saved: Map<string, Note[]>, chat: string, refusal: string) {
-    const sources = this.movedFrom.get(chat) ?? [];
+  private persist(saved: Map<string, Note[]>, targets: readonly string[], refusal: string) {
+    const sources = targets.flatMap((chat) => [...(this.movedFrom.get(chat) ?? [])]);
     for (const source of sources) saved.delete(source);
     const chats = [...saved];
     const ok = writeStore(STORE_KEY, chats.length ? savedNotes(chats) : "");
     if (ok) {
       for (const source of sources) this.chats.delete(source);
-      this.movedFrom.delete(chat);
+      for (const chat of targets) this.movedFrom.delete(chat);
     } else if (!this.saveRefused) this.app.notice(refusal, true);
     this.saveRefused = !ok;
   }
@@ -112,7 +112,14 @@ export class Notes {
   continueNotes(links: readonly (readonly [string, string])[]) {
     if (!links.length) return;
     const saved = readNotes();
-    for (const [from, to] of links) this.moveNotes(saved, from, to);
+    const targets: string[] = [];
+    for (const [from, to] of links) {
+      if (this.moveNotes(saved, from, to)) targets.push(to);
+    }
+
+    if (!targets.length) return;
+    this.persist(saved, targets, "The browser could not save the moved notes. The original notes were not deleted.");
+    this.changed();
   }
 
   private moveNotes(saved: Map<string, Note[]>, from: string, to: string) {
@@ -121,7 +128,7 @@ export class Notes {
     const next = this.movedFrom.has(to) ? this.list(to) : saved.get(to) ?? this.list(to);
     if (!old.length && !earlier) {
       if (saved.has(to)) this.chats.set(to, [...next]);
-      return;
+      return false;
     }
 
     const ids = new Set(next.map((note) => note.id));
@@ -139,6 +146,7 @@ export class Notes {
     });
 
     const merged = [...moved, ...next];
+    saved.delete(from);
     if (merged.length) saved.set(to, merged);
     else saved.delete(to);
     this.chats.set(to, merged);
@@ -149,8 +157,7 @@ export class Notes {
     for (const source of earlier ?? []) sources.add(source);
     this.movedFrom.delete(from);
     this.movedFrom.set(to, sources);
-    this.persist(saved, to, "The browser could not save the moved notes. The original notes were not deleted.");
-    this.changed();
+    return true;
   }
 
   /** Where the notes of chat `id` live: a child's column keeps them in its main chat, under
