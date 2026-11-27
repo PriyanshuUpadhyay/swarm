@@ -1,5 +1,5 @@
 //! PR identity checks from the Swift GitHubInspection boundary.
-use super::discovery::run;
+use super::discovery::{command_seconds_left, run};
 use serde_json::Value;
 use std::{
     collections::BTreeSet,
@@ -51,14 +51,7 @@ fn lookup_matching(
     include_merged: bool,
     expected_branch: Option<&str>,
 ) -> Option<Value> {
-    let command = |program, args: &[&str]| {
-        let remaining = deadline.saturating_duration_since(Instant::now()).as_secs();
-        if remaining == 0 {
-            None
-        } else {
-            run(program, args, remaining)
-        }
-    };
+    let command = |program, args: &[&str]| run(program, args, command_seconds_left(deadline)?);
     let git = |args: &[&str]| {
         let mut flags = vec!["-C", path];
         flags.extend(args);

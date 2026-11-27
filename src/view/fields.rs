@@ -441,7 +441,7 @@ impl FieldReader {
             .collect();
         let previous = self.fields.clone();
         let deadline = Instant::now() + super::github::LOOKUP_TIMEOUT;
-        let time_left = || deadline.saturating_duration_since(Instant::now()).as_secs() > 0;
+        let time_left = || super::discovery::command_seconds_left(deadline).is_some();
         let branch_of = |path: &str| tree.workspace(path).and_then(|(_, w)| w.branch.as_ref());
 
         self.dirty_at.retain(|path, _| dirty.contains(path));

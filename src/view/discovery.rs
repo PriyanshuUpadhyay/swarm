@@ -367,11 +367,13 @@ impl Discovery {
         }
     }
 }
-pub(super) fn workspace_dirty(path: &str, deadline: Instant) -> Option<usize> {
+pub(super) fn command_seconds_left(deadline: Instant) -> Option<u64> {
     let seconds = deadline.saturating_duration_since(Instant::now()).as_secs();
-    if seconds == 0 {
-        return None;
-    }
+    (seconds > 0).then_some(seconds)
+}
+
+pub(super) fn workspace_dirty(path: &str, deadline: Instant) -> Option<usize> {
+    let seconds = command_seconds_left(deadline)?;
     run(
         "git",
         &["-C", path, "status", "--porcelain=v1", "-z"],
