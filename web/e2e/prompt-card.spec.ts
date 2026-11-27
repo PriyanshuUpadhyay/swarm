@@ -283,6 +283,31 @@ test("a permission command opens in a scroll window without moving its choices o
   await expect(tab.locator(".strip-chat").getByTestId("composer")).toBeEnabled();
 });
 
+test("a permission choice reveals hidden command lines before it can answer", async ({ page: tab }) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await showPrompt(tab, [session], {
+    id: "hidden-command", question: "Bash command\n│ line 1\n│ line 2\n│ line 3\n│ line 4\n│ line 5", choices: ["Yes", "No"],
+  });
+  const answers: unknown[] = [];
+  await tab.route("**/api/chat/answer", async (route) => {
+    answers.push(route.request().postDataJSON());
+    await route.fulfill({ json: {} });
+  });
+  await openChat(tab, session);
+  const card = tab.getByTestId("prompt-card");
+  const preview = card.getByTestId("permission-command");
+  await expect(preview).not.toContainText("line 5");
+  await card.focus();
+  await tab.keyboard.down("1");
+  await expect(preview).toContainText("line 5", { timeout: 2000 });
+  await expect(preview).toBeFocused();
+  await tab.keyboard.down("1");
+  await tab.keyboard.up("1");
+  expect(answers).toEqual([]);
+  await tab.keyboard.press("1");
+  await expect.poll(() => answers).toEqual([expect.objectContaining({ prompt_id: "hidden-command", choice: 0 })]);
+});
+
 test("a long question path wraps inside its labelled group", async ({ page: tab }, info) => {
   const screen = join(process.env.SWARM_E2E_HOME!, "screen");
   const path = `/tmp/${"longpath".repeat(100)}`;

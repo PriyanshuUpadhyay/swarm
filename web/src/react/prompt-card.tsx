@@ -57,8 +57,15 @@ export function PromptCard({
     if (rows.current) rows.current.scrollTop = rows.current.scrollHeight;
   }, [prompt.id]);
 
-  // App state shows the answer's result, so this handler does not await the promise.
-  const pick = (i: number) => void app.answer(sessionId, prompt, i);
+  const commandCut = !showAll && command !== null && command.lines.length > COMMAND_PREVIEW_LINES;
+  const showCommand = () => {
+    setExpanded(commandId);
+    commandWindow.current?.focus({ preventScroll: true });
+  };
+  const pick = (i: number) => {
+    if (commandCut) showCommand();
+    else void app.answer(sessionId, prompt, i);
+  };
   // The CLI's input row is one line, so the text goes as one line.
   const line = text.replace(/\s+/g, " ").trim();
   const submit = (e: React.FormEvent) => {
@@ -70,7 +77,8 @@ export function PromptCard({
     const i = Number(e.key) - 1;
     if (i >= prompt.choices.length) return;
     e.preventDefault();
-    pick(i);
+    // Holding a digit must not both reveal the command and answer the prompt.
+    if (!command || !e.repeat) pick(i);
   };
   const answerAfterChoices = !prompt.screen && prompt.choices.length > 0;
   const answer = prompt.input && (
@@ -128,10 +136,7 @@ export function PromptCard({
           <span className="font-semibold">{command.title}</span>
           <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
             <pre ref={commandWindow} data-testid="permission-command" tabIndex={showAll ? 0 : -1} className="max-h-[min(20lh,40vh)] overflow-auto overscroll-contain font-mono text-sm leading-[18px] whitespace-pre">{(showAll ? command.lines : command.lines.slice(0, COMMAND_PREVIEW_LINES)).join("\n")}</pre>
-            {!showAll && command.lines.length > COMMAND_PREVIEW_LINES && <CutLine count={`${command.lines.length - COMMAND_PREVIEW_LINES} more`} show={() => {
-              setExpanded(commandId);
-              commandWindow.current?.focus({ preventScroll: true });
-            }} />}
+            {commandCut && <CutLine count={`${command.lines.length - COMMAND_PREVIEW_LINES} more`} show={showCommand} />}
           </div>
           {command.rest && <span className="min-w-0 whitespace-pre-wrap">{command.rest}</span>}
         </div>
