@@ -168,7 +168,7 @@ function ShownDiff({ app, preview, full }: { app: Reader; preview: TextPreview; 
           <CopyIcon className="size-3" /> Copy patch
         </button>
       </div>
-      <PatchBody key={ready ? "full" : "preview"} patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} wrap={wrap} previewId={preview.id} fileLabels windowed />
+      <PatchBody key={ready ? "full" : "preview"} patch={ready ? f.text : preview.text} info={ready ? f.patch : patchOf(preview)} split={split} wrap={wrap} previewId={preview.id} fileLabels />
       {preview.is_truncated && !ready && <div className="px-2 pb-1.5 text-xs text-muted-foreground">
         {f?.state === "error" ? <>
           <span role="status" className="text-failed">{FULL_OUTPUT_ERROR}</span>{" "}
