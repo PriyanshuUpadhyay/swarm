@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+const GH: &str = "gh";
 pub(super) const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug)]
@@ -68,7 +69,7 @@ fn lookup_bounded(
         match output {
             Err(cut) => *failure.borrow_mut() = Some(LookupError::Deadline(cut)),
             // Git can have no result, as for a detached HEAD. A failed gh read is not a no-PR result.
-            Ok(None) if program == "gh" => *failure.borrow_mut() = Some(LookupError::CommandFailed),
+            Ok(None) if program == GH => *failure.borrow_mut() = Some(LookupError::CommandFailed),
             Ok(output) => return output,
         }
         None
@@ -134,7 +135,7 @@ fn lookup_matching(
         }
     }
     let gh =
-        |args: &[&str]| command("gh", args).and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+        |args: &[&str]| command(GH, args).and_then(|b| serde_json::from_slice::<Value>(&b).ok());
     let info = gh(&[
         "repo",
         "view",
