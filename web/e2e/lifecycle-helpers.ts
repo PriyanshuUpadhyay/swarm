@@ -36,10 +36,8 @@ const workspace = (tab: Page, title: string) => tab.locator('[data-testid="tree-
 
 /** Screenshots for the result, in both themes, only when E2E_SHOTS is set and in WebKit. */
 async function shoot(tab: Page, name: string, browser: string) {
-  if (!process.env.E2E_SHOTS || browser !== "webkit") return;
-  for (const theme of ["dark", "light"])
-    await tab.evaluate((t) => (document.documentElement.dataset.theme = t), theme).then(() => tab.screenshot({ path: join(SHOTS, `s3-${name}-${theme}.png`) }));
-  await tab.evaluate(() => delete document.documentElement.dataset.theme);
+  if (browser !== "webkit") return;
+  await shootThemes(tab, join(SHOTS, `s3-${name}`));
 }
 
 /** Opens the composer on `project` from its "+" and types `prompt`. */
@@ -73,4 +71,11 @@ export async function patchTreePrefs(tab: Page, patch: (prefs: Prefs) => void) {
     patch(tree.prefs);
     await route.fulfill({ json: tree });
   });
+}
+
+export async function shootThemes(tab: Page, prefix: string) {
+  if (!process.env.E2E_SHOTS) return;
+  for (const theme of ["dark", "light"])
+    await tab.evaluate((t) => (document.documentElement.dataset.theme = t), theme).then(() => tab.screenshot({ path: `${prefix}-${theme}.png` }));
+  await tab.evaluate(() => delete document.documentElement.dataset.theme);
 }

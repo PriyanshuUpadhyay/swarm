@@ -1,23 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { holdChatStart, open, patchTreePrefs, readTree } from "./lifecycle-helpers";
+import { holdChatStart, open, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
 
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
 
-async function shots(tab: Page, unit: number | "fix1" | "fix2", name: string) {
-  if (!process.env.E2E_SHOTS) return;
-  const dir = resolve(import.meta.dirname, `../../tmp/shots/${unit}`);
-  mkdirSync(dir, { recursive: true });
-  for (const theme of ["dark", "light"]) {
-    await tab.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
-    await tab.screenshot({ path: join(dir, `${name}-${theme}.png`) });
-  }
-  await tab.evaluate(() => { delete document.documentElement.dataset.theme; });
-}
+const shots = (tab: Page, unit: number | "fix1" | "fix2", name: string) =>
+  shootThemes(tab, resolve(import.meta.dirname, `../../tmp/shots/${unit}/${name}`));
 
 test("the same tab pages both CLI logs and reads tool output from its original session", async ({ page: tab }) => {
   const errors = await open(tab);
