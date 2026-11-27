@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { pierreUnloadNoise } from "./console-noise";
 import { join, resolve } from "node:path";
 import type { Agent, Snapshot } from "../src/core/api";
@@ -22,6 +23,9 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
 
 type Tree = { revision: string; sections: { kind: string; path: string | null; title: string; rows: { id: string; kind: string; title: string; selection: { chat: string | null } }[] }[] };
 const readTree = (view = "workspaces") => api<Tree>(`/api/tree?view=${view}`);
+
+export const fixtureSql = (statement: string) =>
+  execFileSync("sqlite3", ["-cmd", ".timeout 5000", process.env.SWARM_E2E_DB!, statement]);
 
 async function open(tab: Page) {
   const errors: string[] = [];

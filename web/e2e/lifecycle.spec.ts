@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Snapshot } from "../src/core/api";
-import { api, header, open, patchTreePrefs, readTree, server, shoot, workspace } from "./lifecycle-helpers";
+import { api, fixtureSql, header, open, patchTreePrefs, readTree, server, shoot, workspace } from "./lifecycle-helpers";
 
 // New workspace in each mode, setup script output, switch model cancel, archive and delete, and
 // Recently closed (S3), plus the four V1 fixes. Both browsers share one server home, so each case
@@ -115,7 +114,7 @@ test("A chat whose chair has no pane shows its log and the same model picker", a
 test("An instant cross-CLI pick uses saved Summary, and Cancel stops it while the chair writes it", async ({ page: tab }, info) => {
   const live = process.env.SWARM_E2E_LIVE!;
   // Clear the last Summary send before the server checks for an idle chair.
-  execFileSync("sqlite3", ["-cmd", ".timeout 5000", process.env.SWARM_E2E_DB!, `UPDATE agent SET sent_at = NULL WHERE session_id = '${live}' AND id = 'orchestrator'`]);
+  fixtureSql(`UPDATE agent SET sent_at = NULL WHERE session_id = '${live}' AND id = 'orchestrator'`);
   // The browser can still receive the previous listing until the next coordinator pass.
   const idle = await api<Snapshot>("/api/snapshot");
   const chair = idle.agents[live]?.find((agent) => agent.id === "orchestrator");

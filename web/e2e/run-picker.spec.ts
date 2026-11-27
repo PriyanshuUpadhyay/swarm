@@ -5,7 +5,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DRAFT_PREFIX } from "../src/core/app-types";
 import { STORE_KEY, savedNotes } from "../src/core/notes";
-import { captureRunPost, holdChatStart, mockRunCatalog, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
+import { captureRunPost, fixtureSql, holdChatStart, mockRunCatalog, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
 
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
@@ -29,13 +29,12 @@ test("the same tab pages both CLI logs and reads tool output from its original s
   const call = (...args: string[]) => execFileSync(swarm, args, { cwd: join(dir, "ws-giant"), env, encoding: "utf8" }).trim().split("\n").at(-1)!;
   const leaf = call("session", "new", "lane", "--chair", `codex:${randomUUID()}`);
   const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
-  const sql = (statement: string) => execFileSync("sqlite3", ["-cmd", ".timeout 5000", process.env.SWARM_E2E_DB!, statement]);
   const log = join(dir, `${leaf}.jsonl`);
   try {
     const line = { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "After the CLI switch" }] } };
     const model = { type: "turn_context", payload: { model: "gpt-6.1-terra" } };
     writeFileSync(log, `${JSON.stringify(model)}\n${JSON.stringify(line)}\n`);
-    sql(`UPDATE session SET chair_log = ${quote(log)} WHERE id = ${quote(leaf)};
+    fixtureSql(`UPDATE session SET chair_log = ${quote(log)} WHERE id = ${quote(leaf)};
           INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${quote(leaf)}, 'orchestrator', 'codex', unixepoch(), ${quote(log)});`);
     const row = tab.getByTestId("tree-row").and(tab.locator(`[data-session="${leaf}"]`));
     const transcript = tab.getByTestId("transcript").and(tab.locator(`[data-chat="${leaf}"]`));
@@ -83,7 +82,7 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     await card.getByTestId("show-full").click();
     await expect(card.getByTestId("full-output")).toContainText("line 0 of the build log");
   } finally {
-    sql(`DELETE FROM agent WHERE session_id = ${quote(leaf)}; DELETE FROM session WHERE id = ${quote(leaf)};`);
+    fixtureSql(`DELETE FROM agent WHERE session_id = ${quote(leaf)}; DELETE FROM session WHERE id = ${quote(leaf)};`);
     rmSync(log, { force: true });
     await expect.poll(async () => (await readTree()).sections.flatMap((s) => s.rows).some((row) => row.selection?.chat === root)).toBe(true);
   }
