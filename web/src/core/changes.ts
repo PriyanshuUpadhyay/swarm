@@ -292,9 +292,10 @@ export class Changes {
       this.notify();
     } catch (err) {
       if (seq !== this.seq.diff) return;
+
       const capped = err instanceof ApiError && err.status === 413;
-      const hasReadError = err instanceof ApiError && (capped || err.status === 500);
-      this.full = { state: "error", capped, error: hasReadError ? message(err) : "Could not load the full diff." };
+      const detail = err instanceof ApiError && (capped || err.status === 500) ? message(err) : "";
+      this.full = { state: "error", capped, error: detail || "Could not load the full diff." };
       this.notify();
     }
   }

@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { bodyMode, row, rows, open, mockRows } from "./ux-helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { bodyMode, captureThemes, row, rows, open, openChanges, mockRows } from "./ux-helpers";
 import fencePainter from "../../tests/fixtures/s6c/painter.json" with { type: "json" };
 import type { Display, PatchInfo } from "../src/core/api";
 import previewPatch from "./fixtures/s6a-preview.json" with { type: "json" };
@@ -12,6 +12,29 @@ import fullSplit0 from "./fixtures/s6a-full-split-0.json" with { type: "json" };
 const currentLine = (tab: import("@playwright/test").Page) => tab.evaluate(() => {
   const range = [...(CSS.highlights.get("find-current") ?? [])][0] as Range | undefined;
   return range?.startContainer.parentElement?.closest("[data-line]")?.getAttribute("data-line") ?? null;
+});
+
+const fullDiffCut = (page: Page) => page.getByTestId("diff-capped");
+const expand = (page: Page) => fullDiffCut(page).getByRole("button", { name: "Show all", exact: true }).click();
+
+test("Show all reports a failed full diff even if Git sends no text", async ({ page }) => {
+  let error = "";
+  await page.route("**/api/changes/diff?**", (route) => new URL(route.request().url()).searchParams.has("full")
+    ? route.fulfill({ status: 500, json: { error } }) : route.continue());
+
+  try {
+    await openChanges(page, "big.txt");
+    const notice = fullDiffCut(page).getByRole("status");
+    await expand(page);
+    await expect(notice).toHaveText("Could not load the full diff.", { timeout: 2_000 });
+    await captureThemes(page, fullDiffCut(page), "full-read-empty-error");
+
+    error = "Git could not read this file.";
+    await expand(page);
+    await expect(notice).toHaveText(error);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
