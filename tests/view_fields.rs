@@ -3,7 +3,7 @@ use serde_json::json;
 use sidebar_fixture::*;
 use swarm::view::{
     choices::ViewState,
-    discovery::{dirty_count, parse_worktrees},
+    discovery::{DeadlineExpired, dirty_count, parse_worktrees},
     fields::{self, FieldReader, RowFieldLists},
     tree,
 };
@@ -158,7 +158,7 @@ fn requested_paths_and_independent_cache_intervals() {
         },
         |_, _, _| {
             github += 1;
-            None
+            Ok(None)
         },
         |_, _, _| None,
     ));
@@ -175,7 +175,9 @@ fn requested_paths_and_independent_cache_intervals() {
         },
         |_, _, _| {
             github += 1;
-            Some(json!({"number":1,"statusCheckRollup":[{"state":"SUCCESS"}]}))
+            Ok(Some(
+                json!({"number":1,"statusCheckRollup":[{"state":"SUCCESS"}]}),
+            ))
         },
         |_, _, _| None,
     ));
@@ -190,7 +192,7 @@ fn requested_paths_and_independent_cache_intervals() {
         },
         |_, _, _| {
             github += 1;
-            None
+            Ok(None)
         },
         |_, _, _| None,
     );
@@ -205,7 +207,7 @@ fn requested_paths_and_independent_cache_intervals() {
         },
         |_, _, _| {
             github += 1;
-            None
+            Ok(None)
         },
         |_, _, _| None,
     );
@@ -220,7 +222,7 @@ fn requested_paths_and_independent_cache_intervals() {
         },
         |_, _, _| {
             github += 1;
-            None
+            Ok(None)
         },
         |_, _, _| None,
     );
@@ -235,6 +237,60 @@ fn requested_paths_and_independent_cache_intervals() {
     assert_eq!(fields::requested_paths("dirty", &t, &o.fields).len(), 3);
 }
 #[test]
+fn a_timed_out_pr_read_keeps_the_facts_and_retries_first() {
+    let tree = tree();
+    let owner = owner();
+    let path = "/repo/wt/main";
+    let mut cache = FieldReader::default();
+    let pr = json!({
+        "number": 7, "state": "OPEN", "url": "https://github.com/example/repo/pull/7",
+        "statusCheckRollup": [{"state": "SUCCESS"}],
+    });
+
+    cache.refresh_fields_with(
+        &tree,
+        &owner,
+        1,
+        |_, _| None,
+        |_, _, _| Ok(Some(pr.clone())),
+        |_, _, _| None,
+    );
+    let facts = cache.fields[path].clone();
+
+    cache.refresh_fields_with(
+        &tree,
+        &owner,
+        121,
+        |_, _| None,
+        |workspace, _, _| {
+            if workspace == path {
+                Err(DeadlineExpired)
+            } else {
+                Ok(None)
+            }
+        },
+        |_, _, _| None,
+    );
+
+    assert_eq!(cache.fields[path], facts);
+
+    let mut retried = Vec::new();
+    cache.refresh_fields_with(
+        &tree,
+        &owner,
+        122,
+        |_, _| None,
+        |workspace, _, _| {
+            retried.push(workspace.to_owned());
+            Ok(None)
+        },
+        |_, _, _| None,
+    );
+    assert_eq!(retried, [path]);
+    assert!(cache.fields[path].pr_fact.is_none());
+}
+
+#[test]
 fn only_the_selected_workspace_reads_branch_totals() {
     let tree = tree();
     let owner = owner();
@@ -247,7 +303,7 @@ fn only_the_selected_workspace_reads_branch_totals() {
         &owner,
         100,
         |_, _| None,
-        |_, _, _| None,
+        |_, _, _| Ok(None),
         |path, _, _| {
             reads.push(path.to_owned());
             None

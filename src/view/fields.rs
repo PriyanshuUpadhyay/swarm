@@ -1,5 +1,6 @@
 use super::{
     choices::{OwnerChoices, ViewState},
+    discovery::{DeadlineExpired, command_seconds_left},
     tree::{AgentStatus, Chat, Tree, Workspace, age},
 };
 use serde::{Deserialize, Serialize};
@@ -399,7 +400,7 @@ impl FieldReader {
         self.selected = workspace.map(str::to_owned);
     }
 
-    /// Reserve before a read, including failures. The field worker owns this cache.
+    /// The field worker owns this cache; a GitHub deadline cut is not a completed read.
     pub fn refresh_fields(&mut self, tree: &Tree, owner: &OwnerChoices, at: i64) -> bool {
         self.refresh_fields_with(
             tree,
@@ -417,7 +418,7 @@ impl FieldReader {
         owner: &OwnerChoices,
         at: i64,
         mut inspect: impl FnMut(&str, Instant) -> Option<usize>,
-        mut lookup: impl FnMut(&str, Option<&str>, Instant) -> Option<Value>,
+        mut lookup: impl FnMut(&str, Option<&str>, Instant) -> Result<Option<Value>, DeadlineExpired>,
         mut totals: impl FnMut(&str, &str, Instant) -> Option<LineTotals>,
     ) -> bool {
         let branches: BTreeMap<_, _> = tree
@@ -443,7 +444,7 @@ impl FieldReader {
 
         let previous = self.fields.clone();
         let deadline = Instant::now() + super::github::LOOKUP_TIMEOUT;
-        let time_left = || super::discovery::command_seconds_left(deadline).is_some();
+        let time_left = || command_seconds_left(deadline).is_some();
         let branch_of = |path: &str| tree.workspace(path).and_then(|(_, w)| w.branch.as_ref());
 
         self.dirty_at.retain(|path, _| dirty.contains(path));
@@ -488,7 +489,7 @@ impl FieldReader {
             if !time_left() {
                 break;
             }
-            self.cursor = Some(path.clone());
+
             let branch = branch_of(path);
             let read_dirty =
                 dirty.contains(path) && self.dirty_at.get(path).is_none_or(|last| at - last >= 10);
@@ -502,15 +503,20 @@ impl FieldReader {
                 self.dirty_at.insert(path.clone(), at);
                 self.fields.entry(path.clone()).or_default().dirty_count = inspect(path, deadline);
             }
-            if read_github && time_left() {
+
+            if read_github {
+                let Ok(request) = lookup(path, branch.map(String::as_str), deadline) else {
+                    // Leave the cursor before this input so the next pass starts here.
+                    break;
+                };
                 self.github_at.insert(path.clone(), (at, branch.cloned()));
-                let request = lookup(path, branch.map(String::as_str), deadline);
                 let fields = request.as_ref().map(github_fields).unwrap_or_default();
                 let current = self.fields.entry(path.clone()).or_default();
                 current.pr = fields.pr;
                 current.ci = fields.ci;
                 current.pr_fact = fields.pr_fact;
             }
+            self.cursor = Some(path.clone());
         }
         previous != self.fields
     }

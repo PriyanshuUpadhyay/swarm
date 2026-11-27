@@ -1,7 +1,8 @@
 //! PR identity checks from the Swift GitHubInspection boundary.
-use super::discovery::{command_seconds_left, run};
+use super::discovery::{DeadlineExpired, run_before};
 use serde_json::Value;
 use std::{
+    cell::Cell,
     collections::BTreeSet,
     time::{Duration, Instant},
 };
@@ -34,24 +35,48 @@ pub fn lookup(path: &str) -> Option<Value> {
     lookup_until(path, Instant::now() + LOOKUP_TIMEOUT)
 }
 pub fn lookup_until(path: &str, deadline: Instant) -> Option<Value> {
-    lookup_matching(path, deadline, false, None)
+    lookup_bounded(path, deadline, false, None).ok().flatten()
 }
 
 pub(super) fn lookup_for_chip(
     path: &str,
     branch: Option<&str>,
     deadline: Instant,
-) -> Option<Value> {
-    lookup_matching(path, deadline, true, branch)
+) -> Result<Option<Value>, DeadlineExpired> {
+    lookup_bounded(path, deadline, true, branch)
 }
 
-fn lookup_matching(
+fn lookup_bounded(
     path: &str,
     deadline: Instant,
     include_merged: bool,
     expected_branch: Option<&str>,
+) -> Result<Option<Value>, DeadlineExpired> {
+    let timed_out = Cell::new(false);
+    let command = |program: &str, args: &[&str]| {
+        if timed_out.get() {
+            return None;
+        }
+        run_before(program, args, deadline)
+            .inspect_err(|_| timed_out.set(true))
+            .ok()
+            .flatten()
+    };
+
+    let response = lookup_matching(path, include_merged, expected_branch, command);
+    if timed_out.get() {
+        Err(DeadlineExpired)
+    } else {
+        Ok(response)
+    }
+}
+
+fn lookup_matching(
+    path: &str,
+    include_merged: bool,
+    expected_branch: Option<&str>,
+    command: impl Fn(&str, &[&str]) -> Option<Vec<u8>>,
 ) -> Option<Value> {
-    let command = |program, args: &[&str]| run(program, args, command_seconds_left(deadline)?);
     let git = |args: &[&str]| {
         let mut flags = vec!["-C", path];
         flags.extend(args);

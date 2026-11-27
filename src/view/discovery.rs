@@ -9,7 +9,7 @@ use super::{
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::Read,
+    io::{self, Read},
     path::Path,
     process::{Command, Output, Stdio},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -32,7 +32,36 @@ pub fn run(program: &str, args: &[&str], seconds: u64) -> Option<Vec<u8>> {
         .map(|output| output.stdout)
 }
 
+pub(super) fn run_before(
+    program: &str,
+    args: &[&str],
+    deadline: Instant,
+) -> Result<Option<Vec<u8>>, DeadlineExpired> {
+    if command_seconds_left(deadline).is_none() {
+        return Err(DeadlineExpired);
+    }
+    let mut command = Command::new(program);
+    command.args(args);
+    match run_command_deadline(&mut command, || deadline) {
+        Ok(output) if output.status.success() => Ok(Some(output.stdout)),
+        Err(error) if error.kind() == io::ErrorKind::TimedOut => Err(DeadlineExpired),
+        _ => Ok(None),
+    }
+}
+
 pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String> {
+    run_command_deadline(command, || Instant::now() + Duration::from_secs(seconds))
+        .map_err(|error| error.to_string())
+}
+
+fn timeout_error() -> io::Error {
+    io::Error::new(io::ErrorKind::TimedOut, "command timed out")
+}
+
+fn run_command_deadline(
+    command: &mut Command,
+    deadline: impl FnOnce() -> Instant,
+) -> io::Result<Output> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -42,11 +71,13 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = command.spawn().map_err(|e| e.to_string())?;
+
+    let mut child = command.spawn()?;
     let mut stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let (output, receive) = std::sync::mpsc::channel();
     let out_sender = output.clone();
+
     let out_read = std::thread::spawn(move || {
         let mut bytes = Vec::new();
         let _ = out_sender.send((true, stdout.read_to_end(&mut bytes).map(|_| bytes)));
@@ -55,7 +86,8 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         let mut bytes = Vec::new();
         let _ = output.send((false, stderr.read_to_end(&mut bytes).map(|_| bytes)));
     });
-    let deadline = Instant::now() + Duration::from_secs(seconds);
+
+    let deadline = deadline();
     let pid = child.id();
     let (finished, completion) = std::sync::mpsc::channel();
     let wait = std::thread::spawn(move || {
@@ -63,6 +95,7 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         let _ = finished.send(());
         (child, status)
     });
+
     let timed_out = completion
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
         .is_err();
@@ -70,15 +103,14 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         stop_group(pid);
     }
     let (mut child, status) = wait.join().expect("command wait thread");
-    let status = if timed_out || status.is_err() {
+    if timed_out || status.is_err() {
         stop(&mut child);
-        Err("command timed out or could not be read".to_owned())
-    } else {
-        status.map_err(|e| e.to_string())
-    };
+    }
+
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let mut failure = None;
+
     for _ in 0..2 {
         match receive.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok((out, Ok(bytes))) => {
@@ -88,15 +120,23 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
                     stderr = bytes;
                 }
             }
+
             other => {
                 stop(&mut child);
-                failure = Some(format!("command output failed: {other:?}"));
+                failure = Some(match other {
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => timeout_error(),
+                    other => io::Error::other(format!("command output failed: {other:?}")),
+                });
                 break;
             }
         }
     }
+
     let _ = out_read.join();
     let _ = err_read.join();
+    if timed_out {
+        return Err(timeout_error());
+    }
     if let Some(error) = failure {
         return Err(error);
     }
@@ -367,6 +407,9 @@ impl Discovery {
         }
     }
 }
+#[derive(Debug)]
+pub struct DeadlineExpired;
+
 pub(super) fn command_seconds_left(deadline: Instant) -> Option<u64> {
     let seconds = deadline.saturating_duration_since(Instant::now()).as_secs();
     (seconds > 0).then_some(seconds)
