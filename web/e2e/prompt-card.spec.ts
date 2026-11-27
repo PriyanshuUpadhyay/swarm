@@ -72,6 +72,21 @@ test.describe("prompt layout and chat identity", () => {
     });
   }
 
+  test("Stop interrupts an agent while its question is open", async ({ page: tab }) => {
+    const session = process.env.SWARM_E2E_LIVE!;
+    await showPrompt(tab, [session], { id: "waiting-stop", question: "Run the tests?", choices: ["Yes", "No"] });
+    await tab.route("**/api/chat/interrupt", (route) => route.fulfill({ json: {} }));
+    await openChat(tab, session);
+    await expect(tab.getByTestId("prompt-card")).toBeVisible();
+    const status = tab.getByTestId("chat-status-line");
+    const stop = status.getByTestId("stop");
+    await expect(stop).toBeEnabled({ timeout: 2000 });
+    await captureThemes(tab, status, "waiting-stop");
+    const sent = tab.waitForRequest((request) => request.url().endsWith("/api/chat/interrupt") && request.method() === "POST");
+    await stop.click();
+    expect((await sent).postDataJSON()).toMatchObject({ session, agent: "chair" });
+  });
+
   test("a long question scrolls and its choices stay in view", async ({ page: tab }) => {
     const session = process.env.SWARM_E2E_LIVE!;
     const plan = Array.from({ length: 200 }, (_, i) => `Step ${i + 1}: do one part of the plan.`).join("\n");

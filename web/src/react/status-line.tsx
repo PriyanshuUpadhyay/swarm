@@ -59,7 +59,7 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
       <span role="status" className="min-w-0 truncate">{label}</span>
       {clock && <span className="shrink-0 font-mono tabular-nums" aria-label={`Turn elapsed: ${clock}`}>· {offline ? "last seen " : ""}{clock}</span>}
       <span className="flex-1" />
-      {running && (
+      {(running || agent.waiting) && (
         <Button type="button" variant="outline" size="sm" className="h-6 px-2" data-testid="stop" aria-label={`Stop ${target}`} title={agent.who ? `Stop ${target}` : `Stop ${target} (⌘.)`} disabled={state.stopping} onClick={() => void app.interrupt(id)}>
           Stop
         </Button>
