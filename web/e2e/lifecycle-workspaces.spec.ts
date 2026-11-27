@@ -125,8 +125,10 @@ test("an owner fold does not wait for a branch's GitHub lookup", async () => {
     writeFileSync(`${gh}.next`, body, { mode: 0o755 });
     renameSync(`${gh}.next`, gh);
   };
-  const choices = join(home, ".swarm/choices.json");
-  const before = readFileSync(choices, "utf8");
+  const before = await readTree();
+  const project = before.sections.find((s) => s.path === realpathSync(cwd))!;
+  expect(project.expanded).toBe(true);
+  let folded = false;
   const key = randomUUID();
   const marker = join(home, `fold-gh-started-${key}`);
   const release = join(home, `fold-gh-release-${key}`);
@@ -145,23 +147,26 @@ fi
     git("switch", "-c", branch);
     await expect.poll(() => existsSync(marker), { timeout: 18_000 }).toBe(true);
     const tree = await readTree();
-    const project = tree.projects.find((p) => p.path === realpathSync(cwd))!;
     const url = new URL(process.env.SWARM_SERVE_URL!);
     const token = new URLSearchParams(url.hash.slice(1)).get("token");
     const response = await fetch(`${url.origin}/api/choices`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ revision: tree.revision, op: "collapse", id: `project:${project.path}` }),
+      body: JSON.stringify({ revision: tree.revision, op: "collapse", id: project.collapseId }),
       signal: AbortSignal.timeout(2_000),
     });
+    folded = response.ok;
     expect(response.status).toBe(200);
   } finally {
     writeFileSync(release, "");
     replaceGh(original);
     git("switch", "feature");
     git("branch", "-D", branch);
-    writeFileSync(choices, before);
     rmSync(marker, { force: true });
+    if (folded) {
+      const { revision } = await readTree();
+      await api("/api/choices", { revision, op: "expand", id: project.collapseId });
+    }
   }
 });
 
