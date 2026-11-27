@@ -8,6 +8,7 @@ import { row, rows, open, mockRows } from "./ux-helpers";
 import { api, captureRunPost, holdChatStart, mockRunCatalog, patchLiveChair, readTree, shootThemes } from "./lifecycle-helpers";
 import type { Prefs } from "../src/core/nav";
 
+test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
   await mockRows(tab, [row("a1", `needle\n\n${"A paragraph with ordinary text.\n\n".repeat(70)}needle`)], 0, {}, { a1: [{ f: "text" }] });
@@ -124,7 +125,6 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
   await tab.getByTestId("run-query").fill("custom-id");
   await tab.getByTestId("run-query").press("Enter");
   await expect.poll(() => picks.map((p) => p.model)).toEqual(["model-b", "custom-id"]);
-  await tab.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("a removed new-chat default blocks the start and can be reset", async ({ page: tab }) => {
@@ -162,7 +162,6 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
     await expect.poll(async () => (await first.boundingBox())?.y).toBe(top);
     await shootThemes(tab, resolve(import.meta.dirname, "../../tmp/shots/fix4/default-row-empty"));
   } finally {
-    await tab.unrouteAll({ behavior: "ignoreErrors" });
     await setDefault(previous);
   }
 });
@@ -170,16 +169,14 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
 test("a model preview changes the visible outcome but not its announcement", async ({ page: tab }) => {
   await patchLiveChair(tab, (chair) => Object.assign(chair, { provider: "claude", model: "model-a", state: "done", prompt: null }));
   await mockRunCatalog(tab, { providers: [{ id: "claude" }], models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] });
-  try {
-    await open(tab);
-    await tab.getByTestId("model-chip").click();
-    const picker = tab.getByTestId("run-popover");
-    const status = picker.getByRole("status");
-    const before = (await status.textContent())!;
-    await picker.getByRole("button", { name: "Model B", exact: true }).hover();
-    await expect(picker.getByTestId("run-outcome")).toContainText("Model B");
-    await expect(status).toHaveText(before);
-  } finally { await tab.unrouteAll({ behavior: "ignoreErrors" }); }
+  await open(tab);
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  const status = picker.getByRole("status");
+  const before = (await status.textContent())!;
+  await picker.getByRole("button", { name: "Model B", exact: true }).hover();
+  await expect(picker.getByTestId("run-outcome")).toContainText("Model B");
+  await expect(status).toHaveText(before);
 });
 
 test("a refused live switch restores the current highlight", async ({ page: tab }) => {
@@ -284,7 +281,6 @@ test("Ended Resume keeps the prior provider and account and uses the keyboard mo
   await tab.keyboard.press("Escape");
   await tab.getByTestId("resume-chat").click();
   await expect.poll(() => resumes).toEqual([{ session: process.env.SWARM_E2E_LIVE, model: "model-b", account: "work" }]);
-  await tab.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("modified Up keeps queued messages", async ({ page: tab }) => {
