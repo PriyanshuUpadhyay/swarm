@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { captureThemes } from "./ux-helpers";
+import { captureThemes, changeRow as row } from "./ux-helpers";
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -40,7 +40,6 @@ async function lineNumber(tab: Page, text: string) {
 }
 
 const rows = (tab: Page) => tab.getByTestId("change-row");
-const row = (tab: Page, path: string) => tab.locator(`[data-testid="change-row"][data-path="${path}"]`);
 const diffPath = (tab: Page) => tab.getByTestId("diff-path");
 
 test("Changes lists local layers and branch commits, and keys move the file list", async ({ page: tab }) => {

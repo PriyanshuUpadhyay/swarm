@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Block, Display, FindPart, Inline, PatchInfo, Row, RowPage } from "../src/core/api";
 
+export const changeRow = (tab: Page, path: string) => tab.getByTestId("change-row").and(tab.locator(`[data-path="${path}"]`));
+
 export const row = (id: string, text: string, kind: Row["kind"] = "assistant"): Row => ({ id, kind, text, order: [Number(id.replace(/\D/g, "")) || 1, 0] });
 function displayOf(item: Row): Display {
   if (item.kind === "proposedPlan" && item.text === "## Steps\n\n1. Add the row in `src/row.rs` and wire it") {

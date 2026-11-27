@@ -3,9 +3,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Meter } from "../src/core/settings-types";
 import { open, settings } from "./settings-helpers";
-import { captureThemes, open as openChat } from "./ux-helpers";
-
-const changeRow = (tab: Page, path: string) => tab.getByTestId("change-row").and(tab.locator(`[data-path="${path}"]`));
+import { captureThemes, changeRow, open as openChat } from "./ux-helpers";
 
 async function openChanges(tab: Page, path: string) {
   await openChat(tab, process.env.SWARM_E2E_GIT!);
