@@ -360,12 +360,16 @@ pub(super) async fn execute_continue_timed(
 }
 
 async fn require_idle(app: &App, old: &str, chair: &Value) -> Result<(), ApiError> {
-    // A chat before its first turn has no log yet, and so no reply that runs.
-    if chair["state"] == "working"
-        || handoff_rows(app, old)
-            .await
-            .is_ok_and(|rows| view::is_active(&rows))
-    {
+    // Only a chat with no log yet can skip the transcript check.
+    let active = if chair["state"] == "working" {
+        true
+    } else if let Some(log) = resolve_log_if_present(&app.root, old, "chair")? {
+        view::is_active(&read_handoff_log(app, old, &log).await?)
+    } else {
+        false
+    };
+
+    if active {
         return Err(error(
             StatusCode::CONFLICT,
             "Wait for the current reply to finish, or stop it before switching model.",

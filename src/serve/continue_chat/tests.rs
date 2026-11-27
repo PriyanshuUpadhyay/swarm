@@ -55,6 +55,19 @@ async fn file_carry_refuses_a_link_whose_stored_log_is_gone() {
 }
 
 #[tokio::test]
+async fn idle_guard_reports_a_stored_log_read_failure() {
+    let fixture = Fixture::new();
+    std::fs::remove_file(&fixture.log).unwrap();
+    let chair = json!({"state": "done"});
+
+    let err = require_idle(&fixture.app, &fixture.session, &chair)
+        .await
+        .unwrap_err();
+    assert_eq!(err.0, StatusCode::NOT_FOUND);
+    assert_eq!(err.1.0["error"], "transcript log unavailable");
+}
+
+#[tokio::test]
 async fn a_switch_of_a_chat_with_no_adapter_reads_its_chair_on_the_apps_adapter() {
     use std::os::unix::fs::PermissionsExt;
     let fixture = action_fixture();

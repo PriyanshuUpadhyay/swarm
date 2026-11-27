@@ -19,10 +19,18 @@ pub(super) struct Log {
 }
 
 pub(super) fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log, ApiError> {
+    resolve_log_if_present(root, session, agent)?.ok_or_else(no_transcript_log)
+}
+
+pub(super) fn resolve_log_if_present(
+    root: &Path,
+    session: &str,
+    agent: &str,
+) -> Result<Option<Log>, ApiError> {
     // A subagent's chat is its own log, read-only (ADR 0140).
     subagent::check_depth(agent)?;
     if let Some((parent, call)) = subagent::split(agent) {
-        return subagent::child_log(&resolve_log(root, session, parent)?, call);
+        return subagent::child_log(&resolve_log(root, session, parent)?, call).map(Some);
     }
 
     let connection = read_connection(root)
@@ -70,7 +78,8 @@ pub(super) fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log
             .flatten()
             .map(|path| path.to_string_lossy().into_owned())
     });
-    checked_log(path.map(Into::into), format.as_deref())
+    path.map(|path| checked_log(Some(path.into()), format.as_deref()))
+        .transpose()
 }
 
 pub(super) fn resolve_link_log(row: &swarm::store::ContinuationLog) -> Result<Log, ApiError> {
@@ -97,8 +106,12 @@ pub(super) fn resolve_link_log(row: &swarm::store::ContinuationLog) -> Result<Lo
     checked_log(path, format)
 }
 
+fn no_transcript_log() -> ApiError {
+    error(StatusCode::NOT_FOUND, "no transcript log")
+}
+
 fn checked_log(path: Option<PathBuf>, format: Option<&str>) -> Result<Log, ApiError> {
-    let path = path.ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript log"))?;
+    let path = path.ok_or_else(no_transcript_log)?;
     let format = format
         .filter(|format| swarm::view::transcript::LOG_FORMATS.contains(format))
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript format"))?;
