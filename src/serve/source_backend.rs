@@ -128,7 +128,7 @@ pub(super) async fn window(
         && lines.iter().any(|(_, _, events)| {
             events
                 .iter()
-                .any(|event| view::transcript::model_fact(event).is_some())
+                .any(|event| view::model_fact(event).is_some())
         })
         && let Some(model) = model_before(&source, log, start, budget).await
     {
@@ -162,7 +162,7 @@ async fn model_before(source: &Lease, log: &Log, boundary: u64, budget: Budget) 
             .iter()
             .rev()
             .flat_map(|(_, _, events)| events.iter().rev())
-            .find_map(view::transcript::model_fact)
+            .find_map(view::model_fact)
         {
             return Some(model.to_owned());
         }
