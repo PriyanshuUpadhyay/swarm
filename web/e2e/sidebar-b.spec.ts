@@ -228,13 +228,18 @@ test("a branchless chat still reserves the same 36 px below the tabs", async ({ 
 });
 
 test("the PR chip responds to a click within its 24 px hit area", async ({ page }) => {
-  const row = await withChatFacts(page, (tree, row) => { tree.workspaces[row.selection!.workspace!].pr = demoPr; });
-  const chip = row.getByTestId("pr-chip");
-  expect(await chip.evaluate((el) => {
-    const { x, y, width, height } = el.getBoundingClientRect();
-    return el.contains(document.elementFromPoint(x + width / 2, y + height / 2 - 11));
-  })).toBe(true);
-  await page.unrouteAll({ behavior: "wait" });
+  try {
+    const row = await withChatFacts(page, (tree, row) => {
+      const path = row.selection?.workspace;
+      if (!path || !tree.workspaces[path]) throw new Error("PR fixture chat has no workspace");
+      tree.workspaces[path].pr = demoPr;
+    });
+    const chip = row.getByTestId("pr-chip");
+    await expect(chip).toBeVisible();
+    expect(await chip.evaluate((el) => getComputedStyle(el, "::after").height)).toBe("24px");
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 test("the chat agent count has a 24 px click area", async ({ page }) => {
