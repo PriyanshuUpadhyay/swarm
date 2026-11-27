@@ -21,6 +21,8 @@ export class AppStream {
 
   applySnapshot(snap: Snapshot) {
     this.app.snapshot = snap;
+    this.app.snapshotReceivedAt = performance.now();
+
     // A card stays busy until its question goes; the same question shown again is a new ask.
     for (const [id, input] of this.app.inputs)
       if (input.answering && this.app.composing.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;

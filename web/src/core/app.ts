@@ -52,6 +52,7 @@ export class App {
   readonly notes = new Notes(this);
   view: View;
   snapshot: Snapshot | null = null;
+  snapshotReceivedAt = 0;
   tree: TreeView | null = null;
   archivedTree: TreeView | null = null;
   treeName: TreeName = "workspaces";

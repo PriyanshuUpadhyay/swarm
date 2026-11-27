@@ -74,3 +74,36 @@ test("the status line names the work and keeps the turn clock outside the log", 
     await page.clock.resume();
   }
 });
+
+test("a reopened working chat counts from the accepted snapshot", async ({ page }) => {
+  const session = process.env.SWARM_E2E_GIT!;
+  const time = new Date("2030-01-01T00:00:00Z");
+  const serverS = time.getTime() / 1000;
+  await page.clock.install({ time });
+
+  try {
+    await mockStream(page, "clock-age");
+    await page.route("**/api/snapshot", async (route) => {
+      const snapshot = await (await route.fetch()).json() as Snapshot;
+      Object.assign(snapshot.agents[session][0], {
+        state: "working", alive: true, turn_start_time_s: serverS - 65, turn_clock_time_s: serverS,
+      });
+      await route.fulfill({ json: snapshot });
+    });
+    await mockRows(page, [row("reply", "Last reply")]);
+    await open(page);
+    const now = await page.evaluate(() => Date.now());
+    await page.clock.pauseAt(new Date(now + 100));
+    await page.clock.runFor(5_000);
+
+    const target = page.locator(`[data-testid="tree-row"][data-session="${session}"]`);
+    await target.evaluate((el) => (el as HTMLElement).click());
+    await expect(page.getByTestId("composer")).toBeVisible({ timeout: 2_000 });
+    await page.clock.runFor(200);
+    await expect(page.getByTestId("chat-status-line")).toContainText(/Turn elapsed: 1:1\d/, { timeout: 2_000 });
+    await captureThemes(page, page.getByTestId("chat-status-line"), "clock-age");
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.clock.resume();
+  }
+});

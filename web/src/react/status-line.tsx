@@ -1,4 +1,4 @@
-import { useContext, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useState } from "react";
 import { Button } from "../components/ui/button";
 import type { App, Composer } from "../core/app";
 import { inputTarget } from "../core/composer";
@@ -24,11 +24,10 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
   const running = agent.running && !agent.waiting && !agent.unreachable;
   const [work, setWork] = useState<Work | null>(null);
   const shownAt = work?.shownAt ?? null;
-  const sampleAt = useRef(0);
   const { turnStartTimeS, turnClockTimeS } = agent;
-  useEffect(() => { sampleAt.current = performance.now(); }, [turnStartTimeS, turnClockTimeS]);
+  const sampleAt = app.snapshotReceivedAt;
 
-  const sample = useEffectEvent(() => ({ label: workLabel, clock: clockSince(turnStartTimeS, turnClockTimeS, sampleAt.current) }));
+  const sample = useEffectEvent(() => ({ label: workLabel, clock: clockSince(turnStartTimeS, turnClockTimeS, sampleAt) }));
   const reveal = useEffectEvent(() => setWork({ ...sample(), shownAt: performance.now() }));
   const refresh = useEffectEvent(() => {
     const next = sample();
@@ -51,7 +50,7 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
   }, [running, shownAt, offline]);
   useEffect(() => {
     if (running && !offline && shownAt !== null) refresh();
-  }, [running, shownAt, offline, workLabel, turnStartTimeS, turnClockTimeS]);
+  }, [running, shownAt, offline, workLabel, turnStartTimeS, turnClockTimeS, sampleAt]);
 
   if (agent.unreachable) return null;
   if (!agent.waiting && !work) return <div className="h-7" aria-hidden />;
