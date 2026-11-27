@@ -79,6 +79,7 @@ test("a child message stays expanded after its log refreshes and the row remount
   const previous = Array.from({ length: 60 }, (_, i) => row(`a${i + 1}`, `Previous result ${i + 1} ${"check the result ".repeat(35)}`));
   const messageText = Array.from({ length: 16 }, (_, i) => `Review request ${i + 1}`).join("\n\n");
   let polls = 0;
+
   await page.route("**/api/rows?*", (route) => {
     const agent = new URL(route.request().url()).searchParams.get("agent");
     if (agent !== "chair~sub~child-cut") return route.fulfill({ json: rows([batch]) });
@@ -87,6 +88,7 @@ test("a child message stays expanded after its log refreshes and the row remount
     if (++polls > 1) messages.push({ ...row("r101", "Done", "result"), ends_turn: true });
     return route.fulfill({ json: rows(messages) });
   });
+
   await page.clock.install();
   await open(page);
   await page.getByTestId("subagent-row").getByRole("button").click();
@@ -95,6 +97,7 @@ test("a child message stays expanded after its log refreshes and the row remount
   const message = transcript.locator('[data-id="u100"]');
   await message.getByRole("button", { name: "Show all", exact: true }).click();
   await expect(message).toContainText("Review request 16");
+
   await page.clock.runFor(3000);
   await expect(transcript.locator('[data-id="r101"]')).toContainText("Turn finished");
   // Let the refresh's scroll-to-bottom settle before requiring a virtual row to unmount.
