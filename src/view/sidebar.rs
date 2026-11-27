@@ -230,7 +230,7 @@ impl<'a> Projection<'a> {
                     sort_chats(&mut chats);
                     rows.push(self.workspace_row(p, w, &chats));
                     for (_, chat) in chats {
-                        self.chat_rows(w, chat, Some(w.path.as_str()), &mut rows);
+                        self.chat_rows(w, chat, Some(w.path.as_str()), false, &mut rows);
                     }
                 }
                 let name =
