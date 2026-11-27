@@ -166,17 +166,23 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
   }
 });
 
-test("a model preview changes the visible outcome but not its announcement", async ({ page: tab }) => {
+test("a model preview stays readable without scrolling or changing its announcement", async ({ page: tab }) => {
   await patchLiveChair(tab, (chair) => Object.assign(chair, { provider: "claude", model: "model-a", state: "done", prompt: null }));
-  await mockRunCatalog(tab, { providers: [{ id: "claude" }], models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] });
+  await mockRunCatalog(tab, { providers: [{ id: "claude" }, { id: "codex" }], models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] });
   await open(tab);
   await tab.getByTestId("model-chip").click();
+
+  await tab.setViewportSize({ width: 320, height: 800 });
   const picker = tab.getByTestId("run-popover");
   const status = picker.getByRole("status");
   const before = (await status.textContent())!;
+  await picker.getByRole("button", { name: "Codex", exact: true }).click();
   await picker.getByRole("button", { name: "Model B", exact: true }).hover();
-  await expect(picker.getByTestId("run-outcome")).toContainText("Model B");
+  const outcome = picker.getByTestId("run-outcome");
+  await expect(outcome).toContainText("Model B");
+  await expect(outcome).toHaveCSS("overflow-y", "visible");
   await expect(status).toHaveText(before);
+  await shootThemes(tab, resolve(import.meta.dirname, "../../tmp/shots/fix5/model-preview"));
 });
 
 test("a refused live switch restores the current highlight", async ({ page: tab }) => {

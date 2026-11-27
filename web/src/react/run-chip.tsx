@@ -191,7 +191,7 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
         <ErrorLine text={handoff?.error ?? catalog.error} />
         <div className="flex items-center justify-between gap-2">
           <span role="status" className="sr-only">{help(draft)}</span>
-          <span aria-hidden data-testid="run-outcome" className="h-[3lh] overflow-auto">{help(preview ?? draft)}</span>
+          <span aria-hidden data-testid="run-outcome" className="min-h-[3lh] min-w-0 break-words">{help(preview ?? draft)}</span>
           {busy && <StopRun app={app} sessionId={sessionId} variant="outline" />}
         </div>
         {/* cancelSwitch posts a refusal as an app notice. */}
