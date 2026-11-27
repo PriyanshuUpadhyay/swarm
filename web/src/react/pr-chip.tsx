@@ -8,7 +8,7 @@ export function PrChip({ pr, tabIndex }: { pr: PrFact | null | undefined; tabInd
   if (!url || url.origin !== "https://github.com" || url.username || url.password || url.search || url.hash ||
     !/^\/[^/]+\/[^/]+\/pull\/\d+$/.test(url.pathname) || !url.pathname.endsWith(`/pull/${pr.number}`)) return null;
 
-  const ci = pr.state === "open" ? pr.ci : "unknown";
+  const ci = pr.ci;
   const stateLabel = ci === "passed" || ci === "failed" || ci === "pending" ? `${pr.state}, CI ${ci}` : pr.state;
 
   return (
