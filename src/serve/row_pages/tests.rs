@@ -71,6 +71,27 @@ async fn linked_history_pages_across_logs_without_changing_the_leaf_offsets() {
 }
 
 #[tokio::test]
+async fn cold_tail_shows_a_change_from_the_model_before_its_window() {
+    let fixture = Fixture::new();
+    codex_log(&fixture, 0);
+    let model = |id: &str| json!({"type":"turn_context","payload":{"model":id}});
+    let mut history = format!("{}\n", model("before"));
+    history.extend((0..220).map(codex_line));
+    history.push_str(&format!("{}\n{}", model("after"), codex_line(220)));
+    std::fs::write(&fixture.log, history).unwrap();
+
+    let tail = row_page(&fixture, 200, None).await.unwrap();
+    let changes: Vec<_> = tail["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["kind"] == "model_change")
+        .map(|row| row["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(changes, ["before → after"]);
+}
+
+#[tokio::test]
 async fn older_page_sends_only_new_and_changed_rows_in_thousand_row_history() {
     let fixture = Fixture::new();
     codex_log(&fixture, 0);

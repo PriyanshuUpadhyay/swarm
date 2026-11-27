@@ -29,7 +29,7 @@ pub(super) async fn read_row_window(
     start: u64,
     end: u64,
 ) -> Result<LiveRows, ApiError> {
-    source_backend::window(app, key, log, start, end).await
+    source_backend::window(app, key, log, start, end, false).await
 }
 
 pub(super) fn row_offsets(
@@ -289,7 +289,7 @@ async fn load_segment(
     } else {
         None
     };
-    let page = read_row_window(app, &key, log, start, end).await?;
+    let page = source_backend::window(app, &key, log, start, end, true).await?;
     let page = {
         let mut hub = app.hub.lock().unwrap();
         let active = hub

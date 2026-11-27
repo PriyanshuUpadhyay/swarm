@@ -159,7 +159,7 @@ fn model_value(event: &Value) -> Option<&str> {
         .then(|| string(event, "value"))
 }
 
-pub(super) fn model_fact(event: &Value) -> Option<&str> {
+pub fn model_fact(event: &Value) -> Option<&str> {
     model_value(event).filter(|model| !model.trim().is_empty())
 }
 

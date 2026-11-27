@@ -141,6 +141,10 @@ impl ReaderRows {
             _ => (),
         }
     }
+    /// Seed an empty tail window with the nearest proven model before its first row.
+    pub fn seed_model(&mut self, model: String) {
+        self.model = Some(model);
+    }
     pub fn first_model(&self) -> Option<String> {
         let ((start, _), _) = self.records.first_key_value()?;
         if *start != 0 {

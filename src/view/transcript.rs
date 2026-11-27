@@ -30,7 +30,8 @@ pub use records::Record;
 pub(super) use shell::shell_row;
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run, strip_terminal};
 pub use state::{
-    ChatUsage, UsageState, clear_boundary, queued, usage, view_rows, view_rows_with_context,
+    ChatUsage, UsageState, clear_boundary, model_fact, queued, usage, view_rows,
+    view_rows_with_context,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
