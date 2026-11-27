@@ -59,6 +59,20 @@ pub fn chat_text(rows: &[Row]) -> Option<String> {
     (!text.is_empty()).then(|| text.join("\n\n"))
 }
 
+/// Add a chat segment only if its text and separator fit the total byte budget.
+pub fn append_chat_text(text: &mut String, rows: &[Row], limit: usize) -> bool {
+    let Some(part) = chat_text(rows) else {
+        return true;
+    };
+    let separator = if text.is_empty() { "" } else { "\n\n" };
+    if text.len() + separator.len() + part.len() > limit {
+        return false;
+    }
+    text.push_str(separator);
+    text.push_str(&part);
+    true
+}
+
 const SUMMARY_HEADING: &str = "The prior agent prepared this compact handoff summary:\n\n";
 const FILE_HEADING: &str = "The prior chat's user and agent messages are in ";
 

@@ -2,6 +2,43 @@ use super::*;
 use crate::serve::test_support::*;
 
 #[tokio::test]
+async fn file_carry_refuses_an_oversized_chat_before_writing_or_launching() {
+    use std::io::Write;
+    let fixture = action_fixture();
+    std::fs::write(
+        &fixture.app.cli,
+        "#!/bin/sh\nprintf '%s\\n' '{\"agents\":[]}'\n",
+    )
+    .unwrap();
+    let mut log = std::fs::File::create(&fixture.log).unwrap();
+    let content = "x".repeat(20_000);
+    for i in 0..850 {
+        writeln!(
+            log,
+            "{}",
+            json!({"type":"user","uuid":i.to_string(),"message":{"role":"user","content":content}})
+        )
+        .unwrap();
+    }
+    let body = ContinueChat {
+        old_session: fixture.session.clone(),
+        provider: "codex".into(),
+        model: "gpt-5".into(),
+        account: None,
+        effort: None,
+        carry: Carry::File,
+    };
+    register_continue(&fixture.app, &body).unwrap();
+    let call = current_source(&fixture.app, &fixture.session).unwrap();
+
+    let err = prepare_carry(&fixture.app, &body, &call, Duration::ZERO, Duration::ZERO)
+        .await
+        .unwrap_err();
+    assert_eq!(err.0, StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(!fixture.app.root.join("handoffs").exists());
+}
+
+#[tokio::test]
 async fn a_switch_of_a_chat_with_no_adapter_reads_its_chair_on_the_apps_adapter() {
     use std::os::unix::fs::PermissionsExt;
     let fixture = action_fixture();

@@ -143,11 +143,16 @@ pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiEr
             "The current chat has no readable transcript to carry forward",
         )
     })?;
-    read_handoff_log(app, old, &log).await
+    read_handoff_log(app, old, &log, None).await
 }
 
-async fn read_handoff_log(app: &App, old: &str, log: &Log) -> Result<Vec<Row>, ApiError> {
-    let end = row_offsets(&log.path, 1, None)
+async fn read_handoff_log(
+    app: &App,
+    old: &str,
+    log: &Log,
+    before: Option<u64>,
+) -> Result<Vec<Row>, ApiError> {
+    let end = row_offsets(&log.path, 1, before)
         .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
         .1;
     let state = read_row_window(app, &format!("{old}:chair"), log, 0, end).await?;
@@ -369,15 +374,21 @@ async fn prepare_carry(
             let chain = read_connection(&app.root)
                 .and_then(|db| swarm::store::continuation_chain(&db, old))
                 .map_err(super::actions::history_read_error)?;
-            let mut text = Vec::new();
+            let mut budget = ROWS_FIND_LIMIT as u64;
+            let mut text = String::new();
             for id in chain {
                 let log = match resolve_log(&app.root, &id, "chair") {
                     Ok(log) => log,
                     Err(err) if err.0 == StatusCode::NOT_FOUND => continue,
                     Err(err) => return Err(err),
                 };
-                if let Some(part) = handoff::chat_text(&read_handoff_log(app, &id, &log).await?) {
-                    text.push(part);
+                let size = std::fs::metadata(&log.path)
+                    .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
+                    .len();
+                budget = budget.checked_sub(size).ok_or_else(file_carry_limit)?;
+                let rows = read_handoff_log(app, &id, &log, Some(size)).await?;
+                if !handoff::append_chat_text(&mut text, &rows, ROWS_FIND_LIMIT) {
+                    return Err(file_carry_limit());
                 }
             }
             if text.is_empty() {
@@ -386,7 +397,7 @@ async fn prepare_carry(
                     "The current chat has no messages to carry forward",
                 ));
             }
-            let path = chat_file(app, old, text.join("\n\n")).await?;
+            let path = chat_file(app, old, text).await?;
             Ok(Some(handoff::file_message(&path.to_string_lossy())))
         }
         Carry::Summary => {
@@ -431,6 +442,13 @@ async fn prepare_carry(
         }
         Carry::Resume => unreachable!("native resume does not carry chat context"),
     }
+}
+
+fn file_carry_limit() -> ApiError {
+    error(
+        StatusCode::PAYLOAD_TOO_LARGE,
+        "This chat is too large to carry as a file. Choose Summary or No history in Settings.",
+    )
 }
 
 async fn require_idle(app: &App, old: &str, chair: &Value) -> Result<(), ApiError> {
