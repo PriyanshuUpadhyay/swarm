@@ -335,7 +335,7 @@ export class Lifecycle {
 
     this.set({ resuming: { ...this.state.resuming, [session]: true }, switchModel: null });
     try {
-      if (foreign || !chair.resumable) {
+      if (foreign || !chair.resumable || !this.app.panes.chairHasLog(session)) {
         const carry = this.endedRunCarry(session, provider);
         const next = run ?? chair;
         if (!await this.switchModel(session, provider, next.model, next.account, next.effort, carry)) return;

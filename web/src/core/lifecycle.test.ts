@@ -98,6 +98,12 @@ describe("chats", () => {
     });
   });
 
+  it.each(["codex", "claude", "pi"])("links a same-CLI session when an ended %s chat has no turn", async (provider) => {
+    const { app, post } = endedWithoutTurn(provider);
+    await app.life.resumeChat("ended");
+    expect(post).toHaveBeenCalledWith("/api/chat/continue", { old_session: "ended", provider, carry: "clean" });
+  });
+
   it("drops an ended pick when the chair returns in another window", () => {
     const { life } = fakeApp(async () => ({}));
     const app = (life as unknown as { app: App }).app;
