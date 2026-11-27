@@ -241,15 +241,36 @@ pub fn set_launch(
     runner: &crate::config::Runner,
     account: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    set_launch_with_model(
+        connection,
+        session_id,
+        agent_id,
+        profile,
+        runner,
+        Some(&runner.model),
+        account,
+    )
+}
+
+/// An omitted model leaves the choice to the CLI; any model already reported by a hook still stands.
+pub fn set_launch_with_model(
+    connection: &Connection,
+    session_id: &str,
+    agent_id: &str,
+    profile: &str,
+    runner: &crate::config::Runner,
+    model: Option<&str>,
+    account: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
     connection.execute(
-        "UPDATE agent SET profile = ?3, runner = ?4, model = ?5, effort = ?6, account = ?7
+        "UPDATE agent SET profile = ?3, runner = ?4, model = coalesce(?5, model), effort = ?6, account = ?7
          WHERE session_id = ?1 AND id = ?2",
         (
             session_id,
             agent_id,
             profile,
-            runner.label(),
-            &runner.model,
+            model.map(|_| runner.label()),
+            model,
             &runner.effort,
             account,
         ),

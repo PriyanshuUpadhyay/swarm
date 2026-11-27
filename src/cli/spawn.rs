@@ -8,6 +8,7 @@ pub(crate) struct SpawnOptions<'a> {
     pub(crate) account: Option<&'a swarm::profiles::Account>,
     pub(crate) command: &'a [String],
     pub(crate) runner: &'a swarm::config::Runner,
+    pub(crate) cli_default_model: bool,
 }
 
 pub(crate) fn add_agent(
@@ -340,6 +341,9 @@ pub(crate) fn spawn_agent(
         let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
         Ok(Some(format!("{line}; {hook}")))
     };
+
+    let account_name = options.account.map(|account| account.name.as_str());
+    let named_launch = (!options.cli_default_model).then_some((options.runner, account_name));
     let (pane, ring) = register_spawned_pane(
         connection,
         &adapter,
@@ -348,12 +352,22 @@ pub(crate) fn spawn_agent(
         role,
         Some(provider.id()),
         &vars,
-        Some((
-            options.runner,
-            options.account.map(|account| account.name.as_str()),
-        )),
+        named_launch,
         line,
     )?;
+
+    if named_launch.is_none() {
+        swarm::store::set_launch_with_model(
+            connection,
+            &session_id,
+            agent_id,
+            role,
+            options.runner,
+            None,
+            account_name,
+        )?;
+    }
+
     if let Some(text) = ring {
         // The leading space keeps the line out of the pane shell's history when the shell ignores
         // such lines (zsh `hist_ignore_space`, bash `ignorespace`, fish by default).

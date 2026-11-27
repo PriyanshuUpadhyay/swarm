@@ -383,6 +383,7 @@ pub(crate) fn commands_launch(
                 account: picked.as_ref(),
                 command: &command,
                 runner: &runner,
+                cli_default_model: cli_default,
             },
             account_deadline,
         )?;

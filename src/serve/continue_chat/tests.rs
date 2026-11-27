@@ -66,6 +66,30 @@ fn cli_default_launch_rejects_an_explicit_model() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("usage: swarm"));
 }
 
+#[tokio::test]
+async fn cli_default_launch_leaves_no_model_to_remember() {
+    let (fixture, mut launch) = linked_launch_fixture();
+    let output = launch.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    remember_started_model(&fixture.app, &fixture.session).await;
+    let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let chair = swarm::store::agents(&db, &fixture.session)
+        .unwrap()
+        .into_iter()
+        .find(|agent| agent.id == "orchestrator")
+        .unwrap();
+    let saved = choices_store::load(&fixture.app.root, true).unwrap();
+    assert_eq!(
+        (chair.model, saved.owner.prefs.get("recentModels")),
+        (None, None)
+    );
+}
+
 fn ended_file_carry() -> (Fixture, ContinueChat) {
     let fixture = action_fixture();
     std::fs::write(
