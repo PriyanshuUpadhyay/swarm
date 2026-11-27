@@ -61,7 +61,6 @@ fn capture_command(
         command.process_group(0);
     }
     let mut child = command.spawn().map_err(|e| e.to_string())?;
-    let pid = child.id();
     let mut stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let (output, receive) = std::sync::mpsc::channel();
@@ -71,11 +70,7 @@ fn capture_command(
             let mut bytes = Vec::with_capacity(cap.unwrap_or(0));
             let overflow = if let Some(cap) = cap {
                 std::io::copy(&mut stdout.by_ref().take(cap as u64), &mut bytes)?;
-                let overflow = std::io::copy(&mut stdout.take(1), &mut std::io::sink())? != 0;
-                if overflow {
-                    stop_group(pid);
-                }
-                overflow
+                std::io::copy(&mut stdout.take(1), &mut std::io::sink())? != 0
             } else {
                 stdout.read_to_end(&mut bytes)?;
                 false
@@ -91,66 +86,70 @@ fn capture_command(
             stderr.read_to_end(&mut bytes).map(|_| (bytes, false)),
         ));
     });
+
     let deadline = Instant::now() + Duration::from_secs(seconds);
-    let (finished, completion) = std::sync::mpsc::channel();
-    let wait = std::thread::spawn(move || {
-        let status = child.wait();
-        let _ = finished.send(());
-        (child, status)
-    });
-    let timed_out = completion
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .is_err();
-    if timed_out {
-        stop_group(pid);
-    }
-    let (mut child, status) = wait.join().expect("command wait thread");
-    let status = if timed_out || status.is_err() {
-        stop(&mut child);
-        Err("command timed out or could not be read".to_owned())
-    } else {
-        status.map_err(|e| e.to_string())
-    };
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let mut overflow = false;
-    let mut failure = None;
+
+    // Only this thread signals the group. Keep the child unreaped until the pipe reads finish.
     for _ in 0..2 {
         match receive.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            Ok((out, Ok((bytes, excess)))) => {
-                if out {
-                    stdout = bytes;
-                    overflow = excess;
-                } else {
-                    stderr = bytes;
+            Ok((true, Ok((bytes, excess)))) => {
+                stdout = bytes;
+                overflow = excess;
+                if overflow {
+                    kill_group(&mut child);
                 }
             }
+            Ok((false, Ok((bytes, _)))) => stderr = bytes,
             other => {
                 stop(&mut child);
-                failure = Some(format!("command output failed: {other:?}"));
-                break;
+                return Err(format!("command output failed: {other:?}"));
             }
         }
     }
+
     let _ = out_read.join();
     let _ = err_read.join();
-    if let Some(error) = failure {
-        return Err(error);
-    }
+    let status = wait_until(&mut child, deadline)?;
     Ok((
         Output {
-            status: status?,
+            status,
             stdout,
             stderr,
         },
         overflow,
     ))
 }
+
+fn wait_until(
+    child: &mut std::process::Child,
+    deadline: Instant,
+) -> Result<std::process::ExitStatus, String> {
+    loop {
+        if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
+            return Ok(status);
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            stop(child);
+            return Err("command timed out or could not be read".to_owned());
+        }
+        std::thread::sleep(remaining.min(Duration::from_millis(10)));
+    }
+}
+
 fn stop(child: &mut std::process::Child) {
-    stop_group(child.id());
-    let _ = child.kill();
+    kill_group(child);
     let _ = child.wait();
 }
+
+fn kill_group(child: &mut std::process::Child) {
+    stop_group(child.id());
+    let _ = child.kill();
+}
+
 fn stop_group(pid: u32) {
     #[cfg(unix)]
     {
