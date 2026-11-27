@@ -20,6 +20,7 @@ async fn menu_folder(app: &App, cwd: String) -> Result<String, ApiError> {
     if cwd.contains('\0') || !Path::new(&cwd).is_absolute() {
         return Err(error(StatusCode::BAD_REQUEST, "absolute cwd required"));
     }
+
     let app = app.clone();
     tokio::task::spawn_blocking(move || {
         let target = chat_target(&app, &cwd, false)?;
