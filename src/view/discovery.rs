@@ -99,7 +99,7 @@ fn capture_command(
                 stdout = bytes;
                 overflow = excess;
                 if overflow {
-                    kill_group(&mut child);
+                    crate::process::kill_group(child.id() as libc::pid_t);
                 }
             }
             Ok((false, Ok((bytes, _)))) => stderr = bytes,
@@ -141,26 +141,8 @@ fn wait_until(
 }
 
 fn stop(child: &mut std::process::Child) {
-    kill_group(child);
+    crate::process::kill_group(child.id() as libc::pid_t);
     let _ = child.wait();
-}
-
-fn kill_group(child: &mut std::process::Child) {
-    stop_group(child.id());
-    let _ = child.kill();
-}
-
-fn stop_group(pid: u32) {
-    #[cfg(unix)]
-    {
-        unsafe extern "C" {
-            fn kill(pid: i32, signal: i32) -> i32;
-        }
-        // SAFETY: this child owns its process group; kill accepts plain integers.
-        unsafe {
-            kill(-(pid as i32), 9);
-        }
-    }
 }
 fn git(path: &str, args: &[&str]) -> Option<String> {
     let mut flags = vec!["-C", path];
