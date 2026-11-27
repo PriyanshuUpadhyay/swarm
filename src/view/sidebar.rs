@@ -108,7 +108,11 @@ pub fn chat_catalog(
         cache,
     };
     view.live_workspaces(tree)
-        .flat_map(|w| w.chats.iter().map(|chat| view.chat_row(w, chat, None)))
+        .flat_map(|w| {
+            w.chats
+                .iter()
+                .map(|chat| view.chat_row(w, chat, None, false))
+        })
         .collect()
 }
 
@@ -419,7 +423,13 @@ impl<'a> Projection<'a> {
         }
     }
 
-    fn chat_row(&self, w: &Workspace, c: &Chat, parent: Option<&str>) -> SidebarRow {
+    fn chat_row(
+        &self,
+        w: &Workspace,
+        c: &Chat,
+        parent: Option<&str>,
+        show_prompt: bool,
+    ) -> SidebarRow {
         let id = c.row_id();
         let children = c.children();
         let waiting = children
@@ -450,7 +460,20 @@ impl<'a> Projection<'a> {
             .iter()
             .find_map(|s| s["branch_of"].as_str())
             .and_then(|parent| w.chats.iter().find(|c| c.contains(parent)));
-        let detail = prompt(c).or_else(|| c.agents.iter().find_map(|a| a["state_detail"].as_str()));
+        let detail = if let Some(question) = prompt(c) {
+            context.text.remove("question");
+            if show_prompt {
+                shorten(&one_line(question), 80)
+            } else {
+                String::new()
+            }
+        } else {
+            c.agents
+                .iter()
+                .find_map(|a| a["state_detail"].as_str())
+                .map(one_line)
+                .unwrap_or_default()
+        };
         let mut fields = context
             .with_status(c.status)
             .values(&self.owner.fields.chat);
@@ -476,7 +499,7 @@ impl<'a> Projection<'a> {
             has_children: !children.is_empty(),
             children_summary: summary,
             title: c.title.clone(),
-            detail: detail.map(one_line).unwrap_or_default(),
+            detail,
             status: c.status,
             counts: c.counts.clone(),
             age: Some(age(c.last_activity, self.now)),
@@ -499,7 +522,7 @@ impl<'a> Projection<'a> {
     }
 
     fn chat_rows(&self, w: &Workspace, c: &Chat, parent: Option<&str>, out: &mut Vec<SidebarRow>) {
-        let row = self.chat_row(w, c, parent);
+        let row = self.chat_row(w, c, parent, true);
         let expanded = row.expanded;
         let depth = row.depth + 1;
         let id = row.id.clone();

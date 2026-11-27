@@ -105,6 +105,35 @@ fn sidebar_prioritizes_real_prompts_and_counts_every_hidden_project_chat() {
 }
 
 #[test]
+fn needs_you_sends_one_cut_question_and_keeps_the_full_prompt() {
+    use swarm::view::tree;
+    let question = format!("Keep all of this? {}", "more ".repeat(45));
+    let mut waiting = agent("orchestrator", "blocked");
+    waiting["prompt"] = json!({"id":"choose","question":question,"choices":["Yes","No"]});
+    let snap = snapshot(
+        vec![session("ask", "/repo/wt/feature", 1)],
+        json!({"ask":[waiting]}),
+    );
+    let mut owner = owner();
+    owner.fields.chat.push("question".into());
+    let tree = tree::build(&snap, &owner);
+    let state = ViewState::default();
+    let fields = BTreeMap::new();
+    let display = tree::sections(&tree, &owner, &state, false, 100, &fields);
+    let row = &display[0].rows[0];
+    assert!(row.detail.starts_with("Keep all of this?") && row.detail.ends_with('…'));
+    assert!(row.detail.chars().count() <= 80);
+    assert!(!row.fields.iter().any(|f| f.field == "question"));
+    let catalog = tree::chat_catalog(&tree, &owner, &state, 100, &fields);
+    assert!(catalog[0].detail.is_empty());
+    assert!(!catalog[0].fields.iter().any(|f| f.field == "question"));
+    assert_eq!(
+        tree.chats().next().unwrap().agents[0]["prompt"]["question"],
+        question
+    );
+}
+
+#[test]
 fn every_chat_shows_in_the_sidebar_whether_or_not_its_tab_is_open() {
     let tree = tree();
     let mut owner = owner();
