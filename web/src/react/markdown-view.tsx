@@ -8,17 +8,17 @@ import { ColoredRow, PatchBody, useSplit, useWrap } from "./patch-body";
 const SCROLL_WINDOW_LINES = 20;
 const scrollWindowStyle = { "--scroll-window-lines": SCROLL_WINDOW_LINES } as CSSProperties;
 
-function Head({ label, what, diff = false, count = 0 }: { label: string; what: "code" | "table"; diff?: boolean; count?: number }) {
+function Head({ label, what, layout, count = 0 }: { label: string; what: "code" | "table"; layout?: { split: boolean; wrap: boolean }; count?: number }) {
   return (
     <div className="md-head">
       <span>{label}{count > SCROLL_WINDOW_LINES ? ` · ${plural(count, "line")}` : ""}</span>
-      {diff && (
+      {layout && (
         <div className="seg" role="group" aria-label="Diff layout">
-          <button type="button" data-diff-layout="0">Unified</button>
-          <button type="button" data-diff-layout="1">Split</button>
+          <button type="button" data-diff-layout="0" aria-pressed={!layout.split}>Unified</button>
+          <button type="button" data-diff-layout="1" aria-pressed={layout.split}>Split</button>
         </div>
       )}
-      {diff && <div className="seg md-wrap"><button type="button" data-wrap-toggle>Wrap</button></div>}
+      {layout && <div className="seg md-wrap"><button type="button" data-wrap-toggle aria-pressed={layout.wrap}>Wrap</button></div>}
       <button type="button" data-copy={what} aria-label={`Copy ${what}`}>Copy</button>
     </div>
   );
@@ -77,7 +77,7 @@ function HunkCode({ label, text, diff }: { label: string; text: string; diff: Ex
   const wrap = useWrap();
   return (
     <div className="md-code" data-raw={text}>
-      <Head label={label} what="code" diff count={sourceLines(text).length} />
+      <Head label={label} what="code" layout={{ split, wrap }} count={sourceLines(text).length} />
       <PatchBody patch={text} info={diff} split={split} wrap={wrap} fileLabels />
     </div>
   );

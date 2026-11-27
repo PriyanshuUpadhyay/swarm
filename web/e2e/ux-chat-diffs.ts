@@ -105,11 +105,13 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
     Object.defineProperty(window, "s6cCopies", { value: captured });
     Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text: string) => { captured.push(text); } } });
   });
+
   const fence = row("fence1", "raw Markdown deliberately differs from display");
   const tool = row("tool2", "", "diff");
   tool.diff = { id: "fence-tool", path: "x", patch: "@@ -1 +1 @@\n-tool-raw\n+tool-raw\n", added: 1, removed: 1, omitted_lines: 0, shortened_lines: 0, full_lines: 5, full_bytes: 48 };
   const page = rows([fence, tool], 0, { "fence-tool": fencePainter.patch as PatchInfo });
   page.display![fence.id] = structuredClone(fencePainter.display) as Display;
+
   page.display![fence.id].blocks.push({ type: "code", value: {
     label: "diff", text: "multi-file raw copy text", diff: {
       lines: [
@@ -126,6 +128,7 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
   page.body![fence.id] = bodyMode(page.display![fence.id]);
   await tab.route("**/api/rows?*", route => route.fulfill({ json: page }));
   await open(tab);
+
   const hunk = tab.locator('[data-id="fence1"] .md-code').nth(0);
   const prefix = tab.locator('[data-id="fence1"] .md-code').nth(1);
   const card = tab.getByTestId("diff");
@@ -140,9 +143,18 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
     await expect(numberOf(box, "change-addition")).toHaveText("1");
     await expect(box.locator("script, b")).toHaveCount(0);
   }
-  await hunk.locator('[data-diff-layout="1"]').click();
+
+  const unified = hunk.getByRole("button", { name: "Unified", exact: true });
+  const split = hunk.getByRole("button", { name: "Split", exact: true });
+  const wrap = hunk.getByRole("button", { name: "Wrap", exact: true });
+  await expect(unified).toHaveAttribute("aria-pressed", "true", { timeout: 2_000 });
+  await split.click();
+  await expect(unified).toHaveAttribute("aria-pressed", "false");
+  await expect(split).toHaveAttribute("aria-pressed", "true");
   await expect(card.getByRole("button", { name: "Split", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await hunk.locator("[data-wrap-toggle]").click();
+
+  await wrap.click();
+  await expect(wrap).toHaveAttribute("aria-pressed", "true");
   await expect(card.getByRole("button", { name: "Wrap", exact: true })).toHaveAttribute("aria-pressed", "true");
   for (const box of [hunk, card]) {
     await expect(box.locator('pre[data-diff-type="split"]')).toHaveCount(1);
@@ -151,6 +163,7 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
     await expect(rowOf(box, "change-deletion", "[data-deletions]")).toHaveText("<script>x</script>");
     await expect(rowOf(box, "change-addition", "[data-additions]")).toHaveText("<b>&new</b>");
   }
+
   await card.getByRole("button", { name: "Unified", exact: true }).click();
   for (const box of [hunk, card]) {
     await expect(box.locator('pre[data-diff-type="split"]')).toHaveCount(0);
