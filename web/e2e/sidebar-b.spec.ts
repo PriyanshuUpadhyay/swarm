@@ -247,6 +247,38 @@ test("a merged PR chip does not show CI", async ({ page, browserName }) => {
   }
 });
 
+async function sidebarLayout(page: Page, change: (row: SidebarRow, facts: WorkspaceFacts, published: boolean) => void) {
+  let published = false;
+  const row = await withChatFacts(page, (_tree, row, facts) => change(row, facts, published));
+  await page.getByTestId("home-button").click();
+
+  const next = row.locator("xpath=following-sibling::*[1]");
+  await expect(next).toBeVisible();
+  const top = () => next.evaluate((el) => el.getBoundingClientRect().top);
+  const before = await top();
+  const publish = async () => {
+    const archive = page.getByTestId("archive-toggle");
+    await archive.click();
+    published = true;
+    await archive.click();
+  };
+  return { row, before, top, publish };
+}
+
+test("a PR chip does not move the row after a chat with an agent count", async ({ page }) => {
+  try {
+    const { row, before, top, publish } = await sidebarLayout(page, (row, facts, published) => {
+      row.childrenSummary = "1";
+      facts.pr = published ? demoPr : null;
+    });
+    await publish();
+    await expect(row.getByTestId("pr-chip")).toBeVisible();
+    expect(await top()).toBe(before);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("right click leaves the PR chip's native link menu available", async ({ page }) => {
   const row = await withChatFacts(page, (tree, row) => { tree.workspaces[row.selection!.workspace!].pr = demoPr; });
   const chip = row.getByTestId("pr-chip");

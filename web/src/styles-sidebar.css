@@ -277,7 +277,7 @@
   color: var(--foreground);
 }
 .chat-title:has(button.sidebar-count),
-.chat-row:has(button.sidebar-count) .chat-sub:has(.pr-chip) {
+.chat-row:has(button.sidebar-count) .chat-sub:not(.chat-branch) {
   min-height: 24px;
 }
 button.sidebar-count {
