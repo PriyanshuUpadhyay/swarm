@@ -4,7 +4,7 @@
 import { ArchiveIcon, ArchiveRestoreIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, FolderMinusIcon, MessageSquareIcon, PinIcon, PinOffIcon, PencilIcon, PlusIcon, SquareIcon, TerminalIcon, Trash2Icon, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { App } from "../core/app";
-import { archivedSession, chatRows, workspaceRow, type NavRow } from "../core/nav";
+import { archivedSession, chatRows, projectTitle, workspaceRow, type NavRow } from "../core/nav";
 import { canStartIn } from "../core/new-chat";
 import { copyText as copy } from "./copy";
 
@@ -65,7 +65,7 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
 function workspaceActions(app: App, path: string, row: NavRow, menuOnly = false): (RowAction | false)[] {
   const tree = app.view.tree;
   const facts = workspaceRow(tree, path);
-  const project = tree?.projects.find((item) => item.path === facts?.projectPath)?.title ?? facts?.projectPath ?? row.section.title;
+  const project = projectTitle(tree, facts?.projectPath) ?? facts?.projectPath ?? row.section.title;
 
   return [
     { label: "New Chat…", icon: PlusIcon, disabled: !facts?.newChatEnabled, menuOnly, run: () => app.newChat.open(path) },

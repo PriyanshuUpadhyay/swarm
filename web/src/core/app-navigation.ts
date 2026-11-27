@@ -1,7 +1,7 @@
 import { ApiError } from "./api";
 import { measure, type PerfKind } from "./perf";
 import { chatPath, resolveChat, shortId } from "./route";
-import { chatRows, currentRow, navRows, shareTree, workspaceOf, workspaceRow, type ChoiceOp, type Tab, type Tabs } from "./nav";
+import { chatRows, currentRow, navRows, shareTree, workspaceOf, workspaceRow, workspaceSection, type ChoiceOp, type Tab, type Tabs } from "./nav";
 import { message, markable } from "./app-types";
 import type { App } from "./app";
 
@@ -335,9 +335,8 @@ export class AppNavigation {
     if (workspace && this.app.revision !== null && opts.write !== false) {
       // Open the tab before selecting it. Only a workspace change opens its project.
       const project = workspaceRow(this.app.tree, workspace)?.projectPath;
-      const sections = this.app.tree?.sections ?? [];
-      const section = sections.find((s) => s.path === project) ?? sections.find((s) =>
-        s.kind !== "needs-you" && s.rows.some((r) => r.selection?.workspace === workspace));
+      const section = workspaceSection(this.app.tree?.sections ?? [], workspace, project);
+      // The choice queue orders expansion before the tab writes and shows a refused write.
       if (moved && section && !section.expanded) void this.choose({ op: "expand", id: section.collapseId });
       void this.choose({ op: "open_tab", workspace, chat: sessionId });
       void this.choose({ op: "selected_chat", workspace, chat: sessionId, recording_history: opts.history !== false });

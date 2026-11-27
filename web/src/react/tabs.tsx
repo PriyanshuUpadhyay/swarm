@@ -5,6 +5,7 @@
 import { ChevronDownIcon, CopyIcon, PencilIcon, PlusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { App } from "../core/app";
+import { plural } from "../core/lifecycle-state";
 import type { Starting } from "../core/new-chat";
 import { workspaceRow, type Tab, type Tabs } from "../core/nav";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "../components/ui/context-menu";
@@ -259,7 +260,7 @@ const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { 
           data-action="children"
           className={`fld rounded-sm px-1 hover:bg-hover ${tab.children.blocked ? "text-waiting" : ""}`}
           title={tab.children.blocked ? "Show first waiting child" : "Show chat"}
-          aria-label={`${tab.title}, ${tab.children.count} ${tab.children.count === 1 ? "agent" : "agents"}${tab.children.blocked ? `, ${tab.children.blocked} waiting` : ""}`}
+          aria-label={`${tab.title}, ${plural(tab.children.count, "agent")}${tab.children.blocked ? `, ${tab.children.blocked} waiting` : ""}`}
         >
           {tab.children.text}
         </button>

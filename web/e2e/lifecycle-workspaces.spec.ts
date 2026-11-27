@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, readFileSync, realpathSync, renameSync, rmSyn
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { ISSUES, seedEndedChat } from "./serve";
-import { api, compose, header, holdChatStart, open, readTree, shoot, showOtherProjects } from "./lifecycle-helpers";
+import { api, compose, header, holdChatStart, open, readTree, server, shoot, showOtherProjects, token } from "./lifecycle-helpers";
 
 // The cases share one server home with every spec, and a repeat finds the workspaces of the run
 // before, so each name carries the browser and the repeat.
@@ -147,11 +147,9 @@ fi
     git("switch", "-c", branch);
     await expect.poll(() => existsSync(marker), { timeout: 18_000 }).toBe(true);
     const tree = await readTree();
-    const url = new URL(process.env.SWARM_SERVE_URL!);
-    const token = new URLSearchParams(url.hash.slice(1)).get("token");
-    const response = await fetch(`${url.origin}/api/choices`, {
+    const response = await fetch(`${server().origin}/api/choices`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
       body: JSON.stringify({ revision: tree.revision, op: "collapse", id: project.collapseId }),
       signal: AbortSignal.timeout(2_000),
     });

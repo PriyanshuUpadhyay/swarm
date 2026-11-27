@@ -4,7 +4,11 @@ import { join, resolve } from "node:path";
 import type { TreeView } from "../src/core/nav";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
-const token = () => new URLSearchParams(server().hash.slice(1)).get("token")!;
+const token = () => {
+  const value = new URLSearchParams(server().hash.slice(1)).get("token");
+  if (!value) throw new Error("Missing fixture server token");
+  return value;
+};
 const SHOTS = resolve(import.meta.dirname, "../../tmp/web-port");
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
@@ -64,7 +68,7 @@ async function holdChatStart(tab: Page) {
   return bodies;
 }
 
-export { server, api, readTree, open, header, workspace, shoot, holdChatStart, compose };
+export { server, token, api, readTree, open, header, workspace, shoot, holdChatStart, compose };
 
 export async function showOtherProjects(page: Page) {
   const row = page.locator('[data-kind="more-projects"]');

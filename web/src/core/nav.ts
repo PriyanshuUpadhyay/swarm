@@ -211,6 +211,11 @@ export function navRows(tree: TreeView | null, folds: ReadonlyMap<string, boolea
   return out;
 }
 
+export function workspaceSection(sections: readonly Section[], workspace: string, project: string | undefined): Section | undefined {
+  return sections.find((s) => s.path === project) ?? sections.find((s) =>
+    s.kind !== "needs-you" && s.rows.some((r) => r.selection?.workspace === workspace));
+}
+
 /** The visible chat row, else its workspace row or the header of its folded section. */
 export function currentRow(rows: NavRow[], openId: string | null, workspace: string | null, tree?: TreeView | null): string | null {
   const chat = openId ? rows.find((r) => r.kind === "chat" && r.row?.selection?.chat === openId) : undefined;
@@ -219,8 +224,7 @@ export function currentRow(rows: NavRow[], openId: string | null, workspace: str
   const owner = rows.find((r) => r.kind === "workspace" && r.id === workspace);
   if (owner) return owner.id;
   const project = workspaceRow(tree ?? null, workspace)?.projectPath;
-  const header = rows.find((r) => !r.row && r.section.path === project) ?? rows.find((r) =>
-    !r.row && r.kind !== "needs-you" && r.section.rows.some((row) => row.selection?.workspace === workspace));
+  const header = workspaceSection(rows.flatMap((r) => r.row ? [] : [r.section]), workspace, project);
   return header?.id ?? (project && rows.some((r) => r.kind === "more-projects") ? "more-projects" : null);
 }
 
@@ -274,6 +278,10 @@ export type RecentChat = {
   unread: boolean;
 };
 
+export function projectTitle(tree: TreeView | null, path: string | undefined): string | undefined {
+  return tree?.projects.find((project) => project.path === path)?.title;
+}
+
 /** The listed chats across all projects, newest activity first, at most `limit` (HomeModel.recentWork). */
 export function recentWork(tree: TreeView | null, snapshot: Snapshot | null, limit = 8): RecentChat[] {
   const seen = new Set<string>();
@@ -284,7 +292,7 @@ export function recentWork(tree: TreeView | null, snapshot: Snapshot | null, lim
     seen.add(session);
     const path = row.selection?.workspace ?? "";
     const ws = workspaceRow(tree, path);
-    const project = tree?.projects.find((p) => p.path === ws?.projectPath)?.title ?? projectOf(snapshot, path)?.split("/").pop() ?? "";
+    const project = projectTitle(tree, ws?.projectPath) ?? projectOf(snapshot, path)?.split("/").pop() ?? "";
     out.push({
       session,
       title: row.title,
@@ -376,7 +384,7 @@ export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null)
       return latest == null ? activity : activity == null ? latest : Math.max(latest, activity);
     }, null);
     const status = statusOrder.find((state) => chats.some((chat) => chat.status === state)) ?? null;
-    const pinned = facts.pinned === true;
+    const { pinned } = facts;
     return { path, facts, status, pinned, at, chats, project: projectTitles.get(facts.projectPath) ?? "" };
   }).sort((a, b) => Number(b.pinned) - Number(a.pinned) || (b.at ?? 0) - (a.at ?? 0) || a.path.localeCompare(b.path));
 }
