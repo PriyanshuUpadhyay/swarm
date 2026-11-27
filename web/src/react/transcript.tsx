@@ -54,7 +54,8 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const [shownMessages] = useState(() => new Set<string>());
   const [shownQueue] = useState(() => new WeakSet<Row>());
   const { lines, id: openId, chatState, find, canPullBack } = view;
-  const current = find.open ? find.matches[find.index]?.id : undefined;
+  const selectedMatch = find.open ? find.matches[find.index] : undefined;
+  const current = selectedMatch?.id;
   const notes = useTranscriptNotes(app, view, scrollRef);
 
   // A new chat, or its first page: start at the newest row.
@@ -76,16 +77,16 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
 
   // A find step brings its match into view. Declared after the follow effect, so it wins.
   useLayoutEffect(() => {
-    if (!current) return;
+    if (!current || !selectedMatch) return;
     const i = lines.findIndex((l) => l.id === current);
     if (i >= 0) handle.current?.scrollToIndex(i, { align: "center" });
     let frame = 0;
     const timer = requestAnimationFrame(() => {
-      const match = find.matches[find.index];
+      const match = selectedMatch;
       const row = scrollRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(current)}"]`);
       if (match?.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
       frame = requestAnimationFrame(() => {
-        if (!row || !match) return;
+        if (!row) return;
         const target = match.preview ? (match.line == null ? null : findLine(match.preview, match.line)) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] [data-output-line="${match.line}"]`) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] .patch`) ?? row : row;
         const ranges = textRanges(target, find.query);
         const selected = ranges[match.preview ? match.lineOccurrence ?? 0 : match.occurrence];
@@ -106,7 +107,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
       });
     });
     return () => { cancelAnimationFrame(timer); cancelAnimationFrame(frame); };
-  }, [find.seq]);
+  }, [find.seq, find.query, selectedMatch, current]);
   useEffect(() => {
     if (!find.open) { paintRanges("find-matches", []); paintRanges("find-current", []); }
   }, [find.open]);

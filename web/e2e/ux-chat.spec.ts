@@ -72,6 +72,30 @@ test("failed Show all reports the error in the cut line", async ({ page: tab }) 
   }
 });
 
+test("Find repaints the kept match after a row update", async ({ page: tab }) => {
+  const initial = row("find-live", "needle");
+  const find = { [initial.id]: [{ f: "text" as const }] };
+  const word = () => tab.evaluate(() => String(CSS.highlights.get("find-current")?.values().next().value));
+  try {
+    await mockStream(tab, "find-live");
+    await mockRows(tab, [initial], 0, {}, find);
+    await open(tab);
+
+    await tab.keyboard.press("Meta+f");
+    await tab.getByTestId("find-input").fill("needle");
+    await expect.poll(word).toBe("needle");
+    const text = "After the live update: needle";
+    await streamFrame(tab, "rows", {
+      key: `${process.env.SWARM_E2E_LIVE!}:chair`, upsert: [{ ...initial, text }], find, end_offset: 501,
+    });
+
+    await expect(tab.getByTestId("row").filter({ hasText: text })).toBeVisible();
+    await expect.poll(word, { timeout: 2_000 }).toBe("needle");
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("empty Find offers earlier search", async ({ page: tab }, info) => {
   await tab.route("**/api/rows?*", async (route) => {
     if (!new URL(route.request().url()).searchParams.has("before")) return route.fulfill({ json: rows([row("a2", "Current message")], 100, {}, { a2: [{ f: "text" }] }) });
