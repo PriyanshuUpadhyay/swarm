@@ -394,10 +394,17 @@ export class Changes {
     const editor = this.editor(d.path, layer);
     const seq = this.seq.diff;
     this.adding = true;
+
     try {
       const range = await this.app.api.post<{ lines: string; quoted: string[] }>("/api/changes/comment-range", { op: "range", ...(rangePatch ? { patch: rangePatch, from: 0, to: rangePatch.split("\n").length } : { patch: d.patch, from, to }) });
-      if (ws !== this.workspace || ws !== this.app.view.workspace || seq !== this.seq.diff || this.view.diff.state !== "ready" || this.view.diff.data !== d || this.editor(d.path, layer) !== editor) return false;
+      if (ws !== this.workspace || ws !== this.app.view.workspace) return false;
+      if (seq !== this.seq.diff || this.view.diff.state !== "ready" || this.view.diff.data !== d) {
+        this.app.notice("Could not add the comment. The diff changed. Try again.", true);
+        return false;
+      }
+      if (this.editor(d.path, layer) !== editor) return false;
       if (!range.lines) return false;
+
       const comment: DiffComment = { id: ++this.commentSeq, path: d.path, layer, ...range, text: text.trim(), at: Math.max(from, to) };
       this.drafts.set(ws, [...(this.drafts.get(ws) ?? []), comment]);
       this.notify();

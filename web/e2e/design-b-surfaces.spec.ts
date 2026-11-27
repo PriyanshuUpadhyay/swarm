@@ -305,6 +305,34 @@ test("unfinished comment text survives Escape and reload", async ({ page: tab })
   await tab.getByRole("button", { name: "Cancel", exact: true }).click();
 });
 
+test("a Changes refresh during Add reports that the comment was not added", async ({ page: tab }) => {
+  let resume!: () => void;
+  const held = new Promise<void>((done) => { resume = done; });
+  await tab.route("**/api/changes/comment-range", async (route) => {
+    await held;
+    await route.continue();
+  });
+
+  try {
+    const pending = tab.waitForRequest("**/api/changes/comment-range");
+    await addReadmeComment(tab, "Add while the diff refreshes.");
+    await pending;
+    await tab.route("**/api/changes/diff?**", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...await response.json(), added: 700 } });
+    });
+
+    await tab.evaluate(() => dispatchEvent(new Event("focus")));
+    await expect(tab.getByTestId("diff-counts")).toContainText("+700");
+    resume();
+    await expect(tab.getByText("Could not add the comment. The diff changed. Try again.", { exact: true })).toBeVisible({ timeout: 2_000 });
+    await expect(tab.getByTestId("comment-input")).toHaveValue("Add while the diff refreshes.");
+  } finally {
+    resume();
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("the 680 px new-chat composer uses the display face only for its question", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page);
