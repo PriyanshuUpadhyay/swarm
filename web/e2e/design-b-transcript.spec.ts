@@ -127,7 +127,8 @@ test("Find reveals a cut user message and highlights a match beyond the cut", as
 
   await page.keyboard.press("Meta+f");
   await page.getByTestId("find-input").fill("socket timeout");
-  await expect(page.getByTestId("find-count")).toHaveText("1 of 1");
+  const count = page.getByTestId("find-count").and(page.getByRole("status"));
+  await expect(count).toHaveText("1 of 1", { timeout: 2_000 });
   await expect.poll(() => page.evaluate(() => String(CSS.highlights.get("find-current")?.values().next().value))).toBe("socket timeout");
   await expect(message).toContainText(last);
 });

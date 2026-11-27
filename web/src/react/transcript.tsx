@@ -300,7 +300,7 @@ function FindBar({ app, view, listRef }: { app: Reader; view: Pane; listRef: Rea
         onChange={(e) => app.setFindQuery(e.target.value)}
         onKeyDown={onKeyDown}
       />
-      <span className="find-count" data-testid="find-count">
+      <span role="status" className="find-count" data-testid="find-count">
         {count}
       </span>
       {find.query.trim() && !find.matches.length && view.hasOlder && <button type="button" className="t-link" disabled={view.loadingOlder} onClick={() => void app.loadOlder()}>{view.loadingOlder ? "Searching earlier messages…" : "Search earlier messages"}</button>}
