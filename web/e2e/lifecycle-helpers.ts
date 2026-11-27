@@ -89,6 +89,7 @@ export function saveSidebarState() {
 
 export async function clickTarget(control: Locator) {
   const { hit, ...size } = await control.evaluate((el) => {
+    el.scrollIntoView({ block: "center", inline: "nearest" });
     const { x, y, width, height } = el.getBoundingClientRect();
     const target = getComputedStyle(el, "::after");
     const area = {
