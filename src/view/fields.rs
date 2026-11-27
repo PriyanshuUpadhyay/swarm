@@ -523,7 +523,7 @@ impl FieldReader {
                     .take_if(|cut| cut.as_str() == path.as_str())
                     .is_some();
                 let result = lookup(path, branch.map(String::as_str), deadline);
-                if matches!(result, Err(LookupError::Deadline)) {
+                if matches!(result, Err(LookupError::Deadline(_))) {
                     if retry {
                         self.cursor = Some(path.clone());
                     } else {

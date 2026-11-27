@@ -1,17 +1,17 @@
 //! PR identity checks from the Swift GitHubInspection boundary.
-use super::discovery::run_before;
+use super::discovery::{DeadlineExpired, run_before};
 use serde_json::Value;
 use std::{
-    cell::Cell,
+    cell::RefCell,
     collections::BTreeSet,
     time::{Duration, Instant},
 };
 
 pub(super) const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub enum LookupError {
-    Deadline,
+    Deadline(DeadlineExpired),
     CommandFailed,
 }
 
@@ -58,23 +58,23 @@ fn lookup_bounded(
     include_merged: bool,
     expected_branch: Option<&str>,
 ) -> Result<Option<Value>, LookupError> {
-    let failure = Cell::new(None);
+    let failure = RefCell::new(None);
     let command = |program: &str, args: &[&str]| {
-        if failure.get().is_some() {
+        if failure.borrow().is_some() {
             return None;
         }
 
         let output = run_before(program, args, deadline);
-        failure.set(match &output {
-            Err(_) => Some(LookupError::Deadline),
-            Ok(None) if program == "gh" => Some(LookupError::CommandFailed),
-            _ => None,
-        });
-        output.ok().flatten()
+        match output {
+            Err(cut) => *failure.borrow_mut() = Some(LookupError::Deadline(cut)),
+            Ok(None) if program == "gh" => *failure.borrow_mut() = Some(LookupError::CommandFailed),
+            Ok(output) => return output,
+        }
+        None
     };
 
     let response = lookup_matching(path, include_merged, expected_branch, command);
-    failure.get().map_or(Ok(response), Err)
+    failure.into_inner().map_or(Ok(response), Err)
 }
 
 fn lookup_matching(

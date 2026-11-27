@@ -5,6 +5,7 @@ use swarm::view::{
     choices::ViewState,
     discovery::{dirty_count, parse_worktrees},
     fields::{self, FieldReader, RowFieldLists},
+    discovery::DeadlineExpired,
     github::LookupError,
     tree,
 };
@@ -279,7 +280,7 @@ fn a_timed_out_pr_read_keeps_the_facts_and_retries_first() {
                 reads.push(path.to_owned());
 
                 if path == slow {
-                    Err(LookupError::Deadline)
+                    Err(LookupError::Deadline(DeadlineExpired))
                 } else {
                     Ok(None)
                 }
@@ -324,7 +325,7 @@ fn a_workspace_that_rejoins_the_read_set_gets_its_first_retry() {
             |path, _, _| {
                 reads.push(path.to_owned());
                 if path == slow && at > 1 {
-                    Err(LookupError::Deadline)
+                    Err(LookupError::Deadline(DeadlineExpired))
                 } else {
                     Ok(None)
                 }
