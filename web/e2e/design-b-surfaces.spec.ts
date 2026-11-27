@@ -251,7 +251,7 @@ test("a refused expansion keeps the draft preview through a focus refresh", asyn
   let replace = false;
   await tab.route("**/api/changes/diff?**", async (route) => {
     const response = await route.fetch();
-    if (!replace) return route.fulfill({ response });
+    if (!replace || new URL(route.request().url()).searchParams.get("path") !== "big.txt") return route.fulfill({ response });
 
     const data = await response.json();
     const first = data.display.lines.find((line: { text: string }) => line.text === "generated line 1");
@@ -282,6 +282,17 @@ test("a refused expansion keeps the draft preview through a focus refresh", asyn
     expect(await readsPreview).toBe(false);
     await expect(diff).toContainText("generated line 1");
     await expect(input).toHaveValue("Do not move this draft.");
+
+    await tab.route("**/api/changes?**", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      data.files = data.files.filter((file: { path: string }) => file.path !== "big.txt");
+      await route.fulfill({ response, json: data });
+    });
+    await tab.evaluate(() => dispatchEvent(new Event("focus")));
+    await expect(changeRow(tab, "big.txt")).toHaveCount(0, { timeout: 2_000 });
+    await expect(tab.getByTestId("diff-path")).not.toHaveText("big.txt", { timeout: 2_000 });
+    await expect(input).toHaveCount(0);
   } finally {
     await tab.unrouteAll({ behavior: "ignoreErrors" });
   }

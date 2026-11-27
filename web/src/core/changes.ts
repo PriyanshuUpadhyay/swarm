@@ -238,7 +238,7 @@ export class Changes {
     const still = files.find((f) => fileKey(f) === this.selected);
     if (automatic && (still || next.state !== "ready") && (this.full.state === "loading" || this.full.state === "ready")) return this.notify();
 
-    if (automatic && this.full.state === "error" && this.full.rangeMismatch && this.diff.state === "ready") {
+    if (automatic && (still || next.state !== "ready") && this.full.state === "error" && this.full.rangeMismatch && this.diff.state === "ready") {
       const { path, layer = "branch" } = this.diff.data;
       if (this.editor(path, layer)?.open) return this.notify();
     }
