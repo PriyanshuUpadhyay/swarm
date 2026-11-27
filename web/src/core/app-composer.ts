@@ -8,6 +8,7 @@ import {
   type Input,
   type Composer,
   DRAFT_PREFIX,
+  MOVED_DRAFT,
   PICKS_PREFIX,
   HISTORY_PREFIX,
   STASH_PREFIX,
@@ -17,8 +18,8 @@ import {
 } from "./app-types";
 import type { App } from "./app";
 
-const MOVED_DRAFT = "composer.moved.";
 type Draft = { text: string; picks: SkillPick[]; from?: string };
+type MovedDraft = Draft & { from: string; mirrorBefore?: string | null };
 
 export class AppComposer {
   private readonly unsavedDrafts = new Set<string>();
@@ -86,20 +87,27 @@ export class AppComposer {
     return this.app.picks.get(sessionId) ?? [];
   }
 
-  private movedDraft(id: string): Draft | undefined {
+  private movedDraft(id: string): MovedDraft | undefined {
     try {
       const draft = JSON.parse(readStore(MOVED_DRAFT + id) ?? "null");
       if (typeof draft?.from === "string" && typeof draft.text === "string" && Array.isArray(draft.picks)) {
-        return { from: draft.from, text: draft.text, picks: validPicks(draft.text, draft.picks) };
+        const mirrorBefore = typeof draft.mirrorBefore === "string" || draft.mirrorBefore === null ? draft.mirrorBefore : undefined;
+        return { from: draft.from, text: draft.text, picks: validPicks(draft.text, draft.picks), mirrorBefore };
       }
     } catch { return undefined; }
   }
 
   private storedDraft(id: string): Draft {
-    const moved = this.movedDraft(id);
-    if (moved) return moved;
     const text = readStore(DRAFT_PREFIX + id) ?? "";
-    return { text, picks: this.storedPicks(id, text) };
+    const moved = this.movedDraft(id);
+    if (moved) {
+      // Keep an interrupted mirror's result. After a complete write, an older tab can edit the mirror.
+      const before = moved.mirrorBefore;
+      if (typeof before === "string" && (text === before || text === moved.text)) return moved;
+      if (before === undefined && readStore(DRAFT_PREFIX + moved.from)) return moved;
+    }
+
+    return { text, picks: this.storedPicks(id, text), from: moved?.from };
   }
 
   private cacheDraft(id: string, draft: Draft) {
@@ -124,14 +132,17 @@ export class AppComposer {
 
   private saveDraft(id: string, draft: Draft): boolean {
     this.cacheDraft(id, draft);
-    // Record the source and result together before the old-format keys or source can change.
-    const savedMove = !draft.from || writeStore(MOVED_DRAFT + id, JSON.stringify(draft));
-    const savedText = savedMove && writeStore(DRAFT_PREFIX + id, draft.text);
-    const savedPicks = savedMove && writeStore(PICKS_PREFIX + id, draft.picks.length ? JSON.stringify(draft.picks) : "");
+    const textKey = DRAFT_PREFIX + id;
+    const movedKey = MOVED_DRAFT + id;
+    // Save the receipt before changing either legacy key. A null mirror records completion.
+    const savedMove = !draft.from || writeStore(movedKey, JSON.stringify({ ...draft, mirrorBefore: readStore(textKey) ?? "" }));
+    const savedText = savedMove && writeStore(textKey, draft.text);
+    const savedPicks = savedText && writeStore(PICKS_PREFIX + id, draft.picks.length ? JSON.stringify(draft.picks) : "");
+    const saved = savedPicks && (!draft.from || writeStore(movedKey, JSON.stringify({ ...draft, mirrorBefore: null })));
 
-    if (savedText && savedPicks) this.unsavedDrafts.delete(id);
+    if (saved) this.unsavedDrafts.delete(id);
     else this.unsavedDrafts.add(id);
-    return savedText && savedPicks;
+    return saved;
   }
 
   continueDraft(from: string, to: string) {

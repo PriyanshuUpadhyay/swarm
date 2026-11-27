@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Api, ApiError, type Session, type Snapshot } from "./api";
 import { App } from "./app";
+import { DRAFT_PREFIX, PICKS_PREFIX } from "./app-types";
 import { session } from "./chat-fixtures";
 import { Lifecycle } from "./lifecycle";
 import { STORE_KEY as NOTES_STORE } from "./notes";
@@ -272,6 +273,22 @@ describe("linked chat draft and notes", () => {
     const reload = new App(new Api("test"));
     reload.streaming.applySnapshot(linked);
     expect(reload.draft("leaf")).toBe("Changed the earlier part\n\nLater draft");
+  });
+
+  it("keeps a draft edit made by an older page after the move", () => {
+    mockStorage();
+    const tab = new App(new Api("test"));
+    tab.setDraft("root", "Earlier draft");
+    tab.streaming.applySnapshot(linked);
+
+    const picks = [{ start: 0, insert: "/skill:review" }];
+    const edited = "/skill:review Draft from the older page";
+    localStorage.setItem(DRAFT_PREFIX + "leaf", edited);
+    localStorage.setItem(PICKS_PREFIX + "leaf", JSON.stringify(picks));
+    const reload = new App(new Api("test"));
+    reload.streaming.applySnapshot(linked);
+    expect(reload.draft("leaf")).toBe(edited);
+    expect(reload.composing.draftPicks("leaf")).toEqual(picks);
   });
 
   it("does not duplicate an edited note after a failed move and reload", () => {
