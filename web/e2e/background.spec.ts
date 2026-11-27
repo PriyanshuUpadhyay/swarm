@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { captureThemes } from "./ux-helpers";
 
 /** Opens the fixture chat that has two child agents. */
@@ -62,55 +62,52 @@ test("the background list reports a task read failure", async ({ page: tab }, in
 // This must stay above POLL_MS in web/src/react/background-line.tsx.
 const POLL_ADVANCE_MS = 3_100;
 
-test("a background read failure does not move the panel rows", async ({ page: tab }, info) => {
-  let fail = false;
+async function withReadFailure(
+  tab: Page, info: TestInfo, path: "background" | "shells",
+  check: (panel: Locator, fail: (value: boolean) => Promise<void>) => Promise<void>,
+) {
+  let failing = false;
   await tab.clock.install();
-  await tab.route("**/api/background?*", (route) => fail
+  await tab.route(`**/api/${path}?*`, (route) => failing
     ? route.fulfill({ status: 503, json: { error: "Unavailable" } }) : route.continue());
 
   try {
     await openChat(tab, info);
     await tab.keyboard.press("Meta+j");
     const panel = tab.getByTestId("background-panel").last();
+    await expect(panel.getByRole("button", { name: /reviewer/ })).toBeVisible();
+    await check(panel, async (value) => {
+      failing = value;
+      await tab.clock.runFor(POLL_ADVANCE_MS);
+    });
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+}
+
+test("a background read failure does not move the panel rows", async ({ page: tab }, info) => {
+  await withReadFailure(tab, info, "background", async (panel, fail) => {
     const reviewer = panel.getByRole("button", { name: /reviewer/ });
     const top = () => reviewer.evaluate((el) => el.getBoundingClientRect().top);
-    await expect(reviewer).toBeVisible();
     const before = await top();
 
-    fail = true;
-    await tab.clock.runFor(POLL_ADVANCE_MS);
+    await fail(true);
     await expect(panel.getByRole("alert")).toHaveText("Could not load background tasks.", { timeout: 2_000 });
     expect(await top()).toBeCloseTo(before, 1);
     await captureThemes(tab, panel, "background-read-error-spacing");
-  } finally {
-    await tab.unrouteAll({ behavior: "ignoreErrors" });
-  }
+  });
 });
 
 test("a shell-list failure is shown until a good read", async ({ page: tab }, info) => {
-  let fail = false;
-  await tab.clock.install();
-  await tab.route("**/api/shells?*", (route) => fail
-    ? route.fulfill({ status: 503, json: { error: "Unavailable" } }) : route.continue());
-
-  try {
-    await openChat(tab, info);
-    await tab.keyboard.press("Meta+j");
-    const panel = tab.getByTestId("background-panel").last();
+  await withReadFailure(tab, info, "shells", async (panel, fail) => {
     const alert = panel.getByRole("alert");
-    await expect(panel.getByRole("button", { name: /reviewer/ })).toBeVisible();
-
-    fail = true;
-    await tab.clock.runFor(POLL_ADVANCE_MS);
+    await fail(true);
     await expect(alert).toHaveText("Could not load shells.", { timeout: 2_000 });
     await captureThemes(tab, panel, "background-shell-read-error");
 
-    fail = false;
-    await tab.clock.runFor(POLL_ADVANCE_MS);
+    await fail(false);
     await expect(alert).toHaveCount(0, { timeout: 2_000 });
-  } finally {
-    await tab.unrouteAll({ behavior: "ignoreErrors" });
-  }
+  });
 });
 
 test("a resized panel keeps its height when Meta+J hides and shows it", async ({ page: tab }, info) => {
