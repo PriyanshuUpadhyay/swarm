@@ -359,7 +359,8 @@ export class AppNavigation {
     const tree = this.app.tree;
     if (!tree) return;
     const paths = this.app.rows.flatMap((r) => r.row?.selection?.workspace ? [r.row.selection.workspace] : []);
-    const list = [...new Set([...paths, ...Object.keys(tree.workspaces)])].filter((path) => workspaceRow(tree, path)?.archived === false);
+    const withChats = new Set(chatRows(tree).map((row) => row.selection?.workspace));
+    const list = [...new Set([...paths, ...Object.keys(tree.workspaces)])].filter((path) => withChats.has(path) && workspaceRow(tree, path)?.archived === false);
     if (!list.length) return;
     const i = this.app.workspace ? list.indexOf(this.app.workspace) : -1;
     const next = i < 0 ? (delta < 0 ? list.length - 1 : 0) : (i + delta + list.length) % list.length;

@@ -75,6 +75,18 @@ describe("navigation UX", () => {
     expect(app.rows).toEqual([]);
     expect(paletteSources(app.tree, app.snapshot)).toHaveLength(1);
   });
+  it("steps over an empty worktree to the next one with a chat, even if folded", () => {
+    const app = harness();
+    const empty = "/project/empty";
+    const folded = "/project/folded";
+    app.workspace = workspace;
+    const next = chat("folded");
+    app.tree = { ...tree, chats: [...tree.chats, { ...next, selection: { ...next.selection!, workspace: folded } }],
+      workspaces: { ...tree.workspaces, [empty]: folderFacts("/project", "Empty"), [folded]: folderFacts("/project", "Folded") } };
+    const select = vi.spyOn(app.navigation, "selectWorkspace").mockResolvedValue();
+    app.navigation.stepWorkspace(1);
+    expect(select).toHaveBeenCalledWith(folded, undefined);
+  });
   it("reports a failed chat link before restoring the saved selection", () => {
     const app = harness();
     Object.defineProperty(app, "urlChat", { value: "missing" });
