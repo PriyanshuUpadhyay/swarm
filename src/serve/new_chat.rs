@@ -67,12 +67,10 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
 
     let project_of = tokio::task::spawn_blocking(move || {
         let target = chat_target(&snapshot_app, &allowed_cwd, true)?;
-        if target.worktree_only {
+        if let Some(common) = &target.worktree_only {
             match &place {
                 None | Some(Place::Here) => return Err(read_only_error("chat")),
                 Some(Place::Branch { branch }) => {
-                    let common = lifecycle::common(target.tree_project()?)
-                        .ok_or_else(|| read_only_error("chat"))?;
                     let name = branch.strip_prefix("origin/").unwrap_or(branch);
                     if lifecycle::references(common)
                         .map_err(lifecycle_error)?
@@ -121,7 +119,7 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
 struct Target {
     project: String,
     hub_main: bool,
-    worktree_only: bool,
+    worktree_only: Option<String>,
     tree: tree::Tree,
     saved: choices_store::Saved,
 }
@@ -138,14 +136,16 @@ fn chat_target(app: &App, cwd: &str, recheck_projects: bool) -> Result<Target, A
         .ok_or_else(|| error(StatusCode::FORBIDDEN, "cwd is outside the workspace tree"))?;
 
     lifecycle::checked_path(&app.root, cwd, true).map_err(lifecycle_error)?;
-    let worktree_only = is_read_only(&tree, &saved, cwd);
-    if worktree_only {
+    let worktree_only = if is_read_only(&tree, &saved, cwd) {
         if project.path != cwd || !found.is_some_and(|(_, w)| !w.missing && !w.removed) {
             return Err(read_only_error("chat"));
         }
         let common = lifecycle::common(project).ok_or_else(|| read_only_error("chat"))?;
         lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
-    }
+        Some(common.to_owned())
+    } else {
+        None
+    };
 
     let hub_main = found.is_some_and(|(_, workspace)| workspace.hub_main);
     Ok(Target {

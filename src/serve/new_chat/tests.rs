@@ -66,26 +66,22 @@ async fn an_archived_git_root_can_start_only_in_a_new_worktree() {
     std::fs::create_dir(&repo).unwrap();
     let repo = std::fs::canonicalize(repo).unwrap();
     let cwd = repo.to_str().unwrap();
-    let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .current_dir(&repo)
-            .args([
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.invalid",
-            ])
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    };
-    git(&["init", "-qb", "main"]);
-    git(&["commit", "--no-gpg-sign", "--allow-empty", "-qm", "base"]);
+    lifecycle::check_git(cwd, &["init", "-qb", "main"]).unwrap();
+    lifecycle::check_git(
+        cwd,
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "--no-gpg-sign",
+            "--allow-empty",
+            "-qm",
+            "base",
+        ],
+    )
+    .unwrap();
     choices_store::update(&fixture.app.root, None, |owner, _| {
         owner.project_paths.push(cwd.into());
         owner.archived.insert(cwd.into());
