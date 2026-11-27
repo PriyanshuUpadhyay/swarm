@@ -98,6 +98,12 @@
   color: var(--muted-foreground);
   font: var(--text-sm)/18px var(--font-mono);
 }
+.cut-line .t-link,
+.md-head button,
+.diff-head .seg[aria-label="Diff layout"] button {
+  min-width: 24px;
+  min-height: 24px;
+}
 .cli-error {
   display: grid;
   grid-template-columns: 16px auto minmax(0, 1fr);

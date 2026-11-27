@@ -149,6 +149,19 @@ test("removing a saved Changes comment asks first", async ({ page: tab }) => {
   await expect(comment).toHaveCount(0);
 });
 
+test("Home and End pick the first or last selectable diff line", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="README.md"]').click();
+  await expect(tab.getByTestId("diff-path")).toHaveText("README.md");
+  const diff = tab.getByTestId("diff-body");
+  const selection = diff.locator('[data-content] > [data-line][data-selected-line]');
+  await diff.press("End");
+  await expect(selection).toHaveText("A test repository, changed.", { timeout: 2000 });
+  await diff.press("Home");
+  await expect(selection).toHaveText("# Project");
+});
+
 test("an oversized Changes range keeps the note and asks for fewer lines", async ({ page: tab }) => {
   await openChat(tab, process.env.SWARM_E2E_GIT!);
   await tab.route("**/api/changes/diff?**", (route) => {

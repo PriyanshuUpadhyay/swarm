@@ -50,7 +50,7 @@ test("the status line names the work and keeps the turn clock outside the log", 
     await expect(status).toHaveCount(0);
     await page.clock.runFor(1);
     await expect(status.getByRole("status")).toHaveText("Running serve tests", { timeout: 2000 });
-    await expect(status.getByLabel("Turn elapsed: 1:05")).toBeVisible({ timeout: 2000 });
+    await expect(status.getByText("Turn elapsed: 1:05", { exact: true })).toBeAttached({ timeout: 2000 });
     await expect(status.getByTestId("stop")).toBeEnabled();
     expect(await bottom()).toBeCloseTo(idleBottom, 1);
     await captureThemes(page, page.locator(".chat-input"), "status-working");

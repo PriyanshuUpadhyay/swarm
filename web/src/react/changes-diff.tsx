@@ -166,8 +166,11 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
     });
   }, [comments, d.path, d.layer, lines, composing, hi]);
   const item = useMemo(() => full ? parsePatchFiles(patch)[0]?.files[0] : null, [full, patch]);
-  const version = useRef(0);
-  const items = useMemo<CodeViewDiffItem<Note>[]>(() => item ? [{ type: "diff", id: ITEM_ID, fileDiff: item, annotations: notes, version: ++version.current }] : [], [item, notes]);
+  const [revision, setRevision] = useState({ item, notes, version: 0 });
+  if (item && (revision.item !== item || revision.notes !== notes)) {
+    setRevision({ item, notes, version: revision.version + 1 });
+  }
+  const items = useMemo<CodeViewDiffItem<Note>[]>(() => item ? [{ type: "diff", id: ITEM_ID, fileDiff: item, annotations: notes, version: revision.version }] : [], [item, notes, revision.version]);
 
   if (d.notice) return <p className="px-3 py-3 text-xs text-muted-foreground">{d.notice}</p>;
   if (!d.display || !d.patch) return <pre className="patch cpatch" data-testid="diff-body">{d.patch ?? ""}</pre>;
@@ -175,10 +178,11 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
 
   const onKey = (e: KeyboardEvent) => {
     if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
-    const dir = { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1 }[e.key];
+    const edge = e.key === "Home" ? 1 : e.key === "End" ? -1 : 0;
+    const dir = edge || { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1 }[e.key];
     if (dir) {
       e.preventDefault();
-      let i = sel ? sel.cursor + dir : dir > 0 ? 0 : lines.length - 1;
+      let i = sel && !edge ? sel.cursor + dir : dir > 0 ? 0 : lines.length - 1;
       while (i >= 0 && i < lines.length && !code(i)) i += dir;
       if (i < 0 || i >= lines.length) return;
       pick(e.shiftKey && sel ? { anchor: sel.anchor, cursor: i } : { anchor: i, cursor: i });

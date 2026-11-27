@@ -25,7 +25,7 @@ export type WorkspaceShell = { id: string; command: string };
 
 export type BackgroundRow =
   | { key: string; type: "agent"; agent: string; chair: boolean; title: string; detail: string; status: PaneStatus }
-  | { key: string; type: "task"; agent: string; task: BackgroundTask; status: PaneStatus }
+  | { key: string; type: "task"; agent: string; task: BackgroundTask; status: PaneStatus; grouped: boolean }
   | { key: string; type: "shell"; shell: WorkspaceShell; title: string; status: PaneStatus };
 
 /** A task's status as the glyph every list shows. */
@@ -53,7 +53,7 @@ export function runningLine(rows: readonly BackgroundRow[]) {
   return { agents, shells: running.length - agents, failed: failed.length, startedAt: picked.status === "working" && !Number.isNaN(start(picked)) ? start(picked) : null, key: picked.key };
 }
 
-export const GROUP_AFTER = 8;
+const GROUP_AFTER = 8;
 const GROUP_ORDER: Record<PaneStatus, number> = { error: 0, working: 1, blocked: 2, done: 3, ended: 4 };
 
 /** The localStorage key of the row that the Cmd+J panel shows for a chat. */
@@ -89,7 +89,7 @@ export function backgroundRows(session: Session | undefined, agents: readonly Ag
     rows.push({ key: `agent:${a.id}`, type: "agent", agent: a.id, chair, title: chair ? "Chat" : a.id, detail: chair ? a.id : a.role, status: paneStatus(a) });
     const own = visibleTasks.filter((t) => t.agent === a.id);
     own.sort((a, b) => grouped ? GROUP_ORDER[taskStatus(a.status)] - GROUP_ORDER[taskStatus(b.status)] : Number(b.status === "running") - Number(a.status === "running"));
-    for (const t of own) rows.push({ key: taskKey(a.id, t.id), type: "task", agent: a.id, task: t, status: taskStatus(t.status) });
+    for (const t of own) rows.push({ key: taskKey(a.id, t.id), type: "task", agent: a.id, task: t, status: taskStatus(t.status), grouped });
   }
   // A shell that waits at its prompt is a plain circle; a program in it spins.
   const idle = (command: string) => /^-?(zsh|bash|fish|sh|dash|ksh|tcsh|nu)$/.test(command);

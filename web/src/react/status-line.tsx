@@ -62,7 +62,10 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
     <div data-testid="chat-status-line" className="flex h-7 items-center gap-2 text-sm text-muted-foreground">
       {agent.waiting && !offline ? <span className="mx-0.5 size-2 shrink-0 rounded-full bg-waiting" aria-hidden /> : <Glyph form={offline ? "unlit" : "working"} size={12} className="shrink-0" aria-hidden />}
       <span role="status" className="min-w-0 truncate">{label}</span>
-      {clock && <span className="shrink-0 font-mono tabular-nums" aria-label={`Turn elapsed: ${clock}`}>· {offline ? "last seen " : ""}{clock}</span>}
+      {clock && <>
+        <span className="sr-only">{offline ? "Last seen turn elapsed" : "Turn elapsed"}: {clock}</span>
+        <span aria-hidden className="shrink-0 font-mono tabular-nums">· {offline ? "last seen " : ""}{clock}</span>
+      </>}
       <span className="flex-1" />
       {(running || agent.waiting) && (
         <Button type="button" variant="outline" size="sm" className="h-6 px-2" data-testid="stop" aria-label={`Stop ${target}`} title={agent.who ? `Stop ${target}` : `Stop ${target} (⌘.)`} disabled={state.stopping} onClick={() => void app.interrupt(id)}>

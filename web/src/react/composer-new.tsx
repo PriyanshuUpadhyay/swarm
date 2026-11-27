@@ -285,7 +285,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
               aria-label="First prompt"
               placeholder="Describe the task…"
               className="min-h-[96px] w-full resize-none bg-transparent text-md outline-none"
-              aria-expanded={slash.open}
+              aria-autocomplete="list"
               aria-controls={slash.open ? slash.listId : undefined}
               aria-activedescendant={slash.open && slash.rows.length ? `${slash.listId}-${slash.current}` : undefined}
               value={text}

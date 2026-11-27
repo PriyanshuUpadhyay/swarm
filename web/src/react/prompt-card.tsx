@@ -84,13 +84,17 @@ export function PromptCard({
   const answer = prompt.input && (
     <form className="flex min-w-0 items-center gap-2" onSubmit={submit}>
       <input
+        type="text"
+        name="answer"
+        autoComplete="off"
+        spellCheck={false}
         data-testid="prompt-text"
         aria-label="Your answer"
         placeholder={prompt.screen ? "Type text; Send types it and presses Enter" : "Or type your own answer…"}
         value={text}
         disabled={busy !== null}
         onChange={(e) => setTyped({ prompt: prompt.id, text: e.target.value })}
-        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm pointer-coarse:text-[16px] outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
       />
       <button
         type="submit"

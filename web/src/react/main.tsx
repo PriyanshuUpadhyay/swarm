@@ -52,7 +52,7 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   const theme = useTheme();
   const offline = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
   const sidebar = usePanelRef();
-  const [side, setSide] = useState(store.getItem(SIDE_KEY) === "right" ? "right" : "left");
+  const [side, setSide] = useState(() => store.getItem(SIDE_KEY) === "right" ? "right" : "left");
   useEffect(() => {
     frame.toggle = () => {
       const panel = sidebar.current;

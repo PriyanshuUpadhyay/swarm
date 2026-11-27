@@ -250,7 +250,7 @@ export function ComposerBox({ app, composer, lockDraft }: { app: App; composer: 
             disabled={lockDraft}
             aria-label={`Message ${target}`}
             placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
-            aria-expanded={open}
+            aria-autocomplete="list"
             aria-controls={open ? listId : undefined}
             aria-activedescendant={open && rows.length ? `${listId}-${current}` : undefined}
             value={text}

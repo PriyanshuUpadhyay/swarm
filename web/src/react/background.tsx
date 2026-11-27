@@ -11,7 +11,7 @@ import { Fragment, useEffect, useEffectEvent, useRef, useState } from "react";
 import type { App } from "../core/app";
 import { ApiError } from "../core/api";
 import { message, readStore, writeStore } from "../core/app-types";
-import { GROUP_AFTER, pickedKey, type BackgroundRow } from "../core/background";
+import { pickedKey, type BackgroundRow } from "../core/background";
 import { Button } from "../components/ui/button";
 import { useBackground } from "./background-line";
 import { StatusGlyph } from "./status";
@@ -23,7 +23,6 @@ const GROUP_LABEL = { error: "Failed", working: "Running", blocked: "Waiting", d
 
 export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; session: string; focusRequest?: number }) {
   const { rows, addShell, refreshShells } = useBackground();
-  const grouped = rows.filter((r) => r.type === "task").length > GROUP_AFTER;
   const [shellError, setShellError] = useState<string | null>(null);
   // A shell request in flight: a second click would make a second shell, or close one twice.
   const [busy, setBusy] = useState(false);
@@ -104,7 +103,7 @@ export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; 
       <ul className="w-64 shrink-0 overflow-y-auto border-r py-1 text-sm" aria-label="Agents and background tasks">
         {rows.map((r, i) => {
           const prev = rows[i - 1];
-          const startsGroup = grouped && r.type === "task" && (prev?.type !== "task" || prev.agent !== r.agent || prev.status !== r.status);
+          const startsGroup = r.type === "task" && r.grouped && (prev?.type !== "task" || prev.agent !== r.agent || prev.status !== r.status);
           return (
             <Fragment key={r.key}>
               {startsGroup && <li className="pl-6 text-xs text-muted-foreground">{GROUP_LABEL[r.status]}</li>}
