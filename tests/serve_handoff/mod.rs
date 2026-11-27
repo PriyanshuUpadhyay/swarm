@@ -100,6 +100,7 @@ async fn handoff_file_refuses_an_invalid_history_link() {
     let (fixture, mut body) = handoff_fixture();
     let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
     let newer = new_handoff_session(&db, None);
+
     db.execute(
         "UPDATE session SET continuation_of = ?1 WHERE id = ?2",
         (&newer, &fixture.session),

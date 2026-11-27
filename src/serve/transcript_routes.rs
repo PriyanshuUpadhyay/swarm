@@ -84,6 +84,7 @@ pub(super) fn resolve_log_if_present(
 
 pub(super) fn resolve_link_log(row: &swarm::store::ContinuationLog) -> Result<Log, ApiError> {
     let format = row.provider.as_deref();
+
     let path = row
         .path
         .as_deref()
@@ -94,6 +95,7 @@ pub(super) fn resolve_link_log(row: &swarm::store::ContinuationLog) -> Result<Lo
             if format == Some("pi") {
                 return crate::pi_chair_log(id);
             }
+
             if row.archived || !crate::valid_chair_id(id) {
                 return None;
             }
@@ -103,6 +105,7 @@ pub(super) fn resolve_link_log(row: &swarm::store::ContinuationLog) -> Result<Lo
                 _ => None,
             }
         });
+
     checked_log(path, format)
 }
 

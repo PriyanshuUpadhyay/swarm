@@ -54,6 +54,7 @@ pub fn continue_session(
         ),
         rusqlite::named_params! { ":target": new_id, ":source": old_id },
     )?;
+
     if changed != 1 {
         let continued: bool = connection.query_row(
             &format!("SELECT EXISTS ({LIVE_CONTINUATION})"),
@@ -99,6 +100,7 @@ pub fn continuation_logs(
     ))?;
     let mut rows = read.query([leaf])?;
     let first = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+
     if let Some(missing) = first.get::<_, Option<String>>(1)? {
         if missing < first.get::<_, String>(0)? {
             connection.query_row(
@@ -109,6 +111,7 @@ pub fn continuation_logs(
         }
         return Err(rusqlite::Error::InvalidQuery);
     }
+
     let log = |row: &rusqlite::Row<'_>| -> rusqlite::Result<ContinuationLog> {
         Ok(ContinuationLog {
             id: row.get(0)?,
@@ -119,6 +122,7 @@ pub fn continuation_logs(
             days: [row.get(6)?, row.get(7)?, row.get(8)?],
         })
     };
+
     let mut chain = vec![log(first)?];
     while let Some(row) = rows.next()? {
         chain.push(log(row)?);

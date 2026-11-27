@@ -130,6 +130,7 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
   const setDefault = async (model: Prefs["newChatModel"] | null) => api("/api/choices", {
     revision: (await readTree()).revision, op: "pref", key: "newChatModel", value: model,
   });
+
   const previous = (await readTree()).prefs.newChatModel ?? null;
   const dropped = { provider: "codex", model: "dropped-model" };
   await setDefault(dropped);
@@ -146,6 +147,7 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
     await tab.keyboard.press("Meta+t");
     await expect(tab.getByText(/The default model for new chats is no longer listed/)).toBeVisible();
     expect(starts).toEqual([]);
+
     await tab.getByTestId("chip-run").click();
     const first = tab.getByTestId("run-models").getByRole("button", { name: "Model B", exact: true });
     await expect(first).toBeVisible();

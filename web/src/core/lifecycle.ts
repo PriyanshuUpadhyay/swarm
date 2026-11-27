@@ -235,6 +235,7 @@ export class Lifecycle {
       this.set({ endedRun: { ...this.state.endedRun, [session]: run } });
       return;
     }
+
     const current = { provider: chair.provider, model: chair.model, effort: chair.effort, account: chair.account };
     const outcome = switchOutcome(current, run);
     if (outcome === "none") return this.clearRunPick("pendingSwitch", session);
@@ -348,6 +349,7 @@ export class Lifecycle {
 
         await this.app.refresh();
       }
+
       this.clearRunPick("endedRun", session);
     } catch (err) {
       this.app.notice(message(err), true);

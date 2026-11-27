@@ -307,6 +307,7 @@ pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
     let connection = read_connection(&app.root)
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
     let call = session_call(&connection, id)?;
+
     let (archived, continued) = swarm::store::continuation_source_state(&connection, id)
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
     if archived {
@@ -315,6 +316,7 @@ pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
             "This chat is archived. Unarchive it first.",
         ));
     }
+
     if continued {
         return Err(error(
             StatusCode::CONFLICT,

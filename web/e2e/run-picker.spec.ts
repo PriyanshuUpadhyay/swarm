@@ -60,6 +60,7 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     await expect(loadOlder).toBeVisible();
     await loadOlder.click();
     await expect(transcript.getByText("Show the build log")).toBeVisible();
+
     const boundary = transcript.getByTestId("model-change");
     await expect(boundary).toHaveText("codex · gpt-6.1-terra from here");
     const form = await boundary.evaluate((row) => {
@@ -77,6 +78,7 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     if (process.env.E2E_SHOTS) console.log("cross-CLI marker CSS px", form);
     await shots(tab, 5, "linked-transcript");
     await shots(tab, "fix3", "cli-join");
+
     await transcript.getByTestId("fold").click();
     const card = transcript.getByTestId("tool-card").filter({ hasText: "cat big.log" });
     await card.getByRole("button", { name: /cat big\.log/ }).click();
@@ -295,6 +297,7 @@ test("an ended cross-CLI resume offers File when the saved carry is Summary", as
   await picker.getByRole("button", { name: "Codex", exact: true }).click();
   await picker.getByRole("button", { name: "Other model", exact: true }).click();
   await expect(picker.getByTestId("run-outcome")).toContainText("chat text in a file");
+
   await tab.keyboard.press("Escape");
   await tab.getByRole("button", { name: "Resume with File" }).click();
   await expect.poll(() => attempts.map((run) => run.carry)).toEqual(["file"]);
@@ -317,6 +320,7 @@ test("an ended chat keeps a foreign-CLI pick until Resume and uses File by defau
   const captionBox = await caption.boundingBox();
   expect(captionBox!.y - (closed!.y + closed!.height)).toBe(8);
   await shots(tab, "fix2", "ended-caption");
+
   await tab.getByTestId("model-chip").click();
   const picker = tab.getByTestId("run-popover");
   await expect(caption).toBeHidden();

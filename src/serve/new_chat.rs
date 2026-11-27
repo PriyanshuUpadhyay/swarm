@@ -351,6 +351,7 @@ pub(super) async fn remember_started_model(app: &App, session: &str) {
         Ok(changed)
     })
     .await;
+
     match saved {
         Ok(Ok(true)) => app.hub.lock().unwrap().bump(),
         Ok(Ok(false)) => {}

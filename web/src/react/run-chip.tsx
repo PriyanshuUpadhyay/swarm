@@ -29,10 +29,12 @@ export function RunChip({ app, sessionId, chair, ended = false }: { app: App; se
     void app.life.runs.accounts(login).then(({ accounts }) => { if (live) setSingle(accounts.length === 1 ? login : null); }, () => {});
     return () => { live = false; };
   }, [app, login]);
+
   const multipleAccounts = !login || single !== login;
   const pop = useRef<HTMLDivElement>(null);
   // An anchor name must be a CSS ident; useId gives characters outside one.
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+
   const switching = handoff && !isSettled(handoff.phase) ? (handoff.carry === "resume" ? "Restarting…" : "Switching…") : null;
   const run: Run = { provider: shown.provider ?? "claude", model: shown.model, effort: shown.effort, account: shown.account };
   const status = ended ? null : switching;

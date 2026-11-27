@@ -134,6 +134,7 @@ pub(super) async fn window(
     let source = acquire(app, key, log).await?;
     let budget = read_budget()?;
     let lines = window_lines(&source, start, end, budget).await?;
+
     let mut state = LiveRows::empty(start, log.format == "codex");
     if seed_model
         && lines
@@ -143,6 +144,7 @@ pub(super) async fn window(
     {
         state.seed_model(model);
     }
+
     for (start, end, events) in lines {
         state.ingest(start, end, &events);
     }
@@ -154,11 +156,13 @@ pub(super) async fn window(
 /// guessing that an earlier fact stayed current through it.
 async fn model_before(source: &Lease, log: &Log, boundary: u64, budget: Budget) -> Option<String> {
     let mut end = boundary;
+
     while end > 0 && budget.check().is_ok() {
         let (start, read_end) = row_offsets(&log.path, 200, Some(end)).ok()?;
         if read_end != end || start >= end || boundary - start > ROWS_FIND_LIMIT as u64 {
             return None;
         }
+
         let lines = window_lines(source, start, end, budget).await.ok()?;
         if let Some(model) = lines
             .iter()
