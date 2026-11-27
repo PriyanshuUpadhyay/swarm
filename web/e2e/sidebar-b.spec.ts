@@ -216,6 +216,15 @@ test("right click leaves the PR chip's native link menu available", async ({ pag
   await page.unrouteAll({ behavior: "wait" });
 });
 
+test("a branchless chat still reserves the same 36 px below the tabs", async ({ page }) => {
+  const row = await withChatFacts(page, (tree, row) => { tree.workspaces[row.selection!.workspace!].branch = null; });
+  await row.locator(".chat-title").click();
+  const strip = page.getByTestId("branch-bar");
+  await expect(strip).toHaveCSS("height", "36px");
+  await expect(strip).toHaveAttribute("aria-hidden", "true");
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page }) => {
   await load(page);
   await page.getByTestId("home-button").click();

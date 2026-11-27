@@ -6,7 +6,7 @@ import { BranchDiff, PrChip } from "./pr-chip";
 
 export function BranchBar({ app, workspace }: { app: App; workspace: string }) {
   const facts = useSyncExternalStore(app.subscribe, () => workspaceRow(app.view.tree, workspace));
-  if (!facts?.branch) return null;
+  if (!facts?.branch) return <div className="branch-bar" data-testid="branch-bar" aria-hidden />;
   return (
     <div className="branch-bar" data-testid="branch-bar">
       <span className="branch-name" title={facts.branch}>
