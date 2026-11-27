@@ -37,7 +37,7 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
     capture_command(command, seconds, None).map(|(output, _)| output)
 }
 
-/// Keeps at most `limit` stdout bytes and reports if there were more. Both paths reap the child.
+/// Stops the command at the first byte over `limit`. An overflow can return a killed status.
 pub fn run_command_capped(
     command: &mut Command,
     seconds: u64,
@@ -61,16 +61,21 @@ fn capture_command(
         command.process_group(0);
     }
     let mut child = command.spawn().map_err(|e| e.to_string())?;
+    let pid = child.id();
     let mut stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let (output, receive) = std::sync::mpsc::channel();
     let out_sender = output.clone();
     let out_read = std::thread::spawn(move || {
-        let mut read = || -> std::io::Result<_> {
+        let read = || -> std::io::Result<_> {
             let mut bytes = Vec::with_capacity(cap.unwrap_or(0));
             let overflow = if let Some(cap) = cap {
                 std::io::copy(&mut stdout.by_ref().take(cap as u64), &mut bytes)?;
-                std::io::copy(&mut stdout, &mut std::io::sink())? != 0
+                let overflow = std::io::copy(&mut stdout.take(1), &mut std::io::sink())? != 0;
+                if overflow {
+                    stop_group(pid);
+                }
+                overflow
             } else {
                 stdout.read_to_end(&mut bytes)?;
                 false
@@ -87,7 +92,6 @@ fn capture_command(
         ));
     });
     let deadline = Instant::now() + Duration::from_secs(seconds);
-    let pid = child.id();
     let (finished, completion) = std::sync::mpsc::channel();
     let wait = std::thread::spawn(move || {
         let status = child.wait();

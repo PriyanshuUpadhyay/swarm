@@ -73,7 +73,11 @@ pub(super) async fn panel_read(
             .ok_or_else(|| {
                 error(
                     StatusCode::PAYLOAD_TOO_LARGE,
-                    "The complete diff exceeds 2 MiB or 20,010 lines. The preview stays open.",
+                    &format!(
+                        "The complete diff exceeds {} MiB or {} lines. The preview stays open.",
+                        changes::FULL_BYTES / (1024 * 1024),
+                        changes::FULL_LINES,
+                    ),
                 )
             });
         }

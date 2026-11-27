@@ -16,8 +16,8 @@ use std::{
 type Result<T> = std::result::Result<T, Error>;
 type Counts = (Option<usize>, Option<usize>);
 type FileCounts = BTreeMap<String, Counts>;
-const FULL_BYTES: usize = 2 * 1024 * 1024;
-const FULL_LINES: usize = 20_010;
+pub const FULL_BYTES: usize = 2 * 1024 * 1024;
+pub const FULL_LINES: usize = 20_010;
 
 #[derive(Clone, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -79,7 +79,7 @@ fn git_bytes(read: &ReadCommands<'_>, args: &[&str], capped: bool) -> Result<(Ve
     }
     .map_err(Error::Failed)?;
 
-    if !output.status.success() {
+    if !overflow && !output.status.success() {
         return Err(Error::Failed(
             String::from_utf8_lossy(&output.stderr).trim().into(),
         ));

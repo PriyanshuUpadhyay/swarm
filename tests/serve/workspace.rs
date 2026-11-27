@@ -77,13 +77,14 @@ fn full_changes_rejects_output_over_cap_without_changing_the_preview() {
     assert_eq!(status, 413, "{body}");
     assert!(body.contains("2 MiB"), "{body}");
 
-    let mut git = git_command(&server);
-    git.args(["diff", "--", "large.txt"]);
-    let cap = 2_097_152;
-    let (output, overflow) = swarm::view::discovery::run_command_capped(&mut git, 5, cap).unwrap();
-    assert!(output.status.success() && overflow);
-    assert_eq!(output.stdout.len(), cap);
-    assert_eq!(output.stdout.capacity(), cap);
+    // Leave stdout open after the cap so waiting for EOF would hit the command deadline.
+    let mut command = Command::new("sh");
+    command.args(["-c", "printf 12345; exec sleep 30"]);
+    let (output, overflow) =
+        swarm::view::discovery::run_command_capped(&mut command, 1, 4).unwrap();
+    assert!(overflow);
+    assert_eq!(output.stdout, b"1234");
+    assert_eq!(output.stdout.capacity(), 4);
 }
 
 #[test]
