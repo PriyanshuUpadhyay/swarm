@@ -22,4 +22,9 @@ describe("new chat places", () => {
     ]);
     expect(defaultTarget(list, tree, "/notes")?.cwd).toBe("/notes");
   });
+  it("offers only worktree places for an archived git root, not an archived plain folder", () => {
+    const archived = (projectPath: string) => folderFacts(projectPath, projectPath, { archived: true, newChatEnabled: false });
+    const catalog = { ...tree, workspaces: { "/hub": archived("/hub"), "/notes": archived("/notes") } };
+    expect(targets(catalog, null)).toEqual([{ cwd: "/hub", project: "/hub", title: "hub", git: true, worktreeOnly: true }]);
+  });
 });

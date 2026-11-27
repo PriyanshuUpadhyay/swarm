@@ -67,6 +67,27 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
 
     let project_of = tokio::task::spawn_blocking(move || {
         let target = chat_target(&snapshot_app, &allowed_cwd, true)?;
+        if target.worktree_only {
+            match &place {
+                None | Some(Place::Here) => return Err(read_only_error("chat")),
+                Some(Place::Branch { branch }) => {
+                    let common = lifecycle::common(target.tree_project()?)
+                        .ok_or_else(|| read_only_error("chat"))?;
+                    let name = branch.strip_prefix("origin/").unwrap_or(branch);
+                    if lifecycle::references(common)
+                        .map_err(lifecycle_error)?
+                        .checkouts
+                        .contains_key(name)
+                    {
+                        return Err(error(
+                            StatusCode::CONFLICT,
+                            "Pick a branch with no worktree.",
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
 
         // With no place, a hub's main makes the chat's own worktree and any other folder starts
         // the chat in itself (ADR 0146); the composer's `new` makes one in any git project.
@@ -100,12 +121,13 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
 struct Target {
     project: String,
     hub_main: bool,
+    worktree_only: bool,
     tree: tree::Tree,
     saved: choices_store::Saved,
 }
 
-/// Checks that a new chat may start in `cwd`: a workspace or project of the tree, under the
-/// allowed roots, and not read-only. A start passes `recheck_projects`, so its hub-main mark is
+/// Checks the folder named by a new chat. An archived Git root can name a project for a new
+/// worktree, but cannot be the chat's folder. A start passes `recheck_projects`, so its hub-main mark is
 /// that of the git folders now (ADR 0146); a menu or a preview reads the catalog of the last 10 s.
 fn chat_target(app: &App, cwd: &str, recheck_projects: bool) -> Result<Target, ApiError> {
     let (tree, saved) = fresh_lifecycle_tree(app, recheck_projects)?;
@@ -113,19 +135,23 @@ fn chat_target(app: &App, cwd: &str, recheck_projects: bool) -> Result<Target, A
     let project = found
         .map(|(project, _)| project)
         .or_else(|| tree.projects.iter().find(|p| p.path == cwd))
-        .ok_or_else(|| error(StatusCode::FORBIDDEN, "cwd is outside the workspace tree"))?
-        .path
-        .clone();
+        .ok_or_else(|| error(StatusCode::FORBIDDEN, "cwd is outside the workspace tree"))?;
 
     lifecycle::checked_path(&app.root, cwd, true).map_err(lifecycle_error)?;
-    if is_read_only(&tree, &saved, cwd) {
-        return Err(read_only_error("chat"));
+    let worktree_only = is_read_only(&tree, &saved, cwd);
+    if worktree_only {
+        if project.path != cwd || !found.is_some_and(|(_, w)| !w.missing && !w.removed) {
+            return Err(read_only_error("chat"));
+        }
+        let common = lifecycle::common(project).ok_or_else(|| read_only_error("chat"))?;
+        lifecycle::checked_path(&app.root, common, true).map_err(lifecycle_error)?;
     }
 
     let hub_main = found.is_some_and(|(_, workspace)| workspace.hub_main);
     Ok(Target {
-        project,
+        project: project.path.clone(),
         hub_main,
+        worktree_only,
         tree,
         saved,
     })
@@ -177,6 +203,18 @@ fn chat_call(cwd: &str, session: Option<&str>) -> CliCall {
 async fn open_session(app: &App, cwd: &str) -> Result<String, ApiError> {
     let call = chat_call(cwd, None);
     let _create = app.chat_create.lock().await;
+    let root = app.root.clone();
+    let cwd = cwd.to_owned();
+    // Existing-branch starts may resolve to a different folder than the request named.
+    tokio::task::spawn_blocking(move || {
+        let saved = choices_store::load(&root, true).map_err(choice_error)?;
+        if saved.owner.archived.contains(&cwd) {
+            return Err(read_only_error("chat"));
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))??;
     run_cli(app, call.args(&["init"]), None).await?;
     let output = run_cli(app, call.args(&["session", "new", "lane"]), None).await?;
     let session = output.trim();

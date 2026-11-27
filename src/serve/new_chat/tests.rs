@@ -60,6 +60,55 @@ async fn new_chat_route() {
 }
 
 #[tokio::test]
+async fn an_archived_git_root_can_start_only_in_a_new_worktree() {
+    let fixture = action_fixture();
+    let repo = fixture.dir.join("archived-repo");
+    std::fs::create_dir(&repo).unwrap();
+    let repo = std::fs::canonicalize(repo).unwrap();
+    let cwd = repo.to_str().unwrap();
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(&repo)
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "-qb", "main"]);
+    git(&["commit", "--no-gpg-sign", "--allow-empty", "-qm", "base"]);
+    choices_store::update(&fixture.app.root, None, |owner, _| {
+        owner.project_paths.push(cwd.into());
+        owner.archived.insert(cwd.into());
+        Ok(())
+    })
+    .unwrap();
+
+    let here = call_action(
+        &fixture,
+        "/api/chat/new",
+        json!({"cwd":cwd,"place":{"kind":"here"}}),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(here.0, StatusCode::CONFLICT);
+    let started = start_chat(&fixture, json!({"cwd":cwd,"place":{"kind":"new"}}))
+        .await
+        .unwrap();
+    assert_ne!(started["workspace"], cwd);
+    assert!(Path::new(started["workspace"].as_str().unwrap()).is_dir());
+}
+
+#[tokio::test]
 async fn start_status_keeps_the_first_send_failure() {
     let fixture = action_fixture();
     let session = uuid::Uuid::now_v7();

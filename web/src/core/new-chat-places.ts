@@ -8,7 +8,7 @@ export type Place = { kind: "new" } | { kind: "here" } | { kind: "branch"; branc
 
 /** A project the composer can start in: the folder a new chat names, and whether it is a git
  *  project, which can make a new worktree; a plain folder starts the chat in itself. */
-export type Target = { cwd: string; project: string; title: string; git: boolean };
+export type Target = { cwd: string; project: string; title: string; git: boolean; worktreeOnly?: true };
 
 /** What a new worktree gets, for the composer's card. */
 export type Preview = { base: string | null; fetchedUnixS: number | null; setup: string | null };
@@ -29,9 +29,11 @@ export function targets(tree: TreeView | null, workspace: string | null): Target
     const main = eligible.find(([, w]) => w.startsChatWorktree)?.[0];
     const current = eligible.find(([path]) => path === workspace)?.[0];
     const own = workspaceRow(tree, project.path);
-    const fallback = own?.newChatEnabled || (!own && !project.folder) ? project.path : null;
+    const archivedGit = !project.folder && own?.archived && !own.missing;
+    const fallback = own?.newChatEnabled || (!own && !project.folder) || archivedGit ? project.path : null;
     const cwd = main ?? current ?? fallback;
-    return cwd ? [{ cwd, project: project.path, title: project.title, git: !project.folder }] : [];
+    return cwd ? [{ cwd, project: project.path, title: project.title, git: !project.folder,
+      ...(archivedGit && cwd === project.path ? { worktreeOnly: true as const } : {}) }] : [];
   });
 }
 

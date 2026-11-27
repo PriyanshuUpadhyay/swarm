@@ -54,7 +54,8 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
   const unborn = options !== null && options.defaultBranch === null;
   // The tab of the kind already picked keeps its pick.
   const pick = (kind: Kind) => kind !== place.kind && onPlace(KINDS[kind][1]);
-  const kinds = Object.entries(KINDS) as [Kind, [string, Place]][];
+  const kinds = (Object.entries(KINDS) as [Kind, [string, Place]][]).filter(([kind]) => kind !== "here" || !target.worktreeOnly);
+  const branches = options ? branchChoices(options, !target.worktreeOnly) : [];
 
   return (
     <div className="grid gap-3" data-testid="place-panel">
@@ -80,8 +81,8 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
       {place.kind === "branch" && !opts && <p className="text-sm text-muted-foreground">Reading branches…</p>}
       {place.kind === "branch" &&
         options &&
-        (branchChoices(options).length ? (
-          <BranchPicker label="Branch" testid="place-branch" branches={branchChoices(options)} open={options.checkouts} value={place.branch} onChange={(branch) => onPlace({ kind: "branch", branch })} />
+        (branches.length ? (
+          <BranchPicker label="Branch" testid="place-branch" branches={branches} open={options.checkouts} value={place.branch} onChange={(branch) => onPlace({ kind: "branch", branch })} />
         ) : (
           <p className="text-sm text-muted-foreground">This project has no branch but the default one.</p>
         ))}
@@ -109,8 +110,8 @@ export function PlacePanel({ app, target, place, onPlace }: { app: App; target: 
 }
 
 /** The Existing branch list: the open worktrees first, then the free branches. */
-function branchChoices(options: NewOptions): string[] {
-  return [...Object.keys(options.checkouts), ...options.branches];
+function branchChoices(options: NewOptions, allowCheckouts: boolean): string[] {
+  return allowCheckouts ? [...Object.keys(options.checkouts), ...options.branches] : options.branches;
 }
 
 /** A filter box over a branch list, so a long list needs no scrolling. Arrow keys move the pick.
