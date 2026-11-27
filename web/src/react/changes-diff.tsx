@@ -138,7 +138,7 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
     setSel(next);
     const layer = d.layer ?? "branch";
     const text = editor?.text || (open ? changes.unfinishedText(d.path, layer) : "");
-    changes.setEditor(d.path, layer, next && { ...next, text, open });
+    changes.setEditor(d.path, layer, next && { ...next, text, open }, next === null);
   };
   // Open the comment box for a pointer selection, not when keyboard state paints a range.
   const onLineSelected: FileDiffOptions<Note, undefined>["onLineSelected"] = (range) => {
@@ -285,6 +285,7 @@ function CommentBox({ label, text, onChange, onAdd, onCancel, onEscape }: {
         aria-label={`Comment on ${label}`}
         placeholder="What should the agent do with these lines?"
         data-testid="comment-input"
+        disabled={pending}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {

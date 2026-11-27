@@ -315,48 +315,46 @@ test("the PR panel shows the branch's PR with passing, then failing checks", asy
 });
 
 
-test("late Add keeps newer editor text and failed Send keeps the draft", async ({ page: tab }) => {
+test("Add locks the comment text until its reply and failed Send keeps the draft", async ({ page: tab }) => {
   await openGitChat(tab);
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   let started!: () => void;
   const entered = new Promise<void>((resolve) => { started = resolve; });
-  let first = true;
   await tab.route("**/api/changes/comment-range", async (route) => {
-    const body = route.request().postDataJSON();
-    if (body.op === "message") {
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "offline" }) });
-      return;
+    if (route.request().postDataJSON().op === "message") {
+      return route.fulfill({ status: 503, json: { error: "offline" } });
     }
-    if (first) {
-      first = false;
-      started();
-      await held;
-    }
+    started();
+    await held;
     await route.continue();
   });
-  await tab.getByTestId("show-changes").click();
-  await row(tab, "README.md").click();
-  await expect(diffPath(tab)).toHaveText("README.md");
-  await (await lineNumber(tab, "A test repository, changed.")).click();
-  const input = tab.getByTestId("comment-input");
-  await input.fill("Old draft");
-  await tab.getByTestId("comment-add").click();
-  await entered;
-  await input.fill("Newer draft");
-  release();
-  await expect(tab.getByTestId("comment-add")).toBeEnabled();
-  await expect(input).toHaveValue("Newer draft");
-  await expect(tab.getByTestId("comment-card")).toHaveCount(0);
-  await tab.getByTestId("comment-add").click();
-  await expect(tab.getByTestId("comment-card")).toContainText("Newer draft");
-  const send = tab.getByTestId("send-comments");
-  await send.click();
-  await expect(send).toBeEnabled();
-  await expect(tab.getByTestId("drafts")).toContainText("1 comment");
-  await expect(tab.getByTestId("comment-card")).toContainText("Newer draft");
-});
 
+  try {
+    await tab.getByTestId("show-changes").click();
+    await row(tab, "README.md").click();
+    await expect(diffPath(tab)).toHaveText("README.md");
+    await (await lineNumber(tab, "A test repository, changed.")).click();
+    const input = tab.getByTestId("comment-input");
+    await input.fill("Saved draft");
+    await tab.getByTestId("comment-add").click();
+    await entered;
+    await expect(input).toBeDisabled({ timeout: 2_000 });
+    await captureThemes(tab, tab.getByTestId("comment-box"), "comment-add-pending");
+
+    release();
+    const card = tab.getByTestId("comment-card");
+    await expect(card).toContainText("Saved draft");
+    const send = tab.getByTestId("send-comments");
+    await send.click();
+    await expect(send).toBeEnabled();
+    await expect(tab.getByTestId("drafts")).toContainText("1 comment");
+    await expect(card).toContainText("Saved draft");
+  } finally {
+    release();
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
 
 test("diff paints supplied text and quote anchors, then plain text without display", async ({ page: tab }) => {
   const errors = await openGitChat(tab);
