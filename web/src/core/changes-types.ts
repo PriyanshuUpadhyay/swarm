@@ -51,7 +51,7 @@ export type Load<T> = { state: "idle" } | { state: "loading" } | { state: "ready
  *  marks, and the owner's text. `at` is the display line it shows under. */
 export type DiffComment = { id: number; path: string; layer: Layer; lines: string; quoted: string[]; text: string; at: number };
 
-export type CommentEditor = { anchor: number; cursor: number; text: string };
+export type CommentEditor = { anchor: number; cursor: number; text: string; open?: boolean };
 
 export type Tab = "changes" | "pr";
 

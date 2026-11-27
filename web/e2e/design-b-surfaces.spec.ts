@@ -203,6 +203,19 @@ test("an oversized Changes range keeps the note and asks for fewer lines", async
   await expect(selection).toHaveCount(2);
 });
 
+test("Show all does not open a comment for a keyboard selection", async ({ page: tab }) => {
+  await openChanges(tab, "big.txt");
+  const diff = tab.getByTestId("diff-body");
+  const input = tab.getByTestId("comment-input");
+  await diff.press("j");
+  await expect(input).toHaveCount(0);
+
+  const cut = tab.getByTestId("diff-capped");
+  await cut.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(cut).toBeHidden({ timeout: 2_000 });
+  await expect(input).toHaveCount(0, { timeout: 2_000 });
+});
+
 test("the 680 px new-chat composer uses the display face only for its question", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page);

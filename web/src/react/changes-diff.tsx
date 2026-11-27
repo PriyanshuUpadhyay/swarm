@@ -121,7 +121,7 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
   const lines = d.display?.lines ?? [];
   const editor = useSyncExternalStore(changes.subscribe, () => changes.editor(d.path, d.layer ?? "branch"));
   const [sel, setSel] = useState<{ anchor: number; cursor: number } | null>(editor);
-  const [composing, setComposing] = useState(!!editor);
+  const composing = !!editor?.open;
   const body = useRef<HTMLDivElement>(null);
   // A new file or a new patch drops the selection.
   const identity = `${d.layer}\n${d.path}\n${d.patch}`;
@@ -129,23 +129,21 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
   if (shown !== identity) {
     setShown(identity);
     setSel(editor);
-    setComposing(!!editor);
   }
 
   const code = (i: number) => spotOf(lines[i]) !== null;
   const lo = sel ? Math.min(sel.anchor, sel.cursor) : -1;
   const hi = sel ? Math.max(sel.anchor, sel.cursor) : -1;
-  const pick = (next: { anchor: number; cursor: number } | null) => {
+  const pick = (next: { anchor: number; cursor: number } | null, open = composing) => {
     setSel(next);
-    changes.setEditor(d.path, d.layer ?? "branch", next && { ...next, text: editor?.text ?? "" });
+    changes.setEditor(d.path, d.layer ?? "branch", next && { ...next, text: editor?.text ?? "", open });
   };
   // Open the comment box for a pointer selection, not when keyboard state paints a range.
   const onLineSelected: FileDiffOptions<Note, undefined>["onLineSelected"] = (range) => {
     const anchor = range ? indexOf(lines, range.side, range.start) : -1;
     const cursor = range ? indexOf(lines, range.endSide ?? range.side, range.end) : -1;
     if (anchor < 0 || cursor < 0) return pick(null);
-    pick({ anchor, cursor });
-    setComposing(true);
+    pick({ anchor, cursor }, true);
   };
   const patch = useMemo(() => patchText(lines, d.path), [d.path, lines]);
   const selected = useMemo((): SelectedLineRange | null => {
@@ -191,14 +189,13 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
       else rowAt(e.currentTarget, spot)?.scrollIntoView({ block: "nearest" });
     } else if ((e.key === "Enter" || e.key === "c") && sel) {
       e.preventDefault();
-      setComposing(true);
+      pick(sel, true);
     } else if (e.key === "Escape" && sel) {
       e.preventDefault();
       setSel(null);
     }
   };
   const done = () => {
-    setComposing(false);
     changes.setEditor(d.path, d.layer ?? "branch", null);
     body.current?.focus();
   };
@@ -209,7 +206,7 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
         <CommentBox
           label={`${d.path}`}
           text={editor?.text ?? ""}
-          onChange={(text) => changes.setEditor(d.path, d.layer ?? "branch", { ...sel, text })}
+          onChange={(text) => changes.setEditor(d.path, d.layer ?? "branch", { ...sel, text, open: true })}
           onAdd={async (text) => {
             const captured = changes.editor(d.path, d.layer ?? "branch");
             // The range route keeps its request cap. Full diffs send only the chosen hunk lines.
