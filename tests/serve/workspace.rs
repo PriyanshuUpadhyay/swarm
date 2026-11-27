@@ -2,35 +2,28 @@
 
 use super::*;
 
-fn git_command(server: &Server) -> Command {
-    let mut command = Command::new("/usr/bin/git");
-    command
-        .arg("-C")
-        .arg(server.dir.join("project"))
-        .env("GIT_CEILING_DIRECTORIES", &server.dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null");
-    command
-}
-
-fn git(server: &Server, args: &[&str]) {
-    let output = git_command(server).args(args).output().unwrap();
-    assert!(output.status.success(), "{:?}", output);
-}
+use super::s6b_changes::git;
 
 #[test]
 fn changes_routes_read_a_large_file_in_both_modes() {
     let server = Server::configured(false, true);
     let project = server.dir.join("project");
-    let git = |args: &[&str]| git(&server, args);
-    git(&["config", "user.name", "Fixture"]);
-    git(&["config", "user.email", "fixture@example.com"]);
+    git(&server, &["config", "user.name", "Fixture"]);
+    git(&server, &["config", "user.email", "fixture@example.com"]);
     fs::write(project.join("large.txt"), "base\n").unwrap();
-    git(&["add", "."]);
-    git(&["-c", "commit.gpgsign=false", "commit", "-qm", "base"]);
-    git(&["switch", "-qc", "feature"]);
+    git(&server, &["add", "."]);
+    git(
+        &server,
+        &["-c", "commit.gpgsign=false", "commit", "-qm", "base"],
+    );
+    git(&server, &["switch", "-qc", "feature"]);
+
     fs::write(project.join("large.txt"), "new\n".repeat(20_000)).unwrap();
-    git(&["add", "."]);
-    git(&["-c", "commit.gpgsign=false", "commit", "-qm", "large"]);
+    git(&server, &["add", "."]);
+    git(
+        &server,
+        &["-c", "commit.gpgsign=false", "commit", "-qm", "large"],
+    );
     fs::write(project.join("large.txt"), "local\n".repeat(20_000)).unwrap();
     let mut observed = Vec::new();
     let mut expected = Vec::new();
