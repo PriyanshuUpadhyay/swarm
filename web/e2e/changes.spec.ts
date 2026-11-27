@@ -356,6 +356,32 @@ test("Add locks the comment text until its reply and failed Send keeps the draft
   }
 });
 
+test("a list refresh adds the new file without closing the full diff", async ({ page: tab }) => {
+  await openGitChat(tab);
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "big.txt").click();
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(tab.getByTestId("diff-capped")).toBeHidden();
+
+  const name = "refresh-added.txt";
+  await tab.route("**/api/changes?**", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.files.push({ path: name, status: "?", layer: "untracked", added: 1, removed: 0 });
+    await route.fulfill({ response, json: data });
+  });
+
+  try {
+    await tab.evaluate(() => dispatchEvent(new Event("focus")));
+    await expect(row(tab, name)).toBeVisible({ timeout: 2_000 });
+    await expect(diffPath(tab)).toHaveText("big.txt");
+    await expect(tab.getByTestId("diff-capped")).toBeHidden();
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+
 test("diff paints supplied text and quote anchors, then plain text without display", async ({ page: tab }) => {
   const errors = await openGitChat(tab);
   let supplied = true;
