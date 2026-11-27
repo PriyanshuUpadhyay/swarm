@@ -116,7 +116,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
           onMouseEnter={() => preview?.(modelRun(provider, m))} onFocus={() => preview?.(modelRun(provider, m))}
           onMouseLeave={() => preview?.(null)} onBlur={() => preview?.(null)}>
           {nameCli && <><CliMark provider={provider} selected={on} /><span className="shrink-0 text-xs text-muted-foreground">{cliName(provider)}</span></>}
-          <span className="min-w-0 truncate">{m.label}</span>
+          <span className="min-w-0 truncate font-mono">{m.label}</span>
           {m.note && <span className="truncate text-xs text-muted-foreground" title={m.note}>{m.note}</span>}
           {missing && <span className="text-xs text-muted-foreground">Unavailable</span>}
           {current?.provider === provider && current.model === m.id && <span className="ml-auto rounded border border-menu-border px-1 text-xs text-muted-foreground">now</span>}
@@ -167,7 +167,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
               {rail !== "favorites" && Array.isArray(list) && !list.length && <p className="px-2 text-xs text-muted-foreground">No models listed. Type a model id.</p>}
               {rail === "favorites" && !favorites.length && <p className="px-2 text-xs text-muted-foreground">Star a model to see it here.</p>}
               {typeof list === "string" && <p className="line-clamp-2 px-2 text-xs text-failed">{list}</p>}
-              {custom && <button type="button" data-model-id={custom} data-testid={`run-custom-${rail}`} className="w-full truncate rounded-md px-2 py-1 text-left hover:bg-menu-hover" onClick={() => choose(rail, custom)}>Use “{custom}”</button>}
+              {custom && <button type="button" data-model-id={custom} data-testid={`run-custom-${rail}`} className="w-full truncate rounded-md px-2 py-1 text-left hover:bg-menu-hover" onClick={() => choose(rail, custom)}>Use “<span className="font-mono">{custom}</span>”</button>}
             </div>
           </div>
         </div>
