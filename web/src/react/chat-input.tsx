@@ -35,7 +35,7 @@ function EndedControls({ app, sessionId, chair }: { app: App; sessionId: string;
   const run = state.endedRun?.[sessionId];
   const busy = state.resuming?.[sessionId] === true;
   const handoff = run?.model && run.provider !== chair.provider;
-  const canResume = chair.resumable || handoff;
+  const canResume = chair.resumable || chair.provider !== null;
   const carry = savedCarry(app.view.tree?.prefs);
   const label = handoff && endedCarry(carry) !== carry ? "Resume with File" : "Resume";
   return (

@@ -252,6 +252,19 @@ test("reload drops a busy pick rather than applying it on the now-idle chat", as
   expect(switches).toBe(0);
 });
 
+test("Resume links a new same-CLI session when the ended chat has no turn", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  await patchLiveChair(tab, (chair, snapshot, live) => {
+    Object.assign(chair, { provider: "claude", model: "model-a", alive: false, state: "done" });
+    snapshot.sessions.find((session) => session.id === live)!.chair_id = null;
+  });
+  const attempts = await captureRunPost(tab, "continue");
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect.poll(() => attempts).toEqual([{ old_session: process.env.SWARM_E2E_LIVE, provider: "claude", model: "model-a", carry: "clean" }]);
+});
+
 test("an ended cross-CLI resume offers File when the saved carry is Summary", async ({ page: tab }) => {
   await pickerCatalog(tab);
   await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", alive: false, state: "done" }); });

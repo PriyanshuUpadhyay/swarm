@@ -321,13 +321,16 @@ export class Lifecycle {
     const chair = this.app.composing.chair(session);
     if (!chair.unreachable) return;
     const run = this.state.endedRun?.[session];
-    const handoff = run?.model && run.provider !== chair.provider;
-    if (!chair.resumable && !handoff) return;
+    const provider = run?.provider ?? chair.provider;
+    if (!provider) return;
+    const foreign = provider !== chair.provider;
 
     this.set({ resuming: { ...this.state.resuming, [session]: true }, switchModel: null });
     try {
-      if (handoff && run?.model) {
-        if (!await this.switchModel(session, run.provider, run.model, run.account, run.effort, endedCarry(savedCarry(this.app.tree?.prefs)))) return;
+      if (foreign || !chair.resumable) {
+        const carry = foreign ? endedCarry(savedCarry(this.app.tree?.prefs)) : "clean";
+        const next = run ?? chair;
+        if (!await this.switchModel(session, provider, next.model ?? "default", next.account, next.effort, carry)) return;
       } else {
         await this.api.post("/api/chat/resume", {
           session,
