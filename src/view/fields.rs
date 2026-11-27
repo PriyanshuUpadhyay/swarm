@@ -389,11 +389,17 @@ pub fn requested_paths<'a>(
         .map(|w| w.path.as_str())
         .collect()
 }
+struct GithubStamp {
+    at: i64,
+    branch: Option<String>,
+    merged_head: Option<String>,
+}
+
 #[derive(Default)]
 pub struct FieldReader {
     pub fields: BTreeMap<String, WorkspaceFields>,
     dirty_at: BTreeMap<String, i64>,
-    github_at: BTreeMap<String, (i64, Option<String>)>,
+    github_at: BTreeMap<String, GithubStamp>,
     diff_at: BTreeMap<String, (i64, String)>,
     cursor: Option<String>,
     cut_path: Option<String>,
@@ -453,8 +459,8 @@ impl FieldReader {
         let branch_of = |path: &str| tree.workspace(path).and_then(|(_, w)| w.branch.as_ref());
 
         self.dirty_at.retain(|path, _| dirty.contains(path));
-        self.github_at.retain(|path, (_, branch)| {
-            let keep = github.contains(path) && branch.as_ref() == branch_of(path);
+        self.github_at.retain(|path, stamp| {
+            let keep = github.contains(path) && stamp.branch.as_ref() == branch_of(path);
             if !keep && let Some(fields) = self.fields.get_mut(path) {
                 fields.pr = None;
                 fields.ci = None;
@@ -510,7 +516,7 @@ impl FieldReader {
                 && self
                     .github_at
                     .get(path)
-                    .is_none_or(|(last, _)| at - last >= 120);
+                    .is_none_or(|stamp| at - stamp.at >= 120);
 
             if read_dirty {
                 self.dirty_at.insert(path.clone(), at);
@@ -522,24 +528,63 @@ impl FieldReader {
                     .cut_path
                     .take_if(|cut| cut.as_str() == path.as_str())
                     .is_some();
-                let result = lookup(path, branch.map(String::as_str), deadline);
-                if matches!(result, Err(LookupError::Deadline(_))) {
-                    if retry {
-                        self.cursor = Some(path.clone());
-                    } else {
-                        self.cut_path = Some(path.clone());
-                    }
-                    break;
-                }
 
-                self.github_at.insert(path.clone(), (at, branch.cloned()));
-                if let Ok(request) = result {
-                    let fields = request.as_ref().map(github_fields).unwrap_or_default();
-                    let current = self.fields.entry(path.clone()).or_default();
-                    current.pr = fields.pr;
-                    current.ci = fields.ci;
-                    current.pr_fact = fields.pr_fact;
-                }
+                let merged_head = match lookup(path, branch.map(String::as_str), deadline) {
+                    Err(LookupError::Deadline(_)) => {
+                        if retry {
+                            self.cursor = Some(path.clone());
+                        } else {
+                            self.cut_path = Some(path.clone());
+                        }
+                        break;
+                    }
+
+                    Err(LookupError::CommandFailed { head }) => {
+                        let old_head = self
+                            .github_at
+                            .get(path)
+                            .and_then(|stamp| stamp.merged_head.as_deref());
+                        match old_head {
+                            Some(old) if old == head => Some(head),
+                            Some(_) => {
+                                if let Some(fields) = self.fields.get_mut(path) {
+                                    fields.pr_fact = None;
+                                }
+                                None
+                            }
+                            None => None,
+                        }
+                    }
+
+                    Ok(request) => {
+                        let fields = request.as_ref().map(github_fields).unwrap_or_default();
+                        let head = request
+                            .as_ref()
+                            .filter(|_| {
+                                fields
+                                    .pr_fact
+                                    .as_ref()
+                                    .is_some_and(|pr| pr.state == PrState::Merged)
+                            })
+                            .and_then(|pr| pr["headRefOid"].as_str())
+                            .map(str::to_owned);
+
+                        let current = self.fields.entry(path.clone()).or_default();
+                        current.pr = fields.pr;
+                        current.ci = fields.ci;
+                        current.pr_fact = fields.pr_fact;
+                        head
+                    }
+                };
+
+                self.github_at.insert(
+                    path.clone(),
+                    GithubStamp {
+                        at,
+                        branch: branch.cloned(),
+                        merged_head,
+                    },
+                );
             }
             self.cursor = Some(path.clone());
         }

@@ -171,7 +171,7 @@ esac
     fs::write(&fail, "").unwrap();
     d.refresh_fields(&t, &owner, 250);
     assert_eq!(d.fields[&cwd], pr_before_error);
-    fs::remove_file(fail).unwrap();
+    fs::remove_file(&fail).unwrap();
 
     let after_error = fs::read_to_string(format!("{home}/gh-calls")).unwrap();
     d.refresh_fields(&t, &owner, 251);
@@ -199,8 +199,20 @@ esac
         json!({"number":8,"url":"https://github.com/owner/repo/pull/8","state":"merged","ci":"unknown"})
     );
     assert!(github::lookup(&cwd).unwrap().is_null());
-    fs::write(format!("{home}/new-head"), "").unwrap();
+    let new_head = format!("{home}/new-head");
+    fs::write(&new_head, "").unwrap();
     assert!(d.refresh_fields(&t, &owner, 730));
+    assert!(d.fields[&cwd].pr_fact.is_none());
+
+    fs::remove_file(&new_head).unwrap();
+    assert!(d.refresh_fields(&t, &owner, 850));
+    let merged = d.fields[&cwd].clone();
+    fs::write(&fail, "").unwrap();
+    assert!(!d.refresh_fields(&t, &owner, 970));
+    assert_eq!(d.fields[&cwd], merged);
+
+    fs::write(&new_head, "").unwrap();
+    assert!(d.refresh_fields(&t, &owner, 1090));
     assert!(d.fields[&cwd].pr_fact.is_none());
 }
 

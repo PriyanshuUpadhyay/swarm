@@ -13,7 +13,7 @@ pub(super) const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Debug)]
 pub enum LookupError {
     Deadline(DeadlineExpired),
-    CommandFailed,
+    CommandFailed { head: String },
 }
 
 pub fn repository(remote: &str) -> Option<String> {
@@ -60,7 +60,7 @@ fn lookup_bounded(
     expected_branch: Option<&str>,
 ) -> Result<Option<Value>, LookupError> {
     let failure = RefCell::new(None);
-    let command = |program: &str, args: &[&str]| {
+    let command = |program: &str, args: &[&str], gh_head: Option<&str>| {
         if failure.borrow().is_some() {
             return None;
         }
@@ -69,7 +69,10 @@ fn lookup_bounded(
         match output {
             Err(cut) => *failure.borrow_mut() = Some(LookupError::Deadline(cut)),
             // Git can have no result, as for a detached HEAD. A failed gh read is not a no-PR result.
-            Ok(None) if program == GH => *failure.borrow_mut() = Some(LookupError::CommandFailed),
+            Ok(None) => {
+                *failure.borrow_mut() =
+                    gh_head.map(|head| LookupError::CommandFailed { head: head.into() });
+            }
             Ok(output) => return output,
         }
         None
@@ -83,12 +86,12 @@ fn lookup_matching(
     path: &str,
     include_merged: bool,
     expected_branch: Option<&str>,
-    command: impl Fn(&str, &[&str]) -> Option<Vec<u8>>,
+    command: impl Fn(&str, &[&str], Option<&str>) -> Option<Vec<u8>>,
 ) -> Option<Value> {
     let git = |args: &[&str]| {
         let mut flags = vec!["-C", path];
         flags.extend(args);
-        String::from_utf8(command("git", &flags)?)
+        String::from_utf8(command("git", &flags, None)?)
             .ok()
             .map(|s| s.trim().to_owned())
     };
@@ -134,8 +137,9 @@ fn lookup_matching(
             targets.insert(repo);
         }
     }
-    let gh =
-        |args: &[&str]| command(GH, args).and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    let gh = |args: &[&str]| {
+        command(GH, args, Some(&head)).and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+    };
     let info = gh(&[
         "repo",
         "view",

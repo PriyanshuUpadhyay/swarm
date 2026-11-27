@@ -3,9 +3,8 @@ use serde_json::json;
 use sidebar_fixture::*;
 use swarm::view::{
     choices::ViewState,
-    discovery::{dirty_count, parse_worktrees},
+    discovery::{DeadlineExpired, dirty_count, parse_worktrees},
     fields::{self, FieldReader, RowFieldLists},
-    discovery::DeadlineExpired,
     github::LookupError,
     tree,
 };
