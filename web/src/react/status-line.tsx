@@ -53,7 +53,8 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
     if (running && !offline && shownAt !== null) refresh();
   }, [running, shownAt, offline, workLabel, turnStartTimeS, turnClockTimeS]);
 
-  if (agent.unreachable || (!agent.waiting && !work)) return null;
+  if (agent.unreachable) return null;
+  if (!agent.waiting && !work) return <div className="h-7" aria-hidden />;
   const label = agent.waiting ? "Waiting for your answer" : running ? workLabel : work?.label;
   const clock = agent.waiting ? null : work?.clock;
   const target = inputTarget(agent);

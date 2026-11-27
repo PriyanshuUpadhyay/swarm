@@ -38,8 +38,12 @@ test("the status line names the work and keeps the turn clock outside the log", 
   };
   const status = page.getByTestId("chat-status-line");
   const send = page.getByTestId("send");
+  const transcript = page.getByTestId("transcript");
+  const bottom = () => transcript.evaluate((el) => el.getBoundingClientRect().bottom);
 
   try {
+    const idleBottom = await bottom();
+    await captureThemes(page, page.locator(".chat-input"), "status-idle");
     await change("working");
     await expect(send).toHaveCount(0);
     await page.clock.runFor(199);
@@ -48,6 +52,8 @@ test("the status line names the work and keeps the turn clock outside the log", 
     await expect(status.getByRole("status")).toHaveText("Running serve tests", { timeout: 2000 });
     await expect(status.getByLabel("Turn elapsed: 1:05")).toBeVisible({ timeout: 2000 });
     await expect(status.getByTestId("stop")).toBeEnabled();
+    expect(await bottom()).toBeCloseTo(idleBottom, 1);
+    await captureThemes(page, page.locator(".chat-input"), "status-working");
     await expect(page.getByTestId("transcript").getByText("Working…", { exact: true })).toHaveCount(0);
     await captureThemes(page, status, "working");
 
@@ -58,6 +64,7 @@ test("the status line names the work and keeps the turn clock outside the log", 
     await expect(status).toBeVisible();
     await page.clock.runFor(1);
     await expect(status).toHaveCount(0);
+    expect(await bottom()).toBeCloseTo(idleBottom, 1);
 
     await change("blocked");
     await expect(status).toContainText("Waiting for your answer");
