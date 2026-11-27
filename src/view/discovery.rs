@@ -32,6 +32,9 @@ pub fn run(program: &str, args: &[&str], seconds: u64) -> Option<Vec<u8>> {
         .map(|output| output.stdout)
 }
 
+#[derive(Debug)]
+pub struct DeadlineExpired;
+
 pub(super) fn run_before(
     program: &str,
     args: &[&str],
@@ -407,9 +410,6 @@ impl Discovery {
         }
     }
 }
-#[derive(Debug)]
-pub struct DeadlineExpired;
-
 pub(super) fn command_seconds_left(deadline: Instant) -> Option<u64> {
     let seconds = deadline.saturating_duration_since(Instant::now()).as_secs();
     (seconds > 0).then_some(seconds)

@@ -164,6 +164,7 @@ fn requested_paths_and_independent_cache_intervals() {
         |_, _, _| None,
     ));
     assert_eq!((dirty, github), (0, 0));
+
     o.fields.chat.push("dirty".into());
     o.fields.tab.push("ci".into());
     assert!(cache.refresh_fields_with(
@@ -183,6 +184,7 @@ fn requested_paths_and_independent_cache_intervals() {
         |_, _, _| None,
     ));
     assert_eq!((dirty, github), (2, 2));
+
     cache.refresh_fields_with(
         &t,
         &o,
@@ -198,6 +200,7 @@ fn requested_paths_and_independent_cache_intervals() {
         |_, _, _| None,
     );
     assert_eq!((dirty, github), (2, 2));
+
     cache.refresh_fields_with(
         &t,
         &o,
@@ -213,6 +216,7 @@ fn requested_paths_and_independent_cache_intervals() {
         |_, _, _| None,
     );
     assert_eq!((dirty, github), (4, 2));
+
     cache.refresh_fields_with(
         &t,
         &o,
@@ -228,6 +232,7 @@ fn requested_paths_and_independent_cache_intervals() {
         |_, _, _| None,
     );
     assert_eq!((dirty, github), (6, 4));
+
     assert!(
         cache
             .fields

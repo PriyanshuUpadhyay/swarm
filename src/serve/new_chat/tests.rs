@@ -68,6 +68,7 @@ async fn an_archived_git_root_can_start_only_in_a_new_worktree() {
     let cwd = repo.to_str().unwrap();
 
     lifecycle::check_git(cwd, &["init", "-qb", "main"]).unwrap();
+
     lifecycle::check_git(
         cwd,
         &[
