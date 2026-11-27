@@ -6,7 +6,7 @@ import { ApiError, sleep, type Snapshot } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 import { RunCatalog } from "./run-catalog";
-import { chooseModel, savedCarry, switchOutcome, type Run, type SwitchCarry } from "./composer";
+import { chooseModel, endedCarry, savedCarry, switchOutcome, type Run, type SwitchCarry } from "./composer";
 import {
   type NewOptions,
   type Issue,
@@ -327,7 +327,7 @@ export class Lifecycle {
     this.set({ resuming: { ...this.state.resuming, [session]: true }, switchModel: null });
     try {
       if (handoff && run?.model) {
-        if (!await this.switchModel(session, run.provider, run.model, run.account, run.effort, savedCarry(this.app.tree?.prefs))) return;
+        if (!await this.switchModel(session, run.provider, run.model, run.account, run.effort, endedCarry(savedCarry(this.app.tree?.prefs)))) return;
       } else {
         await this.api.post("/api/chat/resume", {
           session,

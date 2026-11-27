@@ -202,6 +202,9 @@ export const CARRY_OPTIONS = [
   ["clean", "No history"],
 ] as const satisfies [string, string][];
 
+/** An ended chair cannot write a summary; the Resume with File action names the alternative. */
+export const endedCarry = (carry: Carry): Carry => carry === "summary" ? "file" : carry;
+
 export function savedCarry(prefs: { switchCarry?: string } | undefined): Carry {
   const mode = prefs?.switchCarry;
   return CARRY_OPTIONS.find(([key]) => key === mode)?.[0] ?? "file";

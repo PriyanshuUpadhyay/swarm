@@ -1,7 +1,7 @@
 import { TriangleAlertIcon } from "lucide-react";
 import { RunChip, useRunState } from "./run-chip";
 import type { App, Banner, Composer } from "../core/app";
-import type { AgentInput } from "../core/composer";
+import { endedCarry, savedCarry, type AgentInput } from "../core/composer";
 import { Button } from "../components/ui/button";
 import { ComposerBox } from "./composer";
 import { PromptCard } from "./prompt-card";
@@ -34,13 +34,16 @@ function EndedControls({ app, sessionId, chair }: { app: App; sessionId: string;
   const state = useRunState(app);
   const run = state.endedRun?.[sessionId];
   const busy = state.resuming?.[sessionId] === true;
-  const canResume = chair.resumable || (run?.model && run.provider !== chair.provider);
+  const handoff = run?.model && run.provider !== chair.provider;
+  const canResume = chair.resumable || handoff;
+  const carry = savedCarry(app.view.tree?.prefs);
+  const label = handoff && endedCarry(carry) !== carry ? "Resume with File" : "Resume";
   return (
     <div className="grid justify-items-center gap-2">
       <div className="flex items-center gap-2">
         <RunChip app={app} sessionId={sessionId} chair={chair} ended />
         {canResume && <Button size="sm" data-testid="resume-chat" disabled={busy} onClick={() => void app.life.resumeChat(sessionId)}>
-          {busy ? "Resuming…" : "Resume"}
+          {busy ? "Resuming…" : label}
         </Button>}
       </div>
       {canResume && <p className={`text-sm/4 text-muted-foreground ${state.switchModel === sessionId ? "invisible" : ""}`}>Resume goes on in this chat</p>}

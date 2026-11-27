@@ -252,6 +252,23 @@ test("reload drops a busy pick rather than applying it on the now-idle chat", as
   expect(switches).toBe(0);
 });
 
+test("an ended cross-CLI resume offers File when the saved carry is Summary", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", alive: false, state: "done" }); });
+  await patchTreePrefs(tab, (prefs) => { prefs.switchCarry = "summary"; });
+  const attempts = await captureRunPost(tab, "continue");
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await picker.getByRole("button", { name: "Codex", exact: true }).click();
+  await picker.getByRole("button", { name: "Other model", exact: true }).click();
+  await expect(picker.getByTestId("run-outcome")).toContainText("chat text in a file");
+  await tab.keyboard.press("Escape");
+  await tab.getByRole("button", { name: "Resume with File" }).click();
+  await expect.poll(() => attempts.map((run) => run.carry)).toEqual(["file"]);
+});
+
 test("an ended chat keeps a foreign-CLI pick until Resume and uses File by default", async ({ page: tab }) => {
   await pickerCatalog(tab);
   const live = process.env.SWARM_E2E_LIVE!;
