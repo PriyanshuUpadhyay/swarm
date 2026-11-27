@@ -71,12 +71,14 @@ pub(super) async fn panel_read(
             .map_err(lifecycle_error)?
             .map(Json)
             .ok_or_else(|| {
+                let lines = changes::FULL_LINES;
                 error(
                     StatusCode::PAYLOAD_TOO_LARGE,
                     &format!(
-                        "The complete diff exceeds {} MiB or {} lines. The preview stays open.",
+                        "The complete diff exceeds {} MiB or {},{:03} lines. The preview stays open.",
                         changes::FULL_BYTES / (1024 * 1024),
-                        changes::FULL_LINES,
+                        lines / 1_000,
+                        lines % 1_000,
                     ),
                 )
             });

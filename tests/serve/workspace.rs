@@ -68,7 +68,7 @@ fn full_changes_rejects_output_over_cap_without_changing_the_preview() {
     );
     let (status, _, body) = server.request("GET", &format!("{url}&full=1"), "", "", true);
     assert_eq!(status, 413, "{body}");
-    assert!(body.contains("2 MiB"), "{body}");
+    assert!(body.contains("2 MiB or 20,010 lines"), "{body}");
 
     // Leave stdout open after the cap so waiting for EOF would hit the command deadline.
     let mut command = Command::new("sh");
