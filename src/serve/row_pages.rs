@@ -108,11 +108,11 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
         swarm::store::continuation_logs(&db, &query.session).map_err(|err| {
             actions::map_history_error(
                 err,
-                [
-                    "unknown session",
-                    "invalid chat history",
-                    "chat history read failed",
-                ],
+                actions::HistoryErrorMessages {
+                    missing: "unknown session",
+                    invalid: "invalid chat history",
+                    failed: "chat history read failed",
+                },
             )
         })?
     } else {

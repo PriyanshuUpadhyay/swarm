@@ -329,17 +329,27 @@ pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
 pub(super) fn history_read_error(err: rusqlite::Error) -> ApiError {
     map_history_error(
         err,
-        [
-            "Chat not found. Open a chat from the sidebar.",
-            "This chat has an invalid history link. Open a different chat.",
-            "Could not read this chat's history. Try again.",
-        ],
+        HistoryErrorMessages {
+            missing: "Chat not found. Open a chat from the sidebar.",
+            invalid: "This chat has an invalid history link. Open a different chat.",
+            failed: "Could not read this chat's history. Try again.",
+        },
     )
+}
+
+pub(super) struct HistoryErrorMessages {
+    pub(super) missing: &'static str,
+    pub(super) invalid: &'static str,
+    pub(super) failed: &'static str,
 }
 
 pub(super) fn map_history_error(
     err: rusqlite::Error,
-    [missing, invalid, failed]: [&str; 3],
+    HistoryErrorMessages {
+        missing,
+        invalid,
+        failed,
+    }: HistoryErrorMessages,
 ) -> ApiError {
     match err {
         rusqlite::Error::QueryReturnedNoRows => error(StatusCode::NOT_FOUND, missing),
