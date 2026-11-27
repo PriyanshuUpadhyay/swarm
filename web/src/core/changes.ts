@@ -227,6 +227,7 @@ export class Changes {
     const keep = this.list.state === "ready";
     if (!keep) this.list = LOADING;
     this.notify();
+
     // Branch mode needs a base; the first read in local mode lists the refs.
     if (this.mode === "branch" && !this.base()) {
       try {
@@ -240,6 +241,7 @@ export class Changes {
         return this.notify();
       }
     }
+
     let next: Load<ChangeList>;
     try {
       next = { state: "ready", data: await this.app.api.get<ChangeList>("/api/changes", this.query()) };
