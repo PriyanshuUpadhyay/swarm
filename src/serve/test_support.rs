@@ -14,6 +14,27 @@ pub(super) fn client(keys: &[(&str, u64)]) -> Client {
     }
 }
 
+pub(super) fn new_test_session(db: &rusqlite::Connection, chair: Option<(&str, &str)>) -> String {
+    swarm::store::create_session(
+        db,
+        "lane",
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        chair,
+        Some("tmux-swarm"),
+    )
+    .unwrap()
+}
+
+pub(super) fn new_linked_test_session(
+    db: &rusqlite::Connection,
+    predecessor: &str,
+    chair: Option<(&str, &str)>,
+) -> String {
+    let leaf = new_test_session(db, chair);
+    swarm::store::continue_session(db, &leaf, predecessor).unwrap();
+    leaf
+}
+
 pub(super) struct Fixture {
     pub(super) app: App,
     pub(super) dir: PathBuf,

@@ -8,16 +8,7 @@ async fn linked_history_pages_across_logs_without_changing_the_leaf_offsets() {
     let fixture = Fixture::new();
     let leaf = {
         let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-        let leaf = swarm::store::create_session(
-            &connection,
-            "lane",
-            Path::new(env!("CARGO_MANIFEST_DIR")),
-            Some(("codex", "second")),
-            Some("tmux-swarm"),
-        )
-        .unwrap();
-        swarm::store::continue_session(&connection, &leaf, &fixture.session).unwrap();
-        leaf
+        new_linked_test_session(&connection, &fixture.session, Some(("codex", "second")))
     };
 
     let user = json!({"type":"user","message":{"content":"older"}});
@@ -223,6 +214,12 @@ async fn follow_rows(fixture: &Fixture, from: u64) -> Events {
     }
 }
 
+async fn finish_following(stream: Events, key: &str) {
+    let mut done = stream.app.hub.lock().unwrap().followers[key].done.clone();
+    drop(stream);
+    done.wait_for(|finished| *finished).await.unwrap();
+}
+
 #[tokio::test]
 async fn follower_cached_tail_keeps_the_prior_model_change() {
     let fixture = model_change_before_tail();
@@ -230,10 +227,8 @@ async fn follower_cached_tail_keeps_the_prior_model_change() {
     let stream = follow_rows(&fixture, end).await;
 
     let key = format!("{}:chair", fixture.session);
-    let mut done = fixture.app.hub.lock().unwrap().followers[&key].done.clone();
     let tail = row_page(&fixture, 200, None).await.unwrap();
-    drop(stream);
-    done.wait_for(|finished| *finished).await.unwrap();
+    finish_following(stream, &key).await;
 
     assert!(
         tail["rows"]
@@ -286,9 +281,7 @@ async fn append_while_paging() {
         row_texts(&row_page(&fixture, 1, None).await.unwrap()).len(),
         201
     );
-    let mut done = fixture.app.hub.lock().unwrap().followers[&key].done.clone();
-    drop(stream);
-    done.wait_for(|finished| *finished).await.unwrap();
+    finish_following(stream, &key).await;
 }
 #[tokio::test]
 async fn retry_history() {

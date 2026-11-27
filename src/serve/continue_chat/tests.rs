@@ -33,15 +33,7 @@ async fn prepare_ended_file(
 async fn file_carry_refuses_a_link_whose_stored_log_is_gone() {
     let (fixture, mut body) = ended_file_carry();
     let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-    let leaf = swarm::store::create_session(
-        &db,
-        "lane",
-        Path::new(env!("CARGO_MANIFEST_DIR")),
-        Some(("pi", "leaf")),
-        Some("tmux-swarm"),
-    )
-    .unwrap();
-    swarm::store::continue_session(&db, &leaf, &fixture.session).unwrap();
+    let leaf = new_linked_test_session(&db, &fixture.session, Some(("pi", "leaf")));
 
     db.execute(
         "UPDATE session SET chair_log = ?1 WHERE id = ?2",
