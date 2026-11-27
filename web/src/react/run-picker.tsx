@@ -154,6 +154,10 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
             <Input className={`w-full pl-7 ${current ? "pr-14" : ""}`} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
             {current && <kbd aria-hidden className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border border-border px-1 font-mono text-xs text-muted-foreground">⇧⌘M</kbd>}
           </div>
+          {prefs?.newChatModel && <div className="flex min-w-0 items-center gap-1 px-1 text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate">Default: {cliName(prefs.newChatModel.provider)} · <span className="font-mono">{prefs.newChatModel.model}</span></span>
+            <button type="button" className="shrink-0 rounded px-1 hover:bg-menu-hover" aria-label="Reset new chat default" onClick={() => void app.settings.setPref("newChatModel", null)}>Reset</button>
+          </div>}
           <div data-testid="run-models" className="max-h-[min(300px,38vh)] overflow-y-auto">
             {rail !== "favorites" && !!prefs?.recentModels?.length && <div data-testid="run-recent">
               <p className="px-2 pt-1 text-xs text-muted-foreground">Recent</p>

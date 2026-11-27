@@ -5,7 +5,8 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { row, rows, open, mockRows } from "./ux-helpers";
-import { captureRunPost, mockRunCatalog, patchLiveChair } from "./lifecycle-helpers";
+import { api, captureRunPost, holdChatStart, mockRunCatalog, patchLiveChair, readTree } from "./lifecycle-helpers";
+import type { Prefs, TreeView } from "../src/core/nav";
 
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
@@ -123,6 +124,29 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
   await tab.getByTestId("run-query").fill("custom-id");
   await tab.getByTestId("run-query").press("Enter");
   await expect.poll(() => picks.map((p) => p.model)).toEqual(["model-b", "custom-id"]);
+});
+
+test("a removed new-chat default blocks the start and can be reset", async ({ page: tab }) => {
+  const tree = () => api<TreeView>("/api/tree?view=workspaces");
+  const setDefault = async (model: Prefs["newChatModel"] | null) => api("/api/choices", {
+    revision: (await readTree()).revision, op: "pref", key: "newChatModel", value: model,
+  });
+  const previous = (await tree()).prefs.newChatModel ?? null;
+  const dropped = { provider: "codex", model: "dropped-model" };
+  await setDefault(dropped);
+  try {
+    await mockRunCatalog(tab, { providers: [{ id: "codex" }], models: [{ id: "model-b", label: "Model B" }] });
+    const starts = await holdChatStart(tab);
+    await open(tab);
+    await tab.keyboard.press("Meta+t");
+    await expect(tab.getByText(/The default model for new chats is no longer listed/)).toBeVisible();
+    expect(starts).toEqual([]);
+    await tab.getByTestId("chip-run").click();
+    await tab.getByRole("button", { name: "Reset new chat default" }).click();
+    await expect.poll(async () => (await tree()).prefs.newChatModel).toBeUndefined();
+  } finally {
+    if (previous) await setDefault(previous);
+  }
 });
 
 test("stream loss shows Reconnecting and clears it after hello", async ({ page: tab }, info) => {

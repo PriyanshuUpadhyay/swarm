@@ -64,6 +64,7 @@ const START_TIMEOUT_MS = 10_000;
 
 type StartOptions = {
   composer?: boolean;
+  useSavedDefault?: boolean;
   submittedText?: string;
   queued?: string[];
   /** Lets an upload finish in the start's draft after the composer closes. */
@@ -201,8 +202,9 @@ export class NewChat {
 
   /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. Only a
    *  start that the composer sent closes it and takes its text. */
-  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, submittedText, queued = [], bindUpload }: StartOptions = {}): Promise<boolean> {
-    if (!run.run && run.role === undefined) run = { ...run, run: defaultRun(this.app.tree?.prefs) };
+  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, useSavedDefault = !run.run && run.role === undefined, submittedText, queued = [], bindUpload }: StartOptions = {}): Promise<boolean> {
+    const saved = useSavedDefault ? defaultRun(this.app.tree?.prefs) : null;
+    if (useSavedDefault) run = { ...run, run: saved };
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
     this.posting = true;
@@ -216,6 +218,14 @@ export class NewChat {
 
     let id: string;
     try {
+      if (saved?.model) {
+        const catalog = await this.app.life.runs.models(saved.provider).catch(() => null);
+        if (catalog?.models.length && !catalog.models.some((model) => model.id === saved.model)) {
+          if (!fromComposer && nav === this.app.navSeq) this.open(cwd, place);
+          this.app.notice("The default model for new chats is no longer listed. Reset it in the run picker or pick a new model.", true);
+          return false;
+        }
+      }
       ({ start: id } = await this.app.api.post<{ start: string }>("/api/chat/new", startBody(cwd, prompt, place, run), AbortSignal.timeout(START_TIMEOUT_MS)));
     } catch (err) {
       // The server may have started the chat before the wait ended, so the notice says to look first.

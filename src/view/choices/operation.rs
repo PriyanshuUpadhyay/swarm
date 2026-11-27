@@ -310,8 +310,8 @@ pub fn apply(
             let valid = match key.as_str() {
                 "theme" => matches!(value.as_str(), Some("system" | "light" | "dark")),
                 "switchCarry" => matches!(value.as_str(), Some("file" | "summary" | "clean")),
-                "newChatModel" | "recentModels" => valid_model_choice(&value),
-
+                "newChatModel" => value.is_null() || valid_model_choice(&value),
+                "recentModels" => valid_model_choice(&value),
                 "favoriteModels" => value.as_array().is_some_and(|models| {
                     let mut seen = std::collections::BTreeSet::new();
                     models.iter().all(|model| {
@@ -344,6 +344,8 @@ pub fn apply(
             let prefs = prefs_object(&mut owner.prefs, section)?;
             if key == "recentModels" {
                 put_recent(prefs, value);
+            } else if key == "newChatModel" && value.is_null() {
+                prefs.remove(name);
             } else {
                 prefs.insert(name.into(), value);
             }

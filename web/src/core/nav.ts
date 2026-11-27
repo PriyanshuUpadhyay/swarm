@@ -128,7 +128,7 @@ export type ChoiceOp =
   | { op: "selected_chat"; workspace: string; chat: string | null; recording_history?: boolean }
   | { op: "seen"; workspace: string; chat: string }
   | { op: "setup_script"; project: string; setup_script: string }
-  | { op: "pref"; key: string; value: string | boolean | ModelChoice | ModelChoice[] }
+  | { op: "pref"; key: string; value: string | boolean | ModelChoice | ModelChoice[] | null }
   | { op: "mute_project"; project: string; muted: boolean };
 
 /** The new tree, with each row and section that did not change kept as the old object, so a

@@ -197,6 +197,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     const first = provider ? (await toSend(text, provider, slash.list, () => app.newChat.commands(target.cwd, provider))).text : text;
     const ok = await app.newChat.start(target.cwd, first, place, { role: profile?.name ?? role, run: changed }, {
       composer: true,
+      useSavedDefault: !run && !explicitProfile,
       submittedText: text,
       bindUpload: (draft) => { uploadTarget.current = draft; },
     });
