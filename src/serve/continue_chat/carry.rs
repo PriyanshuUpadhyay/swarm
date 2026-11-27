@@ -25,8 +25,7 @@ pub(super) async fn prepare_carry(
                 .and_then(|db| swarm::store::continuation_logs(&db, old))
                 .map_err(actions::history_read_error)?;
 
-            let mut budget = ROWS_FIND_LIMIT as u64;
-            let mut text = String::new();
+            let mut text = Vec::new();
             for row in chain {
                 let log = match resolve_link_log(&row) {
                     Ok(log) => log,
@@ -39,24 +38,19 @@ pub(super) async fn prepare_carry(
                     Err(err) => return Err(err),
                 };
 
-                let size = std::fs::metadata(&log.path)
-                    .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
-                    .len();
-                budget = budget
-                    .checked_sub(size)
-                    .ok_or_else(|| file_carry_limit(alive))?;
-                let rows = read_handoff_log(app, &row.id, &log, Some(size)).await?;
-                if !handoff::append_chat_text(&mut text, &rows, ROWS_FIND_LIMIT) {
-                    return Err(file_carry_limit(alive));
+                if let Some(part) = handoff::chat_text(&read_handoff_log(app, &row.id, &log).await?)
+                {
+                    text.push(part);
                 }
             }
+
             if text.is_empty() {
                 return Err(error(
                     StatusCode::CONFLICT,
                     "The current chat has no messages to carry forward",
                 ));
             }
-            let path = chat_file(app, old, text).await?;
+            let path = chat_file(app, old, text.join("\n\n")).await?;
             Ok(Some(handoff::file_message(&path.to_string_lossy())))
         }
         Carry::Summary => {
@@ -101,16 +95,4 @@ pub(super) async fn prepare_carry(
         }
         Carry::Resume => unreachable!("native resume does not carry chat context"),
     }
-}
-
-fn file_carry_limit(alive: bool) -> ApiError {
-    let choices = if alive {
-        "Summary or No history"
-    } else {
-        "No history"
-    };
-    error(
-        StatusCode::PAYLOAD_TOO_LARGE,
-        &format!("This chat is too large to carry as a file. Choose {choices} in Settings."),
-    )
 }

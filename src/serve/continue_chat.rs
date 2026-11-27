@@ -148,7 +148,7 @@ pub(super) fn continue_phase(app: &App, old: &str, phase: &'static str) -> Resul
 }
 pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiError> {
     let log = resolve_log(&app.root, old, "chair").map_err(|_| unreadable_handoff_log())?;
-    read_handoff_log(app, old, &log, None).await
+    read_handoff_log(app, old, &log).await
 }
 
 fn unreadable_handoff_log() -> ApiError {
@@ -158,13 +158,8 @@ fn unreadable_handoff_log() -> ApiError {
     )
 }
 
-async fn read_handoff_log(
-    app: &App,
-    old: &str,
-    log: &Log,
-    before: Option<u64>,
-) -> Result<Vec<Row>, ApiError> {
-    let end = row_offsets(&log.path, 1, before)
+async fn read_handoff_log(app: &App, old: &str, log: &Log) -> Result<Vec<Row>, ApiError> {
+    let end = row_offsets(&log.path, 1, None)
         .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
         .1;
     let state = read_row_window(app, &format!("{old}:chair"), log, 0, end).await?;
