@@ -1,6 +1,7 @@
 import { TriangleAlertIcon } from "lucide-react";
 import { RunChip, useRunState } from "./run-chip";
 import type { App, Banner, Composer } from "../core/app";
+import type { AgentInput } from "../core/composer";
 import { Button } from "../components/ui/button";
 import { ComposerBox } from "./composer";
 import { PromptCard } from "./prompt-card";
@@ -20,10 +21,7 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
             {agent.disabled}
           </p>
         ) : agent.unreachable ? (
-          <div className="flex items-center justify-center gap-2">
-            <RunChip app={app} sessionId={id} chair={agent} ended />
-            <ResumeButton app={app} sessionId={id} native={agent.resumable} provider={agent.provider} />
-          </div>
+          <EndedControls app={app} sessionId={id} chair={agent} />
         ) : (
           <ComposerBox key={id} app={app} composer={composer} />
         )}
@@ -32,15 +30,21 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
   );
 }
 
-function ResumeButton({ app, sessionId, native, provider }: { app: App; sessionId: string; native: boolean; provider: string | null }) {
+function EndedControls({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
   const state = useRunState(app);
   const run = state.endedRun?.[sessionId];
   const busy = state.resuming?.[sessionId] === true;
-  if (!native && !(run?.model && run.provider !== provider)) return null;
+  const canResume = chair.resumable || (run?.model && run.provider !== chair.provider);
   return (
-    <Button size="sm" data-testid="resume-chat" disabled={busy} onClick={() => void app.life.resumeChat(sessionId)}>
-      {busy ? "Resuming…" : "Resume"}
-    </Button>
+    <div className="grid justify-items-center gap-2">
+      <div className="flex items-center gap-2">
+        <RunChip app={app} sessionId={sessionId} chair={chair} ended />
+        {canResume && <Button size="sm" data-testid="resume-chat" disabled={busy} onClick={() => void app.life.resumeChat(sessionId)}>
+          {busy ? "Resuming…" : "Resume"}
+        </Button>}
+      </div>
+      {canResume && <p className={`text-sm/4 text-muted-foreground ${state.switchModel === sessionId ? "invisible" : ""}`}>Resume goes on in this chat</p>}
+    </div>
   );
 }
 

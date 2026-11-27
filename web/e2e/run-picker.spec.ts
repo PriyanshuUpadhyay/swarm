@@ -8,7 +8,7 @@ import { holdChatStart, open, readTree } from "./lifecycle-helpers";
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
 
-async function shots(tab: Page, unit: number | "fix1", name: string) {
+async function shots(tab: Page, unit: number | "fix1" | "fix2", name: string) {
   if (!process.env.E2E_SHOTS) return;
   const dir = resolve(import.meta.dirname, `../../tmp/shots/${unit}`);
   mkdirSync(dir, { recursive: true });
@@ -244,8 +244,16 @@ test("an ended chat keeps a foreign-CLI pick until Resume and uses File by defau
   });
   await open(tab);
   await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
+  const caption = tab.getByText("Resume goes on in this chat", { exact: true });
+  await expect(caption).toBeVisible();
+  await expect(caption).toHaveCSS("font-size", "12px");
+  const closed = await tab.getByTestId("resume-chat").boundingBox();
+  const captionBox = await caption.boundingBox();
+  expect(captionBox!.y - (closed!.y + closed!.height)).toBe(8);
+  await shots(tab, "fix2", "ended-caption");
   await tab.getByTestId("model-chip").click();
   const picker = tab.getByTestId("run-popover");
+  await expect(caption).toBeHidden();
   await picker.getByRole("button", { name: "Codex", exact: true }).click();
   await picker.getByRole("button", { name: "Other model", exact: true }).click();
   await expect(tab.getByTestId("model-chip-label")).toContainText("other");
