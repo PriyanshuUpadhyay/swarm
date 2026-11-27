@@ -3,7 +3,7 @@
 import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { accountCli, accountColor, cliName, endedCarry, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Run } from "../core/composer";
+import { accountCli, accountColor, cliName, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
 import { CliMark } from "./cli-mark";
@@ -177,7 +177,7 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
     const { label } = runModel(catalog, proposed);
     const outcome = switchOutcome(current, proposed);
     return busy ? (pending ? `The agent is working. ${pending.model} does not apply until you confirm after the turn.` : "The agent is working. A pick does not apply now.")
-      : ended ? (outcome === "handoff" ? `Resume: ${outcomeText(outcome, current, proposed, endedCarry(saved), label)}` : "A pick sets the run. Resume opens the same chat.")
+      : ended ? (outcome === "handoff" ? `Resume: ${outcomeText(outcome, current, proposed, app.life.endedRunCarry(sessionId, proposed.provider), label)}` : "A pick sets the run. Resume opens the same chat.")
       : outcome !== "none" ? outcomeText(outcome, current, proposed, saved, label)
       : "A pick applies now. The next reply may read the whole chat once, so it costs more.";
   };

@@ -2,7 +2,7 @@
 // composer's place lists, switch model, archive, delete, prune and Archived chats, on the P3a, P3b
 // and S2 routes. Framework-free; the dialogs read `state`, which is a new object after each change.
 
-import { ApiError, sleep, type Snapshot } from "./api";
+import { ApiError, hasLinkedHistory, sleep, type Snapshot } from "./api";
 import type { App } from "./app";
 import { isChair } from "./panes";
 import { RunCatalog } from "./run-catalog";
@@ -315,6 +315,13 @@ export class Lifecycle {
     }
   }
 
+  endedRunCarry(session: string, provider: string | null): SwitchCarry {
+    const chair = this.app.composing.chair(session);
+    if (provider === chair.provider) return "clean";
+    if (!chair.resumable && !this.app.panes.chairHasLog(session) && !hasLinkedHistory(this.app.snapshot, session)) return "clean";
+    return endedCarry(savedCarry(this.app.tree?.prefs));
+  }
+
   /** An ended chat starts only on Resume, never while picking its next run. */
   async resumeChat(session: string) {
     if (this.state.resuming?.[session] || !this.isCurrentSource(session)) return;
@@ -328,7 +335,7 @@ export class Lifecycle {
     this.set({ resuming: { ...this.state.resuming, [session]: true }, switchModel: null });
     try {
       if (foreign || !chair.resumable) {
-        const carry = foreign ? endedCarry(savedCarry(this.app.tree?.prefs)) : "clean";
+        const carry = this.endedRunCarry(session, provider);
         const next = run ?? chair;
         if (!await this.switchModel(session, provider, next.model, next.account, next.effort, carry)) return;
       } else {
@@ -338,6 +345,7 @@ export class Lifecycle {
           ...(run?.effort ? { effort: run.effort } : {}),
           ...(run?.account ? { account: run.account } : {}),
         });
+
         await this.app.refresh();
       }
       this.clearRunPick("endedRun", session);

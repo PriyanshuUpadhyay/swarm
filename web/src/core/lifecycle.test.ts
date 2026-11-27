@@ -71,6 +71,22 @@ describe("chats", () => {
     expect(group.calls.filter((c) => c.startsWith("leave"))).toEqual(["leave chat-1", "leave chat-2"]);
   });
 
+  it("starts the picked CLI without history when the ended chat has no turn", async () => {
+    const app = new App(new Api("test"));
+    app.snapshot = { version: 1, agents: {}, sessions: [{
+      id: "ended", cwd: "/work", created_at: 1, chair_provider: "codex", chair_id: null, chair_log: null,
+      adapter: "tmux-swarm", project: null, workspace: null,
+    }] };
+    const post = vi.spyOn(app.api, "post").mockResolvedValue({ session: "new" });
+    vi.spyOn(app, "refresh").mockResolvedValue(undefined);
+
+    app.life.pickRun("ended", { provider: "claude", model: "sonnet", effort: null, account: null });
+    await app.life.resumeChat("ended");
+    expect(post).toHaveBeenCalledWith("/api/chat/continue", {
+      old_session: "ended", provider: "claude", model: "sonnet", carry: "clean",
+    });
+  });
+
   it("drops an ended pick when the chair returns in another window", () => {
     const { life } = fakeApp(async () => ({}));
     const app = (life as unknown as { app: App }).app;
