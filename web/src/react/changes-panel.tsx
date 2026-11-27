@@ -213,7 +213,7 @@ function Drafts({ app, changes, files }: { app: App; changes: Changes; files: Ch
             >
               <span className="text-foreground">{c.path.slice(c.path.lastIndexOf("/") + 1)}</span> <span className="text-muted-foreground">{c.lines}</span> {c.text}
             </button>
-            <button className="icon-btn" aria-label="Remove comment" onClick={() => changes.removeComment(c.id)}>
+            <button className="icon-btn" aria-label="Remove comment" onClick={() => changes.confirmRemoveComment(c.id)}>
               <XIcon />
             </button>
           </li>

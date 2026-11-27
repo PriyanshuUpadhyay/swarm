@@ -149,6 +149,30 @@ test("removing a saved Changes comment asks first", async ({ page: tab }) => {
   await expect(comment).toHaveCount(0);
 });
 
+test("removing a Changes tray comment asks first", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="README.md"]').click();
+  const body = tab.getByTestId("diff-body");
+  await body.press("j");
+  await body.press("Enter");
+  await tab.getByTestId("comment-input").fill("Confirm removal from the tray.");
+  await tab.getByTestId("comment-add").click();
+
+  const tray = tab.getByTestId("drafts");
+  const remove = tray.getByRole("button", { name: "Remove comment" });
+  const dialog = tab.getByRole("dialog", { name: "Remove this comment?" });
+  await remove.click();
+  await expect(dialog).toBeVisible({ timeout: 2_000 });
+  await captureThemes(tab, dialog, "remove-tray-comment");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(tray).toContainText("Confirm removal from the tray.");
+
+  await remove.click();
+  await dialog.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(tray).toHaveCount(0);
+});
+
 test("Home and End pick the first or last selectable diff line", async ({ page: tab }) => {
   await openChat(tab, process.env.SWARM_E2E_GIT!);
   await tab.getByTestId("show-changes").click();

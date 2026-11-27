@@ -204,13 +204,7 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
   };
   const renderNote = ({ metadata: n }: { metadata: Note }) => (
     <>
-      {n.comments.map((c) => <CommentCard key={c.id} c={c} onRemove={() => void app.life.ask({
-        title: "Remove this comment?",
-        body: "The saved comment will not be sent.",
-        action: "Remove",
-        cancelFirst: true,
-        run: async () => changes.removeComment(c.id),
-      })} />)}
+      {n.comments.map((c) => <CommentCard key={c.id} c={c} onRemove={() => changes.confirmRemoveComment(c.id)} />)}
       {n.box && sel && (
         <CommentBox
           label={`${d.path}`}

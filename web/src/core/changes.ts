@@ -369,7 +369,18 @@ export class Changes {
     }
   }
 
-  removeComment(id: number) {
+  confirmRemoveComment(id: number) {
+    // The dialog handles cancel and action errors, so the caller does not wait for it.
+    void this.app.life.ask({
+      title: "Remove this comment?",
+      body: "The saved comment will not be sent.",
+      action: "Remove",
+      cancelFirst: true,
+      run: async () => this.removeComment(id),
+    });
+  }
+
+  private removeComment(id: number) {
     const ws = this.workspace;
     if (!ws) return;
     this.drafts.set(ws, (this.drafts.get(ws) ?? []).filter((c) => c.id !== id));
