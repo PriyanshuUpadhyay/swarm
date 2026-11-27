@@ -2,6 +2,14 @@ import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
 import type { SidebarRow, TreeView } from "../src/core/nav";
 
+async function shoot(page: Page, browser: string, name: string) {
+  if (!process.env.E2E_SHOTS || browser !== "webkit") return;
+  for (const colorScheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/${name}-${colorScheme}.png`) });
+  }
+}
+
 async function load(page: Page) {
   await page.setViewportSize({ width: 1280, height: 900 });
   const url = new URL(process.env.SWARM_SERVE_URL!);
@@ -9,7 +17,7 @@ async function load(page: Page) {
   await page.waitForFunction(() => window.__swarmReady === true);
 }
 
-test("head B puts Home and project controls above New chat and palette search", async ({ page }) => {
+test("head B puts Home and project controls above New chat and palette search", async ({ page, browserName }) => {
   await load(page);
   const head = page.getByTestId("sidebar-head");
   const home = head.getByTestId("home-button");
@@ -27,10 +35,7 @@ test("head B puts Home and project controls above New chat and palette search", 
   expect(chatBox.y + chatBox.height).toBeLessThan(searchBox.y);
   expect(searchBox.height).toBe(32);
 
-  for (const colorScheme of ["dark", "light"] as const) {
-    await page.emulateMedia({ colorScheme });
-    await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/U2/head-${colorScheme}.png`) });
-  }
+  await shoot(page, browserName, "U2/head");
 
   await search.click();
   await page.getByRole("combobox").fill("Skills");
@@ -91,7 +96,7 @@ test("the counted cut keeps catalog chats in Search and opens by keyboard", asyn
   await expect(page.getByRole("dialog")).toBeVisible();
 });
 
-test("a PR chip is a keyboard link and the open chat alone shows its branch line", async ({ page }) => {
+test("a PR chip is a keyboard link and the open chat alone shows its branch line", async ({ page, browserName }) => {
   const session = process.env.SWARM_E2E_GIT!;
   const url = "https://github.com/example/project/pull/7";
 
@@ -141,11 +146,8 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   expect(tabBox).toMatchObject({ width: 224, height: 32 });
   expect(barBox?.height).toBe(36);
 
-  for (const colorScheme of ["dark", "light"] as const) {
-    await page.emulateMedia({ colorScheme });
-    await page.mouse.move(700, 100);
-    await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/U5/chrome-${colorScheme}.png`) });
-  }
+  await page.mouse.move(700, 100);
+  await shoot(page, browserName, "U5/chrome");
 });
 
 test("the menu on a waiting chat in a shared worktree has only chat actions", async ({ page }) => {
@@ -281,7 +283,7 @@ test("the rail shows initial loading and a failed workspace list", async ({ page
   await page.unrouteAll({ behavior: "wait" });
 });
 
-test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page }) => {
+test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page, browserName }) => {
   await load(page);
   await page.getByTestId("home-button").click();
   const sidebar = page.getByTestId("sidebar");
@@ -319,10 +321,7 @@ test("the rail replaces the sidebar only below 1024 px and keeps desktop collaps
   await expect(page.getByTestId("new-chat-prompt")).toBeFocused();
   await page.keyboard.press("Escape");
 
-  for (const colorScheme of ["dark", "light"] as const) {
-    await page.emulateMedia({ colorScheme });
-    await page.screenshot({ path: resolve(import.meta.dirname, `../../tmp/shots/U6/rail-${colorScheme}.png`) });
-  }
+  await shoot(page, browserName, "U6/rail");
 
   await page.setViewportSize({ width: 1024, height: 900 });
   await expect(rail).toHaveCount(0);
