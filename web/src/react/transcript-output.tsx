@@ -39,6 +39,7 @@ function OutputBox({ app, preview, full, title }: { app: Reader; preview: TextPr
         <pre className="out">{(preview.text || "No output was recorded.").split("\n").map((text, i, lines) => <span key={i} data-output-line={i}>{text}{i < lines.length - 1 ? "\n" : ""}</span>)}</pre>
       )}
       {preview.is_truncated && f?.state !== "ready" && (
+        // The text reader stores the failure in full, so the click does not wait for the read.
         <CutLine count={omittedOutput(preview)} testid="show-full" busy={f?.state === "loading"} error={f?.state === "error" ? FULL_OUTPUT_ERROR : undefined} show={() => void app.loadFull(preview.id)} />
       )}
     </div>
@@ -134,7 +135,10 @@ function DiffView({ app, diff, full }: { app: Reader; diff: DiffPreview; full: R
           <CutLine count={[
             diff.omitted_lines ? `+${plural(diff.omitted_lines, "line")}` : "",
             diff.shortened_lines ? `${plural(diff.shortened_lines, "line")} shortened` : "",
-          ].filter(Boolean).join(" · ")} busy={f?.state === "loading"} error={f?.state === "error" ? FULL_OUTPUT_ERROR : undefined} show={() => void app.loadFull(diff.id)} />
+          ].filter(Boolean).join(" · ")} busy={f?.state === "loading"} error={f?.state === "error" ? FULL_OUTPUT_ERROR : undefined} show={() => {
+            // The diff reader records loading and failure in full; the click starts the read only.
+            void app.loadFull(diff.id);
+          }} />
         </div>
       )}
     </div>
