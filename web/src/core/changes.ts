@@ -251,12 +251,19 @@ export class Changes {
       if (this.editor(path, layer)?.open) return this.notify();
     }
 
-    if (still) void this.select(still, true, automatic);
-    else if (files.length) void this.select(files[Math.max(0, Math.min(previousIndex, files.length - 1))]);
-    else {
+    if (still) return this.select(still, true, automatic);
+    if (!files.length) {
       this.clearFile();
-      this.notify();
+      return this.notify();
     }
+    if (previousIndex < 0) return this.select(files[0]);
+
+    const byKey = new Map(files.map((file) => [fileKey(file), file]));
+    for (const file of previous.slice(previousIndex + 1)) {
+      const successor = byKey.get(fileKey(file));
+      if (successor) return this.select(successor);
+    }
+    return this.select(files[files.length - 1]);
   }
 
   /** Shows a file's diff (or its contents, in file mode). `again` reads it even if it shows. */

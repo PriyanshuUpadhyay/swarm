@@ -81,6 +81,10 @@ test("a full diff advances to the next surviving file across a failed refresh", 
   await checkNextFile(page, true);
 });
 
+test("a full diff advances to the next surviving file when an earlier file also leaves", async ({ page }) => {
+  await checkNextFile(page, false);
+});
+
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
   const r = row("d1", "", "diff");
   r.diff = { id: "patch-output", path: "app.ts", patch: "@@ -1 +1 @@\n-old\n+preview", added: 1, removed: 1, omitted_lines: 900, shortened_lines: 0, full_lines: 1001, full_bytes: 20000 };
