@@ -496,6 +496,21 @@ impl<'a> Projection<'a> {
             .find_map(|s| s["branch_of"].as_str())
             .and_then(|parent| w.chats.iter().find(|c| c.contains(parent)));
         let detail = prompt(c).or_else(|| c.agents.iter().find_map(|a| a["state_detail"].as_str()));
+        let mut fields = context
+            .with_status(c.status)
+            .values(&self.owner.fields.chat);
+        if w.chats.len() == 1 {
+            for mark in [w.missing.then_some("folder missing"), w.mark.as_deref()]
+                .into_iter()
+                .flatten()
+            {
+                fields.push(FieldValue {
+                    field: "mark".into(),
+                    text: mark.into(),
+                    status: None,
+                });
+            }
+        }
 
         SidebarRow {
             expanded: !self.state.is_collapsed(&id),
@@ -517,9 +532,7 @@ impl<'a> Projection<'a> {
             pinned: self.owner.pinned.contains(&w.path),
             archived: self.owner.archived.contains(&w.path),
             missing: w.missing,
-            fields: context
-                .with_status(c.status)
-                .values(&self.owner.fields.chat),
+            fields,
             selection: Some(Selection {
                 workspace: w.path.clone(),
                 chat: Some(c.id.clone()),

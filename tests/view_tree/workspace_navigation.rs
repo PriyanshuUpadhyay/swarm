@@ -77,7 +77,7 @@ fn bare_hub_removed_and_worktree_states() {
             json!({"path":"/repo/wt/locked","branch":"locked","locked":true}),
             json!({"path":"/repo/wt/detached","detached":true}),
         ]);
-    // The owner opened the locked and detached worktrees, so the sidebar lists them with no chat.
+    // The owner opened the locked and detached worktrees, so the catalog keeps them without chats.
     let mut owner = owner();
     owner
         .project_paths
@@ -107,6 +107,50 @@ fn bare_hub_removed_and_worktree_states() {
     assert!(folders["/repo/wt/missing"].missing);
     assert!(!folders["/repo/wt/missing"].new_chat_enabled);
     assert!(folders["/repo/wt/locked"].new_chat_enabled);
+}
+#[test]
+fn single_chat_rows_keep_worktree_marks() {
+    let entries = [
+        ("locked", "/repo/wt/locked", json!({"locked":true})),
+        ("detached", "/repo/wt/detached", json!({"detached":true})),
+        (
+            "folder missing",
+            "/repo/wt/missing",
+            json!({"missing":true}),
+        ),
+    ];
+    let mut snap = snapshot(
+        entries
+            .iter()
+            .enumerate()
+            .map(|(index, (_, path, _))| session(&format!("chat-{index}"), path, 1))
+            .collect(),
+        json!({}),
+    );
+    for (_, path, mut fact) in entries.clone() {
+        fact["path"] = json!(path);
+        snap["projects"][0]["workspaces"]
+            .as_array_mut()
+            .unwrap()
+            .push(fact);
+    }
+    let rows: Vec<_> = sections(&snap, &owner(), &ViewState::default(), false)
+        .into_iter()
+        .flat_map(|section| section.rows)
+        .collect();
+    for (mark, path, _) in entries {
+        let row = rows
+            .iter()
+            .find(|r| r.kind == "chat" && r.selection.as_ref().is_some_and(|s| s.workspace == path))
+            .unwrap();
+        assert!(
+            row.fields
+                .iter()
+                .any(|f| f.field != "title" && f.text == mark),
+            "missing {mark} in {:?}",
+            row.fields
+        );
+    }
 }
 #[test]
 fn deepest_project_and_shared_path_ids() {
