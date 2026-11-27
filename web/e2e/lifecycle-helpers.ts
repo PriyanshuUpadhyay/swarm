@@ -87,15 +87,21 @@ export function saveSidebarState() {
   };
 }
 
-export async function clickTarget(button: Locator) {
-  return button.evaluate((el) => {
-    const { width, height } = el.getBoundingClientRect();
+export async function clickTarget(control: Locator) {
+  const { hit, ...size } = await control.evaluate((el) => {
+    const { x, y, width, height } = el.getBoundingClientRect();
     const target = getComputedStyle(el, "::after");
-    return {
+    const area = {
       width: Math.max(width, Number.parseFloat(target.width) || 0),
       height: Math.max(height, Number.parseFloat(target.height) || 0),
     };
+
+    const extra = area.height - height;
+    const above = document.elementFromPoint(x + width / 2, y - extra / 4);
+    return { ...area, hit: extra > 0 && above === el };
   });
+  expect(hit, "A point above the painted control must hit its expanded target").toBe(true);
+  return size;
 }
 
 export async function showOtherProjects(page: Page) {

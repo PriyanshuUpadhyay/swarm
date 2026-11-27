@@ -324,7 +324,7 @@ test("the PR chip responds to a click within its 24 px hit area", async ({ page 
     const row = await withChatFacts(page, (_tree, _row, facts) => { facts.pr = demoPr; });
     const chip = row.getByTestId("pr-chip");
     await expect(chip).toBeVisible();
-    expect(await chip.evaluate((el) => getComputedStyle(el, "::after").height)).toBe("24px");
+    expect((await clickTarget(chip)).height).toBe(24);
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
   }
