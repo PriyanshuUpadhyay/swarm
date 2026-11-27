@@ -59,6 +59,9 @@ test("the background list reports a task read failure", async ({ page: tab }, in
   }
 });
 
+// This must stay above POLL_MS in web/src/react/background-line.tsx.
+const POLL_ADVANCE_MS = 3_100;
+
 test("a background read failure does not move the panel rows", async ({ page: tab }, info) => {
   let fail = false;
   await tab.clock.install();
@@ -75,7 +78,7 @@ test("a background read failure does not move the panel rows", async ({ page: ta
     const before = await top();
 
     fail = true;
-    await tab.clock.runFor(3_100);
+    await tab.clock.runFor(POLL_ADVANCE_MS);
     await expect(panel.getByRole("alert")).toHaveText("Could not load background tasks.", { timeout: 2_000 });
     expect(await top()).toBeCloseTo(before, 1);
     await captureThemes(tab, panel, "background-read-error-spacing");
@@ -98,12 +101,12 @@ test("a shell-list failure is shown until a good read", async ({ page: tab }, in
     await expect(panel.getByRole("button", { name: /reviewer/ })).toBeVisible();
 
     fail = true;
-    await tab.clock.runFor(3_100);
+    await tab.clock.runFor(POLL_ADVANCE_MS);
     await expect(alert).toHaveText("Could not load shells.", { timeout: 2_000 });
     await captureThemes(tab, panel, "background-shell-read-error");
 
     fail = false;
-    await tab.clock.runFor(3_100);
+    await tab.clock.runFor(POLL_ADVANCE_MS);
     await expect(alert).toHaveCount(0, { timeout: 2_000 });
   } finally {
     await tab.unrouteAll({ behavior: "ignoreErrors" });
