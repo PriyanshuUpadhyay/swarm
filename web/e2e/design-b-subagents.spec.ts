@@ -57,6 +57,20 @@ test("a group shows observed states, expands after five and opens the chosen chi
   await expect(page.getByTestId("subagent-chat")).toContainText("Keyboard fixes are ready");
 });
 
+test("a working Pi batch shows work on the parent, not guesses about children", async ({ page }) => {
+  const children = Array.from({ length: 4 }, (_, i) => ({ call_id: `work.${i}`, description: `Child task ${i + 1}` }));
+  const batch: Row = {
+    ...row("sub1", "Review the release", "subagent"),
+    subagent: { call_id: "work.0", children, agent_type: "subagent", description: "Review the release", state: "waiting" },
+  };
+  await page.route("**/api/rows?*", (route) => route.fulfill({ json: rows([batch]) }));
+  await open(page);
+  const card = page.getByTestId("subagent-row");
+  await expect(card.getByText("Working", { exact: true })).toBeVisible({ timeout: 2000 });
+  await expect(card.getByRole("button").getByText("Unknown", { exact: false })).toHaveCount(4);
+  await captureThemes(page, card, "subagent-working");
+});
+
 test("a child message stays expanded after its log refreshes and the row remounts", async ({ page }) => {
   const batch: Row = {
     ...row("sub1", "Review the release", "subagent"),

@@ -26,7 +26,7 @@ function openChild(e: MouseEvent<HTMLButtonElement>, callId: string, title: stri
   if (chatId) openSubagent({ chatId, callId, title });
 }
 
-function ChildGroup({ children, title }: { children: SubagentChild[]; title: string }) {
+function ChildGroup({ children, title, state }: { children: SubagentChild[]; title: string; state: ToolState }) {
   const [showAll, setShowAll] = useState(false);
 
   const groups = STATES.map((state) => ({ state, items: children.filter((c) => state === "unknown" ? !STATES.slice(0, 3).some((s) => c.state === s) : c.state === state) }));
@@ -36,6 +36,7 @@ function ChildGroup({ children, title }: { children: SubagentChild[]; title: str
     <>
       <div className="card-head flex-wrap">
         <span className="min-w-0 truncate font-semibold" title={title}>{title}</span>
+        {(state === "waiting" || state === "interrupted") && <span className="flex items-center gap-1"><StatusGlyph state={state} />{state === "waiting" ? "Working" : "Interrupted"}</span>}
         <span className="font-mono text-muted-foreground">{groups.filter((g) => g.items.length).map((g) => `${g.items.length} ${g.state}`).join(" · ")}</span>
       </div>
       <ul className="m-0 list-none px-2 pb-1">
@@ -61,7 +62,7 @@ export function SubagentRow({ run, title }: { run: SubagentRun; title: string })
 
   return (
     <div className="card" data-testid="subagent-row" data-state={run.state}>
-      {children.length > 1 ? <ChildGroup children={children} title={title} /> : (
+      {children.length > 1 ? <ChildGroup children={children} title={title} state={run.state} /> : (
         <button type="button" className="card-head" title="Open the subagent's own work" onClick={(e) => openChild(e, run.call_id, title)}>
           <StatusGlyph state={run.state} />
           <span className="truncate">{title}</span>
