@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { captureThemes } from "./ux-helpers";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GIANT_DIFF_LINES } from "./serve";
 
@@ -130,15 +131,7 @@ test("Show all windows the full diff, finds its tail and sends a range note", as
   await expect(tab.locator(DIFF_ROWS).filter({ hasText: "generated line 20000" })).toBeVisible();
   expect(await tab.locator(DIFF_ROWS).count()).toBeLessThan(200);
 
-  const shots = process.env.DESIGN_B_SHOTS;
-  if (shots) {
-    mkdirSync(shots, { recursive: true });
-    for (const theme of ["dark", "light"] as const) {
-      await tab.emulateMedia({ colorScheme: theme });
-      await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
-      await tab.getByTestId("diff-pane").screenshot({ path: join(shots, `changes-full-${theme}.png`) });
-    }
-  }
+  await captureThemes(tab, tab.getByTestId("diff-pane"), "changes-full");
 
   await find.press("Escape");
   await (await lineNumber(tab, "generated line 19999")).click();

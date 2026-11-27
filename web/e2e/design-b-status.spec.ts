@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Snapshot } from "../src/core/api";
-import { mockRows, mockStream, open, row, streamFrame } from "./ux-helpers";
+import { captureThemes, mockRows, mockStream, open, row, streamFrame } from "./ux-helpers";
 
 test("the status line names the work and keeps the turn clock outside the log", async ({ page }) => {
   const session = process.env.SWARM_E2E_LIVE!;
@@ -43,10 +43,7 @@ test("the status line names the work and keeps the turn clock outside the log", 
     await expect(status.getByLabel("Turn elapsed: 1:06")).toBeVisible();
     await expect(status.getByTestId("stop")).toBeEnabled();
     await expect(page.getByTestId("transcript").getByText("Working…", { exact: true })).toHaveCount(0);
-    if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
-      await page.emulateMedia({ colorScheme: theme });
-      await status.screenshot({ path: `${process.env.DESIGN_B_SHOTS}/working-${theme}.png`, animations: "disabled" });
-    }
+    await captureThemes(page, status, "working");
 
     await page.clock.runFor(100);
     await change("done");
@@ -59,10 +56,7 @@ test("the status line names the work and keeps the turn clock outside the log", 
     await change("blocked");
     await expect(status).toContainText("Waiting for your answer");
     await expect(send).toBeDisabled();
-    if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
-      await page.emulateMedia({ colorScheme: theme });
-      await status.screenshot({ path: `${process.env.DESIGN_B_SHOTS}/waiting-${theme}.png`, animations: "disabled" });
-    }
+    await captureThemes(page, status, "waiting");
   } finally {
     await page.clock.resume();
   }

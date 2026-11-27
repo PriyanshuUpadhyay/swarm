@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { captureThemes } from "./ux-helpers";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Snapshot } from "../src/core/api";
 import type { Prompt } from "../src/core/composer";
@@ -165,10 +166,7 @@ test("a long error token wraps and keeps Retry and Dismiss inside the banner", a
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(box.x + box.width + 1);
     }
     await tab.screenshot({ path: info.outputPath("long-error.png") });
-    if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
-      await tab.emulateMedia({ colorScheme: theme });
-      await banner.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `action-error-${theme}.png`), animations: "disabled" });
-    }
+    await captureThemes(tab, banner, "action-error");
     await banner.getByRole("button", { name: "Dismiss" }).click();
     await expect(banner).toBeHidden();
   } finally {
@@ -217,14 +215,7 @@ test("a permission command opens in a scroll window without moving its choices o
     })).toBe(true);
     await expect(card.getByRole("button", { name: /^3 No$/ })).toBeInViewport();
 
-    const shots = process.env.DESIGN_B_SHOTS;
-    if (shots) {
-      mkdirSync(shots, { recursive: true });
-      for (const theme of ["dark", "light"]) {
-        await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
-        await card.screenshot({ path: join(shots, `permission-${theme}.png`) });
-      }
-    }
+    await captureThemes(tab, card, "permission");
 
     await expect(preview).toBeFocused();
     await tab.keyboard.press("3");

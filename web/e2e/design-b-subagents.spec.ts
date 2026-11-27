@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Row } from "../src/core/api";
-import { open, row, rows } from "./ux-helpers";
+import { captureThemes, open, row, rows } from "./ux-helpers";
 
 test("a long group title is truncated inside the card", async ({ page }) => {
   const title = "Review the release and the related checks ".repeat(5).trim();
@@ -51,10 +51,7 @@ test("a group shows observed states, expands after five and opens the chosen chi
   await card.getByRole("button", { name: "Show all", exact: true }).click({ timeout: 3000 });
   await expect(child).toBeVisible();
 
-  if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
-    await page.emulateMedia({ colorScheme: theme });
-    await card.screenshot({ path: `${process.env.DESIGN_B_SHOTS}/subagents-${theme}.png`, animations: "disabled" });
-  }
+  await captureThemes(page, card, "subagents");
 
   await child.click();
   await expect(page.getByTestId("subagent-chat")).toContainText("Keyboard fixes are ready");

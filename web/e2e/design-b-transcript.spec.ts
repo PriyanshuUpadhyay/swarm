@@ -1,17 +1,8 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
-import { resolve } from "node:path";
-import { mockRows, open, row, rows } from "./ux-helpers";
+import { expect, test } from "@playwright/test";
+import { captureThemes, mockRows, open, row, rows } from "./ux-helpers";
 import type { Block, Inline } from "../src/core/api";
 
 const lines = (last: string) => Array.from({ length: 16 }, (_, i) => i === 15 ? last : `Check result ${i + 1}`).join("\n");
-
-async function shots(page: Page, target: Locator, name: string) {
-  if (!process.env.DESIGN_B_SHOTS) return;
-  for (const theme of ["dark", "light"]) {
-    await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
-    await target.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `${name}-${theme}.png`), animations: "disabled" });
-  }
-}
 
 test("an opened saved thought reveals the cut lines on request", async ({ page }) => {
   await mockRows(page, [row("t1", lines("The saved thought ends here"), "thought")]);
@@ -21,7 +12,7 @@ test("an opened saved thought reveals the cut lines on request", async ({ page }
   await expect(thought.getByTestId("thought-text")).toContainText("Check result 12");
   await expect(thought).toContainText("+4 lines");
   await expect(thought.getByText("The saved thought ends here")).not.toBeVisible();
-  await shots(page, thought, "thought-cut");
+  await captureThemes(page, thought, "thought-cut");
   await thought.getByRole("button", { name: "Show all", exact: true }).click();
   await expect(thought.getByTestId("thought-text")).toContainText("The saved thought ends here");
 });
@@ -47,7 +38,7 @@ test("Find reveals a cut user message and highlights a match beyond the cut", as
   await expect.poll(() => message.locator("strong").evaluate((el) => el.getClientRects().length)).toBeGreaterThan(1);
   await expect(message).toContainText("+4 lines");
   await page.setViewportSize(wide);
-  await shots(page, message, "user-cut");
+  await captureThemes(page, message, "user-cut");
 
   await page.keyboard.press("Meta+f");
   await page.getByTestId("find-input").fill("socket timeout");
@@ -84,7 +75,7 @@ test("live thinking shows its last four lines without growing a box", async ({ p
   });
   expect(shape[0]).toBeCloseTo(4, 1);
   expect(shape[1]).toBe("0px");
-  await shots(page, page.locator('[data-id="live-thought"]'), "thought-live");
+  await captureThemes(page, page.locator('[data-id="live-thought"]'), "thought-live");
 });
 
 test("long code reports its size and scrolls to the last line", async ({ page }) => {
@@ -95,7 +86,7 @@ test("long code reports its size and scrolls to the last line", async ({ page })
   const box = card.locator("pre");
   await expect(card.locator(".md-head")).toContainText("41 lines");
   expect(await box.evaluate((el) => el.clientHeight)).toBeLessThanOrEqual(360);
-  await shots(page, card, "code-window");
+  await captureThemes(page, card, "code-window");
   await box.evaluate((el) => { el.scrollTop = el.scrollHeight; });
   expect(await box.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   await expect(box.getByText("check41", { exact: true })).toBeInViewport();
@@ -124,5 +115,5 @@ test("a failed turn presents the original CLI text as one non-interactive row", 
   await expect(error.getByText(source, { exact: true })).toHaveCSS("font-family", /JetBrains Mono/);
   await expect(error.getByText("Error", { exact: true })).toBeVisible();
   await expect(error.getByRole("button")).toHaveCount(0);
-  await shots(page, error, "cli-error");
+  await captureThemes(page, error, "cli-error");
 });

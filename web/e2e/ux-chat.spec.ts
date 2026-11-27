@@ -4,7 +4,7 @@ import "./ux-chat-diffs";
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { row, rows, open, mockRows, mockStream, streamFrame, type StreamFixture } from "./ux-helpers";
+import { captureThemes, row, rows, open, mockRows, mockStream, streamFrame, type StreamFixture } from "./ux-helpers";
 import type { Snapshot } from "../src/core/api";
 
 
@@ -177,10 +177,7 @@ test("stream loss keeps the last list and accepted update, then clears after hel
   await expect(tab.getByText("Offline. Showing the last list.", { exact: true })).toBeVisible();
   await expect(lastList).toBeVisible();
   await expect(status.locator('svg[data-form="unlit"]')).toBeVisible();
-  if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
-    await tab.emulateMedia({ colorScheme: theme });
-    await tab.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `offline-${theme}.png`), animations: "disabled" });
-  }
+  await captureThemes(tab, tab, "offline");
 
   await tab.evaluate(() => (window as unknown as { swarmStream: StreamFixture }).swarmStream.restore());
   await expect(banner).toHaveCount(0);
@@ -246,10 +243,7 @@ test("modified Up keeps queued messages", async ({ page: tab }) => {
   const queued = tab.getByTestId("row").filter({ hasText: "queued text" });
   await expect(queued.getByText("↑", { exact: true })).toBeVisible();
   await expect(tab.getByTestId("composer-status")).toHaveText("↑ to edit queued messages");
-  if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"]) {
-    await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
-    await queued.screenshot({ path: resolve(process.env.DESIGN_B_SHOTS, `queue-${theme}.png`), animations: "disabled" });
-  }
+  await captureThemes(tab, queued, "queue");
   const composer = tab.getByTestId("composer");
   await composer.focus();
   await composer.press("Meta+ArrowUp");

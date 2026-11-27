@@ -1,4 +1,6 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Block, Display, FindPart, Inline, PatchInfo, Row, RowPage } from "../src/core/api";
 
 export const row = (id: string, text: string, kind: Row["kind"] = "assistant"): Row => ({ id, kind, text, order: [Number(id.replace(/\D/g, "")) || 1, 0] });
@@ -58,6 +60,17 @@ export async function open(tab: Page, session = process.env.SWARM_E2E_LIVE!) {
 }
 export async function mockRows(tab: Page, items: Row[], older = 0, patch: Record<string, PatchInfo> = {}, find: Record<string, FindPart[]> = {}) {
   await tab.route("**/api/rows?*", (route) => route.fulfill({ json: rows(items, older, patch, find) }));
+}
+
+export async function captureThemes(page: Page, target: Locator | Page, name: string) {
+  const dir = process.env.DESIGN_B_SHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  for (const theme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    await target.screenshot({ path: resolve(dir, `${name}-${theme}.png`), animations: "disabled" });
+  }
 }
 
 export type StreamFixture = {

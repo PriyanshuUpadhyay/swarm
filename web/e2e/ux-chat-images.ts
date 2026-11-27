@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockRows, mockStream, open, row, rows, streamFrame } from "./ux-helpers";
+import { captureThemes, mockRows, mockStream, open, row, rows, streamFrame } from "./ux-helpers";
 import type { PatchInfo, Row, TextPreview } from "../src/core/api";
 
 // The served paths differ from the raw text, so a browser reparse cannot pass.
@@ -121,9 +121,5 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
   await expect(shown).toHaveAttribute("data-split", "true");
   await expect(shown).toContainText("old line");
 
-  if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
-    await tab.emulateMedia({ colorScheme: theme });
-    await tab.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
-    await shown.screenshot({ path: `${process.env.DESIGN_B_SHOTS}/shown-diff-${theme}.png`, animations: "disabled" });
-  }
+  await captureThemes(tab, shown, "shown-diff");
 });

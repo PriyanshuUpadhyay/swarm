@@ -1,19 +1,7 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { expect, test } from "@playwright/test";
 import type { Meter } from "../src/core/settings-types";
 import { open, settings } from "./settings-helpers";
-import { open as openChat } from "./ux-helpers";
-
-async function capture(page: Page, target: Locator, name: string) {
-  const dir = process.env.DESIGN_B_SHOTS;
-  if (!dir) return;
-  mkdirSync(dir, { recursive: true });
-  for (const theme of ["dark", "light"]) {
-    await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, theme);
-    await target.screenshot({ path: join(dir, `${name}-${theme}.png`) });
-  }
-}
+import { captureThemes, open as openChat } from "./ux-helpers";
 
 test("refreshing the same diff preserves keyboard selection without opening a comment", async ({ page: tab }) => {
   await openChat(tab, process.env.SWARM_E2E_GIT!);
@@ -80,7 +68,7 @@ test("the 680 px new-chat composer uses the display face only for its question",
   await expect(heading).toHaveCSS("line-height", "52px");
   const prompt = composer.getByTestId("new-chat-prompt");
   await expect(prompt).not.toHaveCSS("font-family", /Instrument Serif/);
-  await capture(page, composer, "new-chat");
+  await captureThemes(page, composer, "new-chat");
   await prompt.fill("Review the failing check.");
   await expect(composer.getByTestId("new-chat-start")).toBeEnabled();
 });
@@ -95,7 +83,7 @@ test("the existing destructive confirmation is outlined while Save stays primary
   await expect(yes).toHaveClass(/(?:^| )border-failed(?: |$)/);
   await expect(yes).toHaveClass(/(?:^| )text-failed(?: |$)/);
   await expect(yes).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await capture(page, profiles, "settings-confirm");
+  await captureThemes(page, profiles, "settings-confirm");
   await profiles.getByRole("button", { name: "Cancel", exact: true }).click();
 });
 
@@ -118,7 +106,7 @@ test("the usage percentage uses the same state color as the bar of what is left"
     await expect(label).toHaveClass(new RegExp(`(?:^| )text-${tone}(?: |$)`));
     await expect(bar.locator("span")).toHaveCSS("background-color", await label.evaluate((el) => getComputedStyle(el).color));
   }
-  await capture(page, accounts, "usage");
+  await captureThemes(page, accounts, "usage");
 });
 
 test("Skills uses R/S/P/F boxes and keeps details in the library", async ({ page }) => {
@@ -135,5 +123,5 @@ test("Skills uses R/S/P/F boxes and keeps details in the library", async ({ page
   await expect(row.locator("[data-skill-kind]")).toBeVisible();
   await row.click();
   await expect(library.getByTestId("skills-detail")).toBeVisible();
-  await capture(page, dialog, "skills");
+  await captureThemes(page, dialog, "skills");
 });

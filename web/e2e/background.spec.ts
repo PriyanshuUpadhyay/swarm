@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { captureThemes } from "./ux-helpers";
 
 /** Opens the fixture chat that has two child agents. */
 async function openChat(tab: Page, info: TestInfo) {
@@ -184,8 +185,5 @@ test("Cmd+J groups nine tasks by state under their owners with the panels open",
   await expect(tab.locator(".chat-input").filter({ has: tab.getByTestId("background-line") }).getByTestId("composer")).toBeInViewport();
   await expect(tab.getByTestId("workspace-panel")).toBeInViewport();
 
-  if (process.env.DESIGN_B_SHOTS) for (const theme of ["dark", "light"] as const) {
-    await tab.emulateMedia({ colorScheme: theme });
-    await tab.screenshot({ path: `${process.env.DESIGN_B_SHOTS}/panels-${theme}.png`, animations: "disabled" });
-  }
+  await captureThemes(tab, tab, "panels");
 });
