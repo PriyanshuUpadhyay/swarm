@@ -244,6 +244,43 @@ test("the chat agent count has a 24 px click area", async ({ page }) => {
   await page.unrouteAll({ behavior: "wait" });
 });
 
+test("the rail caps the chat buttons and opens Search for the rest", async ({ page }) => {
+  let hidden = 0;
+  await withChatFacts(page, (tree, row) => {
+    const extra = Array.from({ length: 12 }, (_, i): SidebarRow => ({
+      ...row, id: `chat:rail-${i}`, title: `Rail chat ${i}`, selection: { ...row.selection!, chat: `rail-${i}` },
+    }));
+    tree.chats = [...tree.chats, ...extra];
+    hidden = tree.chats.length - 8;
+  });
+  await page.setViewportSize({ width: 900, height: 900 });
+  const rail = page.getByTestId("sidebar-rail");
+  await expect(rail.getByTestId("rail-chat")).toHaveCount(8);
+  await rail.getByRole("button", { name: `Search ${hidden} more chats` }).click();
+  await expect(page.getByRole("combobox")).toBeFocused();
+  await page.unrouteAll({ behavior: "wait" });
+});
+
+test("the rail shows initial loading and a failed workspace list", async ({ page }) => {
+  const url = new URL(process.env.SWARM_SERVE_URL!);
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/tree?view=workspaces", async (route) => {
+    await pending;
+    await route.fulfill({ status: 503, json: { error: "Unavailable" } });
+  });
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.goto(`${url.origin}/${url.hash}`);
+  const status = page.getByTestId("sidebar-rail").getByRole("status");
+  try {
+    await expect(status).toHaveText("Loading workspaces…");
+  } finally {
+    release();
+  }
+  await expect(status).toHaveText("Could not load the workspaces");
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page }) => {
   await load(page);
   await page.getByTestId("home-button").click();
