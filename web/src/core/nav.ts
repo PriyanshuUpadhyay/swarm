@@ -32,6 +32,7 @@ export type SidebarRow = {
   // A hub's main: the composer starts a project's new chat here, in its own worktree (ADR 0146).
   startsChatWorktree: boolean;
   dimmed: boolean;
+  standsForWorkspace?: boolean;
   fields: Field[];
   // Null on a "more" or archived row (Option<Selection> in src/view/sidebar.rs).
   selection: Selection | null;

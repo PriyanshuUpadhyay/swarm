@@ -111,9 +111,13 @@ pub fn chat_catalog(
         .flat_map(|w| {
             w.chats
                 .iter()
-                .map(|chat| view.chat_row(w, chat, None, false))
+                .map(|chat| view.chat_row(w, chat, None, false, w.chats.len() == 1))
         })
         .collect()
+}
+
+fn has_workspace_row(chats: usize) -> bool {
+    chats >= 2
 }
 
 fn sort_chats(chats: &mut [Item<'_>]) {
@@ -333,24 +337,28 @@ impl<'a> Projection<'a> {
         for &(w, chat) in shown {
             if groups
                 .get(w.path.as_str())
-                .is_some_and(|chats| chats.len() >= 2)
+                .is_some_and(|chats| has_workspace_row(chats.len()))
             {
                 shown_groups.entry(&w.path).or_default().push(chat);
             }
         }
 
         for &(w, chat) in shown {
-            let Some(group) = groups.get(w.path.as_str()).filter(|group| group.len() >= 2) else {
-                self.chat_rows(w, chat, None, out);
+            let Some(group) = groups
+                .get(w.path.as_str())
+                .filter(|group| has_workspace_row(group.len()))
+            else {
+                self.chat_rows(w, chat, None, true, out);
                 continue;
             };
+
             if let Some(shown) = shown_groups.remove(w.path.as_str()) {
                 let row = self.workspace_row(project, w, group);
                 let expanded = row.expanded;
                 out.push(row);
                 if expanded {
                     for chat in shown {
-                        self.chat_rows(w, chat, Some(w.path.as_str()), out);
+                        self.chat_rows(w, chat, Some(w.path.as_str()), false, out);
                     }
                 }
             }
@@ -440,6 +448,7 @@ impl<'a> Projection<'a> {
         c: &Chat,
         parent: Option<&str>,
         show_prompt: bool,
+        stands_for_workspace: bool,
     ) -> SidebarRow {
         let id = c.row_id();
         let children = c.children();
@@ -488,7 +497,7 @@ impl<'a> Projection<'a> {
         let mut fields = context
             .with_status(c.status)
             .values(&self.owner.fields.chat);
-        if w.chats.len() == 1 {
+        if stands_for_workspace {
             for mark in [w.missing.then_some("folder missing"), w.mark.as_deref()]
                 .into_iter()
                 .flatten()
@@ -521,6 +530,7 @@ impl<'a> Projection<'a> {
             pinned: self.owner.pinned.contains(&w.path),
             archived: self.owner.archived.contains(&w.path),
             missing: w.missing,
+            stands_for_workspace,
             fields,
             selection: Some(Selection {
                 workspace: w.path.clone(),
@@ -532,8 +542,15 @@ impl<'a> Projection<'a> {
         }
     }
 
-    fn chat_rows(&self, w: &Workspace, c: &Chat, parent: Option<&str>, out: &mut Vec<SidebarRow>) {
-        let row = self.chat_row(w, c, parent, true);
+    fn chat_rows(
+        &self,
+        w: &Workspace,
+        c: &Chat,
+        parent: Option<&str>,
+        stands_for_workspace: bool,
+        out: &mut Vec<SidebarRow>,
+    ) {
+        let row = self.chat_row(w, c, parent, true, stands_for_workspace);
         let expanded = row.expanded;
         let depth = row.depth + 1;
         let id = row.id.clone();

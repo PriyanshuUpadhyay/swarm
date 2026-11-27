@@ -32,6 +32,8 @@ pub struct SidebarRow {
     /// A new chat on this row gets its own worktree (ADR 0146).
     pub starts_chat_worktree: bool,
     pub dimmed: bool,
+    #[serde(skip_serializing_if = "super::is_false")]
+    pub stands_for_workspace: bool,
     pub fields: Vec<FieldValue>,
     pub selection: Option<Selection>,
 }

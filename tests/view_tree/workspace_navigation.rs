@@ -109,7 +109,8 @@ fn bare_hub_removed_and_worktree_states() {
     assert!(folders["/repo/wt/locked"].new_chat_enabled);
 }
 #[test]
-fn single_chat_rows_keep_worktree_marks() {
+fn lone_active_chat_rows_keep_worktree_marks() {
+    let now = 10 * 86_400;
     let entries = [
         ("locked", "/repo/wt/locked", json!({"locked":true})),
         ("detached", "/repo/wt/detached", json!({"detached":true})),
@@ -119,14 +120,14 @@ fn single_chat_rows_keep_worktree_marks() {
             json!({"missing":true}),
         ),
     ];
-    let mut snap = snapshot(
-        entries
-            .iter()
-            .enumerate()
-            .map(|(index, (_, path, _))| session(&format!("chat-{index}"), path, 1))
-            .collect(),
-        json!({}),
-    );
+    let mut sessions: Vec<_> = entries
+        .iter()
+        .enumerate()
+        .map(|(index, (_, path, _))| session(&format!("chat-{index}"), path, now))
+        .collect();
+    sessions.push(session("older", "/repo/wt/locked", 1));
+    let mut snap = snapshot(sessions, json!({}));
+
     for (_, path, mut fact) in entries.clone() {
         fact["path"] = json!(path);
         snap["projects"][0]["workspaces"]
@@ -134,10 +135,25 @@ fn single_chat_rows_keep_worktree_marks() {
             .unwrap()
             .push(fact);
     }
-    let rows: Vec<_> = sections(&snap, &owner(), &ViewState::default(), false)
-        .into_iter()
-        .flat_map(|section| section.rows)
-        .collect();
+    let owner = owner();
+    let tree = tree::build(&snap, &owner);
+    let rows: Vec<_> = tree::sections(
+        &tree,
+        &owner,
+        &ViewState::default(),
+        false,
+        now,
+        &Default::default(),
+    )
+    .into_iter()
+    .flat_map(|section| section.rows)
+    .collect();
+
+    assert!(
+        !rows
+            .iter()
+            .any(|r| r.id == "chat:older" || r.id == "/repo/wt/locked")
+    );
     for (mark, path, _) in entries {
         let row = rows
             .iter()
@@ -150,6 +166,7 @@ fn single_chat_rows_keep_worktree_marks() {
             "missing {mark} in {:?}",
             row.fields
         );
+        assert!(row.stands_for_workspace);
     }
 }
 #[test]

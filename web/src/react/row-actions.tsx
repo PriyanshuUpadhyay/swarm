@@ -4,7 +4,7 @@
 import { ArchiveIcon, ArchiveRestoreIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, FolderMinusIcon, MessageSquareIcon, PinIcon, PinOffIcon, PencilIcon, PlusIcon, SquareIcon, TerminalIcon, Trash2Icon, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { App } from "../core/app";
-import { archivedSession, chatRows, projectTitle, workspaceRow, type NavRow } from "../core/nav";
+import { archivedSession, projectTitle, workspaceRow, type NavRow } from "../core/nav";
 import { canStartIn } from "../core/new-chat";
 import { copyText as copy } from "./copy";
 
@@ -45,8 +45,7 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
   else if (r?.kind === "chat" && !r.archived) {
     list = chatActions(app, r.selection?.chat ?? undefined, fold);
     const path = r.selection?.workspace;
-    // A single chat stands for its workspace, so the same workspace actions are in its menu.
-    if (!r.parentId && path && !chatRows(app.view.tree).some((chat) => chat.selection?.workspace === path && chat.id !== r.id)) {
+    if (path && r.standsForWorkspace) {
       list.push(SEP, ...workspaceActions(app, path, row, true));
     }
   } else if (r?.kind === "workspace" && (r.archived || archive)) {

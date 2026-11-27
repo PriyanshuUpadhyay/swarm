@@ -30,7 +30,7 @@ pub(super) fn append<'a>(
         let hidden = count.saturating_sub(CHAT_LIMIT);
         let mut rows = Vec::new();
         for (w, chat) in asks {
-            view.chat_rows(w, chat, None, &mut rows);
+            view.chat_rows(w, chat, None, w.chats.len() == 1, &mut rows);
         }
         if hidden > 0 {
             rows.push(more(NEEDS_YOU, if expanded { 0 } else { hidden }));
@@ -55,7 +55,7 @@ pub(super) fn append<'a>(
                     .map(|chat| (w, chat))
                     .collect();
                 sort_chats(&mut chats);
-                let folded = chats.len() >= 2 && state.is_collapsed(&w.path);
+                let folded = has_workspace_row(chats.len()) && state.is_collapsed(&w.path);
                 let shown: Vec<_> = chats
                     .iter()
                     .copied()
