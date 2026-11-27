@@ -45,6 +45,20 @@ test("Meta+J shows and hides the background panel with the chat's agents", async
   await expect(panel).toHaveCount(0);
 });
 
+test("the background list reports a task read failure", async ({ page: tab }, info) => {
+  await tab.route("**/api/background?*", (route) => route.fulfill({ status: 503, json: { error: "Unavailable" } }));
+  try {
+    await openChat(tab, info);
+    await tab.keyboard.press("Meta+j");
+    const panel = tab.getByTestId("background-panel").last();
+    await expect(panel.getByRole("alert")).toHaveText("Could not load background tasks.", { timeout: 2_000 });
+    await expect(panel.getByRole("button", { name: /reviewer/ })).toBeVisible();
+    await captureThemes(tab, panel, "background-read-error");
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("a resized panel keeps its height when Meta+J hides and shows it", async ({ page: tab }, info) => {
   await openChat(tab, info);
   // The library also puts the panel id on its own element as a test id; the last one is ours.

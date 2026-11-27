@@ -7,7 +7,7 @@ import { Glyph } from "./glyph";
 import { Offline } from "./status";
 
 const POLL_MS = 3000;
-type Lists = { rows: BackgroundRow[]; addShell: (shell: WorkspaceShell) => void; refreshShells: () => Promise<void> };
+type Lists = { rows: BackgroundRow[]; taskReadFailed: boolean; addShell: (shell: WorkspaceShell) => void; refreshShells: () => Promise<void> };
 const Background = createContext<Lists | null>(null);
 
 export function useBackground() {
@@ -19,14 +19,17 @@ export function useBackground() {
 /** The chat and Cmd+J share the same two polling reads, also while the panel is closed. */
 export function BackgroundLists({ app, session, children }: { app: App; session: string; children: ReactNode }) {
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
-  const [tasks, setTasks] = useState<{ session: string; rows: BackgroundTask[] }>({ session, rows: [] });
+  const [tasks, setTasks] = useState<{ session: string; rows: BackgroundTask[]; failed?: boolean }>({ session, rows: [] });
   const [shells, setShells] = useState<{ session: string; rows: WorkspaceShell[] }>({ session, rows: [] });
 
   useEffect(() => {
     let live = true;
     setShells({ session, rows: [] });
     const read = () => Promise.allSettled([
-      app.api.get<{ tasks: BackgroundTask[] }>("/api/background", { session }).then((r) => { if (live) setTasks({ session, rows: r.tasks }); }),
+      app.api.get<{ tasks: BackgroundTask[] }>("/api/background", { session }).then(
+        (r) => { if (live) setTasks({ session, rows: r.tasks }); },
+        () => { if (live) setTasks((last) => ({ session, rows: last.session === session ? last.rows : [], failed: true })); },
+      ),
       app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session }).then((r) => { if (live) setShells({ session, rows: r.shells }); }),
     ]);
     const stop = poll(read, POLL_MS, () => document.hidden);
@@ -41,7 +44,8 @@ export function BackgroundLists({ app, session, children }: { app: App; session:
     const { shells } = await app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session });
     setShells((list) => list.session === session ? { session, rows: shells } : list);
   };
-  return <Background.Provider value={{ rows, addShell, refreshShells }}>{children}</Background.Provider>;
+  const taskReadFailed = tasks.session === session && !!tasks.failed;
+  return <Background.Provider value={{ rows, taskReadFailed, addShell, refreshShells }}>{children}</Background.Provider>;
 }
 
 export function BackgroundLine({ session }: { session: string }) {

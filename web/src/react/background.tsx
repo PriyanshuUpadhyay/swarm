@@ -22,7 +22,7 @@ import { useTheme } from "./appearance";
 const GROUP_LABEL = { error: "Failed", working: "Running", blocked: "Waiting", done: "Done", ended: "Ended" };
 
 export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; session: string; focusRequest?: number }) {
-  const { rows, addShell, refreshShells } = useBackground();
+  const { rows, taskReadFailed, addShell, refreshShells } = useBackground();
   const [shellError, setShellError] = useState<string | null>(null);
   // A shell request in flight: a second click would make a second shell, or close one twice.
   const [busy, setBusy] = useState(false);
@@ -101,6 +101,7 @@ export function BackgroundPanel({ app, session, focusRequest = 0 }: { app: App; 
   return (
     <div className="flex h-full min-h-0 border-t bg-background" data-testid="background-panel">
       <ul className="w-64 shrink-0 overflow-y-auto border-r py-1 text-sm" aria-label="Agents and background tasks">
+        {taskReadFailed && <li className="px-2 py-1 text-failed"><p role="alert">Could not load background tasks.</p></li>}
         {rows.map((r, i) => {
           const prev = rows[i - 1];
           const startsGroup = r.type === "task" && r.grouped && (prev?.type !== "task" || prev.agent !== r.agent || prev.status !== r.status);
