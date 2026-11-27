@@ -57,6 +57,7 @@ export type AgentInput = {
   running: boolean;
   waiting: boolean;
   turnStartTimeS?: number;
+  turnClockTimeS?: number;
   prompt: Prompt | null;
   /** Claude and pi in tmux keep a queue that Up pulls back (ADR 0038). */
   pullBack: boolean;
@@ -107,6 +108,7 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     running: agent?.state === "working",
     waiting,
     turnStartTimeS: agent?.turn_start_time_s,
+    turnClockTimeS: agent?.turn_clock_time_s,
     prompt: unreachable ? null : prompt,
     pullBack: (provider === "claude" || provider === "pi") && (adapter === "tmux" || adapter === "tmux-swarm"),
     queue: (agent?.queue as QueuedMessage[] | undefined) ?? [],

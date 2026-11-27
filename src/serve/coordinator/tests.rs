@@ -287,6 +287,34 @@ fn answering_a_block_keeps_the_web_turn_start() {
 }
 
 #[test]
+fn a_question_after_a_finished_turn_starts_the_next_web_clock() {
+    let fixture = Fixture::new();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let mut previous = BTreeMap::new();
+    for (state, at) in [
+        ("working", 100),
+        ("done", 200),
+        ("blocked", 300),
+        ("working", 400),
+    ] {
+        swarm::store::set_state(
+            &connection,
+            &fixture.session,
+            "worker",
+            state,
+            "hook",
+            None,
+            None,
+            at,
+        )
+        .unwrap();
+    }
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    let row = &snapshot[&fixture.session][0];
+    assert_eq!(row["turn_start_time_s"], 300);
+}
+
+#[test]
 fn a_degraded_listing_drops_cached_observations_after_every_pane_is_cleared() {
     let (fixture, mut connection, mut previous) = cached_waiting_worker();
     swarm::store::clear_pane(&connection, &fixture.session, "worker").unwrap();

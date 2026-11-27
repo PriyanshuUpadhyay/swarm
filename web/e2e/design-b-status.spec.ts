@@ -6,13 +6,19 @@ test("the status line names the work and keeps the turn clock outside the log", 
   const session = process.env.SWARM_E2E_LIVE!;
   const start = new Date("2030-01-01T00:00:00Z");
   const startS = start.getTime() / 1000;
+  const browserTime = new Date(start.getTime() - 120_000);
   let state = "done";
   let version = 0;
 
   await page.route("**/api/snapshot", async (route) => {
     const snapshot = await (await route.fetch()).json() as Snapshot;
     snapshot.version = version;
-    Object.assign(snapshot.agents[session][0], { state, state_at_s: startS, turn_start_time_s: startS - 65 });
+    Object.assign(snapshot.agents[session][0], {
+      state,
+      state_at_s: startS,
+      turn_start_time_s: state === "done" ? undefined : startS - 65,
+      turn_clock_time_s: state === "done" ? undefined : startS,
+    });
     await route.fulfill({ json: snapshot });
   });
   await mockStream(page, "status");
@@ -23,8 +29,8 @@ test("the status line names the work and keeps the turn clock outside the log", 
   }]);
   await open(page);
   await expect(page.getByTestId("fold")).toBeVisible();
-  await page.clock.install({ time: start });
-  await page.clock.pauseAt(new Date(start.getTime() + 1000));
+  await page.clock.install({ time: browserTime });
+  await page.clock.pauseAt(new Date(browserTime.getTime() + 1000));
 
   const change = async (next: string) => {
     state = next;
@@ -40,7 +46,7 @@ test("the status line names the work and keeps the turn clock outside the log", 
     await expect(status).toHaveCount(0);
     await page.clock.runFor(1);
     await expect(status.getByRole("status")).toHaveText("Running serve tests", { timeout: 2000 });
-    await expect(status.getByLabel("Turn elapsed: 1:06")).toBeVisible();
+    await expect(status.getByLabel("Turn elapsed: 1:05")).toBeVisible({ timeout: 2000 });
     await expect(status.getByTestId("stop")).toBeEnabled();
     await expect(page.getByTestId("transcript").getByText("Working…", { exact: true })).toHaveCount(0);
     await captureThemes(page, status, "working");

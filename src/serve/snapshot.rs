@@ -76,10 +76,27 @@ pub(super) fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::
             sessions.push(session);
         }
     }
-    let hub = app.hub.lock().unwrap();
-    Ok(
-        json!({"version": hub.version, "sessions": sessions, "archived": archived, "agents": hub.agents}),
-    )
+    let (version, mut agents) = {
+        let hub = app.hub.lock().unwrap();
+        (hub.version, hub.agents.clone())
+    };
+    // A changing clock belongs to each reply, not the agent cache or its revision.
+    let now = discovery::now();
+    for rows in agents
+        .as_object_mut()
+        .into_iter()
+        .flat_map(|map| map.values_mut())
+    {
+        for agent in rows.as_array_mut().into_iter().flatten() {
+            if agent["turn_start_time_s"]
+                .as_i64()
+                .is_some_and(|start| start > 0 && start <= now)
+            {
+                agent["turn_clock_time_s"] = json!(now);
+            }
+        }
+    }
+    Ok(json!({"version": version, "sessions": sessions, "archived": archived, "agents": agents}))
 }
 
 #[cfg(test)]

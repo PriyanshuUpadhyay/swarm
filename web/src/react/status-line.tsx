@@ -1,4 +1,4 @@
-import { useContext, useEffect, useEffectEvent, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useRef, useState } from "react";
 import { Button } from "../components/ui/button";
 import type { App, Composer } from "../core/app";
 import { inputTarget } from "../core/composer";
@@ -11,10 +11,11 @@ const HOLD_MS = 400;
 
 type Work = { shownAt: number; label: string; clock: string | null };
 
-function clockSince(startS: number | undefined): string | null {
+function clockSince(startS: number | undefined, serverS: number | undefined, sampleAt: number): string | null {
   if (typeof startS !== "number" || !Number.isSafeInteger(startS) || startS <= 0) return null;
-  const seconds = Math.floor(Date.now() / 1000) - startS;
-  return seconds < 0 ? null : waitText(seconds * 1000);
+  if (typeof serverS !== "number" || !Number.isSafeInteger(serverS) || serverS < startS) return null;
+  const elapsed = serverS - startS + Math.floor((performance.now() - sampleAt) / 1000);
+  return waitText(elapsed * 1000);
 }
 
 export function StatusLine({ app, composer }: { app: App; composer: Composer }) {
@@ -23,8 +24,11 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
   const running = agent.running && !agent.waiting && !agent.unreachable;
   const [work, setWork] = useState<Work | null>(null);
   const shownAt = work?.shownAt ?? null;
+  const sampleAt = useRef(0);
+  const { turnStartTimeS, turnClockTimeS } = agent;
+  useEffect(() => { sampleAt.current = performance.now(); }, [turnStartTimeS, turnClockTimeS]);
 
-  const sample = useEffectEvent(() => ({ label: workLabel, clock: clockSince(agent.turnStartTimeS) }));
+  const sample = useEffectEvent(() => ({ label: workLabel, clock: clockSince(turnStartTimeS, turnClockTimeS, sampleAt.current) }));
   const reveal = useEffectEvent(() => setWork({ ...sample(), shownAt: performance.now() }));
   const refresh = useEffectEvent(() => {
     const next = sample();
@@ -47,7 +51,7 @@ export function StatusLine({ app, composer }: { app: App; composer: Composer }) 
   }, [running, shownAt, offline]);
   useEffect(() => {
     if (running && !offline && shownAt !== null) refresh();
-  }, [running, shownAt, offline, workLabel, agent.turnStartTimeS]);
+  }, [running, shownAt, offline, workLabel, turnStartTimeS, turnClockTimeS]);
 
   if (agent.unreachable || (!agent.waiting && !work)) return null;
   const label = agent.waiting ? "Waiting for your answer" : running ? workLabel : work?.label;
