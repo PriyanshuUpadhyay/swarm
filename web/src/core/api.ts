@@ -220,6 +220,9 @@ export class ApiError extends Error {
   }
 }
 
+const snapshotReceipts = new WeakMap<Snapshot, number>();
+export const snapshotReceivedAt = (snapshot: Snapshot) => snapshotReceipts.get(snapshot);
+
 export class Api {
   constructor(
     private readonly token: string,
@@ -247,8 +250,10 @@ export class Api {
     });
   }
 
-  snapshot(): Promise<Snapshot> {
-    return this.json("/api/snapshot");
+  async snapshot(): Promise<Snapshot> {
+    const snapshot = await this.json<Snapshot>("/api/snapshot");
+    snapshotReceipts.set(snapshot, performance.now());
+    return snapshot;
   }
 
   rows(session: string, agent: string, tail: number, before?: number): Promise<RowPage> {

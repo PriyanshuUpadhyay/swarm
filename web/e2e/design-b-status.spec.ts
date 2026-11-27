@@ -75,6 +75,53 @@ test("the status line names the work and keeps the turn clock outside the log", 
   }
 });
 
+test("a slow sidebar read does not delay the turn clock sample", async ({ page }) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  const serverS = Date.parse("2030-01-01T00:00:00Z") / 1_000;
+  let hold = false;
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  await page.clock.install();
+  await mockStream(page, "slow-sidebar");
+
+  await page.route("**/api/snapshot", async (route) => {
+    const snapshot = await (await route.fetch()).json() as Snapshot;
+    snapshot.version = hold ? 700 : 699;
+    Object.assign(snapshot.agents[session][0], {
+      state: hold ? "working" : "done",
+      alive: true,
+      turn_start_time_s: hold ? serverS - 65 : undefined,
+      turn_clock_time_s: hold ? serverS : undefined,
+    });
+    await route.fulfill({ json: snapshot });
+  });
+  await page.route("**/api/tree?view=workspaces", async (route) => {
+    if (hold) await held;
+    await route.continue();
+  });
+
+  try {
+    await open(page);
+    const send = page.getByTestId("send");
+    await expect(send).toBeVisible();
+    hold = true;
+    const [reply] = await Promise.all([page.waitForResponse("**/api/snapshot"), streamFrame(page, "snapshot", { version: 700 })]);
+    await reply.finished();
+    await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+
+    await page.clock.fastForward(5_000);
+    release();
+    await expect(send).toHaveCount(0, { timeout: 2_000 });
+    await page.clock.runFor(200);
+    const status = page.getByTestId("chat-status-line");
+    await expect(status).toContainText(/Turn elapsed: 1:1\d/, { timeout: 2_000 });
+    await captureThemes(page, status, "clock-after-slow-sidebar");
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("a reopened working chat counts from the accepted snapshot", async ({ page }) => {
   const session = process.env.SWARM_E2E_GIT!;
   const time = new Date("2030-01-01T00:00:00Z");

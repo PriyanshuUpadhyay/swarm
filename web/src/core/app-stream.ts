@@ -1,4 +1,4 @@
-import { sleep, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
+import { sleep, snapshotReceivedAt, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import type { Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { bodyModeOf, displayOf, imagesOf, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, units } from "./transcript";
@@ -21,7 +21,7 @@ export class AppStream {
 
   applySnapshot(snap: Snapshot) {
     this.app.snapshot = snap;
-    this.app.snapshotReceivedAt = performance.now();
+    this.app.snapshotReceivedAt = snapshotReceivedAt(snap) ?? performance.now();
 
     // A card stays busy until its question goes; the same question shown again is a new ask.
     for (const [id, input] of this.app.inputs)
