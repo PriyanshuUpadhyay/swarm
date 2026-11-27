@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { SidebarRow, TreeView } from "../src/core/nav";
+import type { SidebarRow, TreeView, WorkspaceFacts } from "../src/core/nav";
 import { clickTarget, readTree, shoot } from "./lifecycle-helpers";
 
 async function load(page: Page) {
@@ -190,13 +190,17 @@ test("Prune names the project for a pinned worktree", async ({ page }) => {
   await page.unrouteAll({ behavior: "wait" });
 });
 
-async function withChatFacts(page: Page, change: (tree: TreeView, row: SidebarRow) => void) {
-  const session = process.env.SWARM_E2E_GIT!;
+async function withChatFacts(page: Page, change: (tree: TreeView, row: SidebarRow, facts: WorkspaceFacts) => void) {
+  const session = process.env.SWARM_E2E_GIT;
+  if (!session) throw new Error("Missing the fixture Git chat");
   await page.route("**/api/tree?view=workspaces", async (route) => {
     const response = await route.fetch();
     const tree: TreeView = await response.json();
-    const row = tree.sections.flatMap((section) => section.rows).find((item) => item.selection?.chat === session)!;
-    change(tree, row);
+    const row = tree.sections.flatMap((section) => section.rows).find((item) => item.selection?.chat === session);
+    const path = row?.selection?.workspace;
+    const facts = path ? tree.workspaces[path] : undefined;
+    if (!row || !facts) throw new Error("Missing the fixture Git workspace row");
+    change(tree, row, facts);
     await route.fulfill({ response, json: tree });
   });
   await load(page);
@@ -229,6 +233,20 @@ test("the archive row has a 24 px Unarchive target without growing", async ({ pa
   }
 });
 
+test("a merged PR chip does not show CI", async ({ page, browserName }) => {
+  try {
+    const row = await withChatFacts(page, (_tree, _row, facts) => {
+      facts.pr = { ...demoPr, state: "merged", ci: "passed" };
+    });
+    const chip = row.getByTestId("pr-chip");
+    await expect(chip).toHaveAccessibleName("PR #7, merged");
+    await expect(chip.locator(".pr-ci")).toHaveCount(0);
+    await shoot(page, "sidebar-merged", browserName);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("right click leaves the PR chip's native link menu available", async ({ page }) => {
   const row = await withChatFacts(page, (tree, row) => { tree.workspaces[row.selection!.workspace!].pr = demoPr; });
   const chip = row.getByTestId("pr-chip");
@@ -248,11 +266,7 @@ test("a branchless chat still reserves the same 36 px below the tabs", async ({ 
 
 test("the PR chip responds to a click within its 24 px hit area", async ({ page }) => {
   try {
-    const row = await withChatFacts(page, (tree, row) => {
-      const path = row.selection?.workspace;
-      if (!path || !tree.workspaces[path]) throw new Error("PR fixture chat has no workspace");
-      tree.workspaces[path].pr = demoPr;
-    });
+    const row = await withChatFacts(page, (_tree, _row, facts) => { facts.pr = demoPr; });
     const chip = row.getByTestId("pr-chip");
     await expect(chip).toBeVisible();
     expect(await chip.evaluate((el) => getComputedStyle(el, "::after").height)).toBe("24px");
