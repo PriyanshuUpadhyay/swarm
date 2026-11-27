@@ -125,11 +125,9 @@ pub(super) async fn window(
     let mut state = LiveRows::empty(start, log.format == "codex");
     let lines = lines(&payload)?;
     if seed_model
-        && lines.iter().any(|(_, _, events)| {
-            events
-                .iter()
-                .any(|event| view::model_fact(event).is_some())
-        })
+        && lines
+            .iter()
+            .any(|(_, _, events)| events.iter().any(|event| view::model_fact(event).is_some()))
         && let Some(model) = model_before(&source, log, start, budget).await
     {
         state.seed_model(model);
