@@ -3,7 +3,7 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon,
 import { useState } from "react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
-import { duration, imagesOf, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
+import { duration, imagesOf, isCliJoin, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
 import { fold, type FoldLevel } from "../core/fold-display";
 import { copyText } from "./copy";
 import { Glyph } from "./glyph";
@@ -98,7 +98,9 @@ function RowBody(ctx: Ctx) {
   if (row.kind === "todoList") return <TodoRow row={row} />;
   if (row.kind === "proposedPlan") return <PlanRow row={row} />;
   if (row.subagent) return <SubagentRow run={row.subagent} title={row.text} sourceSession={row.source_session} />;
-  if (row.kind === "model_change") return <div className="quiet" data-testid="model-change">{row.text}</div>;
+  if (row.kind === "model_change") return isCliJoin(row)
+    ? <div className="divider" data-testid="model-change"><span className="min-w-0 text-center break-words">{row.text}</span></div>
+    : <div className="quiet" data-testid="model-change">{row.text}</div>;
   if (row.tool) return <ToolCard {...ctx} />;
   if (row.kind === "divider")
     return (

@@ -199,6 +199,10 @@ export function cut(d: Display, n: number): Display {
   return { blocks: take(d.blocks) };
 }
 
+export function isCliJoin(row: Row): boolean {
+  return row.kind === "model_change" && row.id.startsWith(row.source_session ? `${row.source_session}:cli-join:` : "cli-join:");
+}
+
 /** A queued row waits for the agent, so it sits after every logged row. */
 function compare(a: Row, b: Row): number {
   const qa = a.kind === "queued" ? 1 : 0;
@@ -206,8 +210,7 @@ function compare(a: Row, b: Row): number {
   const sourceA = a.source_session ?? "~";
   const sourceB = b.source_session ?? "~";
   const segment = sourceA < sourceB ? -1 : sourceA > sourceB ? 1 : 0;
-  const joined = (row: Row) => row.kind === "model_change" && row.id.startsWith(row.source_session ? `${row.source_session}:cli-join:` : "cli-join:") ? 1 : 0;
-  return qa - qb || segment || joined(b) - joined(a) || a.order[0] - b.order[0] || a.order[1] - b.order[1];
+  return qa - qb || segment || Number(isCliJoin(b)) - Number(isCliJoin(a)) || a.order[0] - b.order[0] || a.order[1] - b.order[1];
 }
 
 /** A historical row ID starts with the UUID of its source session. */

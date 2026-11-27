@@ -8,7 +8,7 @@ import { captureRunPost, holdChatStart, mockRunCatalog, open, patchLiveChair, pa
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
 
-const shots = (tab: Page, unit: number | "fix1" | "fix2", name: string) =>
+const shots = (tab: Page, unit: number | "fix1" | "fix2" | "fix3", name: string) =>
   shootThemes(tab, resolve(import.meta.dirname, `../../tmp/shots/${unit}/${name}`));
 
 test("the same tab pages both CLI logs and reads tool output from its original session", async ({ page: tab }) => {
@@ -31,7 +31,8 @@ test("the same tab pages both CLI logs and reads tool output from its original s
   const log = join(dir, `${leaf}.jsonl`);
   try {
     const line = { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "After the CLI switch" }] } };
-    writeFileSync(log, `${JSON.stringify(line)}\n`);
+    const model = { type: "turn_context", payload: { model: "gpt-6.1-terra" } };
+    writeFileSync(log, `${JSON.stringify(model)}\n${JSON.stringify(line)}\n`);
     sql(`UPDATE session SET chair_log = ${quote(log)} WHERE id = ${quote(leaf)};
           INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${quote(leaf)}, 'orchestrator', 'codex', unixepoch(), ${quote(log)});`);
     call("session", "continue", leaf, root);
@@ -48,8 +49,23 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     await expect(loadOlder).toBeVisible();
     await loadOlder.click();
     await expect(transcript.getByText("Show the build log")).toBeVisible();
-    await expect(transcript.getByTestId("model-change")).toHaveText("Claude → Codex");
+    const boundary = transcript.getByTestId("model-change");
+    await expect(boundary).toHaveText("codex · gpt-6.1-terra from here");
+    const form = await boundary.evaluate((row) => {
+      const box = row.getBoundingClientRect();
+      const label = row.firstElementChild!.getBoundingClientRect();
+      return {
+        left: label.left - box.left,
+        right: box.right - label.right,
+        rules: ["::before", "::after"].map((side) => getComputedStyle(row, side).borderTopWidth),
+        font: getComputedStyle(row).fontSize,
+      };
+    });
+    expect(Math.abs(form.left - form.right)).toBeLessThan(1);
+    expect(form.rules).toEqual(["1px", "1px"]);
+    if (process.env.E2E_SHOTS) console.log("cross-CLI marker CSS px", form);
     await shots(tab, 5, "linked-transcript");
+    await shots(tab, "fix3", "cli-join");
     await transcript.getByTestId("fold").click();
     const card = transcript.getByTestId("tool-card").filter({ hasText: "cat big.log" });
     await card.getByRole("button", { name: /cat big\.log/ }).click();

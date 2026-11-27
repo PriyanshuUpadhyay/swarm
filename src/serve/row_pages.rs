@@ -171,10 +171,10 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
                         "chat history read failed",
                     )
                 })?;
-            if let (Some(from), Some(to)) = (provider_label(from), provider_label(to))
+            if let (Some(from), Some(to)) = (provider_id(from), provider_id(to))
                 && from != to
             {
-                joins.push((session.clone(), format!("{from} → {to}")));
+                joins.push((session.clone(), to.to_owned()));
             }
         }
         if linked && end == 0 && index > 0 {
@@ -196,8 +196,8 @@ fn segment_page(root: &Path, query: &RowsQuery) -> Result<SegmentPage, ApiError>
     }
 }
 
-fn provider_label(name: Option<String>) -> Option<&'static str> {
-    swarm::providers::Provider::parse(name.as_deref()?).map(|provider| provider.info().label)
+fn provider_id(name: Option<String>) -> Option<&'static str> {
+    swarm::providers::Provider::parse(name.as_deref()?).map(|provider| provider.id())
 }
 
 pub(super) async fn transcript_rows(
@@ -352,6 +352,7 @@ async fn render_row_page(
             if source == segment.session && let Some(model) = &model {
                 label.push_str(&format!(" · {model}"));
             }
+            label.push_str(" from here");
             let mut row = Row::new(RowKind::ModelChange, label, format!("cli-join:{source}"));
             if source != leaf {
                 row.scope_to(&source);

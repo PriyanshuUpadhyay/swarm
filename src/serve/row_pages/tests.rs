@@ -37,7 +37,7 @@ async fn linked_history_pages_across_logs_without_changing_the_leaf_offsets() {
     let Json(missing) = read(None).await.unwrap();
     assert_eq!(row_texts(&missing), vec!["older"]);
     assert_eq!(missing["page"]["end_offset"], 0);
-    assert_eq!(missing["rows"][1]["text"], "Claude → Codex");
+    assert_eq!(missing["rows"][1]["text"], "codex from here");
 
     let leaf_log = fixture.dir.join("leaf.jsonl");
     let model = json!({"type":"turn_context","payload":{"model":"gpt-5"}});
@@ -52,7 +52,10 @@ async fn linked_history_pages_across_logs_without_changing_the_leaf_offsets() {
     let cursor = current["page"]["older_cursor"].as_str().unwrap();
     let Json(first_leaf_page) = read(Some(cursor.into())).await.unwrap();
     assert_eq!(first_leaf_page["rows"][0]["id"], current["rows"][0]["id"]);
-    assert_eq!(first_leaf_page["rows"][0]["text"], "Claude → Codex · gpt-5");
+    assert_eq!(
+        first_leaf_page["rows"][0]["text"],
+        "codex · gpt-5 from here"
+    );
     let cursor = first_leaf_page["page"]["older_cursor"].as_str().unwrap();
     let Json(older) = read(Some(cursor.into())).await.unwrap();
     assert_eq!(row_texts(&older), vec!["older"]);
