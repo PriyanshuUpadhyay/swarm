@@ -126,6 +126,7 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
     },
   } });
   page.body![fence.id] = bodyMode(page.display![fence.id]);
+
   await tab.route("**/api/rows?*", route => route.fulfill({ json: page }));
   await open(tab);
 
