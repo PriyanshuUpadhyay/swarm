@@ -118,6 +118,28 @@ test("a question that takes text sends the typed answer", async ({ page: tab }, 
   await tab.screenshot({ path: info.outputPath("typed-question.png") });
 });
 
+test("a question puts its answer field and Send after eleven choices", async ({ page: tab }) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await showPrompt(tab, [session], {
+    id: "eleven-choices", question: "Below which window width should the sidebar collapse to a rail?",
+    choices: Array.from({ length: 11 }, (_, i) => i < 9 ? `Option ${i + 1}` : i === 9 ? "Skip this for now" : "Ask the design seat"),
+    input: true,
+  });
+  await tab.setViewportSize({ width: 1280, height: 900 });
+  await openChat(tab, session);
+  const card = tab.getByTestId("prompt-card");
+  await expect(card.getByTestId("prompt-choice")).toHaveCount(11);
+  const bounds = await card.evaluate((el) => ({
+    lastChoice: [...el.querySelectorAll('[data-testid="prompt-choice"]')].at(-1)!.getBoundingClientRect().bottom,
+    answer: el.querySelector('[data-testid="prompt-text"]')!.getBoundingClientRect().top,
+    send: el.querySelector('[data-testid="prompt-send"]')!.getBoundingClientRect().top,
+  }));
+  console.log("Question y (last choice bottom, answer, Send):", bounds);
+  expect(bounds.answer).toBeGreaterThan(bounds.lastChoice);
+  expect(bounds.send).toBeGreaterThan(bounds.lastChoice);
+  await captureThemes(tab, card, "eleven");
+});
+
 test("a screen card shows the pane rows and sends one key per button", async ({ page: tab }, info) => {
   const session = process.env.SWARM_E2E_LIVE!;
   const rows = [...Array.from({ length: 60 }, (_, i) => `row ${i + 1}`), " Select model", " ❯ 1. Opus", "   2. Sonnet"].join("\n");

@@ -72,6 +72,30 @@ export function PromptCard({
     e.preventDefault();
     pick(i);
   };
+  const answerAfterChoices = !prompt.screen && prompt.choices.length > 0;
+  const answer = prompt.input && (
+    <form className="flex min-w-0 items-center gap-2" onSubmit={submit}>
+      <input
+        data-testid="prompt-text"
+        aria-label="Your answer"
+        placeholder={prompt.screen ? "Type text; Send types it and presses Enter" : "Or type your own answer…"}
+        value={text}
+        disabled={busy !== null}
+        onChange={(e) => setTyped({ prompt: prompt.id, text: e.target.value })}
+        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+      />
+      <button
+        type="submit"
+        data-testid="prompt-send"
+        disabled={busy !== null || !line}
+        className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm hover:bg-hover disabled:opacity-60"
+      >
+        Send
+        {busy === -1 && <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" />}
+      </button>
+    </form>
+  );
+
   return (
     <div
       tabIndex={0}
@@ -116,28 +140,7 @@ export function PromptCard({
           {prompt.question}
         </div>
       )}
-      {prompt.input && (
-        <form className="flex min-w-0 items-center gap-2" onSubmit={submit}>
-          <input
-            data-testid="prompt-text"
-            aria-label="Your answer"
-            placeholder={prompt.screen ? "Type text; Send types it and presses Enter" : "Or type your own answer…"}
-            value={text}
-            disabled={busy !== null}
-            onChange={(e) => setTyped({ prompt: prompt.id, text: e.target.value })}
-            className="min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
-          />
-          <button
-            type="submit"
-            data-testid="prompt-send"
-            disabled={busy !== null || !line}
-            className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-sm hover:bg-hover disabled:opacity-60"
-          >
-            Send
-            {busy === -1 && <LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" />}
-          </button>
-        </form>
-      )}
+      {!answerAfterChoices && answer}
       <div className={cn("grid gap-1", prompt.screen && "grid-cols-4")}>
         {prompt.choices.map((choice, i) => {
           const detail = prompt.details?.[i];
@@ -161,6 +164,7 @@ export function PromptCard({
           );
         })}
       </div>
+      {answerAfterChoices && answer}
     </div>
   );
 }
