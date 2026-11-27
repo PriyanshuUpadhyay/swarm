@@ -42,10 +42,12 @@ pub(super) async fn prepare_carry(
                 let size = std::fs::metadata(&log.path)
                     .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
                     .len();
-                budget = budget.checked_sub(size).ok_or_else(file_carry_limit)?;
+                budget = budget
+                    .checked_sub(size)
+                    .ok_or_else(|| file_carry_limit(alive))?;
                 let rows = read_handoff_log(app, &row.id, &log, Some(size)).await?;
                 if !handoff::append_chat_text(&mut text, &rows, ROWS_FIND_LIMIT) {
-                    return Err(file_carry_limit());
+                    return Err(file_carry_limit(alive));
                 }
             }
             if text.is_empty() {
@@ -101,9 +103,14 @@ pub(super) async fn prepare_carry(
     }
 }
 
-fn file_carry_limit() -> ApiError {
+fn file_carry_limit(alive: bool) -> ApiError {
+    let choices = if alive {
+        "Summary or No history"
+    } else {
+        "No history"
+    };
     error(
         StatusCode::PAYLOAD_TOO_LARGE,
-        "This chat is too large to carry as a file. Choose Summary or No history in Settings.",
+        &format!("This chat is too large to carry as a file. Choose {choices} in Settings."),
     )
 }

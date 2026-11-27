@@ -75,6 +75,22 @@ async fn file_carry_refuses_an_oversized_chat_before_writing_or_launching() {
 }
 
 #[tokio::test]
+async fn ended_file_limit_only_offers_no_history() {
+    let (fixture, body) = ended_file_carry();
+    std::fs::File::create(&fixture.log)
+        .unwrap()
+        .set_len(ROWS_FIND_LIMIT as u64 + 1)
+        .unwrap();
+
+    let err = prepare_ended_file(&fixture, &body).await.unwrap_err();
+    assert_eq!(err.0, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(
+        err.1.0["error"],
+        "This chat is too large to carry as a file. Choose No history in Settings."
+    );
+}
+
+#[tokio::test]
 async fn a_switch_of_a_chat_with_no_adapter_reads_its_chair_on_the_apps_adapter() {
     use std::os::unix::fs::PermissionsExt;
     let fixture = action_fixture();
