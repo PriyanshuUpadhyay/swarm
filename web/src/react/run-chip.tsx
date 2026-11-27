@@ -162,9 +162,8 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
     : outcome !== "none" ? outcomeText(outcome, current, proposed, saved, label)
     : "A pick applies now. The next reply may read the whole chat once, so it costs more.";
   return (
-    <>
-      <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={pick} disabled={switching} preview={setPreview} />
-      <div className="grid gap-2 border-t border-menu-border p-2 text-xs text-muted-foreground">
+    <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={pick} disabled={switching} preview={setPreview} foot={
+      <div className="grid gap-2 p-2">
         {handoff && <SwitchProgress handoff={handoff} />}
         <ErrorLine text={handoff?.error ?? catalog.error} />
         <div className="flex items-center justify-between gap-2">
@@ -174,6 +173,6 @@ function RunBody({ app, sessionId, chair, ended }: { app: App; sessionId: string
         {/* cancelSwitch posts a refusal as an app notice. */}
         {switching && <Button className="justify-self-end" type="button" size="sm" variant="outline" data-testid="run-cancel" disabled={!handoff?.canCancel} onClick={() => void app.life.cancelSwitch(sessionId)}>Cancel switch</Button>}
       </div>
-    </>
+    } />
   );
 }

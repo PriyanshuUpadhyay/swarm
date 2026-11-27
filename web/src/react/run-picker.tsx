@@ -2,7 +2,7 @@
 // and the new chat composer both show it (ADR 0110, ADR 0149).
 
 import { ArrowUpRightIcon, BrainIcon, SearchIcon, StarIcon } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore, type Dispatch } from "react";
+import { useEffect, useState, useSyncExternalStore, type Dispatch, type ReactNode } from "react";
 import type { App } from "../core/app";
 import { accountCli, accountColor, chooseModel, cliName, levelWord, limitText, modelLevels, type Run } from "../core/composer";
 import type { ModelInfo } from "../core/run-catalog";
@@ -64,7 +64,7 @@ export function runModel(catalog: Catalog, draft: Run) {
 }
 
 /** One picker for a live run, an ended run, or a new chat draft. */
-export function RunPicker({ app, catalog, current, draft, setDraft, disabled = false, preview }: { app: App; catalog: Catalog; current?: Run; draft: Run; setDraft: Dispatch<Run>; disabled?: boolean; preview?: (run: Run | null) => void }) {
+export function RunPicker({ app, catalog, current, draft, setDraft, disabled = false, preview, foot }: { app: App; catalog: Catalog; current?: Run; draft: Run; setDraft: Dispatch<Run>; disabled?: boolean; preview?: (run: Run | null) => void; foot: ReactNode }) {
   const [accounts, setAccounts] = useState<Pick<Account, "name" | "email" | "summary">[]>([]);
   const usage = useSyncExternalStore(app.settings.subscribe, () => app.settings.state.usage);
   const prefs = useSyncExternalStore(app.subscribe, () => app.view.tree?.prefs);
@@ -139,15 +139,15 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
   };
 
   return (
-    <fieldset disabled={disabled} className="grid min-w-0 grid-cols-[min(136px,30%)_minmax(0,1fr)] overflow-hidden rounded-[inherit]">
-      <div className="grid content-start gap-1 bg-surface p-1.5" aria-label="Model groups" role="group">
+    <div className="grid min-w-0 grid-cols-[min(136px,30%)_minmax(0,1fr)] overflow-hidden rounded-[inherit]">
+      <fieldset disabled={disabled} className="row-span-2 grid min-w-0 content-start gap-1 bg-surface p-1.5" aria-label="Model groups">
         <button type="button" aria-pressed={rail === "favorites"} className={RAIL} onClick={() => setRail("favorites")}><StarIcon className="size-4 shrink-0" /> Favorites</button>
         {providers.map((p) => <button key={p.id} type="button" aria-pressed={rail === p.id} className={RAIL} onClick={() => setRail(p.id)}>
           <CliMark provider={p.id} selected={rail === p.id} />
           <span className="truncate">{cliName(p.id)}</span>{current && p.id !== current.provider && <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden />}
         </button>)}
-      </div>
-      <div className="grid min-w-0 content-start">
+      </fieldset>
+      <fieldset disabled={disabled} className="min-w-0">
         <div className="grid min-w-0 gap-1 p-2" onKeyDown={(e) => modelPickerKey(e, query)}>
           <div className="relative">
             <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -231,8 +231,9 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
           </div>}
         </div>
         </div>
-      </div>
-    </fieldset>
+      </fieldset>
+      <div className="col-start-2 border-t border-menu-border text-sm/4 text-muted-foreground">{foot}</div>
+    </div>
   );
 }
 

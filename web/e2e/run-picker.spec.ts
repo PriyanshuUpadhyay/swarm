@@ -148,7 +148,8 @@ test("the new-chat picker gives a catalog error space inside its footer", async 
   const error = overlay.getByRole("alert").filter({ hasText: "Could not read the CLIs" });
   await expect(error).toBeVisible();
   const rail = overlay.getByRole("group", { name: "Model groups" });
-  expect((await error.boundingBox())!.x - (await rail.boundingBox())!.x).toBeGreaterThanOrEqual(8);
+  const railBox = (await rail.boundingBox())!;
+  expect((await error.boundingBox())!.x - (railBox.x + railBox.width)).toBeGreaterThanOrEqual(8);
 });
 
 test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }) => {
