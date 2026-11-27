@@ -2,7 +2,7 @@
 // and diff line comments that go to the open chat's agent as one message. It follows `App`'s
 // workspace and keeps its own view; `App` stays unaware of it.
 
-import type { PatchLineWire, TextPreview } from "./api";
+import { ApiError, type PatchLineWire, type TextPreview } from "./api";
 import type { App } from "./app";
 import { readStore, writeStore } from "./app-types";
 import type { Command } from "./commands";
@@ -442,7 +442,7 @@ export class Changes {
       this.notify();
       return true;
     } catch (err) {
-      this.app.notice(message(err), true);
+      this.app.notice(err instanceof ApiError && err.status === 413 ? "Could not add the comment. Select fewer lines." : message(err), true);
       return false;
     } finally {
       this.adding = false;

@@ -56,6 +56,33 @@ test("focus refresh resumes after Show all is refused without repeating the full
   expect(fullReads).toBe(1);
 });
 
+test("an oversized Changes range keeps the note and asks for fewer lines", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  await tab.route("**/api/changes/diff?**", (route) => {
+    if (new URL(route.request().url()).searchParams.get("full") !== "1") return route.continue();
+    const lines = ["x", "y"].map((ch, i) => ({ kind: "add", text: ch.repeat(36_000), new: i + 1 }));
+    return route.fulfill({ json: { path: "big.txt", layer: "untracked", patch: "full patch", display: { lines }, added: 2, removed: 0 } });
+  });
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(tab.getByTestId("diff-capped")).toBeHidden();
+  const diff = tab.getByTestId("diff-body");
+  await diff.locator('[data-gutter] > [data-column-number]').first().click();
+  await diff.locator('[data-gutter] > [data-column-number]').last().click({ modifiers: ["Shift"] });
+  const selection = diff.locator('[data-content] > [data-line][data-selected-line]');
+  await expect(selection).toHaveCount(2);
+  const input = tab.getByTestId("comment-input");
+  await input.fill("Check these lines before shipping.");
+
+  const rejection = tab.waitForResponse((response) => new URL(response.url()).pathname === "/api/changes/comment-range");
+  await tab.getByTestId("comment-add").click();
+  expect((await rejection).status()).toBe(413);
+  await expect(tab.getByText("Could not add the comment. Select fewer lines.", { exact: true })).toBeVisible();
+  await expect(input).toHaveValue("Check these lines before shipping.");
+  await expect(selection).toHaveCount(2);
+});
+
 test("the 680 px new-chat composer uses the display face only for its question", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page);
