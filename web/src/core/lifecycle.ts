@@ -286,7 +286,7 @@ export class Lifecycle {
   }
 
   /** Native resume or linked handoff; the server owns progress and cancel. */
-  async switchModel(old: string, provider: string, model: string, account: string | null, effort: string | null = null, carry: SwitchCarry = "file") {
+  async switchModel(old: string, provider: string, model: string | null, account: string | null, effort: string | null = null, carry: SwitchCarry = "file") {
     const running = this.state.handoffs[old];
     if (running && !isSettled(running.phase)) return;
     // The server's frames own canCancel.
@@ -295,7 +295,7 @@ export class Lifecycle {
       const done = await this.api.post<{ session: string }>("/api/chat/continue", {
         old_session: old,
         provider,
-        model,
+        ...(model === null ? {} : { model }),
         carry,
         ...(account ? { account } : {}),
         ...(effort ? { effort } : {}),
@@ -330,7 +330,7 @@ export class Lifecycle {
       if (foreign || !chair.resumable) {
         const carry = foreign ? endedCarry(savedCarry(this.app.tree?.prefs)) : "clean";
         const next = run ?? chair;
-        if (!await this.switchModel(session, provider, next.model ?? "default", next.account, next.effort, carry)) return;
+        if (!await this.switchModel(session, provider, next.model, next.account, next.effort, carry)) return;
       } else {
         await this.api.post("/api/chat/resume", {
           session,

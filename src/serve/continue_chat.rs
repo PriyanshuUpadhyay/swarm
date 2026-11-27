@@ -10,7 +10,7 @@ use carry::prepare_carry;
 pub(super) struct ContinueChat {
     pub(super) old_session: String,
     pub(super) provider: String,
-    pub(super) model: String,
+    pub(super) model: Option<String>,
     pub(super) account: Option<String>,
     /// Absent keeps the profile's effort for that CLI.
     pub(super) effort: Option<String>,
@@ -44,8 +44,15 @@ pub(super) fn register_continue(app: &App, body: &ContinueChat) -> Result<(), Ap
     if swarm::providers::Provider::parse(&body.provider).is_none() {
         return Err(error(StatusCode::BAD_REQUEST, "unknown provider"));
     }
+    if body.carry == Carry::Resume && body.model.is_none() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "a native model switch needs a model",
+        ));
+    }
+
     validate_launch_options([
-        Some(body.model.as_str()),
+        body.model.as_deref(),
         body.account.as_deref(),
         body.effort.as_deref(),
     ])?;
@@ -242,7 +249,7 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     let launch = |model: Option<&str>, effort: Option<&str>, account: Option<&str>| {
         run_cli(app, resume_launch(&call, model, effort, account), None)
     };
-    if let Err(refused) = launch(Some(&body.model), body.effort.as_deref(), account).await {
+    if let Err(refused) = launch(body.model.as_deref(), body.effort.as_deref(), account).await {
         // A chair closed by this switch starts again on its old run, so the chat keeps a pane.
         // With no old model known, launch takes the role's runner, never the refused pick.
         if closed
@@ -317,7 +324,7 @@ pub(super) async fn execute_continue_timed(
             prepared = prepare_carry(app, &body, &call, summary_wait, poll) => prepared?,
         };
         continue_phase(app, old, "starting")?;
-        let started = new_chat_now(app, NewChat { cwd: call.cwd.to_string_lossy().into_owned(), role: None, provider: Some(body.provider.clone()), model: Some(body.model.clone()), account: body.account.clone(), effort: body.effort.clone(), prompt: None, place: Some(Place::Here) }).await?;
+        let started = new_chat_now(app, NewChat { cwd: call.cwd.to_string_lossy().into_owned(), role: None, provider: Some(body.provider.clone()), model: body.model.clone(), account: body.account.clone(), effort: body.effort.clone(), prompt: None, place: Some(Place::Here) }).await?;
         let session = started["session"].as_str().unwrap();
         let next = CliCall { args: vec![], cwd: call.cwd.clone(), session: Some(session.into()), adapter: "tmux-swarm".into() };
         let done = async {

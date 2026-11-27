@@ -40,7 +40,7 @@ esac
     let body = ContinueChat {
         old_session: fixture.session.clone(),
         provider: "codex".into(),
-        model: "gpt-6-sol".into(),
+        model: Some("gpt-6-sol".into()),
         account: None,
         effort: None,
         carry: Carry::Summary,
@@ -129,6 +129,22 @@ fn handoff_link_conflict_points_to_the_newer_chat() {
 
     let err = swarm::store::continue_session(&db, &losing, &old).unwrap_err();
     assert!(err.to_string().contains("Open the newer chat"));
+}
+
+#[tokio::test]
+async fn linked_start_without_a_model_leaves_the_cli_default() {
+    let (fixture, _) = handoff_fixture();
+    let body = json!({"old_session": fixture.session, "provider": "codex", "carry": "clean"});
+    let body = serde_json::from_value(body).unwrap();
+    handoff_test_run(&fixture, body).await.unwrap();
+
+    let calls = std::fs::read_to_string(fixture.dir.join("home/handoff-actions")).unwrap();
+    let launch = calls
+        .lines()
+        .find(|line| line.contains("launch orchestrator"))
+        .unwrap();
+    assert!(launch.contains("--provider codex"), "{launch}");
+    assert!(!launch.contains("--model"), "{launch}");
 }
 
 #[tokio::test]
@@ -412,12 +428,12 @@ async fn handoff_rejects_duplicate_unknown_and_bad_launch_before_cli() {
         StatusCode::BAD_REQUEST
     );
     body.provider = "codex".into();
-    body.model = "--option".into();
+    body.model = Some("--option".into());
     assert_eq!(
         register_continue(&fixture.app, &body).unwrap_err().0,
         StatusCode::BAD_REQUEST
     );
-    body.model = "gpt-6-sol".into();
+    body.model = Some("gpt-6-sol".into());
     body.old_session = "unknown".into();
     assert_eq!(
         register_continue(&fixture.app, &body).unwrap_err().0,
@@ -542,7 +558,10 @@ cat "$SWARM_HOME/menu.json"
 fn a_codex_resume_with_no_account_stays_in_its_account() {
     use super::continue_chat::resume_account;
     assert_eq!(resume_account("codex", None, Some("work")), Some("work"));
-    assert_eq!(resume_account("codex", Some("home"), Some("work")), Some("home"));
+    assert_eq!(
+        resume_account("codex", Some("home"), Some("work")),
+        Some("home")
+    );
     // Claude keeps no session in an account home, so no account means the launch default.
     assert_eq!(resume_account("claude", None, Some("work")), None);
 }

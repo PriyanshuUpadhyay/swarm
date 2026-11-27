@@ -12,7 +12,7 @@ fn ended_file_carry() -> (Fixture, ContinueChat) {
     let body = ContinueChat {
         old_session: fixture.session.clone(),
         provider: "codex".into(),
-        model: "gpt-5".into(),
+        model: Some("gpt-5".into()),
         account: None,
         effort: None,
         carry: Carry::File,
