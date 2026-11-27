@@ -67,6 +67,7 @@ fn lookup_bounded(
         let output = run_before(program, args, deadline);
         match output {
             Err(cut) => *failure.borrow_mut() = Some(LookupError::Deadline(cut)),
+            // Git can have no result, as for a detached HEAD. A failed gh read is not a no-PR result.
             Ok(None) if program == "gh" => *failure.borrow_mut() = Some(LookupError::CommandFailed),
             Ok(output) => return output,
         }
