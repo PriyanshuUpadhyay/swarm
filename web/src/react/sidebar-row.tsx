@@ -30,7 +30,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
     const s = row.section;
     const folded = row.expanded === false;
     return (
-      <div {...common} className={`trow head ${s.kind}`} title={s.path ?? undefined}>
+      <div {...common} className={`trow head ${s.kind}${s.kind === "project" && !archive ? " project-head" : ""}`} title={s.path ?? undefined}>
         <div className="tline">
           {s.kind === "pinned" ? (
             <>
@@ -45,9 +45,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
             </>
           ) : (
             <>
-              <span className="avatar" aria-hidden>
-                {s.title.slice(0, 1)}
-              </span>
+              {archive && <span className="avatar" aria-hidden>{s.title.slice(0, 1)}</span>}
               {s.fields.map((f, i) =>
                 f.field === "status" ? folded && s.status ? <StatusGlyph key={i} status={s.status} /> : null : <FieldView key={i} f={f} row={null} />,
               )}
@@ -84,21 +82,24 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
       <div {...common} className="trow chat-row" data-session={r.selection?.chat ?? undefined} data-marked={marked || undefined}
         style={{ paddingLeft: 9 + (row.level - 2) * 11 }}>
         <div className="tline chat-title">
-          {needsYou ? <span className="needs-dot" aria-hidden /> : r.hasChildren ? chev() : null}
+          <span className="chat-mark">
+            {needsYou ? <span className="needs-dot" aria-hidden /> : r.status && <StatusGlyph status={r.status} />}
+          </span>
           <span className="label" title={r.title}>{r.title}</span>
           {r.fields.some((f) => f.field === "unread") && <span className="unread" role="img" aria-label="Unread" data-tip="Unread" />}
           <span className="flex-1" />
+          {r.hasChildren && !needsYou && chev()}
           {r.childrenSummary && (
             <button className="sidebar-count" type="button" tabIndex={-1} data-action="toggle">{r.childrenSummary}</button>
           )}
         </div>
         <div className="tline chat-sub">
-          {r.status && <><StatusGlyph status={r.status} />{!needsYou && <span className="fld">{shownStatus(r.status)}</span>}</>}
+          {!needsYou && r.status && <span className="fld">{shownStatus(r.status)}</span>}
           {needsYou && r.detail && <span className="label" title={r.detail}>{r.detail}</span>}
-          {r.age && <FieldView f={{ field: "age", text: r.age }} row={r} />}
           {other.map((f, i) => <FieldView key={i} f={f} row={r} />)}
           <span className="flex-1" />
           <PrChip pr={facts?.pr} tabIndex={-1} />
+          {r.age && <FieldView f={{ field: "age", text: r.age }} row={r} />}
         </div>
         {open && facts?.branch && (
           <div className="tline chat-sub chat-branch" data-testid="sidebar-branch">
@@ -124,7 +125,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
   return (
     <div
       {...common}
-      className={head ? "trow head" : "trow"}
+      className={head ? "trow head project-head" : "trow"}
       data-session={r.kind === "chat" ? (r.selection?.chat ?? undefined) : undefined}
       data-dimmed={r.dimmed || undefined}
       data-marked={marked || undefined}
@@ -132,15 +133,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
     >
       {lines.map((fields, i) => (
         <div key={i} className={i ? "tline sub" : "tline"}>
-          {i === 0 && head ? (
-            <span className="avatar" aria-hidden>
-              {row.section.title.slice(0, 1)}
-            </span>
-          ) : i === 0 && (r.kind === "workspace" || r.kind === "chat" || r.kind === "archived") && r.hasChildren ? (
-            chev()
-          ) : (
-            <span className="chev" />
-          )}
+          {!head && (i === 0 && (r.kind === "workspace" || r.kind === "chat" || r.kind === "archived") && r.hasChildren ? chev() : <span className="chev" />)}
           {fields.map((f, j) => (
             <FieldView key={j} f={f} row={r} />
           ))}

@@ -1,4 +1,4 @@
-import { CheckIcon, GitMergeIcon, GitPullRequestIcon, XIcon } from "lucide-react";
+import { CheckIcon, XIcon } from "lucide-react";
 import type { LineTotals, PrFact } from "../core/nav";
 
 export function PrChip({ pr, tabIndex }: { pr: PrFact | null | undefined; tabIndex?: number }) {
@@ -8,18 +8,16 @@ export function PrChip({ pr, tabIndex }: { pr: PrFact | null | undefined; tabInd
   if (!url || url.origin !== "https://github.com" || url.username || url.password || url.search || url.hash ||
     !/^\/[^/]+\/[^/]+\/pull\/\d+$/.test(url.pathname) || !url.pathname.endsWith(`/pull/${pr.number}`)) return null;
 
-  const Merge = pr.state === "merged" ? GitMergeIcon : GitPullRequestIcon;
   const ci = pr.state === "open" ? pr.ci : "unknown";
   const stateLabel = ci === "passed" || ci === "failed" || ci === "pending" ? `${pr.state}, CI ${ci}` : pr.state;
 
   return (
     <a className="pr-chip" data-state={pr.state} data-testid="pr-chip" href={url.href} target="_blank" rel="noopener noreferrer" tabIndex={tabIndex}
       aria-label={`PR #${pr.number}, ${stateLabel}`} title={`PR #${pr.number}, ${stateLabel}`} onClick={(e) => e.stopPropagation()}>
-      <Merge className="pr-icon" aria-hidden />
-      <span>#{pr.number}</span>
       {ci === "passed" ? <CheckIcon className="pr-ci text-done" aria-hidden /> :
         ci === "failed" ? <XIcon className="pr-ci text-failed" aria-hidden /> :
         ci === "pending" ? <span className="pr-ci pr-pending" aria-hidden /> : null}
+      <span>#{pr.number}{pr.state === "merged" ? " merged" : ""}</span>
     </a>
   );
 }

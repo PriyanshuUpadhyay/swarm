@@ -8,11 +8,11 @@ import { Glyph } from "./glyph";
 
 export function SidebarHeader({ app }: { app: App }) {
   return (
-    <div className="flex shrink-0 flex-col gap-3 px-3 py-3" data-testid="sidebar-head">
+    <div className="flex shrink-0 flex-col gap-3 px-3 pt-[9px] pb-3" data-testid="sidebar-head">
       <div className="flex items-center gap-0.5">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="sm" aria-label="Home" data-testid="home-button" onClick={() => app.showHome()}>
+            <Button variant="ghost" size="sm" className="text-md font-semibold" aria-label="Home" data-testid="home-button" onClick={() => app.showHome()}>
               <Glyph aria-hidden />
               Swarm
             </Button>

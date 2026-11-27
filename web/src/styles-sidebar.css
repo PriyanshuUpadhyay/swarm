@@ -222,8 +222,14 @@
   flex: none;
 }
 
-.trow.head.needs-you {
-  font-weight: 600;
+.trow.head.needs-you,
+.trow.head.project-head {
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.trow.head.project-head .chev {
+  opacity: 1;
 }
 .trow.head.more-projects {
   color: var(--muted-foreground);
@@ -248,7 +254,7 @@
   line-height: 14px;
 }
 .needs-dot {
-  flex: 0 0 6px;
+  width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--status-waiting);
@@ -260,8 +266,15 @@
   height: 21px;
   color: var(--foreground);
 }
+.chat-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 12px;
+}
 .trow .chat-sub {
   height: 18px;
+  padding-inline-start: 18px;
   font-size: var(--text-xs);
 }
 .trow .chat-branch,
@@ -284,6 +297,8 @@
 }
 .trow.sidebar-more button {
   cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .pr-chip {
   display: inline-flex;
@@ -310,10 +325,6 @@
 .pr-chip:hover {
   color: var(--foreground);
 }
-.pr-chip .pr-icon {
-  width: 11px;
-  height: 11px;
-}
 .pr-chip .pr-ci {
   width: 9px;
   height: 9px;
@@ -335,7 +346,7 @@
 }
 .sidebar-rail {
   display: flex;
-  flex: 0 0 52px;
+  height: 100%;
   flex-direction: column;
   align-items: center;
   gap: 6px;
