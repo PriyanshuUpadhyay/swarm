@@ -339,7 +339,9 @@ export class App {
   }
 
   setDraft(sessionId: string, text: string, picks?: readonly SkillPick[]) {
-    return this.composing.setDraft(sessionId, text, picks);
+    const empty = this.draft(sessionId) === "";
+    this.composing.setDraft(sessionId, text, picks);
+    if (empty !== (text === "")) this.notify();
   }
 
   history(sessionId: string): string[] {

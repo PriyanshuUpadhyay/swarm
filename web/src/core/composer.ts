@@ -75,6 +75,9 @@ const BRANCH_PROVIDERS = ["claude", "pi"];
 /** Esc Esc and Branch from here need the chair not working and of a CLI that can branch. */
 export const canBranch = (agent: AgentInput) => agent.who === null && !agent.running && BRANCH_PROVIDERS.includes(agent.provider ?? "");
 
+export const canPullQueued = (agent: AgentInput, queued: number, draftEmpty: boolean) =>
+  agent.pullBack && !agent.disabled && queued > 0 && draftEmpty;
+
 /** The chair's input, or the input of the child agent `child` (ChildColumnView). */
 export function agentInput(session: Session | undefined, agents: readonly Agent[] | undefined, child: string | null = null): AgentInput {
   const agent = agents?.find((a) => a.id === (child ?? "orchestrator"));

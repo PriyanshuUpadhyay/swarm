@@ -102,6 +102,7 @@ export type Pane = {
   full: ReadonlyMap<string, FullText>;
   find: Find;
   composer: Composer | null;
+  canPullBack: boolean;
   /** The composer whose box takes the chat's notes: the chair's, also in a child's column (ADR 0162). */
   noteComposer: Composer | null;
 };
@@ -199,6 +200,7 @@ export const NO_PANE: Pane = {
   full: NO_FULL,
   find: NO_FIND,
   composer: null,
+  canPullBack: false,
   noteComposer: null,
 };
 export const NO_CELLS: PaneCell[] = [];

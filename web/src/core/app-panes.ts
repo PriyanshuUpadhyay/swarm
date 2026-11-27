@@ -5,6 +5,7 @@ import { movePane, paneCells, type Direction, type PaneCell } from "./panes";
 
 import { type Chat, type Pane, type Strip, type View, paneId, NO_FIND, NO_PANE, NO_CELLS } from "./app-types";
 import type { App } from "./app";
+import { canPullQueued } from "./composer";
 import { LIVE_THOUGHT, type Line } from "./transcript";
 
 function workLabel(lines: readonly Line[]): string {
@@ -63,7 +64,8 @@ export class AppPanes {
     const finds = chat.id === (this.app.findId ?? this.app.openId);
     const find = finds ? this.app.find : NO_FIND;
     const full = this.app.reading.fullDetail;
-    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, hasLog, full];
+    const draftEmpty = this.app.draft(chat.id) === "";
+    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, hasLog, full, draftEmpty];
     if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
     if (chat.built?.version !== chat.version || chat.built.full !== full) chat.built = { version: chat.version, full, lines: this.app.reading.build(chat) };
     const composer = this.app.composing.composerView(chat);
@@ -81,6 +83,7 @@ export class AppPanes {
       full: chat.full,
       find,
       composer,
+      canPullBack: canPullQueued(composer.agent, composer.queued, draftEmpty),
       noteComposer: chat.agent === "chair" ? composer : main ? this.app.composing.composerView(main) : null,
     };
     chat.memo = { sig, pane };

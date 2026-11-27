@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SENT, type App, type Composer } from "../core/app";
 import { hasPendingImage, imagePaths } from "../core/images";
 import { historyStep, type Browse } from "../core/history";
-import { canBranch, inputTarget, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
+import { canBranch, canPullQueued, inputTarget, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, menuAt, pick, picksAndSends, skillFirst, skillNames, toSend, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { dragOverFiles, dropImage, pasteImage } from "./composer-image";
@@ -96,7 +96,7 @@ export function ComposerBox({ app, composer, lockDraft }: { app: App; composer: 
   // True while a pi send waits for pi's skill list, which can take the probe's 15 s deadline.
   const [listing, setListing] = useState(false);
   const canSend = outgoing(text) !== null && !hasPendingImage(text) && !state.sending && !listing && !state.pulling && !chair.disabled;
-  const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
+  const canPullBack = canPullQueued(chair, composer.queued, text === "");
   const branchable = canBranch(chair);
   const lastEscape = useRef(-Infinity);
   const skills = skillNames(list);
@@ -184,7 +184,7 @@ export function ComposerBox({ app, composer, lockDraft }: { app: App; composer: 
         app.setBranchPicker(true);
       }
       lastEscape.current = e.timeStamp;
-    } else if (e.key === "ArrowUp" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && text === "" && canPullBack) {
+    } else if (e.key === "ArrowUp" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && canPullBack) {
       // The CLI's queue comes back before the history, as in Claude Code (ADR 0038).
       e.preventDefault();
       void app.pullBack(sessionId);
@@ -214,7 +214,7 @@ export function ComposerBox({ app, composer, lockDraft }: { app: App; composer: 
         ? "Pulling back…"
         : state.alreadySent
           ? "Already sent"
-          : canPullBack && text === ""
+          : canPullBack
             ? "↑ to edit queued messages"
             : text === "" && app.stashed(sessionId)
               ? "Draft cleared. Esc brings it back."

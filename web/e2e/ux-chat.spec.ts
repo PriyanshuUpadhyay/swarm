@@ -231,7 +231,27 @@ test("only an editable queued message gets the Up hint", async ({ page: tab }) =
   const saved = tab.locator('[data-id="taken"]');
   await expect(saved).toContainText("already taken");
   await expect(saved).not.toContainText("to edit queued messages");
-  await expect(tab.locator('[data-id="held"]')).toContainText("to edit queued messages");
+  const held = tab.locator('[data-id="held"]');
+  await expect(held).toContainText("to edit queued messages");
+  const composer = tab.getByTestId("composer");
+  await composer.fill("Draft for the next turn");
+  await expect(held).not.toContainText("to edit queued messages", { timeout: 2000 });
+  await composer.clear();
+  await expect(held).toContainText("to edit queued messages");
+});
+
+test("a queued message is cut at twelve lines", async ({ page: tab }) => {
+  const text = Array.from({ length: 16 }, (_, i) => `Queued step ${i + 1}`).join("\n\n");
+  await mockRows(tab, [row("q1", text, "queued")]);
+  await open(tab);
+  const held = tab.locator('[data-id="q1"]');
+  await expect(held).toContainText("Queued step 12");
+  const show = held.getByRole("button", { name: "Show all", exact: true });
+  await expect(show).toBeVisible({ timeout: 2000 });
+  await expect(held).not.toContainText("Queued step 13");
+  await captureThemes(tab, held, "queue-cut");
+  await show.click();
+  await expect(held).toContainText("Queued step 16");
 });
 
 test("modified Up keeps queued messages", async ({ page: tab }) => {

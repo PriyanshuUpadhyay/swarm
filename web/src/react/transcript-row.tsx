@@ -179,7 +179,7 @@ function RowBody(ctx: Ctx) {
         reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
         branch={row.kind === "user" && ctx.branches && app.branch ? () => app.branch?.(row.id) : undefined}
       >
-        {row.kind === "user" ? <MessageCut row={row} reveal={!!ctx.match} /> : <MdBody row={row} />}
+        <MessageCut row={row} reveal={!!ctx.match} />
         <ImageThumbs paths={imagesOf(row)} load={app.imageUrl} />
       </Bubble>
     );
