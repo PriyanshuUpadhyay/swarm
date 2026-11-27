@@ -65,6 +65,10 @@ pub fn continue_session(
     Ok(())
 }
 
+const CHAIR_DAYS: &str = "strftime('%Y/%m/%d', created_at - 86400, 'unixepoch'),
+                          strftime('%Y/%m/%d', created_at, 'unixepoch'),
+                          strftime('%Y/%m/%d', created_at + 86400, 'unixepoch')";
+
 pub struct ContinuationLog {
     pub id: String,
     pub provider: Option<String>,
@@ -79,7 +83,7 @@ pub fn continuation_logs(
     connection: &Connection,
     leaf: &str,
 ) -> rusqlite::Result<Vec<ContinuationLog>> {
-    let mut read = connection.prepare_cached(
+    let mut read = connection.prepare_cached(&format!(
         "WITH RECURSIVE chain(id, cwd, predecessor) AS (
            SELECT id, cwd, continuation_of FROM session WHERE id = ?1
            UNION ALL
@@ -87,12 +91,9 @@ pub fn continuation_logs(
            JOIN session s ON s.id = chain.predecessor AND s.id < chain.id AND s.cwd = chain.cwd
          )
          SELECT s.id, s.continuation_of, s.chair_provider, s.chair_id, s.chair_log,
-                s.archived_at IS NOT NULL,
-                strftime('%Y/%m/%d', s.created_at - 86400, 'unixepoch'),
-                strftime('%Y/%m/%d', s.created_at, 'unixepoch'),
-                strftime('%Y/%m/%d', s.created_at + 86400, 'unixepoch')
+                s.archived_at IS NOT NULL, {CHAIR_DAYS}
          FROM chain JOIN session s ON s.id = chain.id ORDER BY chain.id",
-    )?;
+    ))?;
     let mut rows = read.query([leaf])?;
     let first = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
     if let Some(missing) = first.get::<_, Option<String>>(1)? {
@@ -299,12 +300,9 @@ pub fn sessions_with_archived(
     connection: &Connection,
     include_archived: bool,
 ) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
-    let mut statement = connection.prepare(
+    let mut statement = connection.prepare(&format!(
         "SELECT session.id, talk_mode, adapter, cwd, session.created_at,
-                chair_provider, chair_id, chair_log, continuation_of,
-                strftime('%Y/%m/%d', session.created_at - 86400, 'unixepoch'),
-                strftime('%Y/%m/%d', session.created_at, 'unixepoch'),
-                strftime('%Y/%m/%d', session.created_at + 86400, 'unixepoch'),
+                chair_provider, chair_id, chair_log, continuation_of, {CHAIR_DAYS},
                 (SELECT count(*) FROM agent WHERE session_id = session.id),
                 (SELECT count(*) FROM message WHERE session_id = session.id),
                 (SELECT max(created_at) FROM message WHERE session_id = session.id),
@@ -316,7 +314,7 @@ pub fn sessions_with_archived(
          ))
          ORDER BY archived_at IS NOT NULL, coalesce(archived_at, session.created_at) DESC,
                   session.id DESC",
-    )?;
+    ))?;
     let rows = statement.query_map((include_archived, ARCHIVED_SESSIONS_LIMIT), |row| {
         Ok(SessionRow {
             id: row.get(0)?,
