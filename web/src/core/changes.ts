@@ -387,6 +387,8 @@ export class Changes {
 
   // ---- diff line comments ----
 
+  get addingComment() { return this.adding; }
+
   /** Adds a draft for display lines `from`..`to` of the shown diff. */
   async addComment(from: number, to: number, text: string, rangePatch?: string): Promise<boolean> {
     const ws = this.workspace;

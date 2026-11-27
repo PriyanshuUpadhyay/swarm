@@ -134,12 +134,15 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
   const code = (i: number) => spotOf(lines[i]) !== null;
   const lo = sel ? Math.min(sel.anchor, sel.cursor) : -1;
   const hi = sel ? Math.max(sel.anchor, sel.cursor) : -1;
+
   const pick = (next: { anchor: number; cursor: number } | null, open = composing) => {
+    if (changes.addingComment) return;
     setSel(next);
     const layer = d.layer ?? "branch";
     const text = editor?.text || (open ? changes.unfinishedText(d.path, layer) : "");
     changes.setEditor(d.path, layer, next && { ...next, text, open }, next === null);
   };
+
   // Open the comment box for a pointer selection, not when keyboard state paints a range.
   const onLineSelected: FileDiffOptions<Note, undefined>["onLineSelected"] = (range) => {
     const anchor = range ? indexOf(lines, range.side, range.start) : -1;

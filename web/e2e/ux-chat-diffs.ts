@@ -119,6 +119,28 @@ test("failed Add returns focus to the comment field", async ({ page }) => {
   }
 });
 
+test("a line number cannot replace the range while Add waits", async ({ page }) => {
+  const release = await heldCommentAdd(page);
+  try {
+    await openChanges(page, "README.md");
+    const diff = page.getByTestId("diff-body");
+    await diff.locator('[data-gutter] > [data-column-number="1"]').first().click();
+    const input = page.getByTestId("comment-input");
+    await input.fill("Save this original line.");
+    await page.getByTestId("comment-add").click();
+    await expect(input).toBeDisabled();
+
+    await diff.locator('[data-gutter] > [data-column-number="2"]').first().click();
+    await expect(input).toBeDisabled({ timeout: 2_000 });
+    release();
+    await expect(page.getByTestId("comment-card")).toContainText("Save this original line.", { timeout: 2_000 });
+    await expect(input).toHaveCount(0);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
   const r = row("d1", "", "diff");
   r.diff = { id: "patch-output", path: "app.ts", patch: "@@ -1 +1 @@\n-old\n+preview", added: 1, removed: 1, omitted_lines: 900, shortened_lines: 0, full_lines: 1001, full_bytes: 20000 };
