@@ -53,7 +53,7 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     await expect(tab.getByTestId("tab").and(tab.locator(`[data-session="${leaf}"]`))).toHaveAttribute("data-id", tabId!);
     await expect(transcript.getByText("After the CLI switch")).toBeVisible();
     await expect.poll(() => tab.evaluate(([draftKey, noteKey]) => [localStorage.getItem(draftKey), localStorage.getItem(noteKey)], [DRAFT_PREFIX + leaf, STORE_KEY])).toEqual([
-      "Earlier draft\n\nLater draft", savedNotes([[leaf, [{ ...note, rowId: `${root}:${note.rowId}` }]]]),
+      "Earlier draft\n\nLater draft", savedNotes([[leaf, [{ ...note, origin: `${root}:${note.id}`, rowId: `${root}:${note.rowId}` }]]]),
     ]);
 
     const loadOlder = tab.getByTestId("load-older");

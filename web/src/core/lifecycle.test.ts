@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { Api, ApiError, type Session } from "./api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Api, ApiError, type Session, type Snapshot } from "./api";
 import { App } from "./app";
 import { Lifecycle } from "./lifecycle";
 
@@ -178,6 +178,61 @@ describe("chats", () => {
     life.onHandoff({ old_session: "chat-1", phase: "cancelled", canCancel: false });
     life.onHandoff({ old_session: "chat-1", phase: "starting", canCancel: false });
     expect(life.state.handoffs["chat-1"]?.phase).toBe("cancelled");
+  });
+});
+
+describe("linked chat draft and notes", () => {
+  const session = { cwd: "/work", created_at: 1, chair_provider: "claude", adapter: null, project: null, workspace: null };
+  const linked: Snapshot = {
+    version: 1, agents: {},
+    sessions: [{ ...session, id: "root" }, { ...session, id: "leaf", continuation_of: "root" }],
+  };
+
+  function blockStorageWrites() {
+    const store = new Map<string, string>();
+    let blocked = false;
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (blocked) throw new Error("storage full");
+        store.set(key, value);
+      },
+      removeItem: (key: string) => store.delete(key),
+    });
+    return (value: boolean) => { blocked = value; };
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("does not append the original draft again after a failed move, an edit, and reload", () => {
+    const block = blockStorageWrites();
+    const tab = new App(new Api("test"));
+    tab.setDraft("root", "Earlier draft");
+    tab.setDraft("leaf", "Later draft");
+    block(true);
+    tab.streaming.applySnapshot(linked);
+    expect(tab.draft("leaf")).toBe("Earlier draft\n\nLater draft");
+
+    block(false);
+    tab.setDraft("leaf", "Changed the earlier part\n\nLater draft");
+    const reload = new App(new Api("test"));
+    reload.streaming.applySnapshot(linked);
+    expect(reload.draft("leaf")).toBe("Changed the earlier part\n\nLater draft");
+  });
+
+  it("does not duplicate an edited note after a failed move and reload", () => {
+    const block = blockStorageWrites();
+    const tab = new App(new Api("test"));
+    tab.notes.add("root", { kind: "reply", rowId: "row-1", quote: "An earlier reply" });
+    block(true);
+    tab.streaming.applySnapshot(linked);
+    const [note] = tab.notes.list("leaf");
+
+    block(false);
+    tab.notes.setText("leaf", note.id, "Edited note");
+    const reload = new App(new Api("test"));
+    reload.streaming.applySnapshot(linked);
+    expect(reload.notes.list("leaf").map((item) => item.text)).toEqual(["Edited note"]);
   });
 });
 

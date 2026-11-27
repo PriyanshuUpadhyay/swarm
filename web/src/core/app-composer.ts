@@ -17,8 +17,12 @@ import {
 } from "./app-types";
 import type { App } from "./app";
 
+const MOVED_DRAFT = "composer.moved.";
+type Draft = { text: string; picks: SkillPick[]; from?: string };
+
 export class AppComposer {
   private readonly unsavedDrafts = new Set<string>();
+  private readonly draftSources = new Map<string, string>();
   private captionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly app: App) {}
@@ -72,19 +76,36 @@ export class AppComposer {
 
   /** Each chat keeps its draft, also across a reload (ComposerDraftStore). */
   draft(sessionId: string): string {
-    let d = this.app.drafts.get(sessionId);
-    if (d === undefined) this.app.drafts.set(sessionId, (d = readStore(DRAFT_PREFIX + sessionId) ?? ""));
-    return d;
+    if (!this.app.drafts.has(sessionId)) this.cacheDraft(sessionId, this.storedDraft(sessionId));
+    return this.app.drafts.get(sessionId) ?? "";
   }
 
   /** Pick ranges persist beside the draft text; old drafts need no migration. */
   draftPicks(sessionId: string): SkillPick[] {
-    let picks = this.app.picks.get(sessionId);
-    if (!picks) {
-      picks = this.storedPicks(sessionId, this.draft(sessionId));
-      this.app.picks.set(sessionId, picks);
-    }
-    return picks;
+    if (!this.app.picks.has(sessionId)) this.draft(sessionId);
+    return this.app.picks.get(sessionId) ?? [];
+  }
+
+  private movedDraft(id: string): Draft | undefined {
+    try {
+      const draft = JSON.parse(readStore(MOVED_DRAFT + id) ?? "null");
+      if (typeof draft?.from === "string" && typeof draft.text === "string" && Array.isArray(draft.picks)) {
+        return { from: draft.from, text: draft.text, picks: validPicks(draft.text, draft.picks) };
+      }
+    } catch { return undefined; }
+  }
+
+  private storedDraft(id: string): Draft {
+    const moved = this.movedDraft(id);
+    if (moved) return moved;
+    const text = readStore(DRAFT_PREFIX + id) ?? "";
+    return { text, picks: this.storedPicks(id, text) };
+  }
+
+  private cacheDraft(id: string, draft: Draft) {
+    this.app.drafts.set(id, draft.text);
+    this.app.picks.set(id, draft.picks);
+    if (draft.from) this.draftSources.set(id, draft.from);
   }
 
   private storedPicks(sessionId: string, text: string): SkillPick[] {
@@ -97,33 +118,44 @@ export class AppComposer {
   /** The box calls this on each edit; it does not render. */
   setDraft(sessionId: string, text: string, picks?: readonly SkillPick[]) {
     const next = picks ? validPicks(text, picks) : editPicks(this.draft(sessionId), text, this.draftPicks(sessionId));
-    this.app.drafts.set(sessionId, text);
-    this.app.picks.set(sessionId, next);
-    const savedText = writeStore(DRAFT_PREFIX + sessionId, text);
-    const savedPicks = writeStore(PICKS_PREFIX + sessionId, next.length ? JSON.stringify(next) : "");
-    if (savedText && savedPicks) this.unsavedDrafts.delete(sessionId);
-    else this.unsavedDrafts.add(sessionId);
+    const from = this.draftSources.get(sessionId) ?? this.movedDraft(sessionId)?.from;
+    return this.saveDraft(sessionId, { text, picks: next, from });
+  }
+
+  private saveDraft(id: string, draft: Draft): boolean {
+    this.cacheDraft(id, draft);
+    // Record the source and result together before the old-format keys or source can change.
+    const savedMove = !draft.from || writeStore(MOVED_DRAFT + id, JSON.stringify(draft));
+    const savedText = savedMove && writeStore(DRAFT_PREFIX + id, draft.text);
+    const savedPicks = savedMove && writeStore(PICKS_PREFIX + id, draft.picks.length ? JSON.stringify(draft.picks) : "");
+
+    if (savedText && savedPicks) this.unsavedDrafts.delete(id);
+    else this.unsavedDrafts.add(id);
     return savedText && savedPicks;
   }
 
   continueDraft(from: string, to: string) {
-    const read = (id: string) => {
-      if (this.unsavedDrafts.has(id)) return { text: this.draft(id), picks: this.draftPicks(id) };
-      const text = readStore(DRAFT_PREFIX + id) ?? "";
-      return { text, picks: this.storedPicks(id, text) };
-    };
+    const read = (id: string): Draft => this.unsavedDrafts.has(id)
+      ? { text: this.draft(id), picks: this.draftPicks(id), from: this.draftSources.get(id) }
+      : this.storedDraft(id);
     const old = read(from);
     const next = read(to);
+
     if (old.text) {
-      const prefix = old.text + (next.text ? "\n\n" : "");
-      const picks = [...old.picks, ...next.picks.map((pick) => ({ ...pick, start: pick.start + prefix.length }))];
-      if (this.setDraft(to, prefix + next.text, picks)) this.setDraft(from, "", []);
+      let moved = next;
+      if (next.from !== from) {
+        const prefix = old.text + (next.text ? "\n\n" : "");
+        const picks = [...old.picks, ...next.picks.map((pick) => ({ ...pick, start: pick.start + prefix.length }))];
+        moved = { from, text: prefix + next.text, picks };
+      }
+
+      if (this.saveDraft(to, moved)) this.setDraft(from, "", []);
       else this.app.notice("The browser could not save the moved draft. The original draft was not deleted.", true);
     } else if (this.app.drafts.has(to) && !this.unsavedDrafts.has(to)) {
       // Another tab can move the stored draft first; replace this tab's cached copy.
-      this.app.drafts.set(to, next.text);
-      this.app.picks.set(to, next.picks);
+      this.cacheDraft(to, next);
     } else return;
+
     this.update(to, { draftRev: this.input(to).draftRev + 1 });
   }
 

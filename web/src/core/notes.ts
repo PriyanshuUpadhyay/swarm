@@ -9,7 +9,7 @@ import { scopedRowId } from "./transcript";
 const KINDS = ["text", "item", "reply"] as const;
 /** `rowId` only finds the row on screen; the agent never sees it. `quote` is the full text.
  *  `agent` is the child agent whose reply the note marks; absent, the chair's own reply. */
-export type Note = { id: number; kind: (typeof KINDS)[number]; rowId: string; quote: string; text: string; at: number; agent?: string };
+export type Note = { id: number; kind: (typeof KINDS)[number]; rowId: string; quote: string; text: string; at: number; agent?: string; origin?: string };
 
 /** The saved drafts: this key holds `savedNotes` of every chat with notes. */
 export const STORE_KEY = "swarm.notes.v1";
@@ -23,7 +23,8 @@ const isNote = (n: unknown): n is Note => {
   const r = n as Record<string, unknown>;
   return typeof r.id === "number" && (KINDS as readonly unknown[]).includes(r.kind) && typeof r.rowId === "string"
     && typeof r.quote === "string" && typeof r.text === "string" && typeof r.at === "number"
-    && (r.agent === undefined || typeof r.agent === "string");
+    && (r.agent === undefined || typeof r.agent === "string")
+    && (r.origin === undefined || typeof r.origin === "string");
 };
 
 /** The saved drafts; a value of any other shape gives none. */
@@ -108,12 +109,19 @@ export class Notes {
     }
 
     const ids = new Set(next.map((note) => note.id));
+    const origins = new Set(next.map((note) => note.origin));
     this.seq = Math.max(this.seq, ...old.map((note) => note.id), ...ids);
-    const moved = old.map((note) => ({
-      ...note,
-      id: ids.has(note.id) ? ++this.seq : note.id,
-      rowId: scopedRowId(note.rowId) ? note.rowId : `${from}:${note.rowId}`,
-    }));
+    const moved = old.flatMap((note) => {
+      const origin = note.origin ?? `${from}:${note.id}`;
+      if (origins.has(origin)) return [];
+      return [{
+        ...note,
+        origin,
+        id: ids.has(note.id) ? ++this.seq : note.id,
+        rowId: scopedRowId(note.rowId) ? note.rowId : `${from}:${note.rowId}`,
+      }];
+    });
+
     const merged = [...moved, ...next];
     saved.delete(from);
     saved.set(to, merged);
