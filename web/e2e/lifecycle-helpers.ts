@@ -3,6 +3,8 @@ import { pierreUnloadNoise } from "./console-noise";
 import { join, resolve } from "node:path";
 import type { Agent, Snapshot } from "../src/core/api";
 import type { Prefs, TreeView } from "../src/core/nav";
+import type { ModelInfo } from "../src/core/run-catalog";
+import type { Account, ProviderInfo } from "../src/core/settings-types";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 const token = () => new URLSearchParams(server().hash.slice(1)).get("token")!;
@@ -81,6 +83,19 @@ export async function patchLiveChair(tab: Page, patch: (chair: Agent, snapshot: 
     patch(snapshot.agents[session][0], snapshot, session);
     await route.fulfill({ json: snapshot });
   });
+}
+
+export async function mockRunCatalog(tab: Page, { providers, models, accounts = [] }: {
+  providers: (Pick<ProviderInfo, "id"> & Partial<ProviderInfo>)[];
+  models: ModelInfo[] | ((provider: string | null) => ModelInfo[]);
+  accounts?: (Pick<Account, "name" | "email"> & Partial<Account>)[];
+}) {
+  await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers } }));
+  await tab.route("**/api/models?*", (route) => {
+    const provider = new URL(route.request().url()).searchParams.get("provider");
+    return route.fulfill({ json: { models: typeof models === "function" ? models(provider) : models } });
+  });
+  await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts } }));
 }
 
 export async function shootThemes(tab: Page, prefix: string) {

@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { row, rows, open, mockRows } from "./ux-helpers";
-import { patchLiveChair } from "./lifecycle-helpers";
+import { mockRunCatalog, patchLiveChair } from "./lifecycle-helpers";
 
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
@@ -95,9 +95,11 @@ test("image upload blocks Send and preserves edits made while it waits", async (
 });
 
 test("run picker accepts Down and Enter, retains Codex account wording and reloads cached usage", async ({ page: tab }, info) => {
-  await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers: [{ id: "codex", label: "Codex", accounts: true, efforts: ["high"], default_effort: "high" }] } }));
-  await tab.route("**/api/models?*", (route) => route.fulfill({ json: { models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] } }));
-  await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts: [{ name: "work", email: null, summary: null }] } }));
+  await mockRunCatalog(tab, {
+    providers: [{ id: "codex", label: "Codex", accounts: true, efforts: ["high"], default_effort: "high" }],
+    models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }],
+    accounts: [{ name: "work", email: null, summary: null }],
+  });
   await patchLiveChair(tab, (chair, snapshot, session) => {
     snapshot.sessions.find((s) => s.id === session)!.chair_provider = "codex";
     Object.assign(chair, { provider: "codex", account: "work", model: "model-a" });
@@ -157,9 +159,11 @@ test("an arriving question keeps an active draft and cannot turn a typed digit i
 
 test("Ended Resume keeps the prior provider and account and uses the keyboard model pick", async ({ page: tab }) => {
   await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "codex", account: "work", model: "model-a", alive: false }); });
-  await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers: [{ id: "codex", label: "Codex", accounts: true }] } }));
-  await tab.route("**/api/models?*", (route) => route.fulfill({ json: { models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] } }));
-  await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts: [{ name: "work", email: null }] } }));
+  await mockRunCatalog(tab, {
+    providers: [{ id: "codex", label: "Codex", accounts: true }],
+    models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }],
+    accounts: [{ name: "work", email: null }],
+  });
 
   const resumes: Record<string, unknown>[] = [];
   await tab.route("**/api/chat/resume", (route) => {

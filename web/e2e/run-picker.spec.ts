@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { holdChatStart, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
+import { holdChatStart, mockRunCatalog, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
 
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
@@ -65,13 +65,10 @@ test("the same tab pages both CLI logs and reads tool output from its original s
 
 async function pickerCatalog(tab: Page) {
   const providers = ["claude", "codex", "agy", "pi"].map((id) => ({ id, accounts: id === "claude" || id === "codex", efforts: ["low", "high"], default_effort: "high" }));
-  await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers } }));
-  await tab.route("**/api/models?*", (route) => {
-    const cli = new URL(route.request().url()).searchParams.get("provider");
-    const models = cli === "claude" ? [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] : [{ id: "other", label: "Other model" }];
-    return route.fulfill({ json: { models } });
+  await mockRunCatalog(tab, {
+    providers,
+    models: (cli) => cli === "claude" ? [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] : [{ id: "other", label: "Other model" }],
   });
-  await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts: [] } }));
 }
 
 test("one idle picker opens by shortcut, keeps an unlisted current model and applies picks at once", async ({ page: tab }) => {
