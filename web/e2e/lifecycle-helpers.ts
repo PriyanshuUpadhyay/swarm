@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { pierreUnloadNoise } from "./console-noise";
 import { join, resolve } from "node:path";
+import type { Prefs, TreeView } from "../src/core/nav";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 const token = () => new URLSearchParams(server().hash.slice(1)).get("token")!;
@@ -65,3 +66,11 @@ async function holdChatStart(tab: Page) {
 }
 
 export { server, api, readTree, open, header, workspace, shoot, holdChatStart, compose };
+
+export async function patchTreePrefs(tab: Page, patch: (prefs: Prefs) => void) {
+  await tab.route("**/api/tree?*", async (route) => {
+    const tree: TreeView = await (await route.fetch()).json();
+    patch(tree.prefs);
+    await route.fulfill({ json: tree });
+  });
+}

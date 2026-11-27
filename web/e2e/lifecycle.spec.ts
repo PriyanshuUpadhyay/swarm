@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Snapshot } from "../src/core/api";
-import { api, header, open, readTree, server, shoot, workspace } from "./lifecycle-helpers";
+import { api, header, open, patchTreePrefs, readTree, server, shoot, workspace } from "./lifecycle-helpers";
 
 // New workspace in each mode, setup script output, switch model cancel, archive and delete, and
 // Recently closed (S3), plus the four V1 fixes. Both browsers share one server home, so each case
@@ -123,10 +123,7 @@ test("An instant cross-CLI pick uses saved Summary, and Cancel stops it while th
   let picked = false;
   tab.on("request", (request) => { if (request.url().endsWith("/api/chat/continue")) picked = true; });
   await tab.route("**/api/snapshot", (route) => picked ? route.continue() : route.fulfill({ json: idle }));
-  await tab.route("**/api/tree?*", async (route) => {
-    const tree = await (await route.fetch()).json();
-    await route.fulfill({ json: { ...tree, prefs: { ...tree.prefs, switchCarry: "summary" } } });
-  });
+  await patchTreePrefs(tab, (prefs) => { prefs.switchCarry = "summary"; });
   const errors = await open(tab);
   const chats = async () => (await readTree()).sections.flatMap((s) => s.rows).filter((r) => r.kind === "chat").length;
   const before = await chats();

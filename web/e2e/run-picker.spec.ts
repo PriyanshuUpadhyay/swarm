@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { holdChatStart, open, readTree } from "./lifecycle-helpers";
+import { holdChatStart, open, patchTreePrefs, readTree } from "./lifecycle-helpers";
 
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
@@ -95,10 +95,10 @@ test("one idle picker opens by shortcut, keeps an unlisted current model and app
     Object.assign(snap.agents[live][0], { provider: "claude", model: picked.at(-1)?.model ?? "unlisted-model", effort: "high", state: "done", prompt: null });
     await route.fulfill({ json: snap });
   });
-  await tab.route("**/api/tree?*", async (route) => {
-    const tree = await (await route.fetch()).json();
-    tree.prefs = { ...tree.prefs, favoriteModels: [{ provider: "claude", model: "model-b" }], recentModels: [{ provider: "codex", model: "other" }], newChatModel: { provider: "codex", model: "other" } };
-    await route.fulfill({ json: tree });
+  await patchTreePrefs(tab, (prefs) => {
+    prefs.favoriteModels = [{ provider: "claude", model: "model-b" }];
+    prefs.recentModels = [{ provider: "codex", model: "other" }];
+    prefs.newChatModel = { provider: "codex", model: "other" };
   });
   await open(tab);
   await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
@@ -233,11 +233,7 @@ test("an ended chat keeps a foreign-CLI pick until Resume and uses File by defau
     Object.assign(snap.agents[live][0], { provider: "claude", model: "model-a", state: "done", alive: false });
     await route.fulfill({ json: snap });
   });
-  await tab.route("**/api/tree?*", async (route) => {
-    const tree = await (await route.fetch()).json();
-    delete tree.prefs.switchCarry;
-    await route.fulfill({ json: tree });
-  });
+  await patchTreePrefs(tab, (prefs) => { delete prefs.switchCarry; });
   await tab.route("**/api/chat/continue", async (route) => {
     attempts.push(route.request().postDataJSON());
     await finishing;
