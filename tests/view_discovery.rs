@@ -91,7 +91,7 @@ case "$*" in
 *'--state merged'*) printf '[{"number":8,"state":"MERGED","baseRefOid":"def","headRefOid":"abc","headRefName":"feature","headRepository":{"nameWithOwner":"owner/repo"},"url":"https://github.com/owner/repo/pull/8"}]\n' ;;
 *)
     if [ -f "$HOME/merged" ]; then printf '[]\n'; exit; fi
-    url=https://github.com/owner/repo/pull/7
+    url=https://github.com/Owner/Repo/pull/7
     if [ -f "$HOME/foreign" ]; then url=https://example.com/owner/repo/pull/7; fi
     pr="{\"number\":7,\"state\":\"OPEN\",\"isDraft\":true,\"baseRefOid\":\"def\",\"headRefOid\":\"abc\",\"headRefName\":\"feature\",\"headRepository\":{\"nameWithOwner\":\"owner/repo\"},\"url\":\"$url\",\"statusCheckRollup\":[{\"state\":\"SUCCESS\"}]}"
     if [ -f "$HOME/ambiguous" ]; then printf '[%s,%s]\n' "$pr" "$pr"; else printf '[%s]\n' "$pr"; fi ;;
@@ -150,7 +150,7 @@ esac
     assert!(d.refresh_fields(&t, &owner, 130));
     assert_eq!(
         serde_json::to_value(&d.fields[&cwd]).unwrap()["prFact"],
-        json!({"number":7,"url":"https://github.com/owner/repo/pull/7","state":"draft","ci":"passed"})
+        json!({"number":7,"url":"https://github.com/Owner/Repo/pull/7","state":"draft","ci":"passed"})
     );
     assert!(d.fields[&cwd].dirty_count.is_none());
     owner.fields.workspace.push("dirty".into());

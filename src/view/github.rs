@@ -152,20 +152,19 @@ fn lookup_matching(
                 if repo != head_repository {
                     continue;
                 }
-                if request["number"].as_u64()? == 0
+                let number = request["number"].as_u64()?;
+                if number == 0
                     || (include_merged && request["state"] != state.to_ascii_uppercase())
                     || request["baseRefOid"].as_str()?.is_empty()
                     || request["headRefOid"].as_str()?.is_empty()
                 {
                     return None;
                 }
-                let url = request["url"].as_str()?;
-                if url
-                    != format!(
-                        "https://github.com/{target}/pull/{}",
-                        request["number"].as_u64()?
-                    )
-                {
+                let url_repo = request["url"]
+                    .as_str()?
+                    .strip_prefix("https://github.com/")?
+                    .strip_suffix(&format!("/pull/{number}"))?;
+                if name(url_repo).as_ref() != Some(target) {
                     return None;
                 }
                 matches.push(request.clone());
