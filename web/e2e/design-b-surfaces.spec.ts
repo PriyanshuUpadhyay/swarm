@@ -25,12 +25,14 @@ async function addReadmeComment(tab: Page, text: string) {
 test("refreshing the same diff preserves keyboard selection without opening a comment", async ({ page: tab }) => {
   await openChanges(tab, "README.md");
   await expect(tab.getByTestId("diff-path")).toHaveText("README.md");
+
   const body = tab.getByTestId("diff-body");
   const picked = tab.locator('[data-testid="diff-body"] [data-content] > [data-line][data-selected-line]');
   await body.focus();
   await tab.keyboard.press("j");
   await expect(picked).toHaveCount(1);
   await expect(body).toBeFocused();
+
   let added = 700;
   await tab.route("**/api/changes/diff?**", async (route) => {
     const response = await route.fetch();
@@ -102,6 +104,7 @@ test("Show all can retry a transient full diff failure", async ({ page: tab }) =
     if (full && ++fullReads === 1) return route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
     return route.continue();
   });
+
   await openChanges(tab, "big.txt");
   const cut = tab.getByTestId("diff-capped");
   const show = cut.getByRole("button", { name: "Show all", exact: true });
@@ -125,6 +128,7 @@ test("Show all keeps an unfinished range comment on the same lines", async ({ pa
     data.patch = data.patch.replace("+generated line 1\n", "+changed line 1\n");
     await route.fulfill({ response, json: data });
   });
+
   await openChanges(tab, "big.txt");
   const diff = tab.getByTestId("diff-body");
   const first = diff.locator('[data-gutter] > [data-column-number="1"]');
@@ -136,6 +140,7 @@ test("Show all keeps an unfinished range comment on the same lines", async ({ pa
   await show.click();
   await expect(cut.getByRole("status")).toBeVisible({ timeout: 2000 });
   await expect(input).toHaveValue("Keep this note for line one.");
+
   await show.click();
   await expect(cut).toBeHidden();
   await expect(input).toHaveValue("Keep this note for line one.");
@@ -144,6 +149,7 @@ test("Show all keeps an unfinished range comment on the same lines", async ({ pa
 
 test("removing a saved Changes comment asks first", async ({ page: tab }) => {
   await addReadmeComment(tab, "Keep this until I confirm.");
+
   const comment = tab.getByTestId("comment-card");
   const remove = comment.getByRole("button", { name: "Remove comment" });
   const dialog = tab.getByRole("dialog", { name: "Remove this comment?" });
@@ -152,6 +158,7 @@ test("removing a saved Changes comment asks first", async ({ page: tab }) => {
   await captureThemes(tab, dialog, "remove-comment");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(comment).toContainText("Keep this until I confirm.");
+
   await remove.click();
   await dialog.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(comment).toHaveCount(0);
@@ -192,9 +199,11 @@ test("an oversized Changes range keeps the note and asks for fewer lines", async
     const lines = ["x", "y"].map((ch, i) => ({ kind: "add", text: ch.repeat(36_000), new: i + 1 }));
     return route.fulfill({ json: { path: "big.txt", layer: "untracked", patch: "full patch", display: { lines }, added: 2, removed: 0 } });
   });
+
   await openChanges(tab, "big.txt");
   await tab.getByRole("button", { name: "Show all", exact: true }).click();
   await expect(tab.getByTestId("diff-capped")).toBeHidden();
+
   const diff = tab.getByTestId("diff-body");
   await diff.locator('[data-gutter] > [data-column-number]').first().click();
   await diff.locator('[data-gutter] > [data-column-number]').last().click({ modifiers: ["Shift"] });
