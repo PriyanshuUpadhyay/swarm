@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { holdChatStart, mockRunCatalog, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
+import { captureRunPost, holdChatStart, mockRunCatalog, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
 
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
@@ -74,11 +74,7 @@ async function pickerCatalog(tab: Page) {
 test("one idle picker opens by shortcut, keeps an unlisted current model and applies picks at once", async ({ page: tab }) => {
   await pickerCatalog(tab);
   const live = process.env.SWARM_E2E_LIVE!;
-  const picked: Record<string, unknown>[] = [];
-  await tab.route("**/api/chat/continue", (route) => {
-    picked.push(route.request().postDataJSON());
-    return route.fulfill({ json: { session: live } });
-  });
+  const picked = await captureRunPost(tab, "continue");
   await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: picked.at(-1)?.model ?? "unlisted-model", effort: "high", state: "done", prompt: null }); });
   await patchTreePrefs(tab, (prefs) => {
     prefs.favoriteModels = [{ provider: "claude", model: "model-b" }];
@@ -142,17 +138,13 @@ test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }
   const live = process.env.SWARM_E2E_LIVE!;
   let working = true;
   let stops = 0;
-  const switches: Record<string, unknown>[] = [];
   await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null }); });
   await tab.route("**/api/chat/interrupt", async (route) => {
     stops++;
     working = false;
     await route.continue();
   });
-  await tab.route("**/api/chat/continue", (route) => {
-    switches.push(route.request().postDataJSON());
-    return route.fulfill({ json: { session: live } });
-  });
+  const switches = await captureRunPost(tab, "continue");
   await open(tab);
   await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
   await tab.getByTestId("model-chip").click();
@@ -180,10 +172,7 @@ test("reload drops a busy pick rather than applying it on the now-idle chat", as
   let working = true;
   let switches = 0;
   await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null }); });
-  await tab.route("**/api/chat/continue", (route) => {
-    switches++;
-    return route.fulfill({ json: { session: live } });
-  });
+  await captureRunPost(tab, "continue", () => { switches++; });
   await open(tab);
   const row = tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`));
   await row.click();
@@ -202,16 +191,11 @@ test("reload drops a busy pick rather than applying it on the now-idle chat", as
 test("an ended chat keeps a foreign-CLI pick until Resume and uses File by default", async ({ page: tab }) => {
   await pickerCatalog(tab);
   const live = process.env.SWARM_E2E_LIVE!;
-  const attempts: Record<string, unknown>[] = [];
   let release: () => void;
   const finishing = new Promise<void>((resolve) => { release = resolve; });
   await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: "done", alive: false }); });
   await patchTreePrefs(tab, (prefs) => { delete prefs.switchCarry; });
-  await tab.route("**/api/chat/continue", async (route) => {
-    attempts.push(route.request().postDataJSON());
-    await finishing;
-    await route.fulfill({ json: { session: live } });
-  });
+  const attempts = await captureRunPost(tab, "continue", () => finishing);
   await open(tab);
   await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
   const caption = tab.getByText("Resume goes on in this chat", { exact: true });

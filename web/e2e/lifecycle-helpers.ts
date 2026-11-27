@@ -98,6 +98,16 @@ export async function mockRunCatalog(tab: Page, { providers, models, accounts = 
   await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts } }));
 }
 
+export async function captureRunPost(tab: Page, action: "continue" | "resume", onPost?: () => void | Promise<void>) {
+  const bodies: Record<string, unknown>[] = [];
+  await tab.route(`**/api/chat/${action}`, async (route) => {
+    bodies.push(route.request().postDataJSON());
+    if (onPost) await onPost();
+    await route.fulfill({ json: { session: process.env.SWARM_E2E_LIVE } });
+  });
+  return bodies;
+}
+
 export async function shootThemes(tab: Page, prefix: string) {
   if (!process.env.E2E_SHOTS) return;
   for (const theme of ["dark", "light"])

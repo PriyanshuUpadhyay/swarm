@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { row, rows, open, mockRows } from "./ux-helpers";
-import { mockRunCatalog, patchLiveChair } from "./lifecycle-helpers";
+import { captureRunPost, mockRunCatalog, patchLiveChair } from "./lifecycle-helpers";
 
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
@@ -104,11 +104,7 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
     snapshot.sessions.find((s) => s.id === session)!.chair_provider = "codex";
     Object.assign(chair, { provider: "codex", account: "work", model: "model-a" });
   });
-  const picks: Record<string, unknown>[] = [];
-  await tab.route("**/api/chat/continue", (route) => {
-    picks.push(route.request().postDataJSON());
-    return route.fulfill({ json: { session: process.env.SWARM_E2E_LIVE! } });
-  });
+  const picks = await captureRunPost(tab, "continue");
   let reads = 0;
   await tab.route("**/api/usage", (route) => { reads++; return route.fulfill({ json: { meters: [] } }); });
   await open(tab);
@@ -165,11 +161,7 @@ test("Ended Resume keeps the prior provider and account and uses the keyboard mo
     accounts: [{ name: "work", email: null }],
   });
 
-  const resumes: Record<string, unknown>[] = [];
-  await tab.route("**/api/chat/resume", (route) => {
-    resumes.push(route.request().postDataJSON());
-    return route.fulfill({ json: { session: process.env.SWARM_E2E_LIVE } });
-  });
+  const resumes = await captureRunPost(tab, "resume");
   await open(tab);
   await tab.getByTestId("model-chip").click();
   const picker = tab.getByTestId("run-popover");
