@@ -99,8 +99,13 @@ export class Notes {
     this.saveRefused = !ok;
   }
 
-  continueNotes(from: string, to: string) {
+  continueNotes(links: readonly (readonly [string, string])[]) {
+    if (!links.length) return;
     const saved = readNotes();
+    for (const [from, to] of links) this.moveNotes(saved, from, to);
+  }
+
+  private moveNotes(saved: Map<string, Note[]>, from: string, to: string) {
     const old = saved.get(from) ?? (this.saveRefused ? this.list(from) : NO_NOTES);
     const next = saved.get(to) ?? this.list(to);
     if (!old.length) {

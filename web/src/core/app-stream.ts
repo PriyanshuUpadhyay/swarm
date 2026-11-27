@@ -28,11 +28,13 @@ export class AppStream {
       // A reconnect can discover several links at once. Move oldest first so notes and text
       // reach the active leaf without changing the stored chat-link order.
       const added = snap.sessions.filter((session) => session.continuation_of && !known.has(session.id));
+      const links: [string, string][] = [];
       for (const { id, continuation_of: from } of added.sort((a, b) => a.id.localeCompare(b.id))) {
         if (!from) continue;
         this.app.composing.continueDraft(from, id);
-        this.app.notes.continueNotes(from, id);
+        links.push([from, id]);
       }
+      this.app.notes.continueNotes(links);
     }
     const life = this.app.life;
     if (Object.keys(life?.state.pendingSwitch ?? {}).length || Object.keys(life?.state.endedRun ?? {}).length) life.reconcileRunPicks(snap);
