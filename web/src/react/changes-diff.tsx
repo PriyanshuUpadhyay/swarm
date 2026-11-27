@@ -136,7 +136,9 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
   const hi = sel ? Math.max(sel.anchor, sel.cursor) : -1;
   const pick = (next: { anchor: number; cursor: number } | null, open = composing) => {
     setSel(next);
-    changes.setEditor(d.path, d.layer ?? "branch", next && { ...next, text: editor?.text ?? "", open });
+    const layer = d.layer ?? "branch";
+    const text = editor?.text || (open ? changes.unfinishedText(d.path, layer) : "");
+    changes.setEditor(d.path, layer, next && { ...next, text, open });
   };
   // Open the comment box for a pointer selection, not when keyboard state paints a range.
   const onLineSelected: FileDiffOptions<Note, undefined>["onLineSelected"] = (range) => {
@@ -178,6 +180,7 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
     if (e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
     const edge = e.key === "Home" ? 1 : e.key === "End" ? -1 : 0;
     const dir = edge || { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1 }[e.key];
+
     if (dir) {
       e.preventDefault();
       let i = sel && !edge ? sel.cursor + dir : dir > 0 ? 0 : lines.length - 1;
@@ -187,16 +190,19 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
       const spot = spotOf(lines[i])!;
       if (full) window.current?.scrollTo({ type: "line", id: ITEM_ID, ...spot, align: "nearest", behavior: "instant" });
       else rowAt(e.currentTarget, spot)?.scrollIntoView({ block: "nearest" });
+
     } else if ((e.key === "Enter" || e.key === "c") && sel) {
       e.preventDefault();
       pick(sel, true);
     } else if (e.key === "Escape" && sel) {
       e.preventDefault();
       setSel(null);
+      done(true);
     }
   };
-  const done = () => {
-    changes.setEditor(d.path, d.layer ?? "branch", null);
+
+  const done = (keepText = false) => {
+    changes.setEditor(d.path, d.layer ?? "branch", null, keepText);
     body.current?.focus();
   };
   const renderNote = ({ metadata: n }: { metadata: Note }) => (
@@ -217,7 +223,8 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
             }
             return success;
           }}
-          onCancel={done}
+          onCancel={() => done()}
+          onEscape={() => done(true)}
         />
       )}
     </>
@@ -251,7 +258,10 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
   );
 }
 
-function CommentBox({ label, text, onChange, onAdd, onCancel }: { label: string; text: string; onChange: (text: string) => void; onAdd: (text: string) => Promise<boolean>; onCancel: () => void }) {
+function CommentBox({ label, text, onChange, onAdd, onCancel, onEscape }: {
+  label: string; text: string; onChange: (text: string) => void; onAdd: (text: string) => Promise<boolean>;
+  onCancel: () => void; onEscape: () => void;
+}) {
   const [pending, setPending] = useState(false);
   const submitting = useRef(false);
   const add = async () => {
@@ -283,7 +293,7 @@ function CommentBox({ label, text, onChange, onAdd, onCancel }: { label: string;
           } else if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();
-            onCancel();
+            onEscape();
           }
         }}
       />

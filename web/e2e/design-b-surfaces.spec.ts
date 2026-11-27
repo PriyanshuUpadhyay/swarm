@@ -280,6 +280,31 @@ test("a refused expansion keeps the draft preview through a focus refresh", asyn
   }
 });
 
+test("unfinished comment text survives Escape and reload", async ({ page: tab }) => {
+  await openChanges(tab, "README.md");
+  const draft = "Keep this unfinished comment.";
+  const body = tab.getByTestId("diff-body");
+  const input = tab.getByTestId("comment-input");
+  const openEditor = async () => {
+    await body.press("j");
+    await body.press("Enter");
+  };
+
+  await openEditor();
+  await input.fill(draft);
+  await input.press("Escape");
+  await expect(input).toHaveCount(0);
+  await openEditor();
+  await expect(input).toHaveValue(draft, { timeout: 2_000 });
+
+  await tab.reload();
+  await changeRow(tab, "README.md").click();
+  await expect(input).toHaveCount(0);
+  await openEditor();
+  await expect(input).toHaveValue(draft, { timeout: 2_000 });
+  await tab.getByRole("button", { name: "Cancel", exact: true }).click();
+});
+
 test("the 680 px new-chat composer uses the display face only for its question", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page);

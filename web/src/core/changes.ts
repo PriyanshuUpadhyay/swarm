@@ -14,6 +14,7 @@ const IDLE = { state: "idle" } as const;
 const LOADING = { state: "loading" } as const;
 const NO_COMMENTS: DiffComment[] = [];
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+const stringPairs = (v: unknown) => Array.isArray(v) ? v.filter((x): x is [string, string] => Array.isArray(x) && x.length === 2 && x.every((s) => typeof s === "string")) : [];
 
 function sameRange(preview: FileDiff, full: FileDiff, editor: CommentEditor | null) {
   if (!editor) return true;
@@ -32,7 +33,6 @@ function sameRange(preview: FileDiff, full: FileDiff, editor: CommentEditor | nu
       && (quote === undefined ? fullQuote === undefined : fullQuote?.startsWith(quote));
   });
 }
-
 
 export const fileKey = (f: Pick<ChangeFile, "path" | "layer">) => `${f.layer}\n${f.path}`;
 
@@ -79,6 +79,7 @@ export class Changes {
   private seq = { list: 0, diff: 0, file: 0, pr: 0 };
 
   private editors = new Map<string, CommentEditor>();
+  private unfinished = new Map<string, string>();
 
   constructor(private readonly app: App) {
     try {
@@ -87,7 +88,9 @@ export class Changes {
         this.open = saved.open === true;
         this.tab = saved.tab === "pr" ? "pr" : "changes";
         this.mode = saved.mode === "branch" ? "branch" : "local";
-        if (Array.isArray(saved.bases)) this.bases = new Map(saved.bases.filter((x: unknown) => Array.isArray(x) && x.length === 2 && x.every((s) => typeof s === "string")));
+
+        this.bases = new Map(stringPairs(saved.bases));
+        this.unfinished = new Map(stringPairs(saved.unfinished));
         if (Array.isArray(saved.drafts)) this.drafts = new Map(saved.drafts.filter((x: unknown) => Array.isArray(x) && typeof x[0] === "string" && Array.isArray(x[1]) && x[1].every((c) => typeof c.id === "number" && typeof c.path === "string" && typeof c.text === "string" && typeof c.lines === "string" && typeof c.layer === "string" && typeof c.at === "number" && Array.isArray(c.quoted) && c.quoted.every((q: unknown) => typeof q === "string"))));
         this.commentSeq = Math.max(0, ...[...this.drafts.values()].flat().map((c) => c.id));
       }
@@ -105,7 +108,7 @@ export class Changes {
   };
 
   private notify() {
-    writeStore("swarm.changes.v1", JSON.stringify({ open: this.open, tab: this.tab, mode: this.mode, bases: [...this.bases], drafts: [...this.drafts] }));
+    writeStore("swarm.changes.v1", JSON.stringify({ open: this.open, tab: this.tab, mode: this.mode, bases: [...this.bases], drafts: [...this.drafts], unfinished: [...this.unfinished] }));
     this.view = this.makeView();
     for (const fn of this.listeners) fn();
   }
@@ -358,14 +361,25 @@ export class Changes {
     this.notify();
   }
 
-  editor(path: string, layer: Layer): CommentEditor | null {
-    return this.editors.get(`${this.workspace}\n${fileKey({ path, layer })}`) ?? null;
+  private editorKey(path: string, layer: Layer) {
+    return `${this.workspace}\n${fileKey({ path, layer })}`;
   }
 
-  setEditor(path: string, layer: Layer, value: CommentEditor | null) {
-    const key = `${this.workspace}\n${fileKey({ path, layer })}`;
+  editor(path: string, layer: Layer): CommentEditor | null {
+    return this.editors.get(this.editorKey(path, layer)) ?? null;
+  }
+
+  unfinishedText(path: string, layer: Layer) {
+    return this.unfinished.get(this.editorKey(path, layer)) ?? "";
+  }
+
+  setEditor(path: string, layer: Layer, value: CommentEditor | null, keepText = false) {
+    const key = this.editorKey(path, layer);
     if (value) this.editors.set(key, value);
     else this.editors.delete(key);
+
+    if (value?.open && value.text) this.unfinished.set(key, value.text);
+    else if (value?.open || (!value && !keepText)) this.unfinished.delete(key);
     this.notify();
   }
 
