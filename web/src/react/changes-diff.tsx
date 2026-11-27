@@ -1,7 +1,7 @@
 import { MessageSquarePlusIcon, XIcon } from "lucide-react";
 import { CodeView, File, PatchDiff, type CodeViewHandle, type DiffLineAnnotation, type FileDiffOptions, type FileOptions, type SelectedLineRange } from "@pierre/diffs/react";
 import { parsePatchFiles, type CodeViewDiffItem } from "@pierre/diffs";
-import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject } from "react";
 import type { App } from "../core/app";
 import { type Changes, type DiffComment, type FileDiff, type Load } from "../core/changes";
 import { Button } from "../components/ui/button";
@@ -264,21 +264,32 @@ function CommentBox({ label, text, onChange, onAdd, onCancel, onEscape }: {
 }) {
   const [pending, setPending] = useState(false);
   const submitting = useRef(false);
+  const input = useRef<HTMLTextAreaElement>(null);
+  const restoreFocus = useRef(false);
+
+  useLayoutEffect(() => {
+    if (pending || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    input.current?.focus();
+  }, [pending]);
+
   const add = async () => {
     if (submitting.current || !text.trim()) return;
     submitting.current = true;
     setPending(true);
     try {
-      await onAdd(text);
+      restoreFocus.current = !(await onAdd(text));
     } finally {
       submitting.current = false;
       setPending(false);
     }
   };
+
   return (
     <div className="comment-box" data-testid="comment-box">
       <MessageSquarePlusIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
       <textarea
+        ref={input}
         autoFocus
         rows={2}
         value={text}
@@ -286,6 +297,7 @@ function CommentBox({ label, text, onChange, onAdd, onCancel, onEscape }: {
         placeholder="What should the agent do with these lines?"
         data-testid="comment-input"
         disabled={pending}
+
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -298,6 +310,7 @@ function CommentBox({ label, text, onChange, onAdd, onCancel, onEscape }: {
           }
         }}
       />
+
       <div className="flex flex-col gap-1">
         <Button size="sm" data-testid="comment-add" disabled={pending || !text.trim()} onClick={() => void add()}>
           Add

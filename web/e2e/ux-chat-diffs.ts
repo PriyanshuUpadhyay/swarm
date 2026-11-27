@@ -85,6 +85,40 @@ test("a full diff advances to the next surviving file when an earlier file also 
   await checkNextFile(page, false);
 });
 
+async function heldCommentAdd(page: Page, status?: number) {
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  await page.route("**/api/changes/comment-range", async (route) => {
+    await held;
+    if (status) await route.fulfill({ status, json: { error: "Could not add this comment." } });
+    else await route.continue();
+  });
+  return release;
+}
+
+test("failed Add returns focus to the comment field", async ({ page }) => {
+  const release = await heldCommentAdd(page, 503);
+  try {
+    await openChanges(page, "README.md");
+    const diff = page.getByTestId("diff-body");
+    await diff.press("j");
+    await diff.press("Enter");
+    const input = page.getByTestId("comment-input");
+    await input.fill("Keep this draft on failure.");
+    await input.press("Enter");
+    await expect(input).toBeDisabled();
+
+    release();
+    await expect(input).toBeEnabled();
+    await expect(input).toBeFocused({ timeout: 2_000 });
+    await expect(input).toHaveValue("Keep this draft on failure.");
+    await captureThemes(page, page.getByTestId("comment-box"), "comment-add-failure-focus");
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
   const r = row("d1", "", "diff");
   r.diff = { id: "patch-output", path: "app.ts", patch: "@@ -1 +1 @@\n-old\n+preview", added: 1, removed: 1, omitted_lines: 900, shortened_lines: 0, full_lines: 1001, full_bytes: 20000 };
