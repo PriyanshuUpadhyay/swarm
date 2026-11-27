@@ -1,7 +1,7 @@
 // The run picker: models of each CLI, the thinking level and the account. The chat's run chip
 // and the new chat composer both show it (ADR 0110, ADR 0149).
 
-import { ArrowUpRightIcon, BrainIcon, StarIcon } from "lucide-react";
+import { ArrowUpRightIcon, BrainIcon, SearchIcon, StarIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type Dispatch } from "react";
 import type { App } from "../core/app";
 import { accountCli, accountColor, chooseModel, cliName, levelWord, limitText, modelLevels, type Run } from "../core/composer";
@@ -149,7 +149,11 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
       </div>
       <div className="grid min-w-0 content-start">
         <div className="grid min-w-0 gap-1 p-2" onKeyDown={(e) => modelPickerKey(e, query)}>
-          <Input className="w-full" data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <div className="relative">
+            <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input className={`w-full pl-7 ${current ? "pr-14" : ""}`} data-testid="run-query" placeholder="Search or type a model id" aria-label="Model" spellCheck={false} autoComplete="off" value={query} onChange={(e) => setQuery(e.target.value)} />
+            {current && <kbd aria-hidden className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border border-border px-1 font-mono text-xs text-muted-foreground">⇧⌘M</kbd>}
+          </div>
           <div data-testid="run-models" className="max-h-[min(300px,38vh)] overflow-y-auto">
             {rail !== "favorites" && !!prefs?.recentModels?.length && <div data-testid="run-recent">
               <p className="px-2 pt-1 text-xs text-muted-foreground">Recent</p>
