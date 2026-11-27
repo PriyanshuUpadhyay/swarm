@@ -1,6 +1,6 @@
 mod sidebar_fixture;
 mod tab_fixture;
-use serde_json::json;
+use serde_json::{Value, json};
 use sidebar_fixture::*;
 use std::collections::BTreeMap;
 use swarm::view::{
@@ -8,6 +8,12 @@ use swarm::view::{
     tabs::{self},
 };
 use tab_fixture::*;
+
+fn waiting_agent(question: &str) -> Value {
+    let mut waiting = agent("orchestrator", "blocked");
+    waiting["prompt"] = json!({"id":"choose","question":question,"choices":["Yes","No"]});
+    waiting
+}
 
 #[test]
 fn continued_tab_key_survives_session_change() {
@@ -48,9 +54,7 @@ fn continued_tab_key_survives_session_change() {
 #[test]
 fn sidebar_prioritizes_real_prompts_and_counts_every_hidden_project_chat() {
     let now = 700_000;
-    let mut prompt = agent("orchestrator", "blocked");
-    prompt["prompt"] =
-        json!({"id":"choose","question":"Approve this change?","choices":["Yes","No"]});
+    let prompt = waiting_agent("Approve this change?");
     let mut sessions: Vec<_> = (1..=6)
         .map(|i| session(&format!("quiet-{i}"), "/repo/wt/main", now - i))
         .collect();
@@ -108,8 +112,7 @@ fn sidebar_prioritizes_real_prompts_and_counts_every_hidden_project_chat() {
 fn needs_you_sends_one_cut_question_and_keeps_the_full_prompt() {
     use swarm::view::tree;
     let question = format!("Keep all of this? {}", "more ".repeat(45));
-    let mut waiting = agent("orchestrator", "blocked");
-    waiting["prompt"] = json!({"id":"choose","question":question,"choices":["Yes","No"]});
+    let waiting = waiting_agent(&question);
     let snap = snapshot(
         vec![session("ask", "/repo/wt/feature", 1)],
         json!({"ask":[waiting]}),
@@ -138,8 +141,7 @@ fn needs_you_sends_one_cut_question_and_keeps_the_full_prompt() {
 #[test]
 fn needs_you_can_return_to_the_saved_five_chat_cut() {
     use swarm::view::tree;
-    let mut waiting = agent("orchestrator", "blocked");
-    waiting["prompt"] = json!({"id":"choose","question":"Approve?","choices":["Yes","No"]});
+    let waiting = waiting_agent("Approve?");
     let mut agents = serde_json::Map::new();
     let sessions = (0..6)
         .map(|i| {
@@ -176,8 +178,7 @@ fn the_first_shown_chat_stands_for_its_workspace_without_a_workspace_row() {
     let main = "/repo/wt/main";
     let feature = "/repo/wt/feature";
     let flat = "/repo/wt/empty";
-    let mut waiting = agent("orchestrator", "blocked");
-    waiting["prompt"] = json!({"id":"choose","question":"Approve?","choices":["Yes","No"]});
+    let waiting = waiting_agent("Approve?");
 
     let sessions = vec![
         session("main-first", main, now),
