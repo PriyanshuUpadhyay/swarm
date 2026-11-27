@@ -91,9 +91,8 @@ pub fn sections(
             }
         }
     }
-    if !archive {
-        mark_standalone_chats(tree, &mut sections);
-    }
+
+    mark_standalone_chats(tree, &mut sections);
     sections
 }
 
