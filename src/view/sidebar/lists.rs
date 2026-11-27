@@ -55,10 +55,14 @@ pub(super) fn append<'a>(
                     .map(|chat| (w, chat))
                     .collect();
                 sort_chats(&mut chats);
+                let folded = chats.len() >= 2 && state.is_collapsed(&w.path);
                 let shown: Vec<_> = chats
                     .iter()
                     .copied()
                     .filter(|(_, chat)| {
+                        if folded {
+                            return true;
+                        }
                         seen += 1;
                         let beyond_cut = seen > CHAT_LIMIT && !urgent(chat);
                         hidden += usize::from(beyond_cut);
