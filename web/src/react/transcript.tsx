@@ -236,7 +236,8 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
-                      queueStart={canPullBack && row.kind === "queued" && lines[index - 1]?.row.kind !== "queued"}
+                      queueStart={!!view.composer?.agent.pullBack && row.kind === "queued" && lines[index - 1]?.row.kind !== "queued"}
+                      showQueueHint={canPullBack}
                     />;
                   }}
                 </Virtualizer>

@@ -45,6 +45,28 @@ test("the next queued message does not inherit Show all", async ({ page }) => {
   }
 });
 
+test("typing the first draft letter does not move the next queued row", async ({ page }) => {
+  const hint = page.locator('[data-id="queue-0"]').getByText("to edit queued messages");
+  const editor = page.getByTestId("composer");
+  try {
+    await queuedChat(page, ["First queued text", "Next queued text"]);
+    const distance = () => page.locator('[data-kind="queued"]').evaluateAll(([first, next]) =>
+      next.getBoundingClientRect().top - first.getBoundingClientRect().top);
+    await expect(hint).toBeVisible();
+    const before = await distance();
+
+    await editor.fill("a");
+    await expect(hint).toBeHidden({ timeout: 2_000 });
+    // The virtual list updates row positions after its resize observer runs.
+    await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    expect(await distance()).toBeCloseTo(before, 1);
+    await captureThemes(page, page.getByTestId("transcript"), "queue-draft-spacing");
+  } finally {
+    await editor.fill("");
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("an opened saved thought reveals the cut lines on request", async ({ page }) => {
   await mockRows(page, [row("t1", lines("The saved thought ends here"), "thought")]);
   await open(page);

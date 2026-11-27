@@ -18,7 +18,7 @@ import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 type CutState = { key: string | Row; shown: boolean; reveal: () => void };
 type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; cutState?: CutState; composerId?: string; branches?: boolean; match?: string };
 
-function LineView({ index, queueStart, ...ctx }: Ctx & { index: number; queueStart?: boolean }) {
+function LineView({ index, queueStart, showQueueHint, ...ctx }: Ctx & { index: number; queueStart?: boolean; showQueueHint?: boolean }) {
   const { app, line, match } = ctx;
   const { row } = line;
 
@@ -32,7 +32,9 @@ function LineView({ index, queueStart, ...ctx }: Ctx & { index: number; queueSta
       className={`line${line.fold ? " step" : ""}`}
     >
       <ImageLoader.Provider value={app.imageUrl}>
-        {queueStart && <div className="flex items-center justify-end gap-1 text-xs text-muted-foreground"><Kbd>↑</Kbd> to edit queued messages</div>}
+        {queueStart && <div className="flex h-5 items-center justify-end gap-1 text-xs text-muted-foreground">
+          {showQueueHint && <><Kbd>↑</Kbd> to edit queued messages</>}
+        </div>}
         <RowBody {...ctx} />
       </ImageLoader.Provider>
     </div>
