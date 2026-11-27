@@ -6,11 +6,12 @@ use super::{
     RECORD, Record, Row, RowKind, SUBAGENT_TOOL, TextPreview, UNMAPPED, chip, is_record, key, meta,
     peer_text, record_text, shell_row, shell_run, string, tagged, task_summary,
 };
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
 use super::super::ToolState;
-use super::{SubagentChild, SubagentRun};
+use super::{ChildState, PI_CHILD_SLOTS, SubagentChild, SubagentRun};
 
 fn call_row_id(event: &Value) -> String {
     format!("{}:call", string(event, "tool_call_id"))
@@ -51,12 +52,12 @@ pub(in crate::view) fn subagent_labels(input: &Value, name: &str) -> (String, St
     (agent_type.into(), line.chars().take(LABEL_CHARS).collect())
 }
 
-type ChildStates<'a> = [Option<&'a str>; 4];
+type ChildStates = [Option<ChildState>; PI_CHILD_SLOTS];
 
 /// Results after a turn still belong to their unique earlier call in the same Pi log.
-pub(in crate::view) fn pi_child_facts(records: &[Record]) -> HashMap<usize, ChildStates<'_>> {
+pub(in crate::view) fn pi_child_facts(records: &[Record]) -> HashMap<usize, ChildStates> {
     let mut calls = HashMap::new();
-    let mut facts: HashMap<usize, ChildStates<'_>> = HashMap::new();
+    let mut facts: HashMap<usize, ChildStates> = HashMap::new();
 
     for (index, record) in records.iter().enumerate() {
         let event = &record.event;
@@ -81,8 +82,10 @@ pub(in crate::view) fn pi_child_facts(records: &[Record]) -> HashMap<usize, Chil
                     for (state, found) in facts.entry(*call).or_default().iter_mut().zip(states) {
                         let found = found
                             .as_str()
-                            .filter(|s| matches!(*s, "started" | "done" | "failed"));
-                        if found.is_some() && !(found == Some("started") && state.is_some()) {
+                            .and_then(|_| ChildState::deserialize(found).ok());
+                        if found.is_some()
+                            && !(found == Some(ChildState::Started) && state.is_some())
+                        {
                             *state = found;
                         }
                     }
@@ -98,7 +101,7 @@ pub(in crate::view) fn subagent_run(
     event: &Value,
     state: ToolState,
     result: Option<TextPreview>,
-    observed: ChildStates<'_>,
+    observed: ChildStates,
 ) -> SubagentRun {
     let input = &event["input"];
     let name = string(event, "name");
@@ -119,7 +122,7 @@ pub(in crate::view) fn subagent_run(
         .as_array()
         .filter(|tasks| name == SUBAGENT_TOOL && tasks.len() > 1)
     {
-        for (i, task) in tasks.iter().take(4).enumerate() {
+        for (i, task) in tasks.iter().take(PI_CHILD_SLOTS).enumerate() {
             let (_, description) = subagent_labels(task, name);
             let id = if i == 0 {
                 call_id.to_owned()
@@ -132,7 +135,7 @@ pub(in crate::view) fn subagent_run(
             run.children.push(SubagentChild {
                 call_id: id,
                 description,
-                state: observed[i].map(str::to_owned),
+                state: observed[i],
             });
         }
     }

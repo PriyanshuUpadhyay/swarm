@@ -1,6 +1,6 @@
 use super::{DiffPreview, TextPreview, ToolActivity};
 use super::{builder, fold_rows, queue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(super) mod checklist;
@@ -29,6 +29,7 @@ pub(super) use events::{pi_child_facts, subagent_run};
 pub use records::Record;
 pub(super) use shell::shell_row;
 const SUBAGENT_TOOL: &str = "subagent";
+const PI_CHILD_SLOTS: usize = 4;
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run, strip_terminal};
 pub use state::{
     ChatUsage, UsageState, clear_boundary, queued, usage, view_rows, view_rows_with_context,
@@ -80,12 +81,19 @@ pub struct SubagentRun {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<TextPreview>,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChildState {
+    Started,
+    Done,
+    Failed,
+}
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SubagentChild {
     pub call_id: String,
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub state: Option<String>,
+    pub state: Option<ChildState>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ShellRun {

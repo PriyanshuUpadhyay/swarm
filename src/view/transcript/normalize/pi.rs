@@ -4,21 +4,13 @@ use super::claude_input::{self, Input};
 use super::claude_json::{self, Object};
 use super::pi_text;
 use super::{NormalizedEvent, SnapshotError, Work};
-use crate::view::transcript::SUBAGENT_TOOL;
+use crate::view::transcript::{ChildState, PI_CHILD_SLOTS, SUBAGENT_TOOL};
 use serde::ser::SerializeMap;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use serde_json::{Value, json, value::RawValue};
 
 /// Swarm's Pi question tool (src/bus/pi_live.ts), shown like Claude's AskUserQuestion.
 const QUESTION_TOOL: &str = "ask_user_question";
-
-#[derive(Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum ChildState {
-    Started,
-    Done,
-    Failed,
-}
 
 fn child_results(
     fact: &mut Fact,
@@ -36,17 +28,23 @@ fn child_results(
     {
         return Ok(());
     }
-    let Some(results) = details.array("results").filter(|items| items.len() <= 4) else {
+    let Some(results) = details
+        .array("results")
+        .filter(|items| items.len() <= PI_CHILD_SLOTS)
+    else {
         return Ok(());
     };
 
-    let mut states = [None; 4];
+    let mut states = [None; PI_CHILD_SLOTS];
     for raw in results {
         work.check()?;
         let Some(result) = Object::parse(raw) else {
             return Ok(());
         };
-        let Some(slot) = result.integer("slot").filter(|n| (1..=4).contains(n)) else {
+        let Some(slot) = result
+            .integer("slot")
+            .filter(|n| (1..=PI_CHILD_SLOTS as i64).contains(n))
+        else {
             return Ok(());
         };
 
