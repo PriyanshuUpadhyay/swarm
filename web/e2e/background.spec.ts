@@ -84,6 +84,32 @@ test("a background read failure does not move the panel rows", async ({ page: ta
   }
 });
 
+test("a shell-list failure is shown until a good read", async ({ page: tab }, info) => {
+  let fail = false;
+  await tab.clock.install();
+  await tab.route("**/api/shells?*", (route) => fail
+    ? route.fulfill({ status: 503, json: { error: "Unavailable" } }) : route.continue());
+
+  try {
+    await openChat(tab, info);
+    await tab.keyboard.press("Meta+j");
+    const panel = tab.getByTestId("background-panel").last();
+    const alert = panel.getByRole("alert");
+    await expect(panel.getByRole("button", { name: /reviewer/ })).toBeVisible();
+
+    fail = true;
+    await tab.clock.runFor(3_100);
+    await expect(alert).toHaveText("Could not load shells.", { timeout: 2_000 });
+    await captureThemes(tab, panel, "background-shell-read-error");
+
+    fail = false;
+    await tab.clock.runFor(3_100);
+    await expect(alert).toHaveCount(0, { timeout: 2_000 });
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("a resized panel keeps its height when Meta+J hides and shows it", async ({ page: tab }, info) => {
   await openChat(tab, info);
   // The library also puts the panel id on its own element as a test id; the last one is ours.

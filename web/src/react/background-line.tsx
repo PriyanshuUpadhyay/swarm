@@ -7,7 +7,7 @@ import { Glyph } from "./glyph";
 import { Offline } from "./status";
 
 const POLL_MS = 3000;
-type Lists = { rows: BackgroundRow[]; taskReadFailed: boolean; addShell: (shell: WorkspaceShell) => void; refreshShells: () => Promise<void> };
+type Lists = { rows: BackgroundRow[]; taskReadFailed: boolean; shellReadFailed: boolean; addShell: (shell: WorkspaceShell) => void; refreshShells: () => Promise<void> };
 const Background = createContext<Lists | null>(null);
 
 export function useBackground() {
@@ -20,7 +20,7 @@ export function useBackground() {
 export function BackgroundLists({ app, session, children }: { app: App; session: string; children: ReactNode }) {
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
   const [tasks, setTasks] = useState<{ session: string; rows: BackgroundTask[]; failed?: boolean }>({ session, rows: [] });
-  const [shells, setShells] = useState<{ session: string; rows: WorkspaceShell[] }>({ session, rows: [] });
+  const [shells, setShells] = useState<{ session: string; rows: WorkspaceShell[]; failed?: boolean }>({ session, rows: [] });
 
   useEffect(() => {
     let live = true;
@@ -30,7 +30,10 @@ export function BackgroundLists({ app, session, children }: { app: App; session:
         (r) => { if (live) setTasks({ session, rows: r.tasks }); },
         () => { if (live) setTasks((last) => ({ session, rows: last.session === session ? last.rows : [], failed: true })); },
       ),
-      app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session }).then((r) => { if (live) setShells({ session, rows: r.shells }); }),
+      app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session }).then(
+        (r) => { if (live) setShells({ session, rows: r.shells }); },
+        () => { if (live) setShells((last) => ({ session, rows: last.session === session ? last.rows : [], failed: true })); },
+      ),
     ]);
     const stop = poll(read, POLL_MS, () => document.hidden);
     return () => { live = false; stop(); };
@@ -45,7 +48,8 @@ export function BackgroundLists({ app, session, children }: { app: App; session:
     setShells((list) => list.session === session ? { session, rows: shells } : list);
   };
   const taskReadFailed = tasks.session === session && !!tasks.failed;
-  return <Background.Provider value={{ rows, taskReadFailed, addShell, refreshShells }}>{children}</Background.Provider>;
+  const shellReadFailed = shells.session === session && !!shells.failed;
+  return <Background.Provider value={{ rows, taskReadFailed, shellReadFailed, addShell, refreshShells }}>{children}</Background.Provider>;
 }
 
 export function BackgroundLine({ session }: { session: string }) {
