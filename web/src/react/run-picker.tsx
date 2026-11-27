@@ -1,7 +1,7 @@
 // The run picker: models of each CLI, the thinking level and the account. The chat's run chip
 // and the new chat composer both show it (ADR 0110, ADR 0149).
 
-import { ArrowUpRightIcon, StarIcon } from "lucide-react";
+import { ArrowUpRightIcon, BrainIcon, StarIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore, type Dispatch } from "react";
 import type { App } from "../core/app";
 import { accountCli, accountColor, chooseModel, cliName, levelWord, limitText, modelLevels, type Run } from "../core/composer";
@@ -89,7 +89,7 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
     return () => { live = false; };
   }, [app, accountInfo]);
 
-  const { levels, defaultLevel, label } = runModel(catalog, draft);
+  const { levels, defaultLevel } = runModel(catalog, draft);
   const q = query.trim().toLowerCase();
   const accountRows = draft.account && !accounts.some((a) => a.name === draft.account) ? [{ name: draft.account, email: null, summary: null }, ...accounts] : accounts;
   const list = catalog.models[rail];
@@ -168,11 +168,10 @@ export function RunPicker({ app, catalog, current, draft, setDraft, disabled = f
           </div>
         </div>
         <div className="grid gap-2 border-t border-menu-border p-2">
-        <div className="grid gap-1.5" role="group" aria-label="Thinking" data-testid="run-thinking">
-          <div className="flex gap-2 text-xs text-muted-foreground">
-            <span className="flex-1 font-medium">Thinking</span>
-            {levels.length > 0 && label && <span className="truncate">levels {label} allows</span>}
-          </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1" role="group" aria-label="Thinking" data-testid="run-thinking">
+          <span className="flex items-center gap-1.5 text-sm/4 text-muted-foreground">
+            <BrainIcon aria-hidden className="size-3.5" /> Thinking
+          </span>
           {levels.length ? (
             <div className="flex flex-wrap gap-1">
               {levels.map((l) => (
