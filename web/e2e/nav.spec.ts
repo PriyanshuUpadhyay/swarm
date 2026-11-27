@@ -58,7 +58,7 @@ async function selectTabOutside(tab: Page) {
   return { workspaceId, session, key };
 }
 
-test("a workspace dragged onto the Pinned header is pinned; the menu pins and unpins", async ({ page: tab }) => {
+test("workspaces no longer move or drag; the menu still pins and unpins", async ({ page: tab }) => {
   await tab.setViewportSize({ width: 1280, height: 900 });
   const errors = await open(tab);
   const pinnedRows = async () => (await readTree()).sections.find((s) => s.kind === "pinned")?.rows.map((r) => r.id) ?? [];
@@ -70,12 +70,19 @@ test("a workspace dragged onto the Pinned header is pinned; the menu pins and un
     await tab.getByRole("menuitem", { name: item }).click();
   };
 
+  await workspace.click({ button: "right" });
+  await expect(tab.getByRole("menuitem", { name: "Pin workspace" })).toBeVisible();
+  await expect(tab.getByRole("menuitem", { name: "Move Up", exact: true })).toHaveCount(0);
+  await expect(tab.getByRole("menuitem", { name: "Move Down", exact: true })).toHaveCount(0);
+  expect(await workspace.evaluate((element) => element.draggable)).toBe(false);
+  await tab.keyboard.press("Escape");
+
   await menu(live, "Pin workspace");
   const header = tab.locator('[data-testid="tree-row"][data-kind="pinned"]');
   await expect(header).toBeVisible();
   await expect.poll(pinnedRows).toEqual([live]);
 
-  await workspace.dragTo(header);
+  await menu(workspaceId, "Pin workspace");
   await expect.poll(pinnedRows).toEqual(expect.arrayContaining([live, workspaceId]));
   const order = () => tab.getByTestId("tree-row").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-kind") === "project" ? "project" : r.getAttribute("data-id")));
   await expect.poll(async () => (await order()).indexOf(workspaceId) < (await order()).indexOf("project")).toBe(true);

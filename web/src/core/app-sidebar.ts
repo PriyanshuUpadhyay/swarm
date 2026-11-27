@@ -1,7 +1,7 @@
 
 
 import { measure, whenPainted } from "./perf";
-import { foldId, moveTarget, archivedSession, navRows, type NavRow, type TreeName } from "./nav";
+import { foldId, archivedSession, navRows, type NavRow, type TreeName } from "./nav";
 import { message, markable } from "./app-types";
 import type { App } from "./app";
 
@@ -127,16 +127,11 @@ export class AppSidebar {
     } else if (sel.chat) this.app.navigation.openChat(sel.chat, e);
   }
 
-  /** Pin from the menu or a drop on Pinned; a folded Pinned header opens to show it. */
+  /** Pin from the menu and open a folded Pinned header to show it. */
   async pin(workspace: string) {
     if (!(await this.app.navigation.choose({ op: "pin", workspace }))) return;
     const pinned = this.app.tree?.sections.find((s) => s.kind === "pinned");
     if (pinned && !pinned.expanded) void this.app.navigation.choose({ op: "expand", id: pinned.collapseId });
-  }
-
-  /** Move Up / Move Down's target, or null when the row cannot move that way. */
-  workspaceMoveTarget(path: string, offset: -1 | 1): string | null {
-    return moveTarget(this.app.tree, this.app.snapshot, path, offset);
   }
 
   /** The Workspaces / Archived switch at the foot of the sidebar. */

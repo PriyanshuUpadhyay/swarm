@@ -80,19 +80,6 @@
 .trow .chev[data-action]:hover {
   color: var(--foreground);
 }
-/* The row buttons (new chat, new workspace, unarchive) always show; the grip only on hover. */
-.trow .grip {
-  display: none;
-}
-.trow .grip {
-  width: 12px;
-  height: 12px;
-  flex: none;
-  color: var(--muted-foreground);
-}
-.trow[data-hover] .grip {
-  display: inline-grid;
-}
 .trow .row-btn {
   display: inline-grid;
   place-items: center;
@@ -199,19 +186,8 @@
   color: var(--foreground);
 }
 .trow:focus-visible,
-.trow[data-menu="true"],
-.trow[data-over="true"],
-.pin-zone[data-over="true"] {
+.trow[data-menu="true"] {
   box-shadow: inset 0 0 0 1px var(--ring);
-}
-.pin-zone {
-  margin: 0 6px 6px;
-  padding: 6px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-md);
-  text-align: center;
-  font-size: var(--text-xs);
-  color: var(--muted-foreground);
 }
 .unread {
   width: 6px;

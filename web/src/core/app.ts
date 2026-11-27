@@ -214,10 +214,6 @@ export class App {
     return this.sidebar.pin(workspace);
   }
 
-  workspaceMoveTarget(path: string, offset: -1 | 1): string | null {
-    return this.sidebar.workspaceMoveTarget(path, offset);
-  }
-
   setTreeName(name: TreeName) {
     return this.sidebar.setTreeName(name);
   }

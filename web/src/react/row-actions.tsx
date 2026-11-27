@@ -62,8 +62,6 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
 
 function workspaceActions(app: App, path: string, row: NavRow, menuOnly = false): (RowAction | false)[] {
   const facts = workspaceRow(app.view.tree, path);
-  const up = !menuOnly && app.workspaceMoveTarget(path, -1);
-  const down = !menuOnly && app.workspaceMoveTarget(path, 1);
 
   return [
     { label: "New Chat…", icon: PlusIcon, disabled: !facts?.newChatEnabled, menuOnly, run: () => app.newChat.open(path) },
@@ -71,8 +69,6 @@ function workspaceActions(app: App, path: string, row: NavRow, menuOnly = false)
       ? { label: "Unpin workspace", icon: PinOffIcon, menuOnly, run: () => void app.choose({ op: "unpin", workspace: path }) }
       : { label: "Pin workspace", icon: PinIcon, menuOnly, run: () => void app.pin(path) },
     { label: "Rename workspace…", icon: PencilIcon, menuOnly, run: () => app.renameWorkspace(path) },
-    !menuOnly && { label: "Move Up", disabled: !up, run: () => up && void app.choose({ op: "reorder_workspace", workspace: path, target: up }) },
-    !menuOnly && { label: "Move Down", disabled: !down, run: () => down && void app.choose({ op: "reorder_workspace", workspace: path, target: down }) },
     { label: "Archive workspace", icon: ArchiveIcon, menuOnly, run: () => void app.life.archiveWorkspace(path) },
     { label: "Remove worktree…", icon: Trash2Icon, menuOnly, run: () => void app.life.deleteWorkspace(path) },
     facts?.missing === true && { label: "Prune worktree…", menuOnly, run: () => void app.life.pruneWorkspace(path, row.section.title) },

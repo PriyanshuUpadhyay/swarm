@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, type Api, type Snapshot } from "./api";
 import { App } from "./app";
-import { moveTarget, navRows, nextBlocked, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type TreeView } from "./nav";
+import { navRows, nextBlocked, paletteSections, rankPalette, recentWork, shareTree, type PaletteItem, type TreeView } from "./nav";
 import { row, chat, section, tree, appMain, appFeature, fixRows, fixChild, docs, web, webChat, sample } from "./nav-fixtures";
 
 describe("sidebar lines", () => {
@@ -48,24 +48,6 @@ describe("sidebar lines", () => {
       "2:chat:chat:a:/r/notes",
       "3:child:a/coder:chat:a",
     ]);
-  });
-});
-
-describe("workspace moves", () => {
-  it("moves within a project section, and stops at its ends", () => {
-    expect(moveTarget(sample, null, "/r/app", 1)).toBe("/r/app/wt/feature");
-    expect(moveTarget(sample, null, "/r/app", -1)).toBeNull();
-    expect(moveTarget(sample, null, "/r/app/wt/feature", 1)).toBeNull();
-  });
-
-  it("moves a pinned row only past pinned rows of its own project", () => {
-    const other = row("/r/blog", "workspace", 0, { pinned: true });
-    const site = row("/r/web/wt/b", "workspace", 0, { pinned: true });
-    const t = tree([section("pinned", "pinned", [web, other, site])]);
-    const s = (id: string, project: string) => ({ id, cwd: project, workspace: id, project, created_at: 1, chair_provider: null, adapter: null });
-    const snap: Snapshot = { version: 1, sessions: [s("a", "/r/web"), { ...s("b", "/r/blog"), workspace: "/r/blog" }, { ...s("c", "/r/web"), workspace: "/r/web/wt/b" }], agents: {} };
-    snap.sessions[0].workspace = "/r/web";
-    expect(moveTarget(t, snap, "/r/web", 1)).toBe("/r/web/wt/b");
   });
 });
 

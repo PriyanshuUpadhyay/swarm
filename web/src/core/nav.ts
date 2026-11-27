@@ -133,7 +133,6 @@ export type TabsView = { version: number; revision: string; view: Tabs };
 /** One `POST /api/choices` operation (P2a). The app adds the revision. */
 export type ChoiceOp =
   | { op: "pin" | "unpin"; workspace: string }
-  | { op: "reorder_workspace"; workspace: string; target: string }
   | { op: "collapse" | "expand"; id: string }
   | { op: "expand_list"; id: string }
   | { op: "rename_workspace"; workspace: string; name: string }
@@ -251,22 +250,6 @@ export function workspaceRow(tree: TreeView | null, path: string | null): Worksp
 /** The project path of a workspace, from the snapshot's sessions in it. */
 function projectOf(snapshot: Snapshot | null, workspace: string): string | null {
   return snapshot?.sessions.find((s) => (s.workspace ?? s.cwd) === workspace)?.project ?? null;
-}
-
-/** Move Up (-1) or Down (+1): the neighbour in the same project with the same pin state
- *  (WorkspaceNavigation.workspaceMoveTarget). A project section lists exactly those; the pinned
- *  section mixes projects, so its siblings are the pinned rows of the same project. */
-export function moveTarget(tree: TreeView | null, snapshot: Snapshot | null, path: string, offset: -1 | 1): string | null {
-  const section = tree?.sections.find((s) => s.rows.some((r) => r.kind === "workspace" && r.id === path));
-  const row = section?.rows.find((r) => r.id === path);
-  if (!section || !row || row.archived) return null;
-  let siblings = section.rows.filter((r) => r.kind === "workspace" && !r.archived).map((r) => r.id);
-  if (section.kind === "pinned") {
-    const project = projectOf(snapshot, path);
-    siblings = siblings.filter((p) => projectOf(snapshot, p) === project);
-  }
-  const i = siblings.indexOf(path);
-  return siblings[i + offset] ?? null;
 }
 
 /** When a session last did something, in seconds: its newest message, agent state, or start. */

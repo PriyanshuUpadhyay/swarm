@@ -1,4 +1,4 @@
-import { ArchiveRestoreIcon, ChevronRightIcon, GitBranchIcon, GitPullRequestIcon, GripVerticalIcon, PinIcon, PlusIcon } from "lucide-react";
+import { ArchiveRestoreIcon, ChevronRightIcon, GitBranchIcon, GitPullRequestIcon, PinIcon, PlusIcon } from "lucide-react";
 import { memo } from "react";
 import { shownStatus, type Field, type NavRow, type SidebarRow, type WorkspaceFacts } from "../core/nav";
 import { BranchDiff, PrChip } from "./pr-chip";
@@ -30,7 +30,7 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
     const s = row.section;
     const folded = row.expanded === false;
     return (
-      <div {...common} className={`trow head ${s.kind}`} data-drop={s.kind === "pinned" ? "pin" : undefined} title={s.path ?? undefined}>
+      <div {...common} className={`trow head ${s.kind}`} title={s.path ?? undefined}>
         <div className="tline">
           {s.kind === "pinned" ? (
             <>
@@ -128,7 +128,6 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
       data-session={r.kind === "chat" ? (r.selection?.chat ?? undefined) : undefined}
       data-dimmed={r.dimmed || undefined}
       data-marked={marked || undefined}
-      draggable={r.kind === "workspace" && !r.archived && !archive ? true : undefined}
       style={head ? undefined : { paddingLeft: 12 + r.depth * 14 }}
     >
       {lines.map((fields, i) => (
@@ -147,7 +146,6 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
           ))}
           {i === 0 && head && r.hasChildren && chev()}
           <span className="flex-1" />
-          {i === 0 && r.kind === "workspace" && !r.archived && !archive && <GripVerticalIcon className="grip" aria-hidden data-tip="Drag to reorder or pin workspace" />}
           {i === 0 && r.kind === "archived-chat" && (
             <button tabIndex={-1} className="row-btn" data-action="unarchive" aria-label={`Unarchive ${r.title}`} title="Unarchive and open">
               <ArchiveRestoreIcon />

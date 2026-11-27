@@ -1,9 +1,9 @@
-// The owner can open, pick, fold and drag rows of one server-projected list.
+// The owner can open, pick and fold rows of one server-projected list.
 
 import { ArchiveRestoreIcon, TriangleAlertIcon } from "lucide-react";
-import { useRef, useState, useSyncExternalStore, type DragEvent, type MouseEvent } from "react";
+import { useRef, useSyncExternalStore, type MouseEvent } from "react";
 import type { App } from "../core/app";
-import { archivedSession, currentRow, workspaceRow, type SidebarRow } from "../core/nav";
+import { archivedSession, currentRow, workspaceRow } from "../core/nav";
 import { canStartIn } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
@@ -35,10 +35,7 @@ function WorkspaceList({ app }: { app: App }) {
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
   const listRef = useRef<HTMLDivElement>(null);
-  const dragged = useRef<SidebarRow | null>(null);
-  const [dragging, setDragging] = useState(false);
   const archive = treeName === "archived";
-  const hasPinned = tree?.sections.some((s) => s.kind === "pinned") ?? false;
   const current = currentRow(rows, openId, workspace, archive ? null : tree);
 
   const onClick = (e: MouseEvent) => {
@@ -53,55 +50,6 @@ function WorkspaceList({ app }: { app: App }) {
     else app.clickRow(row.id, e.metaKey || e.ctrlKey ? "toggle" : e.shiftKey ? "range" : null);
   };
 
-  // A drop target: the Pinned header or the pin zone, or another workspace of the same section.
-  const dropTarget = (e: DragEvent): { el: HTMLElement; pin: boolean; target?: string } | null => {
-    const source = dragged.current;
-    if (!source) return null;
-    const el = (e.target as Element).closest<HTMLElement>('[data-drop="pin"], [data-testid="tree-row"][data-kind="workspace"]');
-    if (!el) return null;
-    if (el.dataset.drop === "pin") return source.pinned ? null : { el, pin: true };
-    const target = rows.find((r) => r.id === el.dataset.id);
-    const from = rows.find((r) => r.id === source.id);
-    if (!target || target.id === source.id || target.section !== from?.section || target.row?.archived) return null;
-    return { el, pin: false, target: target.id };
-  };
-  const clearMark = () => listRef.current?.querySelectorAll("[data-over]").forEach((n) => n.removeAttribute("data-over"));
-  const dragProps = archive
-    ? {}
-    : {
-        onDragStart: (e: DragEvent) => {
-          const el = (e.target as Element).closest<HTMLElement>('[data-testid="tree-row"][data-kind="workspace"]');
-          const row = el && rows.find((r) => r.id === el.dataset.id)?.row;
-          if (!row || row.archived) return;
-          dragged.current = row;
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", row.id);
-          setDragging(true);
-        },
-        onDragOver: (e: DragEvent) => {
-          const t = dropTarget(e);
-          if (!t) return;
-          e.preventDefault();
-          if (!t.el.hasAttribute("data-over")) {
-            clearMark();
-            t.el.setAttribute("data-over", "true");
-          }
-        },
-        onDrop: (e: DragEvent) => {
-          const t = dropTarget(e);
-          const source = dragged.current;
-          clearMark();
-          if (!t || !source) return;
-          e.preventDefault();
-          if (t.pin) void app.pin(source.id);
-          else void app.choose({ op: "reorder_workspace", workspace: source.id, target: t.target! });
-        },
-        onDragEnd: () => {
-          dragged.current = null;
-          clearMark();
-          setDragging(false);
-        },
-      };
 
   return (
     <>
@@ -116,13 +64,7 @@ function WorkspaceList({ app }: { app: App }) {
             data-testid="sidebar"
             data-loaded={String(loaded)}
             onClick={onClick}
-            {...dragProps}
           >
-            {dragging && !hasPinned && (
-              <div data-drop="pin" data-testid="pin-zone" className="pin-zone">
-                Drop here to pin
-              </div>
-            )}
             {rows.map((row) => (
               <RowView key={row.id} row={row} selected={row.id === selected} marked={marked.size ? marked.has(row.id) : null} current={row.id === current}
                 open={!archive && row.kind === "chat" && row.row?.selection?.chat === openId}
