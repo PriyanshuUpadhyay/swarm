@@ -225,6 +225,16 @@ test("a branchless chat still reserves the same 36 px below the tabs", async ({ 
   await page.unrouteAll({ behavior: "wait" });
 });
 
+test("the PR chip responds to a click within its 24 px hit area", async ({ page }) => {
+  const row = await withChatFacts(page, (tree, row) => { tree.workspaces[row.selection!.workspace!].pr = demoPr; });
+  const chip = row.getByTestId("pr-chip");
+  expect(await chip.evaluate((el) => {
+    const { x, y, width, height } = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(x + width / 2, y + height / 2 - 11));
+  })).toBe(true);
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page }) => {
   await load(page);
   await page.getByTestId("home-button").click();

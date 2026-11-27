@@ -301,6 +301,7 @@
   text-underline-offset: 2px;
 }
 .pr-chip {
+  position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -312,6 +313,11 @@
   font-size: var(--text-xs);
   font-weight: 600;
   line-height: var(--text-xs--line-height);
+}
+.pr-chip::after {
+  position: absolute;
+  inset: -3px 0;
+  content: "";
 }
 .pr-chip[data-state="draft"] {
   border-color: var(--pr-draft-border);
