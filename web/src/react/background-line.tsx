@@ -1,5 +1,5 @@
 import { XIcon } from "lucide-react";
-import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { App } from "../core/app";
 import { backgroundRows, elapsed, OPEN_BACKGROUND, poll, runningLine, type BackgroundRow, type BackgroundTask, type OpenBackgroundDetail, type WorkspaceShell } from "../core/background";
 import { plural } from "./cut-line";
@@ -7,6 +7,7 @@ import { Glyph } from "./glyph";
 import { Offline } from "./status";
 
 const POLL_MS = 3000;
+type ReadRows<T> = { session: string; rows: T[]; failed?: boolean };
 type Lists = { rows: BackgroundRow[]; taskReadFailed: boolean; shellReadFailed: boolean; addShell: (shell: WorkspaceShell) => void; refreshShells: () => Promise<void> };
 const Background = createContext<Lists | null>(null);
 
@@ -19,20 +20,24 @@ export function useBackground() {
 /** The chat and Cmd+J share the same two polling reads, also while the panel is closed. */
 export function BackgroundLists({ app, session, children }: { app: App; session: string; children: ReactNode }) {
   const snapshot = useSyncExternalStore(app.subscribe, () => app.snapshot);
-  const [tasks, setTasks] = useState<{ session: string; rows: BackgroundTask[]; failed?: boolean }>({ session, rows: [] });
-  const [shells, setShells] = useState<{ session: string; rows: WorkspaceShell[]; failed?: boolean }>({ session, rows: [] });
+  const [tasks, setTasks] = useState<ReadRows<BackgroundTask>>({ session, rows: [] });
+  const [shells, setShells] = useState<ReadRows<WorkspaceShell>>({ session, rows: [] });
 
   useEffect(() => {
     let live = true;
     setShells({ session, rows: [] });
+    const fail = <T,>(setRows: Dispatch<SetStateAction<ReadRows<T>>>) => {
+      if (live) setRows((last) => ({ session, rows: last.session === session ? last.rows : [], failed: true }));
+    };
+
     const read = () => Promise.allSettled([
       app.api.get<{ tasks: BackgroundTask[] }>("/api/background", { session }).then(
         (r) => { if (live) setTasks({ session, rows: r.tasks }); },
-        () => { if (live) setTasks((last) => ({ session, rows: last.session === session ? last.rows : [], failed: true })); },
+        () => fail(setTasks),
       ),
       app.api.get<{ shells: WorkspaceShell[] }>("/api/shells", { session }).then(
         (r) => { if (live) setShells({ session, rows: r.shells }); },
-        () => { if (live) setShells((last) => ({ session, rows: last.session === session ? last.rows : [], failed: true })); },
+        () => fail(setShells),
       ),
     ]);
     const stop = poll(read, POLL_MS, () => document.hidden);
