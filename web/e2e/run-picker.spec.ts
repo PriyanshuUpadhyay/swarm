@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { holdChatStart, open, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
+import { holdChatStart, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
 
 // Live snapshot reads can still be in flight when the test page closes.
 test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
@@ -82,11 +82,7 @@ test("one idle picker opens by shortcut, keeps an unlisted current model and app
     picked.push(route.request().postDataJSON());
     return route.fulfill({ json: { session: live } });
   });
-  await tab.route("**/api/snapshot", async (route) => {
-    const snap = await (await route.fetch()).json();
-    Object.assign(snap.agents[live][0], { provider: "claude", model: picked.at(-1)?.model ?? "unlisted-model", effort: "high", state: "done", prompt: null });
-    await route.fulfill({ json: snap });
-  });
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: picked.at(-1)?.model ?? "unlisted-model", effort: "high", state: "done", prompt: null }); });
   await patchTreePrefs(tab, (prefs) => {
     prefs.favoriteModels = [{ provider: "claude", model: "model-b" }];
     prefs.recentModels = [{ provider: "codex", model: "other" }];
@@ -150,11 +146,7 @@ test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }
   let working = true;
   let stops = 0;
   const switches: Record<string, unknown>[] = [];
-  await tab.route("**/api/snapshot", async (route) => {
-    const snap = await (await route.fetch()).json();
-    Object.assign(snap.agents[live][0], { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null });
-    await route.fulfill({ json: snap });
-  });
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null }); });
   await tab.route("**/api/chat/interrupt", async (route) => {
     stops++;
     working = false;
@@ -190,11 +182,7 @@ test("reload drops a busy pick rather than applying it on the now-idle chat", as
   const live = process.env.SWARM_E2E_LIVE!;
   let working = true;
   let switches = 0;
-  await tab.route("**/api/snapshot", async (route) => {
-    const snap = await (await route.fetch()).json();
-    Object.assign(snap.agents[live][0], { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null });
-    await route.fulfill({ json: snap });
-  });
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null }); });
   await tab.route("**/api/chat/continue", (route) => {
     switches++;
     return route.fulfill({ json: { session: live } });
@@ -220,11 +208,7 @@ test("an ended chat keeps a foreign-CLI pick until Resume and uses File by defau
   const attempts: Record<string, unknown>[] = [];
   let release: () => void;
   const finishing = new Promise<void>((resolve) => { release = resolve; });
-  await tab.route("**/api/snapshot", async (route) => {
-    const snap = await (await route.fetch()).json();
-    Object.assign(snap.agents[live][0], { provider: "claude", model: "model-a", state: "done", alive: false });
-    await route.fulfill({ json: snap });
-  });
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: "done", alive: false }); });
   await patchTreePrefs(tab, (prefs) => { delete prefs.switchCarry; });
   await tab.route("**/api/chat/continue", async (route) => {
     attempts.push(route.request().postDataJSON());

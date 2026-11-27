@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { pierreUnloadNoise } from "./console-noise";
 import { join, resolve } from "node:path";
+import type { Agent, Snapshot } from "../src/core/api";
 import type { Prefs, TreeView } from "../src/core/nav";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
@@ -70,6 +71,15 @@ export async function patchTreePrefs(tab: Page, patch: (prefs: Prefs) => void) {
     const tree: TreeView = await (await route.fetch()).json();
     patch(tree.prefs);
     await route.fulfill({ json: tree });
+  });
+}
+
+export async function patchLiveChair(tab: Page, patch: (chair: Agent, snapshot: Snapshot, session: string) => void) {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await tab.route("**/api/snapshot", async (route) => {
+    const snapshot: Snapshot = await (await route.fetch()).json();
+    patch(snapshot.agents[session][0], snapshot, session);
+    await route.fulfill({ json: snapshot });
   });
 }
 
