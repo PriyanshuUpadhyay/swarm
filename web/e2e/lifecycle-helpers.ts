@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { pierreUnloadNoise } from "./console-noise";
 import { join, resolve } from "node:path";
 import type { TreeView } from "../src/core/nav";
@@ -69,6 +69,17 @@ async function holdChatStart(tab: Page) {
 }
 
 export { server, token, api, readTree, open, header, workspace, shoot, holdChatStart, compose };
+
+export async function clickTarget(button: Locator) {
+  return button.evaluate((el) => {
+    const { width, height } = el.getBoundingClientRect();
+    const target = getComputedStyle(el, "::after");
+    return {
+      width: Math.max(width, Number.parseFloat(target.width) || 0),
+      height: Math.max(height, Number.parseFloat(target.height) || 0),
+    };
+  });
+}
 
 export async function showOtherProjects(page: Page) {
   const row = page.locator('[data-kind="more-projects"]');

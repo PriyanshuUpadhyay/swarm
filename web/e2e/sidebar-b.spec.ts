@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { SidebarRow, TreeView } from "../src/core/nav";
-import { shoot } from "./lifecycle-helpers";
+import { clickTarget, readTree, shoot } from "./lifecycle-helpers";
 
 async function load(page: Page) {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -204,6 +204,30 @@ async function withChatFacts(page: Page, change: (tree: TreeView, row: SidebarRo
 }
 
 const demoPr = { number: 7, url: "https://github.com/example/project/pull/7", state: "open", ci: "unknown" } as const;
+
+test("the archive row has a 24 px Unarchive target without growing", async ({ page }) => {
+  const tree = await readTree();
+  const section = tree.sections.find((item) => item.rows.some((row) => row.kind === "chat"));
+  const chat = section?.rows.find((row) => row.kind === "chat");
+  if (!section || !chat) throw new Error("Missing a chat for the archive fixture");
+  const archived: SidebarRow = { ...chat, id: "archived-chat:fixture", kind: "archived-chat", depth: 0, parentId: null, fields: [] };
+
+  try {
+    await page.route("**/api/tree?view=archived", (route) => route.fulfill({
+      json: { ...tree, view: "archived", sections: [{ ...section, rows: [archived] }] },
+    }));
+    await load(page);
+    await page.getByTestId("archive-toggle").click();
+    const row = page.locator('[data-id="archived-chat:fixture"]');
+    const button = row.getByRole("button", { name: /^Unarchive / });
+    await expect(button).toBeVisible();
+    await expect(button).toHaveCSS("height", "18px");
+    await expect(row).toHaveCSS("height", "28px");
+    expect(await clickTarget(button)).toEqual({ width: 24, height: 24 });
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
 
 test("right click leaves the PR chip's native link menu available", async ({ page }) => {
   const row = await withChatFacts(page, (tree, row) => { tree.workspaces[row.selection!.workspace!].pr = demoPr; });

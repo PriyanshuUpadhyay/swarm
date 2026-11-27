@@ -81,6 +81,7 @@
   color: var(--foreground);
 }
 .trow .row-btn {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 18px;
@@ -90,6 +91,14 @@
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted-foreground);
+}
+.trow .row-btn::after {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: max(100%, 24px);
+  height: max(100%, 24px);
+  transform: translate(-50%, -50%);
+  content: "";
 }
 .trow .row-btn:hover {
   background: var(--selected);

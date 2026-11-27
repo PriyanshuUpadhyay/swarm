@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { api, header, open, readTree, server, shoot, showOtherProjects, workspace } from "./lifecycle-helpers";
+import { api, clickTarget, header, open, readTree, server, shoot, showOtherProjects, workspace } from "./lifecycle-helpers";
 
 const chatIn = async (title: string) => {
   const session = async () => {
@@ -233,7 +233,12 @@ test("holding ⌘ over a row shows its actions as icons, and releasing ⌘ hides
   await expect(tab.getByTestId("row-bar-hint")).toBeVisible();
   // The new chat "+" shows without hover.
   await tab.mouse.move(0, 0);
-  await expect(row.locator('[data-action="new-chat"]')).toBeVisible();
+  const newChat = row.locator('[data-action="new-chat"]');
+  await expect(newChat).toBeVisible();
+  await expect(newChat).toHaveCSS("height", "18px");
+  await expect(row.locator(".tline").first()).toHaveCSS("height", "28px");
+  expect(await clickTarget(newChat)).toEqual({ width: 24, height: 24 });
+
   await row.hover();
   await expect(bar).toBeHidden();
   await tab.keyboard.down("Meta");
