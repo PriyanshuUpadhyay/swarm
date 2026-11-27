@@ -96,6 +96,38 @@ test("Show all can retry a transient full diff failure", async ({ page: tab }) =
   await expect(cut).toBeHidden();
 });
 
+test("Show all keeps an unfinished range comment on the same lines", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  let fullReads = 0;
+  await tab.route("**/api/changes/diff?**", async (route) => {
+    const full = new URL(route.request().url()).searchParams.get("full") === "1";
+    if (!full || ++fullReads !== 1) return route.continue();
+    const response = await route.fetch();
+    const data = await response.json();
+    const first = data.display.lines.find((line: { text: string }) => line.text === "generated line 1");
+    first.text = "changed line 1";
+    first.quote = "+changed line 1";
+    data.patch = data.patch.replace("+generated line 1\n", "+changed line 1\n");
+    await route.fulfill({ response, json: data });
+  });
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  const diff = tab.getByTestId("diff-body");
+  const first = diff.locator('[data-gutter] > [data-column-number="1"]');
+  await first.click();
+  const input = tab.getByTestId("comment-input");
+  await input.fill("Keep this note for line one.");
+  const cut = tab.getByTestId("diff-capped");
+  const show = cut.getByRole("button", { name: "Show all", exact: true });
+  await show.click();
+  await expect(cut.getByRole("status")).toBeVisible({ timeout: 2000 });
+  await expect(input).toHaveValue("Keep this note for line one.");
+  await show.click();
+  await expect(cut).toBeHidden();
+  await expect(input).toHaveValue("Keep this note for line one.");
+  await expect(diff.locator('[data-content] > [data-line][data-selected-line]')).toHaveText("generated line 1");
+});
+
 test("an oversized Changes range keeps the note and asks for fewer lines", async ({ page: tab }) => {
   await openChat(tab, process.env.SWARM_E2E_GIT!);
   await tab.route("**/api/changes/diff?**", (route) => {

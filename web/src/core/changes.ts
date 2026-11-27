@@ -334,15 +334,18 @@ export class Changes {
 
   async expandDiff() {
     if (this.diff.state !== "ready" || !this.diff.data.is_truncated || (this.full.state !== "idle" && !(this.full.state === "error" && !this.full.capped))) return;
-    const { path, layer = "branch" } = this.diff.data;
+    const preview = this.diff.data;
+    const { path, layer = "branch" } = preview;
     const seq = ++this.seq.diff;
     this.full = LOADING;
     this.notify();
     try {
       const data = await this.app.api.get<FileDiff>("/api/changes/diff", this.query({ path, layer, full: "1" }));
       if (seq !== this.seq.diff) return;
-      this.full = { state: "ready", data };
-      this.setEditor(path, layer, null);
+      const editor = this.editor(path, layer);
+      const range = (d: FileDiff) => editor && JSON.stringify(d.display?.lines.slice(Math.min(editor.anchor, editor.cursor), 1 + Math.max(editor.anchor, editor.cursor)));
+      this.full = range(preview) === range(data) ? { state: "ready", data } : { state: "error", error: "The selected lines changed. The preview stays open." };
+      this.notify();
     } catch (err) {
       if (seq !== this.seq.diff) return;
       const capped = err instanceof ApiError && err.status === 413;
