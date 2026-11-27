@@ -124,6 +124,7 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
   await tab.getByTestId("run-query").fill("custom-id");
   await tab.getByTestId("run-query").press("Enter");
   await expect.poll(() => picks.map((p) => p.model)).toEqual(["model-b", "custom-id"]);
+  await tab.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("a removed new-chat default blocks the start and can be reset", async ({ page: tab }) => {
