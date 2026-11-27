@@ -386,20 +386,19 @@ fn read_patch(
             return Ok(None);
         };
 
-        (
-            counts
-                .get(path)
-                .map(|&(added, removed)| Change {
-                    path: path.into(),
-                    status: String::new(),
-                    layer: "branch".into(),
-                    added,
-                    removed,
-                })
-                .into_iter()
-                .collect(),
-            Some(source),
-        )
+        let files = counts
+            .get(path)
+            .map(|&(added, removed)| Change {
+                path: path.into(),
+                status: String::new(),
+                layer: "branch".into(),
+                added,
+                removed,
+            })
+            .into_iter()
+            .collect();
+
+        (files, Some(source))
     } else {
         let files = local_changes(&bytes(
             &read,
