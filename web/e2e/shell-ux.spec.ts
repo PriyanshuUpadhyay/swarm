@@ -117,6 +117,8 @@ test("chat pickers filter, move with arrow keys, and refresh imports without clo
     { id: "one", title: `Imported choice ${++imports}`, workspace: "/repo", provider: "codex", lastActivity: 42 },
   ] } }));
   await open(page);
+  await page.getByRole("button", { name: "Add project" }).click();
+  await page.keyboard.press("Escape");
   await page.getByTestId("archive-toggle").click();
   await page.getByRole("button", { name: "Archived chats…" }).click();
   const archive = page.getByTestId("recently-closed");
