@@ -15,7 +15,8 @@ import { PlanRow, TodoRow } from "./transcript-todo";
 import { SubagentRow } from "./subagent-chat";
 import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
-type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; cutState?: { shown: Set<string>; key: string }; composerId?: string; branches?: boolean; match?: string };
+type CutState = { key: string | Row; shown: boolean; reveal: () => void };
+type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; cutState?: CutState; composerId?: string; branches?: boolean; match?: string };
 
 function LineView({ index, queueStart, ...ctx }: Ctx & { index: number; queueStart?: boolean }) {
   const { app, line, match } = ctx;
@@ -63,11 +64,15 @@ function MdBody({ row }: { row: Row }) {
 const CUT_AT = 12;
 
 function MessageCut({ line: { row }, cutState, match, thought }: Pick<Ctx, "line" | "cutState" | "match"> & { thought?: boolean }) {
-  const [showAll, setShowAll] = useState(() => cutState?.shown.has(cutState.key) ?? false);
+  const [opened, setOpened] = useState<string | Row | true | null>(null);
+  const key = cutState?.key ?? true;
 
   const body = thought ? null : paintBodyOf(row);
-  const open = showAll || !!match;
-  const show = () => { if (cutState) cutState.shown.add(cutState.key); setShowAll(true); };
+  const open = cutState?.shown || opened === key || !!match;
+  const show = () => {
+    cutState?.reveal();
+    setOpened(key);
+  };
 
   if (body?.kind === "tree") {
     const cut = open ? null : cutMarkdown(body.display, CUT_AT);

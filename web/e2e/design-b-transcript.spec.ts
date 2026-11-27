@@ -1,8 +1,49 @@
-import { expect, test } from "@playwright/test";
-import { captureThemes, mockRows, open, row, rows } from "./ux-helpers";
-import type { Block, Inline } from "../src/core/api";
+import { expect, test, type Page } from "@playwright/test";
+import { captureThemes, mockRows, mockStream, open, row, rows, streamFrame } from "./ux-helpers";
+import type { Block, Inline, Snapshot } from "../src/core/api";
 
 const lines = (last: string) => Array.from({ length: 16 }, (_, i) => i === 15 ? last : `Check result ${i + 1}`).join("\n");
+
+async function queuedChat(page: Page, initial: string[]) {
+  const session = process.env.SWARM_E2E_LIVE!;
+  let texts = initial;
+  let version = 1;
+  await mockStream(page, "queued-chat");
+  await page.route("**/api/snapshot", async (route) => {
+    const snapshot = await (await route.fetch()).json() as Snapshot;
+    snapshot.version = version;
+    const chair = snapshot.agents[session].find((agent) => agent.id === "orchestrator")!;
+    chair.queue = texts.map((text, i) => ({ id: `queue-${i}`, text, mode: "steering", detail: "Steering" }));
+    await route.fulfill({ json: snapshot });
+  });
+
+  await mockRows(page, [row("before-queue", "Last reply")]);
+  await open(page);
+  return async (next: string[]) => {
+    texts = next;
+    await streamFrame(page, "snapshot", { version: ++version });
+  };
+}
+
+test("the next queued message does not inherit Show all", async ({ page }) => {
+  const first = "First queued message";
+  const next = "Next queued message";
+  const queued = (id: number) => page.getByTestId("row").and(page.locator(`[data-id="queue-${id}"]`));
+
+  try {
+    const update = await queuedChat(page, [lines(first), lines(next)]);
+    const show = queued(0).getByRole("button", { name: "Show all", exact: true });
+    await show.click();
+    await expect(queued(0)).toContainText(first);
+
+    await update([lines(next)]);
+    await expect(queued(1)).toHaveCount(0);
+    await expect(show).toBeVisible({ timeout: 2_000 });
+    await expect(queued(0)).not.toContainText(next);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
 
 test("an opened saved thought reveals the cut lines on request", async ({ page }) => {
   await mockRows(page, [row("t1", lines("The saved thought ends here"), "thought")]);

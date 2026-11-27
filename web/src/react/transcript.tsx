@@ -1,6 +1,7 @@
 import { ArrowDownIcon, ChevronDownIcon, ChevronUpIcon, MessageSquareDashedIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
+import type { Row } from "../core/api";
 import { PROMPT_JUMP, SENT, type App, type Pane, type Reader } from "../core/app";
 import { canBranch } from "../core/composer";
 import { promptIndex, type Line } from "../core/transcript";
@@ -51,6 +52,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const [away, setAway] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
   const [shownMessages] = useState(() => new Set<string>());
+  const [shownQueue] = useState(() => new WeakSet<Row>());
   const { lines, id: openId, chatState, find, canPullBack } = view;
   const current = find.open ? find.matches[find.index]?.id : undefined;
   const notes = useTranscriptNotes(app, view, scrollRef);
@@ -215,21 +217,28 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                   shift={view.shift}
                   onScroll={onScroll}
                 >
-                  {(line: Line, index: number) => (
-                    <LineView
+                  {(line: Line, index: number) => {
+                    const id = `${openId}\0${line.id}`;
+                    const row = line.row;
+                    // Queue wire IDs name positions. A changed queue creates new row objects.
+                    const cutState = row.kind === "queued"
+                      ? { key: row, shown: shownQueue.has(row), reveal: () => shownQueue.add(row) }
+                      : { key: id, shown: shownMessages.has(id), reveal: () => shownMessages.add(id) };
+
+                    return <LineView
                       key={line.id}
                       app={app}
                       line={line}
-                      cutState={{ shown: shownMessages, key: `${openId}\0${line.id}` }}
+                      cutState={cutState}
                       index={index}
                       full={view.full}
                       // An unreachable agent shows no text box, so its rows offer no Reuse.
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
-                      queueStart={canPullBack && line.row.kind === "queued" && lines[index - 1]?.row.kind !== "queued"}
-                    />
-                  )}
+                      queueStart={canPullBack && row.kind === "queued" && lines[index - 1]?.row.kind !== "queued"}
+                    />;
+                  }}
                 </Virtualizer>
                 {notes.layer}
               </>
