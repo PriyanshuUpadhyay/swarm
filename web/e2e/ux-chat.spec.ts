@@ -151,7 +151,8 @@ test("a removed new-chat default blocks the start and can be reset", async ({ pa
     await tab.getByRole("button", { name: "Reset new chat default" }).click();
     await expect.poll(async () => (await tree()).prefs.newChatModel).toBeUndefined();
   } finally {
-    if (previous) await setDefault(previous);
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+    await setDefault(previous);
   }
 });
 
