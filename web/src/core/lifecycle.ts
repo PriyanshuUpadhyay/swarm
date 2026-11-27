@@ -319,7 +319,7 @@ export class Lifecycle {
   endedRunCarry(session: string, provider: string | null): Carry {
     const chair = this.app.composing.chair(session);
     if (provider === chair.provider) return "clean";
-    if (!chair.resumable && !this.app.panes.chairHasLog(session) && !hasLinkedHistory(this.app.snapshot, session)) return "clean";
+    if (!this.app.panes.chairHasLog(session) && !hasLinkedHistory(this.app.snapshot, session)) return "clean";
     return endedCarry(savedCarry(this.app.tree?.prefs));
   }
 

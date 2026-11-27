@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Api, ApiError, type Session, type Snapshot } from "./api";
 import { App } from "./app";
+import { session } from "./chat-fixtures";
 import { Lifecycle } from "./lifecycle";
 
 /** An App stand-in that records what Lifecycle asks of it. `post` answers by path. */
@@ -71,19 +72,29 @@ describe("chats", () => {
     expect(group.calls.filter((c) => c.startsWith("leave"))).toEqual(["leave chat-1", "leave chat-2"]);
   });
 
-  it("starts the picked CLI without history when the ended chat has no turn", async () => {
+  function endedWithoutTurn(provider: string) {
     const app = new App(new Api("test"));
-    app.snapshot = { version: 1, agents: {}, sessions: [{
-      id: "ended", cwd: "/work", created_at: 1, chair_provider: "codex", chair_id: null, chair_log: null,
-      adapter: "tmux-swarm", project: null, workspace: null,
-    }] };
+    const ended = session({
+      id: "ended", cwd: "/work", created_at: 1, chair_provider: provider,
+      chair_id: provider === "codex" ? null : "native", chair_log: null, workspace: null,
+    });
+    app.snapshot = { version: 1, agents: {}, sessions: [ended] };
     const post = vi.spyOn(app.api, "post").mockResolvedValue({ session: "new" });
     vi.spyOn(app, "refresh").mockResolvedValue(undefined);
+    return { app, post };
+  }
 
-    app.life.pickRun("ended", { provider: "claude", model: "sonnet", effort: null, account: null });
+  it.each([
+    ["codex", "claude", "sonnet"],
+    ["claude", "codex", "gpt-test"],
+    ["pi", "claude", "sonnet"],
+  ])("starts the picked CLI without history for an ended %s chat with no turn", async (source, provider, model) => {
+    const { app, post } = endedWithoutTurn(source);
+    app.life.pickRun("ended", { provider, model, effort: null, account: null });
     await app.life.resumeChat("ended");
+
     expect(post).toHaveBeenCalledWith("/api/chat/continue", {
-      old_session: "ended", provider: "claude", model: "sonnet", carry: "clean",
+      old_session: "ended", provider, model, carry: "clean",
     });
   });
 
