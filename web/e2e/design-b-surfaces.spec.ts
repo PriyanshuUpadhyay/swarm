@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { Meter } from "../src/core/settings-types";
 import { open, settings } from "./settings-helpers";
 import { captureThemes, open as openChat } from "./ux-helpers";
@@ -220,6 +222,22 @@ test("Show all does not open a comment for a keyboard selection", async ({ page:
   await cut.getByRole("button", { name: "Show all", exact: true }).click();
   await expect(cut).toBeHidden({ timeout: 2_000 });
   await expect(input).toHaveCount(0, { timeout: 2_000 });
+});
+
+test("Show all keeps a selection on a line cut by the character limit", async ({ page: tab }) => {
+  const name = "round4-long-diff-line.txt";
+  const file = join(process.env.SWARM_E2E_GIT_DIR!, name);
+  writeFileSync(file, "a".repeat(14_000) + "\n", { flag: "wx" });
+
+  try {
+    await openChanges(tab, name);
+    await tab.getByTestId("diff-body").press("End");
+    const cut = tab.getByTestId("diff-capped");
+    await cut.getByRole("button", { name: "Show all", exact: true }).click();
+    await expect(cut).toBeHidden({ timeout: 2_000 });
+  } finally {
+    rmSync(file);
+  }
 });
 
 test("a refused expansion keeps the draft preview through a focus refresh", async ({ page: tab }) => {

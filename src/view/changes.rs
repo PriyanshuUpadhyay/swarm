@@ -345,7 +345,7 @@ pub fn patch(
     Ok(read_patch(root, path, mode, base, layer, false)?.expect("uncapped preview"))
 }
 
-/// `None` means the full patch did not fit; the preview is still available.
+/// `None`: the full patch exceeded a cap.
 pub fn full_patch(
     root: &str,
     path: &str,
@@ -371,6 +371,7 @@ fn read_patch(
     validate_path(path)?;
     let read = ReadCommands::new(root);
     let before = identity(&read, Some(path))?;
+
     let pair = if matches!(mode, Mode::Branch) {
         comparison(&read, base, &before)?.pair
     } else {
@@ -384,6 +385,7 @@ fn read_patch(
         let Some((source, counts)) = patch_and_counts(&read, "branch", &pair, path, expand)? else {
             return Ok(None);
         };
+
         (
             counts
                 .get(path)
@@ -399,6 +401,7 @@ fn read_patch(
             Some(source),
         )
     } else {
+
         (
             local_changes(&bytes(
                 &read,
@@ -412,6 +415,7 @@ fn read_patch(
                     path,
                 ],
             )?)?,
+
             None,
         )
     };
@@ -445,6 +449,7 @@ fn read_patch(
                 json!({"path":path,"notice":"Binary file or symbolic link","added":file.added,"removed":file.removed}),
             ));
         };
+
         file.added = Some(source.full_lines);
         file.removed = Some(0);
         let name = serde_json::to_string(&format!("b/{path}")).unwrap();
@@ -457,12 +462,14 @@ fn read_patch(
         } else {
             ""
         };
+
         let lines = source.full_lines + 4 + usize::from(!ending.is_empty());
         let bytes = header.len() + source.full_bytes + source.full_lines + ending.len();
         if expand && !fits_full(lines, bytes) {
             return Ok(None);
         }
         full = Some((lines, bytes));
+
         let mut patch = header;
         for line in source.text.split_inclusive('\n') {
             patch.push('+');
@@ -476,12 +483,14 @@ fn read_patch(
         source.expect("tracked patch")
     };
 
+    let mut cut = false;
     let mut preview = if expand {
         let lines = source.lines().count();
         let bytes = source.len();
         if !fits_full(lines, bytes) {
             return Ok(None);
         }
+
         TextPreview {
             text: source,
             full_lines: lines,
@@ -489,8 +498,11 @@ fn read_patch(
             ..Default::default()
         }
     } else {
-        TextPreview::new(&source, 200)
+        let p = TextPreview::new(&source, 200);
+        cut = p.ends_with_partial_line(&source);
+        p
     };
+
     if let Some((lines, bytes)) = full {
         preview.is_truncated |= bytes > preview.full_bytes;
         preview.full_lines = lines;
@@ -499,10 +511,12 @@ fn read_patch(
     }
 
     stable(&read, mode, base, Some(path), &before, &pair)?;
-    Ok(Some(
-        json!({"path":path,"layer":layer,"patch":preview.text,"display":super::transcript::patch_wire::changes_patch(&preview.text),"is_truncated":preview.is_truncated,
-        "full_lines":preview.full_lines,"full_bytes":preview.full_bytes,"hidden_lines":preview.hidden_lines,"added":file.added,"removed":file.removed}),
-    ))
+    let mut reply = json!({"path":path,"layer":layer,"patch":preview.text,"display":super::transcript::patch_wire::changes_patch(&preview.text),"is_truncated":preview.is_truncated,
+        "full_lines":preview.full_lines,"full_bytes":preview.full_bytes,"hidden_lines":preview.hidden_lines,"added":file.added,"removed":file.removed});
+    if cut {
+        reply["partial_last_line"] = json!(true);
+    }
+    Ok(Some(reply))
 }
 
 fn validate_path(path: &str) -> Result<()> {

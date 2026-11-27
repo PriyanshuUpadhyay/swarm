@@ -14,6 +14,7 @@ export type FileDiff = {
   patch?: string;
   display?: { lines: PatchLineWire[] };
   is_truncated?: boolean;
+  partial_last_line?: boolean;
   full_lines?: number;
   hidden_lines?: number;
   added: number | null;

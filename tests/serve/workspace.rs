@@ -62,10 +62,10 @@ fn full_changes_rejects_output_over_cap_without_changing_the_preview() {
     );
     let (status, _, body) = server.request("GET", &url, "", "", true);
     assert_eq!(status, 200, "{body}");
-    assert_eq!(
-        serde_json::from_str::<Value>(&body).unwrap()["is_truncated"],
-        true
-    );
+    let preview: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(preview["is_truncated"], true);
+    assert_eq!(preview["partial_last_line"], true);
+
     let (status, _, body) = server.request("GET", &format!("{url}&full=1"), "", "", true);
     assert_eq!(status, 413, "{body}");
     assert!(body.contains("2 MiB or 20,010 lines"), "{body}");
