@@ -1,5 +1,70 @@
 use super::*;
 use crate::serve::test_support::*;
+use swarm::bus::CLI_DEFAULT_MODEL_FLAG;
+
+fn linked_launch_fixture() -> (Fixture, std::process::Command) {
+    let fixture = Fixture::new();
+    let home = fixture.app.root.parent().unwrap();
+    std::fs::write(
+        fixture.app.root.join("adapters/fake.conf"),
+        "self = true\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
+    )
+    .unwrap();
+
+    let mut launch = std::process::Command::new(fixture.app.sources.worker_cli.as_ref().unwrap());
+    launch
+        .env_clear()
+        .env("HOME", home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("SWARM_HOME", home)
+        .env("SWARM_ADAPTER", "fake")
+        .env("SWARM_SESSION_ID", &fixture.session)
+        .env("SWARM_AGENT_ID", "orchestrator")
+        .current_dir(home);
+
+    launch.args([
+        "launch",
+        "orchestrator",
+        "chat",
+        "--provider",
+        "codex",
+        CLI_DEFAULT_MODEL_FLAG,
+    ]);
+    (fixture, launch)
+}
+
+#[test]
+fn cli_default_launch_omits_the_provider_model_flag() {
+    let (fixture, mut launch) = linked_launch_fixture();
+    let output = launch.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let script = fixture
+        .app
+        .root
+        .join("runs")
+        .join(&fixture.session)
+        .join("orchestrator.sh");
+    let command = std::fs::read_to_string(script).unwrap();
+    assert!(command.contains("'codex'"), "{command}");
+    assert!(!command.contains("'--model'"), "{command}");
+}
+
+#[test]
+fn cli_default_launch_rejects_an_explicit_model() {
+    let (_fixture, mut launch) = linked_launch_fixture();
+    let output = launch.args(["--model", "gpt-test"]).output().unwrap();
+    assert!(
+        !output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("usage: swarm"));
+}
 
 fn ended_file_carry() -> (Fixture, ContinueChat) {
     let fixture = action_fixture();
