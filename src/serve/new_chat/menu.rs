@@ -21,9 +21,15 @@ async fn menu_folder(app: &App, cwd: String) -> Result<String, ApiError> {
         return Err(error(StatusCode::BAD_REQUEST, "absolute cwd required"));
     }
     let app = app.clone();
-    tokio::task::spawn_blocking(move || chat_target(&app, &cwd, false).map(|_| cwd))
-        .await
-        .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))?
+    tokio::task::spawn_blocking(move || {
+        let target = chat_target(&app, &cwd, false)?;
+        if target.worktree_only {
+            return Err(read_only_error("chat"));
+        }
+        Ok(cwd)
+    })
+    .await
+    .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "cwd check failed"))?
 }
 
 /// `GET /api/chat/new-commands?cwd=&provider=`: the `/` menu rows that `provider` offers in

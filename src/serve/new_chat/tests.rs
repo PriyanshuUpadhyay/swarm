@@ -101,6 +101,14 @@ async fn an_archived_git_root_can_start_only_in_a_new_worktree() {
     .await
     .unwrap_err();
     assert_eq!(here.0, StatusCode::CONFLICT);
+    let files = menu::new_chat_files(
+        State(fixture.app.clone()),
+        Query(serde_json::from_value(json!({"cwd": cwd})).unwrap()),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(files.0, StatusCode::CONFLICT);
+
     let started = start_chat(&fixture, json!({"cwd":cwd,"place":{"kind":"new"}}))
         .await
         .unwrap();
