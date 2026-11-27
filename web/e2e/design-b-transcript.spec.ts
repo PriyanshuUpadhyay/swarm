@@ -118,6 +118,10 @@ for (const place of ["away", "bottom"] as const) {
       await expect(page.getByTestId("find-count")).toContainText("of 2");
       await waitFrames(page, 3);
       expect(Math.abs(await position() - before)).toBeLessThan(5);
+
+      if (place === "away") {
+        await expect.poll(() => page.evaluate(() => ["find-matches", "find-current"].map((name) => CSS.highlights.get(name)?.size))).toEqual([0, 0]);
+      }
     } finally {
       await page.unrouteAll({ behavior: "ignoreErrors" });
     }
