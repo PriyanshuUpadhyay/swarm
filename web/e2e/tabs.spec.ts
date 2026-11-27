@@ -69,9 +69,12 @@ test("the tab child button names one agent in the singular", async ({ page }) =>
     await page.goto(`${server().origin}/${server().hash}`);
     await page.waitForFunction(() => window.__swarmReady === true);
 
-    const selected = page.waitForResponse((res) => res.url().endsWith("/api/choices") && res.request().postDataJSON().op === "selected_chat");
-    await page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" }).click();
-    expect((await selected).status()).toBe(200);
+    const workspace = page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" });
+    const [selected] = await Promise.all([
+      page.waitForResponse((res) => res.url().endsWith("/api/choices") && res.request().postDataJSON().op === "selected_chat"),
+      workspace.click(),
+    ]);
+    expect(selected.status()).toBe(200);
     const strip = page.getByTestId("tab-strip");
     const child = strip.locator('[data-action="children"]').first();
     await expect(child).toHaveAccessibleName(/, 1 agent$/);
