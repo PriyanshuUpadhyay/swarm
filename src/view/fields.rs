@@ -1,10 +1,13 @@
 use super::{
-    choices::ViewState,
-    tree::{AgentStatus, Chat, Workspace, age},
+    choices::{OwnerChoices, ViewState},
+    tree::{AgentStatus, Chat, Tree, Workspace, age},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Instant,
+};
 
 pub const FIELDS: &[&str] = &[
     "status", "title", "provider", "branch", "age", "children", "question", "unread", "dirty",
@@ -381,6 +384,128 @@ pub fn requested_paths<'a>(
         .map(|w| w.path.as_str())
         .collect()
 }
+#[derive(Default)]
+pub struct FieldReader {
+    pub fields: BTreeMap<String, WorkspaceFields>,
+    dirty_at: BTreeMap<String, i64>,
+    github_at: BTreeMap<String, (i64, Option<String>)>,
+    diff_at: BTreeMap<String, (i64, String)>,
+    cursor: Option<String>,
+}
+
+impl FieldReader {
+    /// Reserve before a read, including failures. The field worker owns this cache.
+    pub fn refresh_fields(&mut self, tree: &Tree, owner: &OwnerChoices, at: i64) -> bool {
+        self.refresh_fields_with(
+            tree,
+            owner,
+            at,
+            super::discovery::workspace_dirty,
+            super::github::lookup_for_chip,
+            super::changes::branch_totals,
+        )
+    }
+
+    pub fn refresh_fields_with(
+        &mut self,
+        tree: &Tree,
+        owner: &OwnerChoices,
+        at: i64,
+        mut inspect: impl FnMut(&str, Instant) -> Option<usize>,
+        mut lookup: impl FnMut(&str, Option<&str>, Instant) -> Option<Value>,
+        mut totals: impl FnMut(&str, &str, Instant) -> Option<LineTotals>,
+    ) -> bool {
+        let branches: BTreeMap<_, _> = tree
+            .projects
+            .iter()
+            .flat_map(|p| &p.workspaces)
+            .filter(|w| {
+                !w.missing && !w.removed && !w.chats.is_empty() && !owner.archived.contains(&w.path)
+            })
+            .filter_map(|w| Some((w.path.as_str(), w.branch.as_deref()?)))
+            .collect();
+        let dirty: BTreeSet<_> = requested_paths("dirty", tree, &owner.fields)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let github: BTreeSet<_> = requested_paths("pr", tree, &owner.fields)
+            .into_iter()
+            .chain(requested_paths("ci", tree, &owner.fields))
+            .chain(branches.keys().copied())
+            .map(str::to_owned)
+            .collect();
+        let previous = self.fields.clone();
+        let deadline = Instant::now() + super::github::LOOKUP_TIMEOUT;
+        let time_left = || deadline.saturating_duration_since(Instant::now()).as_secs() > 0;
+        let branch_of = |path: &str| tree.workspace(path).and_then(|(_, w)| w.branch.as_ref());
+
+        self.dirty_at.retain(|path, _| dirty.contains(path));
+        self.github_at.retain(|path, (_, branch)| {
+            let keep = github.contains(path) && branch.as_ref() == branch_of(path);
+            if !keep && let Some(fields) = self.fields.get_mut(path) {
+                fields.pr = None;
+                fields.ci = None;
+                fields.pr_fact = None;
+            }
+            keep
+        });
+        self.diff_at.retain(|path, (_, branch)| {
+            let keep = branches.get(path.as_str()).copied() == Some(branch.as_str());
+            if !keep && let Some(fields) = self.fields.get_mut(path) {
+                fields.diff = None;
+            }
+            keep
+        });
+
+        self.fields
+            .retain(|path, _| dirty.contains(path) || github.contains(path));
+        let paths: Vec<_> = dirty.union(&github).collect();
+        let next = self
+            .cursor
+            .as_ref()
+            .map_or(0, |last| paths.partition_point(|path| *path <= last));
+        for path in paths[next..].iter().chain(&paths[..next]).copied() {
+            if !time_left() {
+                break;
+            }
+            self.cursor = Some(path.clone());
+            let branch = branch_of(path);
+            let read_dirty =
+                dirty.contains(path) && self.dirty_at.get(path).is_none_or(|last| at - last >= 10);
+            let read_github = github.contains(path)
+                && self
+                    .github_at
+                    .get(path)
+                    .is_none_or(|(last, _)| at - last >= 120);
+
+            if read_dirty {
+                self.dirty_at.insert(path.clone(), at);
+                self.fields.entry(path.clone()).or_default().dirty_count = inspect(path, deadline);
+            }
+            if read_github && time_left() {
+                self.github_at.insert(path.clone(), (at, branch.cloned()));
+                let request = lookup(path, branch.map(String::as_str), deadline);
+                let fields = request.as_ref().map(github_fields).unwrap_or_default();
+                let current = self.fields.entry(path.clone()).or_default();
+                current.pr = fields.pr;
+                current.ci = fields.ci;
+                current.pr_fact = fields.pr_fact;
+            }
+            if time_left()
+                && let Some(&branch) = branches.get(path.as_str())
+                && self
+                    .diff_at
+                    .get(path)
+                    .is_none_or(|(last, _)| at - last >= 10)
+            {
+                self.diff_at.insert(path.clone(), (at, branch.into()));
+                self.fields.entry(path.clone()).or_default().diff = totals(path, branch, deadline);
+            }
+        }
+        previous != self.fields
+    }
+}
+
 pub fn github_fields(request: &Value) -> WorkspaceFields {
     let Some(number) = request["number"].as_u64() else {
         return WorkspaceFields::default();

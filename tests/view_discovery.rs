@@ -5,6 +5,7 @@ use std::{fs, path::Path, process::Command};
 use swarm::view::{
     choices::OwnerChoices,
     discovery::{self, Discovery},
+    fields::FieldReader,
     github, tree,
 };
 
@@ -147,6 +148,7 @@ esac
     d.augment(&mut snapshot, &owner, 159);
     assert_eq!(snapshot["sessions"][0]["title"], "Sidebar fix");
     let t = tree::build(&snapshot, &owner);
+    let mut d = FieldReader::default();
     assert!(d.refresh_fields(&t, &owner, 130));
     assert_eq!(
         serde_json::to_value(&d.fields[&cwd]).unwrap()["prFact"],
@@ -237,10 +239,11 @@ fn branch_totals_count_only_committed_changes_from_the_merge_base() {
     let owner = OwnerChoices::default();
     discovery.augment(&mut snapshot, &owner, 100);
     let tree = tree::build(&snapshot, &owner);
-    discovery.refresh_fields(&tree, &owner, 100);
+    let mut reader = FieldReader::default();
+    reader.refresh_fields(&tree, &owner, 100);
 
     assert_eq!(
-        serde_json::to_value(discovery.fields.get(repo.to_str().unwrap())).unwrap()["diff"],
+        serde_json::to_value(reader.fields.get(repo.to_str().unwrap())).unwrap()["diff"],
         json!({"addedLines":2,"removedLines":1})
     );
 }

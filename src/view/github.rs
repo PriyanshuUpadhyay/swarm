@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const LOOKUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub fn repository(remote: &str) -> Option<String> {
     let path = remote
@@ -37,8 +37,12 @@ pub fn lookup_until(path: &str, deadline: Instant) -> Option<Value> {
     lookup_matching(path, deadline, false, None)
 }
 
-pub(super) fn lookup_for_chip(path: &str, branch: Option<&str>) -> Option<Value> {
-    lookup_matching(path, Instant::now() + LOOKUP_TIMEOUT, true, branch)
+pub(super) fn lookup_for_chip(
+    path: &str,
+    branch: Option<&str>,
+    deadline: Instant,
+) -> Option<Value> {
+    lookup_matching(path, deadline, true, branch)
 }
 
 fn lookup_matching(

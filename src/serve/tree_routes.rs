@@ -56,7 +56,16 @@ pub(super) fn loaded_tree(
     };
     let tree = tree::build(&snapshot, &saved.owner);
     saved.state.record_first_sight(&tree);
-    Ok((tree, saved, cache.discovery.fields.clone()))
+    let fields = cache
+        .fields
+        .iter()
+        .filter_map(|(path, (branch, facts))| {
+            let (_, workspace) = tree.workspace(path)?;
+            (!workspace.missing && !workspace.removed && workspace.branch == *branch)
+                .then(|| (path.clone(), facts.clone()))
+        })
+        .collect();
+    Ok((tree, saved, fields))
 }
 
 pub(super) async fn tree_view(

@@ -1,10 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, realpathSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { ISSUES } from "./serve";
-import { api, compose, header, holdChatStart, open, shoot, showOtherProjects } from "./lifecycle-helpers";
+import { api, compose, header, holdChatStart, open, readTree, shoot, showOtherProjects } from "./lifecycle-helpers";
 
 // The cases share one server home with every spec, and a repeat finds the workspaces of the run
 // before, so each name carries the browser and the repeat.
@@ -113,6 +113,56 @@ test("the place menu sends a branch, a pull request or an issue as the chat's pl
     execFileSync("git", ["-C", ghProject(), "branch", "-D", `topic-${b}`]);
   }
   expect(errors).toEqual([]);
+});
+
+test("an owner fold does not wait for a branch's GitHub lookup", async () => {
+  const dir = process.env.SWARM_E2E_DIR!;
+  const home = process.env.SWARM_E2E_HOME!;
+  const cwd = process.env.SWARM_E2E_GIT_DIR!;
+  const gh = join(dir, "bin/gh");
+  const original = readFileSync(gh, "utf8");
+  const replaceGh = (body: string) => {
+    writeFileSync(`${gh}.next`, body, { mode: 0o755 });
+    renameSync(`${gh}.next`, gh);
+  };
+  const choices = join(home, ".swarm/choices.json");
+  const before = readFileSync(choices, "utf8");
+  const key = randomUUID();
+  const marker = join(home, `fold-gh-started-${key}`);
+  const release = join(home, `fold-gh-release-${key}`);
+  const git = (...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe" });
+  const branch = `fold-gh-${key}`;
+  try {
+    replaceGh(original.replace("#!/bin/sh\n", `#!/bin/sh
+if [ "$1 $2" = "repo view" ]; then
+  touch "$HOME/fold-gh-started-${key}"
+  for delay in 1 2 3 4 5 6 7 8; do
+    [ ! -e "$HOME/fold-gh-release-${key}" ] || break
+    sleep 1
+  done
+fi
+`));
+    git("switch", "-c", branch);
+    await expect.poll(() => existsSync(marker), { timeout: 18_000 }).toBe(true);
+    const tree = await readTree();
+    const project = tree.projects.find((p) => p.path === realpathSync(cwd))!;
+    const url = new URL(process.env.SWARM_SERVE_URL!);
+    const token = new URLSearchParams(url.hash.slice(1)).get("token");
+    const response = await fetch(`${url.origin}/api/choices`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ revision: tree.revision, op: "collapse", id: `project:${project.path}` }),
+      signal: AbortSignal.timeout(2_000),
+    });
+    expect(response.status).toBe(200);
+  } finally {
+    writeFileSync(release, "");
+    replaceGh(original);
+    git("switch", "feature");
+    git("branch", "-D", branch);
+    writeFileSync(choices, before);
+    rmSync(marker, { force: true });
+  }
 });
 
 test("archive asks while agents run and restores; delete asks and removes the folder", async ({ page: tab }, info) => {

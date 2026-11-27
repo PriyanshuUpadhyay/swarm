@@ -144,8 +144,9 @@ fn compare_to(
         refs: entries.iter().map(|entry| entry[0].to_owned()).collect(),
     })
 }
-pub(super) fn branch_totals(root: &str, branch: &str) -> Option<LineTotals> {
-    let read = ReadCommands::new(root);
+pub(super) fn branch_totals(root: &str, branch: &str, deadline: Instant) -> Option<LineTotals> {
+    let mut read = ReadCommands::new(root);
+    read.deadline = read.deadline.min(deadline);
     let before = identity(&read, None).ok()?;
     if before["branch"] != branch {
         return None;

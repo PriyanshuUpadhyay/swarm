@@ -3,8 +3,8 @@ use serde_json::json;
 use sidebar_fixture::*;
 use swarm::view::{
     choices::ViewState,
-    discovery::{Discovery, dirty_count, parse_worktrees},
-    fields::{self, RowFieldLists},
+    discovery::{dirty_count, parse_worktrees},
+    fields::{self, FieldReader, RowFieldLists},
     tree,
 };
 #[test]
@@ -145,22 +145,22 @@ fn requested_paths_and_independent_cache_intervals() {
     let t = tree();
     let plain = tree::build(&folder_snapshot(vec![], json!({})), &owner());
     let mut o = owner();
-    let mut cache = Discovery::default();
+    let mut cache = FieldReader::default();
     let mut dirty = 0;
     let mut github = 0;
     assert!(!cache.refresh_fields_with(
         &plain,
         &o,
         0,
-        |_| {
+        |_, _| {
             dirty += 1;
             Some(2)
         },
-        |_, _| {
+        |_, _, _| {
             github += 1;
             None
         },
-        |_, _| None,
+        |_, _, _| None,
     ));
     assert_eq!((dirty, github), (0, 0));
     o.fields.chat.push("dirty".into());
@@ -169,60 +169,60 @@ fn requested_paths_and_independent_cache_intervals() {
         &t,
         &o,
         1,
-        |_| {
+        |_, _| {
             dirty += 1;
             Some(2)
         },
-        |_, _| {
+        |_, _, _| {
             github += 1;
             Some(json!({"number":1,"statusCheckRollup":[{"state":"SUCCESS"}]}))
         },
-        |_, _| None,
+        |_, _, _| None,
     ));
     assert_eq!((dirty, github), (2, 2));
     cache.refresh_fields_with(
         &t,
         &o,
         10,
-        |_| {
+        |_, _| {
             dirty += 1;
             Some(2)
         },
-        |_, _| {
+        |_, _, _| {
             github += 1;
             None
         },
-        |_, _| None,
+        |_, _, _| None,
     );
     assert_eq!((dirty, github), (2, 2));
     cache.refresh_fields_with(
         &t,
         &o,
         11,
-        |_| {
+        |_, _| {
             dirty += 1;
             Some(2)
         },
-        |_, _| {
+        |_, _, _| {
             github += 1;
             None
         },
-        |_, _| None,
+        |_, _, _| None,
     );
     assert_eq!((dirty, github), (4, 2));
     cache.refresh_fields_with(
         &t,
         &o,
         121,
-        |_| {
+        |_, _| {
             dirty += 1;
             None
         },
-        |_, _| {
+        |_, _, _| {
             github += 1;
             None
         },
-        |_, _| None,
+        |_, _, _| None,
     );
     assert_eq!((dirty, github), (6, 4));
     assert!(
