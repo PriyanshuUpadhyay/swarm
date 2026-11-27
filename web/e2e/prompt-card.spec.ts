@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Snapshot } from "../src/core/api";
 import type { Prompt } from "../src/core/composer";
+import { saveSidebarState } from "./lifecycle-helpers";
 
 const screens = resolve(import.meta.dirname, "../../tests/fixtures/screens");
 const idle = readFileSync(join(screens, "claude-idle.txt"), "utf8");
@@ -27,21 +28,13 @@ async function showPrompt(tab: Page, sessions: string[], prompt: Prompt) {
   });
 }
 
-let saved: { path: string; content: string | null }[];
-test.beforeEach(() => {
-  saved = ["choices.json", "view-state.json"].map((name) => {
-    const path = join(process.env.SWARM_E2E_HOME!, ".swarm", name);
-    return { path, content: existsSync(path) ? readFileSync(path, "utf8") : null };
-  });
-});
+let restore: ReturnType<typeof saveSidebarState>;
+test.beforeEach(() => { restore = saveSidebarState(); });
 test.afterEach(async ({ page: tab }) => {
   // Chat navigation writes tabs and selection into the home shared with later specs.
   await tab.unrouteAll({ behavior: "wait" });
   await tab.close();
-  for (const { path, content } of saved) {
-    if (content === null) rmSync(path, { force: true });
-    else writeFileSync(path, content);
-  }
+  restore();
 });
 
 test.describe("prompt layout and chat identity", () => {

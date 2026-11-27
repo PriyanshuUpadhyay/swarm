@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Tab, TabsView, TreeView } from "../src/core/nav";
-import { clickTarget } from "./lifecycle-helpers";
+import { clickTarget, saveSidebarState } from "./lifecycle-helpers";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 
@@ -56,12 +56,7 @@ for (const pending of ["empty", null] as const) {
 }
 
 test("the tab child button names one agent in the singular", async ({ page }) => {
-  const fixtureHome = process.env.SWARM_E2E_HOME;
-  if (!fixtureHome) throw new Error("Missing the shared test home");
-  const saved = ["choices.json", "view-state.json"].map((name) => {
-    const path = join(fixtureHome, ".swarm", name);
-    return { path, before: existsSync(path) ? readFileSync(path) : null };
-  });
+  const restore = saveSidebarState();
 
   try {
     await page.route("**/api/tabs?*", async (route) => {
@@ -95,10 +90,7 @@ test("the tab child button names one agent in the singular", async ({ page }) =>
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await page.close();
-    for (const { path, before } of saved) {
-      if (before) writeFileSync(path, before);
-      else rmSync(path, { force: true });
-    }
+    restore();
   }
 });
 

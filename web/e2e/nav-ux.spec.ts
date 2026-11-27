@@ -1,27 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import type { TreeView } from "../src/core/nav";
+import { saveSidebarState } from "./lifecycle-helpers";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 const token = () => new URLSearchParams(server().hash.slice(1)).get("token")!;
 const row = (page: Page, session: string) => page.locator(`[data-testid="tree-row"][data-session="${session}"]`);
 const composer = (page: Page) => page.locator(".strip-chat .chat-input").getByTestId("composer");
-let saved: { path: string; body: string | null }[] = [];
-test.beforeEach(() => {
-  saved = ["choices.json", "view-state.json"].map((name) => {
-    const path = join(process.env.SWARM_E2E_HOME!, ".swarm", name);
-    return { path, body: existsSync(path) ? readFileSync(path, "utf8") : null };
-  });
-});
+let restore: ReturnType<typeof saveSidebarState>;
+test.beforeEach(() => { restore = saveSidebarState(); });
 test.afterEach(async ({ page }, info) => {
   try { await page.screenshot({ path: info.outputPath("navigation.png") }); }
   finally {
     await page.close();
-    for (const { path, body } of saved) {
-      if (body === null) rmSync(path, { force: true });
-      else writeFileSync(path, body);
-    }
+    restore();
   }
 });
 async function load(page: Page, path = "/") {
