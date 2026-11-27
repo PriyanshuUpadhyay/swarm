@@ -1,12 +1,27 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { Meter } from "../src/core/settings-types";
 import { open, settings } from "./settings-helpers";
 import { captureThemes, open as openChat } from "./ux-helpers";
 
-test("refreshing the same diff preserves keyboard selection without opening a comment", async ({ page: tab }) => {
+const changeRow = (tab: Page, path: string) => tab.getByTestId("change-row").and(tab.locator(`[data-path="${path}"]`));
+
+async function openChanges(tab: Page, path: string) {
   await openChat(tab, process.env.SWARM_E2E_GIT!);
   await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="README.md"]').click();
+  await changeRow(tab, path).click();
+}
+
+async function addReadmeComment(tab: Page, text: string) {
+  await openChanges(tab, "README.md");
+  const body = tab.getByTestId("diff-body");
+  await body.press("j");
+  await body.press("Enter");
+  await tab.getByTestId("comment-input").fill(text);
+  await tab.getByTestId("comment-add").click();
+}
+
+test("refreshing the same diff preserves keyboard selection without opening a comment", async ({ page: tab }) => {
+  await openChanges(tab, "README.md");
   await expect(tab.getByTestId("diff-path")).toHaveText("README.md");
   const body = tab.getByTestId("diff-body");
   const picked = tab.locator('[data-testid="diff-body"] [data-content] > [data-line][data-selected-line]');
@@ -35,15 +50,13 @@ test("refreshing the same diff preserves keyboard selection without opening a co
 });
 
 test("focus refresh resumes after Show all is refused without repeating the full read", async ({ page: tab }) => {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
   let fullReads = 0;
   await tab.route("**/api/changes/diff?**", async (route) => {
     if (new URL(route.request().url()).searchParams.get("full") !== "1") return route.continue();
     fullReads++;
     await route.fulfill({ status: 413, json: { error: "The full diff is over the cap." } });
   });
-  await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  await openChanges(tab, "big.txt");
   const cut = tab.getByTestId("diff-capped");
   const show = cut.getByRole("button", { name: "Show all", exact: true });
   await show.click();
@@ -58,9 +71,7 @@ test("focus refresh resumes after Show all is refused without repeating the full
 });
 
 test("Changes updates its file list without replacing an open full diff", async ({ page: tab }) => {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
-  await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  await openChanges(tab, "big.txt");
   const cut = tab.getByTestId("diff-capped");
   await cut.getByRole("button", { name: "Show all", exact: true }).click();
   await expect(cut).toBeHidden();
@@ -72,21 +83,19 @@ test("Changes updates its file list without replacing an open full diff", async 
     await route.fulfill({ response, json: data });
   });
   await tab.evaluate(() => dispatchEvent(new Event("focus")));
-  await expect(tab.locator('[data-testid="change-row"][data-path="new-change.txt"]')).toBeVisible({ timeout: 2000 });
+  await expect(changeRow(tab, "new-change.txt")).toBeVisible({ timeout: 2000 });
   await expect(tab.getByTestId("diff-path")).toHaveText("big.txt");
   await expect(cut).toBeHidden();
 });
 
 test("Show all can retry a transient full diff failure", async ({ page: tab }) => {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
   let fullReads = 0;
   await tab.route("**/api/changes/diff?**", (route) => {
     const full = new URL(route.request().url()).searchParams.get("full") === "1";
     if (full && ++fullReads === 1) return route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
     return route.continue();
   });
-  await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  await openChanges(tab, "big.txt");
   const cut = tab.getByTestId("diff-capped");
   const show = cut.getByRole("button", { name: "Show all", exact: true });
   await show.click();
@@ -97,7 +106,6 @@ test("Show all can retry a transient full diff failure", async ({ page: tab }) =
 });
 
 test("Show all keeps an unfinished range comment on the same lines", async ({ page: tab }) => {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
   let fullReads = 0;
   await tab.route("**/api/changes/diff?**", async (route) => {
     const full = new URL(route.request().url()).searchParams.get("full") === "1";
@@ -110,8 +118,7 @@ test("Show all keeps an unfinished range comment on the same lines", async ({ pa
     data.patch = data.patch.replace("+generated line 1\n", "+changed line 1\n");
     await route.fulfill({ response, json: data });
   });
-  await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  await openChanges(tab, "big.txt");
   const diff = tab.getByTestId("diff-body");
   const first = diff.locator('[data-gutter] > [data-column-number="1"]');
   await first.click();
@@ -129,13 +136,7 @@ test("Show all keeps an unfinished range comment on the same lines", async ({ pa
 });
 
 test("removing a saved Changes comment asks first", async ({ page: tab }) => {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
-  await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="README.md"]').click();
-  await tab.getByTestId("diff-body").press("j");
-  await tab.getByTestId("diff-body").press("Enter");
-  await tab.getByTestId("comment-input").fill("Keep this until I confirm.");
-  await tab.getByTestId("comment-add").click();
+  await addReadmeComment(tab, "Keep this until I confirm.");
   const comment = tab.getByTestId("comment-card");
   const remove = comment.getByRole("button", { name: "Remove comment" });
   const dialog = tab.getByRole("dialog", { name: "Remove this comment?" });
@@ -150,14 +151,7 @@ test("removing a saved Changes comment asks first", async ({ page: tab }) => {
 });
 
 test("removing a Changes tray comment asks first", async ({ page: tab }) => {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
-  await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="README.md"]').click();
-  const body = tab.getByTestId("diff-body");
-  await body.press("j");
-  await body.press("Enter");
-  await tab.getByTestId("comment-input").fill("Confirm removal from the tray.");
-  await tab.getByTestId("comment-add").click();
+  await addReadmeComment(tab, "Confirm removal from the tray.");
 
   const tray = tab.getByTestId("drafts");
   const remove = tray.getByRole("button", { name: "Remove comment" });
@@ -174,9 +168,7 @@ test("removing a Changes tray comment asks first", async ({ page: tab }) => {
 });
 
 test("Home and End pick the first or last selectable diff line", async ({ page: tab }) => {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
-  await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="README.md"]').click();
+  await openChanges(tab, "README.md");
   await expect(tab.getByTestId("diff-path")).toHaveText("README.md");
   const diff = tab.getByTestId("diff-body");
   const selection = diff.locator('[data-content] > [data-line][data-selected-line]');
@@ -187,14 +179,12 @@ test("Home and End pick the first or last selectable diff line", async ({ page: 
 });
 
 test("an oversized Changes range keeps the note and asks for fewer lines", async ({ page: tab }) => {
-  await openChat(tab, process.env.SWARM_E2E_GIT!);
   await tab.route("**/api/changes/diff?**", (route) => {
     if (new URL(route.request().url()).searchParams.get("full") !== "1") return route.continue();
     const lines = ["x", "y"].map((ch, i) => ({ kind: "add", text: ch.repeat(36_000), new: i + 1 }));
     return route.fulfill({ json: { path: "big.txt", layer: "untracked", patch: "full patch", display: { lines }, added: 2, removed: 0 } });
   });
-  await tab.getByTestId("show-changes").click();
-  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  await openChanges(tab, "big.txt");
   await tab.getByRole("button", { name: "Show all", exact: true }).click();
   await expect(tab.getByTestId("diff-capped")).toBeHidden();
   const diff = tab.getByTestId("diff-body");
