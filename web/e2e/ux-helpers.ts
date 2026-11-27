@@ -73,18 +73,23 @@ export async function captureThemes(page: Page, target: Locator | Page, name: st
   }
 }
 
-export type StreamFixture = {
+type StreamFixture = {
   send: (event: string, data: unknown) => void;
   drop: () => void;
   restore: () => void;
 };
+
+declare global {
+  interface Window {
+    swarmStream: StreamFixture;
+  }
+}
 
 export async function mockStream(tab: Page, stream: string, first: unknown = { stream, build: "fixture" }) {
   await tab.route("**/api/subscribe", (route) => route.fulfill({ json: { ok: true } }));
 
   await tab.addInitScript((first) => {
     const fetch = window.fetch.bind(window);
-    const scope = window as unknown as { swarmStream: StreamFixture };
     let down = false;
     window.fetch = async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -95,7 +100,7 @@ export async function mockStream(tab: Page, stream: string, first: unknown = { s
       const body = new ReadableStream<Uint8Array>({ start(controller) {
         const encoder = new TextEncoder();
         const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-        scope.swarmStream = {
+        window.swarmStream = {
           send,
           drop: () => { down = true; controller.close(); },
           restore: () => { down = false; },
@@ -108,5 +113,9 @@ export async function mockStream(tab: Page, stream: string, first: unknown = { s
 }
 
 export function streamFrame(tab: Page, event: string, data: unknown) {
-  return tab.evaluate(({ event, data }) => (window as unknown as { swarmStream: StreamFixture }).swarmStream.send(event, data), { event, data });
+  return tab.evaluate(({ event, data }) => window.swarmStream.send(event, data), { event, data });
+}
+
+export function streamControl(tab: Page, action: "drop" | "restore") {
+  return tab.evaluate((mode) => window.swarmStream[mode](), action);
 }

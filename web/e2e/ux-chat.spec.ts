@@ -4,7 +4,7 @@ import "./ux-chat-diffs";
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { captureThemes, row, rows, open, mockRows, mockStream, streamFrame, type StreamFixture } from "./ux-helpers";
+import { captureThemes, row, rows, open, mockRows, mockStream, streamControl, streamFrame } from "./ux-helpers";
 import type { Snapshot } from "../src/core/api";
 
 
@@ -205,11 +205,8 @@ test("stream loss keeps the last list and accepted update, then clears after hel
   await read;
 
   await tab.clock.setFixedTime(new Date("2030-01-01T14:02:30Z"));
-  await tab.evaluate(() => {
-    const { swarmStream } = window as unknown as { swarmStream: StreamFixture };
-    swarmStream.send("unsupported", {});
-    swarmStream.drop();
-  });
+  await streamFrame(tab, "unsupported", {});
+  await streamControl(tab, "drop");
   const banner = tab.getByTestId("reconnecting");
   const lastList = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
   await expect(banner.locator("time")).toHaveAttribute("datetime", accepted, { timeout: 2000 });
@@ -220,7 +217,7 @@ test("stream loss keeps the last list and accepted update, then clears after hel
   await expect(status.locator('svg[data-form="unlit"]')).toBeVisible();
   await captureThemes(tab, tab, "offline");
 
-  await tab.evaluate(() => (window as unknown as { swarmStream: StreamFixture }).swarmStream.restore());
+  await streamControl(tab, "restore");
   await expect(banner).toHaveCount(0);
   await expect(status.locator('svg[data-form="working"]')).toBeVisible();
 });
