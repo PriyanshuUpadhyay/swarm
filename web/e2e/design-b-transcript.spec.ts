@@ -128,6 +128,83 @@ for (const place of ["away", "bottom"] as const) {
   });
 }
 
+test("Find completes an Enter step when its match reply arrives before the next frame", async ({ page }) => {
+  const tool = row("a20", "", "toolUse");
+  const target = 14;
+  const output = Array.from({ length: 80 }, (_, i) => i === target || i === 70 ? `Needle ${i}` : `Output ${i}`).join("\n");
+  const preview = "find-step-output";
+  tool.tool = { name: "Bash", input: {}, state: "finished", header_title: "Read results", output: {
+    id: preview, text: output, full_lines: 80, full_bytes: output.length, hidden_lines: 0,
+  } };
+  const items = Array.from({ length: 40 }, (_, i) => i === 19 ? tool : row(`a${i + 1}`, `Reply ${i + 1}`));
+  let hold = false;
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  let entered!: () => void;
+  const requested = new Promise<void>((done) => { entered = done; });
+
+  await page.clock.install();
+  await mockStream(page, "find-step-reply");
+  await mockRows(page, items, 0, {}, { a20: [{ f: "tool.output.text", p: preview }] });
+  await page.route("**/api/rows", async (route) => {
+    if (!hold || route.request().method() !== "POST") return route.continue();
+    const response = await route.fetch();
+    entered();
+    await held;
+    await route.fulfill({ response });
+  });
+
+  try {
+    await open(page);
+    const input = page.getByTestId("find-input");
+    const count = page.getByTestId("find-count");
+    const toolCard = page.getByTestId("tool-card");
+    await page.keyboard.press("Meta+f");
+    await input.fill("needle");
+    await expect(count).toHaveText("1 of 2");
+    await expect(toolCard.getByTestId("output")).toBeVisible();
+    await waitFrames(page, 3);
+    await toolCard.locator("button[aria-expanded]").evaluate((button) => (button as HTMLButtonElement).click());
+    await expect(toolCard.getByTestId("output")).toHaveCount(0);
+
+    await page.evaluate((id) => {
+      window.addEventListener("swarm:find-output", (event) => {
+        const { preview, line } = (event as CustomEvent<{ preview: string; line: number }>).detail;
+        if (preview === id) document.documentElement.dataset.findStepLine = String(line);
+      });
+    }, preview);
+    hold = true;
+    await streamFrame(page, "rows", {
+      key: `${process.env.SWARM_E2E_LIVE!}:chair`, upsert: [row("a41", "Another needle")],
+      find: { a41: [{ f: "text" }] }, end_offset: 501,
+    });
+    await requested;
+
+    const now = await page.evaluate(() => Date.now());
+    await page.clock.pauseAt(new Date(now + 100));
+    await input.press("Enter");
+    await expect(toolCard.getByTestId("output")).toHaveCount(1, { timeout: 2_000 });
+    release();
+    await expect(count).toHaveText("3 of 3");
+    await page.clock.runFor(100);
+    await page.clock.resume();
+
+    await expect(toolCard.getByTestId("output")).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("data-find-step-line", String(target), { timeout: 2_000 });
+    const distance = () => page.getByTestId("transcript").evaluate((el) => {
+      const match = CSS.highlights.get("find-current")?.values().next().value as Range | undefined;
+      const rect = match?.getBoundingClientRect();
+      const view = el.getBoundingClientRect();
+      return rect ? Math.abs(rect.top + rect.height / 2 - view.top - view.height / 2) : Infinity;
+    });
+    await expect.poll(distance).toBeLessThan(24);
+  } finally {
+    release();
+    await page.clock.resume();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("an opened saved thought reveals the cut lines on request", async ({ page }) => {
   await mockRows(page, [row("t1", lines("The saved thought ends here"), "thought")]);
   await open(page);

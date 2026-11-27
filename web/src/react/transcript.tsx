@@ -80,7 +80,6 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   useLayoutEffect(() => {
     if (!current || !selectedMatch) return;
     const step = findStep.current !== find.seq;
-    findStep.current = find.seq;
     const i = step ? lines.findIndex((l) => l.id === current) : -1;
     if (i >= 0) handle.current?.scrollToIndex(i, { align: "center" });
 
@@ -91,6 +90,8 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
       if (step && match.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
 
       frame = requestAnimationFrame(() => {
+        // A fresh match object can cancel both frames without starting a new step.
+        if (step) findStep.current = find.seq;
         if (!row) {
           paintRanges("find-matches", []);
           paintRanges("find-current", []);
