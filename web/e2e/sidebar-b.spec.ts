@@ -247,10 +247,19 @@ test("a merged PR chip does not show CI", async ({ page, browserName }) => {
   }
 });
 
-async function sidebarLayout(page: Page, change: (row: SidebarRow, facts: WorkspaceFacts, published: boolean) => void) {
+async function sidebarLayout(page: Page, change: (row: SidebarRow, facts: WorkspaceFacts, published: boolean) => void, open = false) {
   let published = false;
+  if (open) {
+    // Select the chat without saving that selection in the shared test home.
+    await page.route("**/api/choices", (route) => route.fulfill({ json: { revision: "fixture" } }));
+  }
   const row = await withChatFacts(page, (_tree, row, facts) => change(row, facts, published));
-  await page.getByTestId("home-button").click();
+  if (open) {
+    await row.locator(".chat-title").click();
+    await expect(row).toHaveAttribute("aria-current", "true");
+  } else {
+    await page.getByTestId("home-button").click();
+  }
 
   const next = row.locator("xpath=following-sibling::*[1]");
   await expect(next).toBeVisible();
@@ -273,6 +282,20 @@ test("a PR chip does not move the row after a chat with an agent count", async (
     });
     await publish();
     await expect(row.getByTestId("pr-chip")).toBeVisible();
+    expect(await top()).toBe(before);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+test("a branch name does not move the row after the open chat", async ({ page, browserName }) => {
+  try {
+    const { row, before, top, publish } = await sidebarLayout(page, (_row, facts, published) => {
+      facts.branch = published ? "feature" : null;
+    }, true);
+    await shoot(page, "sidebar-branchless", browserName);
+    await publish();
+    await expect(row.getByTestId("sidebar-branch")).toHaveText("feature");
     expect(await top()).toBe(before);
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });

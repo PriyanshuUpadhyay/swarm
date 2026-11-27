@@ -101,11 +101,13 @@ export const RowView = memo(function RowView({ row, selected, marked, current, o
           <PrChip pr={facts?.pr} tabIndex={-1} />
           {r.age && <FieldView f={{ field: "age", text: r.age }} row={r} />}
         </div>
-        {open && facts?.branch && (
-          <div className="tline chat-sub chat-branch" data-testid="sidebar-branch">
-            <GitBranchIcon className="size-3 shrink-0" aria-hidden />
-            <span className="label" title={facts.branch}>{facts.branch}</span>
-            <BranchDiff diff={facts.diff} />
+        {open && (
+          <div className="tline chat-sub chat-branch" data-testid="sidebar-branch" aria-hidden={!facts?.branch || undefined}>
+            {facts?.branch && <>
+              <GitBranchIcon className="size-3 shrink-0" aria-hidden />
+              <span className="label" title={facts.branch}>{facts.branch}</span>
+              <BranchDiff diff={facts.diff} />
+            </>}
           </div>
         )}
       </div>
