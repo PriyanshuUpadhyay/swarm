@@ -239,7 +239,8 @@ function DiffBody({ app, changes, d, comments, expanded, window }: { app: App; c
       {(d.is_truncated || (d.hidden_lines ?? 0) > 0) && (
         <div className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground" data-testid="diff-capped">
           Showing the first {plural(lines.length, "line")} of {plural(d.full_lines ?? lines.length, "line")}.
-          {expanded.state === "error" ? <p role="status" className="text-failed">{expanded.error}</p> : (
+          {expanded.state === "error" && <p role="status" className="text-failed">{expanded.error}</p>}
+          {!(expanded.state === "error" && expanded.capped) && (
             <CutLine count={d.hidden_lines ? `${d.hidden_lines.toLocaleString()} more` : "More text"} show={() => void changes.expandDiff()} busy={expanded.state === "loading"} />
           )}
         </div>

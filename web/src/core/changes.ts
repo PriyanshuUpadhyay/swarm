@@ -52,7 +52,7 @@ export type PullRequest = {
 };
 export type PrView = { pullRequest: PullRequest | null; checks: Check[] | null; differsFromLocalHead?: boolean };
 
-export type Load<T> = { state: "idle" } | { state: "loading" } | { state: "ready"; data: T } | { state: "error"; error: string };
+export type Load<T> = { state: "idle" } | { state: "loading" } | { state: "ready"; data: T } | { state: "error"; error: string; capped?: boolean };
 
 /** One draft comment on a diff: the file, the line range label, the quoted lines with their +/-
  *  marks, and the owner's text. `at` is the display line it shows under. */
@@ -236,12 +236,14 @@ export class Changes {
   }
 
   /** Reads the shown tab again. */
-  reload() {
+  reload(automatic = false) {
     if (this.tab === "pr") void this.loadPr();
     else {
-      if (this.full.state !== "idle") this.seq.diff++;
-      this.full = IDLE;
-      void this.loadList();
+      if (!automatic) {
+        if (this.full.state !== "idle") this.seq.diff++;
+        this.full = IDLE;
+      }
+      void this.loadList(automatic);
     }
     this.notify();
   }
@@ -263,27 +265,12 @@ export class Changes {
     } else this.notify();
   }
 
-  private query(extra: Record<string, string> = {}): URLSearchParams {
-    const q = new URLSearchParams({ workspace: this.workspace ?? "", mode: this.mode, ...extra });
+  private query(extra: Record<string, string> = {}) {
     const base = this.base();
-    if (this.mode === "branch" && base) q.set("base", base);
-    return q;
+    return { workspace: this.workspace ?? "", mode: this.mode, ...extra, ...(this.mode === "branch" && base ? { base } : {}) };
   }
 
-  private async read<T>(path: string, q: URLSearchParams): Promise<T> {
-    const res = await this.app.api.fetch(`${path}?${q}`, { headers: this.app.api.headers() });
-    const text = await res.text();
-    if (res.ok) return JSON.parse(text) as T;
-    let error = text || `${res.status} ${res.statusText}`;
-    try {
-      error = String(JSON.parse(text).error ?? error);
-    } catch {
-      // Not JSON: keep the body text.
-    }
-    throw new Error(error);
-  }
-
-  private async loadList() {
+  private async loadList(automatic = false) {
     if (!this.workspace) return;
     const workspace = this.workspace;
     const seq = ++this.seq.list;
@@ -293,7 +280,7 @@ export class Changes {
     // Branch mode needs a base; the first read in local mode lists the refs.
     if (this.mode === "branch" && !this.base()) {
       try {
-        const local = await this.read<ChangeList>("/api/changes", new URLSearchParams({ workspace: this.workspace, mode: "local" }));
+        const local = await this.app.api.get<ChangeList>("/api/changes", { workspace: this.workspace, mode: "local" });
         if (seq !== this.seq.list || workspace !== this.workspace) return;
         if (local.refs.length === 0) throw new Error("This workspace has no branch to compare with.");
         this.list = { state: "ready", data: { ...local, files: [] } };
@@ -305,16 +292,17 @@ export class Changes {
     }
     let next: Load<ChangeList>;
     try {
-      next = { state: "ready", data: await this.read<ChangeList>("/api/changes", this.query()) };
+      next = { state: "ready", data: await this.app.api.get<ChangeList>("/api/changes", this.query()) };
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
     if (seq !== this.seq.list || workspace !== this.workspace) return;
     this.list = next;
+    if (automatic && (this.full.state === "loading" || this.full.state === "ready")) return this.notify();
     const files = next.state === "ready" ? next.data.files : [];
     // The shown file stays when it is still changed; else the first file shows.
     const still = files.find((f) => fileKey(f) === this.selected);
-    if (still) void this.select(still, true);
+    if (still) void this.select(still, true, automatic);
     else if (files.length) void this.select(files[0]);
     else {
       this.clearFile();
@@ -323,18 +311,18 @@ export class Changes {
   }
 
   /** Shows a file's diff (or its contents, in file mode). `again` reads it even if it shows. */
-  async select(f: ChangeFile, again = false) {
+  async select(f: ChangeFile, again = false, automatic = false) {
     const key = fileKey(f);
     if (key === this.selected && !again) return;
     this.selected = key;
     this.file = IDLE;
-    this.full = IDLE;
+    if (!automatic) this.full = IDLE;
     const seq = ++this.seq.diff;
     if (this.diff.state !== "ready" || !again) this.diff = LOADING;
     this.notify();
     let next: Load<FileDiff>;
     try {
-      next = { state: "ready", data: await this.read<FileDiff>("/api/changes/diff", this.query({ path: f.path, layer: f.layer })) };
+      next = { state: "ready", data: await this.app.api.get<FileDiff>("/api/changes/diff", this.query({ path: f.path, layer: f.layer })) };
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
@@ -345,19 +333,20 @@ export class Changes {
   }
 
   async expandDiff() {
-    if (this.diff.state !== "ready" || !this.diff.data.is_truncated || this.full.state !== "idle") return;
+    if (this.diff.state !== "ready" || !this.diff.data.is_truncated || (this.full.state !== "idle" && !(this.full.state === "error" && !this.full.capped))) return;
     const { path, layer = "branch" } = this.diff.data;
-    const seq = this.seq.diff;
+    const seq = ++this.seq.diff;
     this.full = LOADING;
     this.notify();
     try {
-      const data = await this.read<FileDiff>("/api/changes/diff", this.query({ path, layer, full: "1" }));
+      const data = await this.app.api.get<FileDiff>("/api/changes/diff", this.query({ path, layer, full: "1" }));
       if (seq !== this.seq.diff) return;
       this.full = { state: "ready", data };
       this.setEditor(path, layer, null);
     } catch (err) {
       if (seq !== this.seq.diff) return;
-      this.full = { state: "error", error: message(err) };
+      const capped = err instanceof ApiError && err.status === 413;
+      this.full = { state: "error", capped, error: capped ? message(err) : "Could not load the full diff." };
       this.notify();
     }
   }
@@ -385,7 +374,7 @@ export class Changes {
     this.notify();
     let next: Load<FilePreview>;
     try {
-      next = { state: "ready", data: await this.read<FilePreview>("/api/changes/file", new URLSearchParams({ workspace: this.workspace ?? "", path })) };
+      next = { state: "ready", data: await this.app.api.get<FilePreview>("/api/changes/file", { workspace: this.workspace ?? "", path }) };
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
@@ -402,7 +391,7 @@ export class Changes {
     this.notify();
     let next: Load<PrView>;
     try {
-      next = { state: "ready", data: await this.read<PrView>("/api/pr", new URLSearchParams({ workspace: this.workspace })) };
+      next = { state: "ready", data: await this.app.api.get<PrView>("/api/pr", { workspace: this.workspace }) };
     } catch (err) {
       next = { state: "error", error: message(err) };
     }

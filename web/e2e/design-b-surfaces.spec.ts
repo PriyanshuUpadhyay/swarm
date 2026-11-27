@@ -52,8 +52,48 @@ test("focus refresh resumes after Show all is refused without repeating the full
   const refresh = tab.waitForResponse((res) => new URL(res.url()).pathname === "/api/changes", { timeout: 2500 });
   await tab.evaluate(() => dispatchEvent(new Event("focus")));
   expect((await refresh).ok()).toBe(true);
-  await expect(show).toBeVisible();
+  await expect(cut).toContainText("The full diff is over the cap.");
+  await expect(show).toHaveCount(0);
   expect(fullReads).toBe(1);
+});
+
+test("Changes updates its file list without replacing an open full diff", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  const cut = tab.getByTestId("diff-capped");
+  await cut.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(cut).toBeHidden();
+
+  await tab.route("**/api/changes?**", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.files = [...data.files.filter((file: { path: string }) => file.path !== "big.txt"), { path: "new-change.txt", status: "?", layer: "untracked", added: 1, removed: 0 }];
+    await route.fulfill({ response, json: data });
+  });
+  await tab.evaluate(() => dispatchEvent(new Event("focus")));
+  await expect(tab.locator('[data-testid="change-row"][data-path="new-change.txt"]')).toBeVisible({ timeout: 2000 });
+  await expect(tab.getByTestId("diff-path")).toHaveText("big.txt");
+  await expect(cut).toBeHidden();
+});
+
+test("Show all can retry a transient full diff failure", async ({ page: tab }) => {
+  await openChat(tab, process.env.SWARM_E2E_GIT!);
+  let fullReads = 0;
+  await tab.route("**/api/changes/diff?**", (route) => {
+    const full = new URL(route.request().url()).searchParams.get("full") === "1";
+    if (full && ++fullReads === 1) return route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
+    return route.continue();
+  });
+  await tab.getByTestId("show-changes").click();
+  await tab.locator('[data-testid="change-row"][data-path="big.txt"]').click();
+  const cut = tab.getByTestId("diff-capped");
+  const show = cut.getByRole("button", { name: "Show all", exact: true });
+  await show.click();
+  await expect(cut.getByRole("status")).toBeVisible();
+  expect(fullReads).toBe(1);
+  await show.click({ timeout: 2000 });
+  await expect(cut).toBeHidden();
 });
 
 test("an oversized Changes range keeps the note and asks for fewer lines", async ({ page: tab }) => {

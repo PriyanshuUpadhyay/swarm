@@ -41,9 +41,7 @@ export function WorkspacePanel({ app, changes }: { app: App; changes: Changes })
     if (!view.open || !view.workspace) return;
     const refresh = () => {
       const now = changes.view;
-      // Keep the expanded revision and its selections until a manual refresh or a file change.
-      const preview = now.full.state === "idle" || now.full.state === "error";
-      if (!document.hidden && now.list.state !== "loading" && now.pr.state !== "loading" && (now.tab === "pr" || preview)) changes.reload();
+      if (!document.hidden && now.list.state !== "loading" && now.pr.state !== "loading") changes.reload(true);
     };
     const timer = window.setInterval(refresh, 5000);
     window.addEventListener("focus", refresh);
