@@ -80,6 +80,7 @@ fn launch_argv(
     } else {
         vec![provider.id().into()]
     };
+
     if let Some(model) = model
         .filter(|model| *model != "default" || !matches!(provider, Provider::Agy | Provider::Pi))
     {

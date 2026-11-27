@@ -149,14 +149,7 @@ impl Fixture {
         .unwrap();
         std::fs::write(root.join("swarm-home"), "swarm\n").unwrap();
         let connection = swarm::store::open(&root.join("swarm.db")).unwrap();
-        let session = swarm::store::create_session(
-            &connection,
-            "lane",
-            Path::new(env!("CARGO_MANIFEST_DIR")),
-            Some(("claude", "synthetic")),
-            Some("tmux-swarm"),
-        )
-        .unwrap();
+        let session = new_test_session(&connection, Some(("claude", "synthetic")));
         swarm::store::set_chair_log(&connection, &session, &log).unwrap();
         swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
         let (actions, action_queue) = mpsc::channel(64);
