@@ -29,12 +29,10 @@ pub(super) async fn prepare_carry(
             for row in chain {
                 let log = match resolve_link_log(&row) {
                     Ok(log) => log,
-                    Err(err) if err.0 == StatusCode::NOT_FOUND => {
-                        if row.path.as_deref().is_none_or(str::is_empty) {
-                            continue;
-                        }
-                        return Err(unreadable_handoff_log());
+                    Err((StatusCode::NOT_FOUND, _)) if stored_link_path(&row).is_none() => {
+                        continue;
                     }
+                    Err((StatusCode::NOT_FOUND, body)) => return Err((StatusCode::CONFLICT, body)),
                     Err(err) => return Err(err),
                 };
 

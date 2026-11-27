@@ -30,21 +30,29 @@ async fn prepare_ended_file(
 }
 
 #[tokio::test]
-async fn file_carry_refuses_a_link_whose_stored_log_is_gone() {
-    let (fixture, mut body) = ended_file_carry();
-    let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
-    let leaf = new_linked_test_session(&db, &fixture.session, Some(("pi", "leaf")));
+async fn file_carry_keeps_the_error_from_an_unreadable_older_log() {
+    for (provider, expected) in [
+        ("claude", "transcript log unavailable"),
+        ("unknown", "no transcript format"),
+    ] {
+        let (fixture, mut body) = ended_file_carry();
+        let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        let leaf = new_linked_test_session(&db, &fixture.session, Some(("claude", "leaf")));
+        swarm::store::set_chair_log(&db, &leaf, &fixture.log).unwrap();
 
-    db.execute(
-        "UPDATE session SET chair_log = ?1 WHERE id = ?2",
-        [fixture.dir.join("missing.jsonl").to_str().unwrap(), &leaf],
-    )
-    .unwrap();
+        let missing = fixture.dir.join("missing.jsonl");
+        db.execute(
+            "UPDATE session SET chair_provider = ?1, chair_log = ?2 WHERE id = ?3",
+            (provider, missing.to_str().unwrap(), &fixture.session),
+        )
+        .unwrap();
 
-    body.old_session = leaf;
-    let err = prepare_ended_file(&fixture, &body).await.unwrap_err();
-    assert_eq!(err.0, StatusCode::CONFLICT);
-    assert!(!fixture.app.root.join("handoffs").exists());
+        body.old_session = leaf;
+        let err = prepare_ended_file(&fixture, &body).await.unwrap_err();
+        assert_eq!(err.0, StatusCode::CONFLICT);
+        assert_eq!(err.1.0["error"], expected);
+        assert!(!fixture.app.root.join("handoffs").exists());
+    }
 }
 
 #[tokio::test]

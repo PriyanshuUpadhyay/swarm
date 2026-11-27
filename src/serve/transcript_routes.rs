@@ -82,29 +82,31 @@ pub(super) fn resolve_log_if_present(
         .transpose()
 }
 
+pub(super) fn stored_link_path(row: &swarm::store::ContinuationLog) -> Option<&Path> {
+    row.path
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .map(Path::new)
+}
+
 pub(super) fn resolve_link_log(row: &swarm::store::ContinuationLog) -> Result<Log, ApiError> {
     let format = row.provider.as_deref();
 
-    let path = row
-        .path
-        .as_deref()
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            let id = row.native_id.as_deref()?;
-            if format == Some("pi") {
-                return crate::pi_chair_log(id);
-            }
+    let path = stored_link_path(row).map(Path::to_path_buf).or_else(|| {
+        let id = row.native_id.as_deref()?;
+        if format == Some("pi") {
+            return crate::pi_chair_log(id);
+        }
 
-            if row.archived || !crate::valid_chair_id(id) {
-                return None;
-            }
-            match format {
-                Some("claude") => crate::claude_chair_log(id),
-                Some("codex") => crate::codex_chair_log(id, &row.days),
-                _ => None,
-            }
-        });
+        if row.archived || !crate::valid_chair_id(id) {
+            return None;
+        }
+        match format {
+            Some("claude") => crate::claude_chair_log(id),
+            Some("codex") => crate::codex_chair_log(id, &row.days),
+            _ => None,
+        }
+    });
 
     checked_log(path, format)
 }
