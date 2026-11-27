@@ -89,6 +89,7 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
       const match = selectedMatch;
       const row = scrollRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(current)}"]`);
       if (step && match.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
+
       frame = requestAnimationFrame(() => {
         if (!row) {
           paintRanges("find-matches", []);
