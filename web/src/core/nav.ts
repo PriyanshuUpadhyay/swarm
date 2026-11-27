@@ -61,6 +61,7 @@ export type WorkspaceFacts = {
   title: string;
   missing: boolean;
   archived: boolean;
+  pinned: boolean;
   newChatEnabled: boolean;
   startsChatWorktree: boolean;
   branch: string | null;
@@ -375,7 +376,7 @@ export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null)
       return latest == null ? activity : activity == null ? latest : Math.max(latest, activity);
     }, null);
     const status = statusOrder.find((state) => chats.some((chat) => chat.status === state)) ?? null;
-    const pinned = chats.some((chat) => chat.pinned);
+    const pinned = facts.pinned === true;
     return { path, facts, status, pinned, at, chats, project: projectTitles.get(facts.projectPath) ?? "" };
   }).sort((a, b) => Number(b.pinned) - Number(a.pinned) || (b.at ?? 0) - (a.at ?? 0) || a.path.localeCompare(b.path));
 }

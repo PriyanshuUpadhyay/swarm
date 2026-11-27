@@ -36,7 +36,7 @@ export function section(id: string, kind: Section["kind"], rows: SidebarRow[], e
 }
 
 export const folderFacts = (projectPath: string, title: string, extra: Partial<WorkspaceFacts> = {}): WorkspaceFacts => ({
-  projectPath, title, startsChatWorktree: false, newChatEnabled: true, missing: false, archived: false, branch: null, diff: null, pr: null, ...extra,
+  projectPath, title, startsChatWorktree: false, newChatEnabled: true, missing: false, archived: false, pinned: false, branch: null, diff: null, pr: null, ...extra,
 });
 
 export const tree = (sections: Section[], view: TreeView["view"] = "workspaces"): TreeView => ({

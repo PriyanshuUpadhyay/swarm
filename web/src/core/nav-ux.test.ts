@@ -44,6 +44,11 @@ describe("navigation UX", () => {
     expect(recentWork(catalog, snapshot).map((r) => r.session)).toEqual(["two", "one"]);
     expect(navRows(catalog).some((r) => r.kind === "chat")).toBe(false);
   });
+  it("puts a pinned workspace without chats first in the palette", () => {
+    const pinned = "/project/pinned";
+    const catalog = { ...tree, workspaces: { ...tree.workspaces, [pinned]: { ...folderFacts("/project", "Pinned worktree"), pinned: true } } };
+    expect(paletteSources(catalog, snapshot).map((item) => item.path)).toEqual([pinned, workspace]);
+  });
   it("selects and expands a chat's project even when another chat from it is in Needs you", () => {
     const app = harness();
     const project = { ...tree.sections[0], expanded: false };
