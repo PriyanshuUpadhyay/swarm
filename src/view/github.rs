@@ -176,6 +176,9 @@ fn lookup_matching(
     let mut matches = matching("open")?;
     if matches.is_empty() && include_merged {
         matches = matching("merged")?;
+        if matches.len() == 1 && matches[0]["headRefOid"] != head {
+            matches.clear();
+        }
     }
     if matches.len() > 1
         || git(&["symbolic-ref", "--quiet", "--short", "HEAD"])? != branch

@@ -75,7 +75,7 @@ case "$*" in
 'rev-parse --path-format=absolute --git-common-dir') printf '%s\n' "$HOME/repo/.git" ;;
 'worktree list --porcelain -z') printf 'worktree %s\000branch refs/heads/feature\000\000' "$HOME/repo" ;;
 'symbolic-ref --quiet --short HEAD') printf 'feature\n' ;;
-'rev-parse HEAD') printf 'abc\n' ;;
+'rev-parse HEAD') if [ -f "$HOME/new-head" ]; then printf 'new\n'; else printf 'abc\n'; fi ;;
 'remote') printf 'origin\n' ;;
 'remote get-url --push --all -- origin'|'remote get-url -- origin') printf 'git@github.com:owner/repo.git\n' ;;
 'status --porcelain=v1 -z') printf ' M changed\000' ;;
@@ -183,6 +183,9 @@ esac
         json!({"number":8,"url":"https://github.com/owner/repo/pull/8","state":"merged","ci":"unknown"})
     );
     assert!(github::lookup(&cwd).unwrap().is_null());
+    fs::write(format!("{home}/new-head"), "").unwrap();
+    assert!(d.refresh_fields(&t, &owner, 730));
+    assert!(d.fields[&cwd].pr_fact.is_none());
 }
 
 #[test]
