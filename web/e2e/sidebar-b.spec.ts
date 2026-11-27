@@ -148,6 +148,51 @@ test("a PR chip is a keyboard link and the open chat alone shows its branch line
   }
 });
 
+test("the menu on a waiting chat in a shared worktree has only chat actions", async ({ page }) => {
+  await page.route("**/api/tree?view=workspaces", async (route) => {
+    const response = await route.fetch();
+    const tree: TreeView = await response.json();
+    const waiting = tree.chats.find((r) => r.selection?.workspace?.endsWith("/ws-tabs"))!;
+    tree.sections = [
+      { id: "needs-you", kind: "needs-you", path: null, folder: false, expanded: true, collapseId: "needs-you",
+        title: "Needs you", status: "blocked", fields: [], rows: [{ ...waiting, parentId: null, status: "blocked" }] },
+    ];
+    await route.fulfill({ response, json: tree });
+  });
+  await load(page);
+  const row = page.getByTestId("sidebar").locator('[data-kind="chat"]');
+  await row.click({ button: "right" });
+  const menu = page.getByTestId("row-menu");
+  await expect(menu.getByRole("menuitem", { name: "Archive chat", exact: true })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Archive workspace", exact: true })).toHaveCount(0);
+  await page.unrouteAll({ behavior: "wait" });
+});
+
+test("Prune names the project for a pinned worktree", async ({ page }) => {
+  const session = process.env.SWARM_E2E_GIT!;
+  let project = "";
+  await page.route("**/api/tree?view=workspaces", async (route) => {
+    const response = await route.fetch();
+    const tree: TreeView = await response.json();
+    const chat = tree.chats.find((r) => r.selection?.chat === session)!;
+    const facts = tree.workspaces[chat.selection!.workspace!];
+    project = tree.projects.find((p) => p.path === facts.projectPath)!.title;
+    facts.missing = true;
+    tree.sections = [
+      { id: "pinned", kind: "pinned", path: null, folder: false, expanded: true, collapseId: "pinned",
+        title: "Pinned", status: null, fields: [], rows: [{ ...chat, pinned: true, parentId: null }] },
+    ];
+    await route.fulfill({ response, json: tree });
+  });
+  await page.route("**/api/workspace/impact?*", (route) => route.fulfill({ json: { prunePaths: ["/missing"] } }));
+  await load(page);
+  const row = page.getByTestId("sidebar").locator(`[data-session="${session}"]`);
+  await row.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Prune worktree…" }).click();
+  await expect(page.getByTestId("confirm")).toContainText(`missing folders in ${project}:`);
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page }) => {
   await load(page);
   await page.getByTestId("home-button").click();

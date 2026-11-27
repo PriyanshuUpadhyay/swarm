@@ -4,7 +4,7 @@
 import { ArchiveIcon, ArchiveRestoreIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, FolderMinusIcon, MessageSquareIcon, PinIcon, PinOffIcon, PencilIcon, PlusIcon, SquareIcon, TerminalIcon, Trash2Icon, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { App } from "../core/app";
-import { archivedSession, workspaceRow, type NavRow } from "../core/nav";
+import { archivedSession, chatRows, workspaceRow, type NavRow } from "../core/nav";
 import { canStartIn } from "../core/new-chat";
 import { copyText as copy } from "./copy";
 
@@ -46,7 +46,9 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
     list = chatActions(app, r.selection?.chat ?? undefined, fold);
     const path = r.selection?.workspace;
     // A single chat stands for its workspace, so the same workspace actions are in its menu.
-    if (!r.parentId && path) list.push(SEP, ...workspaceActions(app, path, row, true));
+    if (!r.parentId && path && !chatRows(app.view.tree).some((chat) => chat.selection?.workspace === path && chat.id !== r.id)) {
+      list.push(SEP, ...workspaceActions(app, path, row, true));
+    }
   } else if (r?.kind === "workspace" && (r.archived || archive)) {
     list = [
       { label: "Restore workspace", icon: ArchiveRestoreIcon, run: () => app.life.restoreWorkspace(r.id) },
@@ -61,7 +63,9 @@ export function rowActions(app: App, row: NavRow): (RowAction | typeof SEP)[] {
 }
 
 function workspaceActions(app: App, path: string, row: NavRow, menuOnly = false): (RowAction | false)[] {
-  const facts = workspaceRow(app.view.tree, path);
+  const tree = app.view.tree;
+  const facts = workspaceRow(tree, path);
+  const project = tree?.projects.find((item) => item.path === facts?.projectPath)?.title ?? facts?.projectPath ?? row.section.title;
 
   return [
     { label: "New Chat…", icon: PlusIcon, disabled: !facts?.newChatEnabled, menuOnly, run: () => app.newChat.open(path) },
@@ -71,7 +75,7 @@ function workspaceActions(app: App, path: string, row: NavRow, menuOnly = false)
     { label: "Rename workspace…", icon: PencilIcon, menuOnly, run: () => app.renameWorkspace(path) },
     { label: "Archive workspace", icon: ArchiveIcon, menuOnly, run: () => void app.life.archiveWorkspace(path) },
     { label: "Remove worktree…", icon: Trash2Icon, menuOnly, run: () => void app.life.deleteWorkspace(path) },
-    facts?.missing === true && { label: "Prune worktree…", menuOnly, run: () => void app.life.pruneWorkspace(path, row.section.title) },
+    facts?.missing === true && { label: "Prune worktree…", menuOnly, run: () => void app.life.pruneWorkspace(path, project) },
     row.section.folder && { label: "Remove Project…", icon: FolderMinusIcon, menuOnly, run: () => app.life.removeProject(row.section.path ?? "", row.section.title) },
   ];
 }
