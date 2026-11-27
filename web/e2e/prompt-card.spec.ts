@@ -150,6 +150,7 @@ test("a question puts its answer field and Send after eleven choices", async ({ 
   });
   await tab.setViewportSize({ width: 1280, height: 900 });
   await openChat(tab, session);
+
   const card = tab.getByTestId("prompt-card");
   await expect(card.getByTestId("prompt-choice")).toHaveCount(11);
   const bounds = await card.evaluate((el) => ({
@@ -251,6 +252,7 @@ test("a permission command opens in a scroll window without moving its choices o
     await expect(card).toContainText("23 more");
     const preview = card.getByTestId("permission-command");
     await expect(preview).toHaveText("Command line 1\nCommand line 2\nCommand line 3\nCommand line 4", { useInnerText: true });
+
     const look = await card.evaluate((el) => {
       const head = el.firstElementChild!;
       const dot = head.firstElementChild!;
@@ -265,6 +267,7 @@ test("a permission command opens in a scroll window without moving its choices o
       };
     });
     console.log("Permission card measurements:", look);
+
     expect(look.dot).toBe(8);
     expect(look.dotColor).not.toBe(look.labelColor);
     expect(look.inset).not.toBe(look.panel);
@@ -301,6 +304,7 @@ test("a permission choice reveals hidden command lines before it can answer", as
     answers.push(route.request().postDataJSON());
     await route.fulfill({ json: {} });
   });
+
   await openChat(tab, session);
   const card = tab.getByTestId("prompt-card");
   const preview = card.getByTestId("permission-command");
@@ -312,6 +316,7 @@ test("a permission choice reveals hidden command lines before it can answer", as
   await tab.keyboard.down("1");
   await tab.keyboard.up("1");
   expect(answers).toEqual([]);
+
   await tab.keyboard.press("1");
   await expect.poll(() => answers).toEqual([expect.objectContaining({ prompt_id: "hidden-command", choice: 0 })]);
 });
