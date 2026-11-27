@@ -193,6 +193,29 @@ test("Prune names the project for a pinned worktree", async ({ page }) => {
   await page.unrouteAll({ behavior: "wait" });
 });
 
+async function withChatFacts(page: Page, change: (tree: TreeView, row: SidebarRow) => void) {
+  const session = process.env.SWARM_E2E_GIT!;
+  await page.route("**/api/tree?view=workspaces", async (route) => {
+    const response = await route.fetch();
+    const tree: TreeView = await response.json();
+    const row = tree.sections.flatMap((section) => section.rows).find((item) => item.selection?.chat === session)!;
+    change(tree, row);
+    await route.fulfill({ response, json: tree });
+  });
+  await load(page);
+  return page.getByTestId("sidebar").locator(`[data-session="${session}"]`);
+}
+
+const demoPr = { number: 7, url: "https://github.com/example/project/pull/7", state: "open", ci: "unknown" } as const;
+
+test("right click leaves the PR chip's native link menu available", async ({ page }) => {
+  const row = await withChatFacts(page, (tree, row) => { tree.workspaces[row.selection!.workspace!].pr = demoPr; });
+  const chip = row.getByTestId("pr-chip");
+  expect(await chip.evaluate((link) => link.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })))).toBe(true);
+  await expect(page.getByTestId("row-menu")).toHaveCount(0);
+  await page.unrouteAll({ behavior: "wait" });
+});
+
 test("the rail replaces the sidebar only below 1024 px and keeps desktop collapse", async ({ page }) => {
   await load(page);
   await page.getByTestId("home-button").click();
