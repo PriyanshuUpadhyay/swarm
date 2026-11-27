@@ -228,10 +228,17 @@ test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }
   await expect(stop).toBeVisible();
   await expect(tab.getByTestId("composer-status").getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   await shots(tab, 7, "busy-picker");
+  const transcript = tab.getByTestId("transcript");
+  const height = (await transcript.boundingBox())!.height;
   await stop.click();
   await expect.poll(() => stops).toBe(1);
   const banner = tab.getByTestId("switch-pending");
   await expect(banner).toBeVisible();
+  const ready = tab.getByTestId("switch-ready");
+  await expect(ready).toHaveAttribute("role", "status");
+  await expect(ready).toContainText("Switch now");
+  expect((await transcript.boundingBox())!.height).toBe(height);
+  await shots(tab, "fix3", "switch-ready");
   await expect(banner.getByText("Switch to model-b?")).toHaveCSS("font-size", "12px");
   expect(switches).toEqual([]);
   await shots(tab, "fix1", "switch-confirmation");
