@@ -106,6 +106,10 @@ async fn an_archived_git_root_can_start_only_in_a_new_worktree() {
     .await
     .unwrap_err();
     assert_eq!(files.0, StatusCode::CONFLICT);
+    assert_eq!(
+        files.1.0["error"],
+        "Files and commands are not listed for an archived workspace."
+    );
 
     let started = start_chat(&fixture, json!({"cwd":cwd,"place":{"kind":"new"}}))
         .await

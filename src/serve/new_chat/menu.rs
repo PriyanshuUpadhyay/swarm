@@ -24,7 +24,10 @@ async fn menu_folder(app: &App, cwd: String) -> Result<String, ApiError> {
     tokio::task::spawn_blocking(move || {
         let target = chat_target(&app, &cwd, false)?;
         if target.worktree_only.is_some() {
-            return Err(read_only_error("chat"));
+            return Err(error(
+                StatusCode::CONFLICT,
+                "Files and commands are not listed for an archived workspace.",
+            ));
         }
         Ok(cwd)
     })
