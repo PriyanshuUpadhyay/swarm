@@ -12,7 +12,8 @@ async function load(page: Page) {
 test("head B puts Home and project controls above New chat and palette search", async ({ page }) => {
   await load(page);
   const head = page.getByTestId("sidebar-head");
-  const home = head.getByRole("button", { name: "Home" });
+  const home = head.getByTestId("home-button");
+  await expect(home).toHaveAccessibleName("Swarm");
   const add = head.getByRole("button", { name: "Add project" });
   const settings = head.getByRole("button", { name: "Settings" });
   const chat = head.getByRole("button", { name: "New chat", exact: true });

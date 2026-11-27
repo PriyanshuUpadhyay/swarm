@@ -12,7 +12,7 @@ export function SidebarHeader({ app }: { app: App }) {
       <div className="flex items-center gap-0.5">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="sm" className="text-md font-semibold" aria-label="Home" data-testid="home-button" onClick={() => app.showHome()}>
+            <Button variant="ghost" size="sm" className="text-md font-semibold" data-testid="home-button" onClick={() => app.showHome()}>
               <Glyph aria-hidden />
               Swarm
             </Button>
