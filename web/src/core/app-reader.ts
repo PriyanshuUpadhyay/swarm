@@ -281,8 +281,8 @@ export class AppReader {
       if (chat.linkedTail === linked) chat.error = String(err);
     } finally {
       chat.loadingOlder = false;
+      if (this.app.openId === chat.sessionId) this.app.notify();
     }
-    if (this.app.openId === chat.sessionId) this.app.notify();
   }
 
   // ---- find ----

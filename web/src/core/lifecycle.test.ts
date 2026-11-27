@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, type Session } from "./api";
-import type { App } from "./app";
+import { Api, ApiError, type Session } from "./api";
+import { App } from "./app";
 import { Lifecycle } from "./lifecycle";
 
 /** An App stand-in that records what Lifecycle asks of it. `post` answers by path. */
@@ -178,6 +178,25 @@ describe("chats", () => {
     life.onHandoff({ old_session: "chat-1", phase: "cancelled", canCancel: false });
     life.onHandoff({ old_session: "chat-1", phase: "starting", canCancel: false });
     expect(life.state.handoffs["chat-1"]?.phase).toBe("cancelled");
+  });
+});
+
+describe("linked chat reader", () => {
+  it("clears the older-page spinner when a stale reply arrives after linkage", async () => {
+    let reply!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => { reply = resolve; });
+    const app = new App(new Api("test", () => response));
+    const chat = app.reading.newChat("leaf");
+    app.openId = chat.id;
+    Object.assign(chat, { loaded: true, state: "ready", older: 12, linkedTail: false });
+    const older = app.reading.loadOlder();
+    expect(app.view.loadingOlder).toBe(true);
+
+    Object.assign(chat, { linkedTail: true, older: "leaf:12" });
+    app.notify();
+    reply(Response.json({ page: { start_offset: 0, end_offset: 12 }, rows: [], usage: null }));
+    await older;
+    expect(app.view.loadingOlder).toBe(false);
   });
 });
 
