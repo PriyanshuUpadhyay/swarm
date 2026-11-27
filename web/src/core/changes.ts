@@ -48,6 +48,10 @@ export class Changes {
   private mode: Mode = "local";
   private bases = new Map<string, string>();
   private list: Load<ChangeList> = IDLE;
+
+  // A failed automatic read can hide the list without closing the full diff.
+  private listedFiles: ChangeFile[] = [];
+
   private selected: string | null = null;
   private showFile = false;
   private diff: Load<FileDiff> = IDLE;
@@ -134,6 +138,7 @@ export class Changes {
   }
 
   private clearFile() {
+    this.listedFiles = [];
     this.selected = null;
     this.diff = IDLE;
     this.full = IDLE;
@@ -232,10 +237,12 @@ export class Changes {
       next = { state: "error", error: message(err) };
     }
     if (seq !== this.seq.list || workspace !== this.workspace) return;
-    const previousIndex = this.list.state === "ready"
-      ? this.list.data.files.findIndex((file) => fileKey(file) === this.selected) : -1;
+    const previous = this.listedFiles;
+    const previousIndex = previous.findIndex((file) => fileKey(file) === this.selected);
     this.list = next;
     const files = next.state === "ready" ? next.data.files : [];
+    if (next.state === "ready") this.listedFiles = files;
+
     const still = files.find((f) => fileKey(f) === this.selected);
     if (automatic && (still || next.state !== "ready") && (this.full.state === "loading" || this.full.state === "ready")) return this.notify();
 

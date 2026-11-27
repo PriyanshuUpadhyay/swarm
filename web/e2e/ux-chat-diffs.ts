@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { bodyMode, captureThemes, row, rows, open, openChanges, mockRows } from "./ux-helpers";
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { bodyMode, captureThemes, changeRow, row, rows, open, openChanges, mockRows } from "./ux-helpers";
+import type { ChangeList } from "../src/core/changes-types";
 import fencePainter from "../../tests/fixtures/s6c/painter.json" with { type: "json" };
 import type { Display, PatchInfo } from "../src/core/api";
 import previewPatch from "./fixtures/s6a-preview.json" with { type: "json" };
@@ -35,6 +38,47 @@ test("Show all reports a failed full diff even if Git sends no text", async ({ p
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
   }
+});
+
+async function checkNextFile(page: Page, failure: boolean) {
+  const later = "fix6-later.txt";
+  const file = join(process.env.SWARM_E2E_GIT_DIR!, later);
+  const paths = ["README.md", "big.txt", "notes.md", ...(failure ? [] : [later])];
+  let state: "initial" | "failed" | "removed" = "initial";
+  await page.route("**/api/changes?**", async (route) => {
+    if (state === "failed") return route.fulfill({ status: 503, json: { error: "List unavailable" } });
+    const response = await route.fetch();
+    const data = await response.json() as ChangeList;
+    const visible = state === "initial" ? paths : paths.filter((path) => path !== "big.txt" && (failure || path !== "README.md"));
+    await route.fulfill({ response, json: { ...data, files: visible.map((path) => data.files.find((f) => f.path === path)) } });
+  });
+
+  try {
+    if (!failure) writeFileSync(file, "A later change\n");
+    await openChanges(page, "big.txt");
+    await expand(page);
+    await expect(fullDiffCut(page)).toBeHidden();
+    const diffPath = page.getByTestId("diff-path");
+    const refresh = () => page.evaluate(() => dispatchEvent(new Event("focus")));
+    if (failure) {
+      state = "failed";
+      await refresh();
+      await expect(page.getByText("List unavailable", { exact: true })).toBeVisible();
+      await expect(diffPath).toHaveText("big.txt");
+    }
+
+    state = "removed";
+    await refresh();
+    await expect(changeRow(page, "big.txt")).toHaveCount(0);
+    await expect(diffPath).toHaveText("notes.md", { timeout: 2_000 });
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    if (!failure) rmSync(file, { force: true });
+  }
+}
+
+test("a full diff advances to the next surviving file across a failed refresh", async ({ page }) => {
+  await checkNextFile(page, true);
 });
 
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
