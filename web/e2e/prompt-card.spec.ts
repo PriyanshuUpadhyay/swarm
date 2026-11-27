@@ -206,6 +206,25 @@ test("a permission command opens in a scroll window without moving its choices o
     await expect(card).toContainText("23 more");
     const preview = card.getByTestId("permission-command");
     await expect(preview).toHaveText("Command line 1\nCommand line 2\nCommand line 3\nCommand line 4", { useInnerText: true });
+    const look = await card.evaluate((el) => {
+      const head = el.firstElementChild!;
+      const dot = head.firstElementChild!;
+      const inset = el.querySelector('[data-testid="permission-command"]')!.parentElement!;
+      return {
+        dot: dot.getBoundingClientRect().width,
+        dotColor: getComputedStyle(dot).backgroundColor,
+        labelColor: getComputedStyle(head).color,
+        panel: getComputedStyle(el).backgroundColor,
+        inset: getComputedStyle(inset).backgroundColor,
+        border: getComputedStyle(inset).borderTopWidth,
+      };
+    });
+    console.log("Permission card measurements:", look);
+    expect(look.dot).toBe(8);
+    expect(look.dotColor).not.toBe(look.labelColor);
+    expect(look.inset).not.toBe(look.panel);
+    expect(look.border).toBe("1px");
+    await captureThemes(tab, card, "permission-cut");
 
     await show.click();
     await expect(preview).toContainText("Command line 27");

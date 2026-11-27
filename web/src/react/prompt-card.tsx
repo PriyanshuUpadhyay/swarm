@@ -81,8 +81,8 @@ export function PromptCard({
       className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 rounded-xl border border-border bg-surface p-4 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       onKeyDown={onKeyDown}
     >
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-waiting">
-        <CircleHelpIcon className="size-3.5" />
+      <div className={cn("flex items-center gap-1.5 text-xs font-semibold", command ? "text-muted-foreground" : "text-waiting")}>
+        {command ? <span className="mx-0.5 size-2 shrink-0 rounded-full bg-waiting" aria-hidden /> : <CircleHelpIcon className="size-3.5" />}
         <span className="flex-1">{who ?? "The chair"} is waiting for you</span>
         {showColumn && (
           <button type="button" className="t-link font-normal" onClick={showColumn}>
@@ -102,7 +102,7 @@ export function PromptCard({
       ) : command ? (
         <div data-testid="prompt-question" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2 text-md break-words select-text">
           <span className="font-semibold">{command.title}</span>
-          <div className="min-w-0 rounded-lg bg-code px-2 py-1">
+          <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
             <pre ref={commandWindow} data-testid="permission-command" tabIndex={showAll ? 0 : -1} className="max-h-[min(20lh,40vh)] overflow-auto overscroll-contain font-mono text-sm leading-[18px] whitespace-pre">{(showAll ? command.lines : command.lines.slice(0, COMMAND_PREVIEW_LINES)).join("\n")}</pre>
             {!showAll && command.lines.length > COMMAND_PREVIEW_LINES && <CutLine count={`${command.lines.length - COMMAND_PREVIEW_LINES} more`} show={() => {
               setExpanded(commandId);
