@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Tab, TabsView, TreeView } from "../src/core/nav";
+import { clickTarget } from "./lifecycle-helpers";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 
@@ -76,8 +77,21 @@ test("the tab child button names one agent in the singular", async ({ page }) =>
     const selected = page.waitForResponse((res) => res.url().endsWith("/api/choices") && res.request().postDataJSON().op === "selected_chat");
     await page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" }).click();
     expect((await selected).status()).toBe(200);
-    const child = page.getByTestId("tab-strip").locator('[data-action="children"]').first();
+    const strip = page.getByTestId("tab-strip");
+    const child = strip.locator('[data-action="children"]').first();
     await expect(child).toHaveAccessibleName(/, 1 agent$/);
+    await expect(strip).toHaveCSS("height", "40px");
+    await expect(child.locator("xpath=..")).toHaveCSS("height", "32px");
+    const target = await clickTarget(child);
+    expect(target).toEqual({ width: 24, height: 24 });
+
+    const close = child.locator('xpath=following-sibling::button[@data-action="close"]');
+    const [box, next, inset] = await Promise.all([
+      child.boundingBox(), close.boundingBox(),
+      child.evaluate((el) => Number.parseFloat(getComputedStyle(el, "::after").left)),
+    ]);
+    if (!box || !next) throw new Error("The tab is missing adjacent actions");
+    expect(box.x + inset + target.width / 2).toBeLessThanOrEqual(next.x);
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await page.close();

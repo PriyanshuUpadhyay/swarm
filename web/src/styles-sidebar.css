@@ -92,7 +92,8 @@
   background: transparent;
   color: var(--muted-foreground);
 }
-.trow .row-btn::after {
+.trow .row-btn::after,
+.tab button[data-action="children"]::after {
   position: absolute;
   inset: 50% auto auto 50%;
   width: max(100%, 24px);
@@ -531,9 +532,10 @@ button.sidebar-count {
   color: var(--foreground);
 }
 .tab {
+  --tab-gap: 6px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--tab-gap);
   flex: none;
   min-width: 120px;
   max-width: 224px;
@@ -568,6 +570,13 @@ button.sidebar-count {
   flex: none;
   font-size: var(--text-xs);
   color: var(--muted-foreground);
+}
+.tab button[data-action="children"] {
+  position: relative;
+}
+.tab button[data-action="children"]::after {
+  /* The count can be narrower than 12 px. Keep its 24 px target clear of Close. */
+  left: min(50%, calc(100% + var(--tab-gap) - 12px));
 }
 .tab .glyph:not(.swarm-glyph) {
   width: 11px;
