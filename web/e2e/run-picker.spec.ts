@@ -146,6 +146,27 @@ test("two quick star clicks keep both favorites", async ({ page: tab }) => {
   await expect.poll(() => saved.at(-1)?.map((m) => m.model)).toEqual(["model-a", "model-b"]);
 });
 
+test("the run chip names its CLI and keeps its width while the account list loads", async ({ page: tab }) => {
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "codex", account: "long-work-account", model: "model-a" }); });
+  await tab.route("**/api/accounts?*", async (route) => {
+    await accountsReady;
+    await route.fulfill({ json: { accounts: [{ name: "long-work-account", email: null }] } });
+  });
+  let release!: () => void;
+  const accountsReady = new Promise<void>((resolve) => { release = resolve; });
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  const chip = tab.getByTestId("model-chip");
+  let before: number;
+  try {
+    await expect(chip.getByTestId("model-chip-label")).toContainText("long-work-account");
+    await expect(chip).toHaveAccessibleName(/Codex.*long-work-account/);
+    before = (await chip.boundingBox())!.width;
+  } finally { release(); }
+  await expect(chip.getByTestId("model-chip-label")).toContainText("Codex");
+  expect((await chip.boundingBox())!.width).toBe(before!);
+});
+
 test("a typed model stays available in the new-chat picker", async ({ page: tab }) => {
   await pickerCatalog(tab);
   await open(tab);

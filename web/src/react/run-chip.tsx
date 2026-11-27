@@ -3,7 +3,7 @@
 import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { App } from "../core/app";
-import { accountCli, accountColor, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Run } from "../core/composer";
+import { accountCli, accountColor, cliName, outcomeText, runLabel, runTip, savedCarry, switchOutcome, type AgentInput, type Run } from "../core/composer";
 import { isSettled } from "../core/lifecycle";
 import { Button } from "../components/ui/button";
 import { CliMark } from "./cli-mark";
@@ -35,6 +35,10 @@ export function RunChip({ app, sessionId, chair, ended = false }: { app: App; se
   const anchor = `--run-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const switching = handoff && !isSettled(handoff.phase) ? (handoff.carry === "resume" ? "Restarting…" : "Switching…") : null;
   const run: Run = { provider: shown.provider ?? "claude", model: shown.model, effort: shown.effort, account: shown.account };
+  const status = ended ? null : switching;
+  const named = multipleAccounts ? shown.account : null;
+  const cliLabel = runLabel({ ...shown, account: null });
+  const accountLabel = runLabel(shown);
 
   useEffect(() => {
     const el = pop.current;
@@ -63,9 +67,17 @@ export function RunChip({ app, sessionId, chair, ended = false }: { app: App; se
         onClick={() => (open ? app.life.close("switchModel") : app.life.openSwitchModel(sessionId))}
       >
         {shown.provider && <CliMark provider={shown.provider} selected={open} />}
-        {shown.account && multipleAccounts && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(shown.account) }} />}
-        <span className="truncate" data-testid="model-chip-label">
-          {(ended ? null : switching) ?? runLabel(multipleAccounts ? shown : { ...shown, account: null })}
+        <span className="grid min-w-0">
+          {/* Keep the chip the same width when the account list settles. */}
+          {shown.account && !status && <span aria-hidden className="invisible col-start-1 row-start-1 flex min-w-0 items-center gap-1">
+            {!named && <span className="size-2 shrink-0" />}
+            <span className="truncate">{named ? cliLabel : accountLabel}</span>
+          </span>}
+          <span className="col-start-1 row-start-1 flex min-w-0 items-center gap-1">
+            {named && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accountColor(named) }} />}
+            {named && shown.provider && !status && <span className="sr-only">{cliName(shown.provider)} · </span>}
+            <span className="truncate" data-testid="model-chip-label">{status ?? (named ? accountLabel : cliLabel)}</span>
+          </span>
         </span>
         {!chair.who && <ChevronDownIcon className="size-3 shrink-0" />}
       </button>
