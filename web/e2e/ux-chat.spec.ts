@@ -55,6 +55,23 @@ test("Find searches loaded full output and reveals its virtual line", async ({ p
   await tab.screenshot({ path: info.outputPath("find-full-output.png") });
 });
 
+test("failed Show all reports the error in the cut line", async ({ page: tab }) => {
+  const output = row("read-failure", "Result", "toolResult");
+  output.output = { id: "read-failure", text: "Preview", full_lines: 30, hidden_lines: 29, full_bytes: 400, is_truncated: true };
+  try {
+    await mockRows(tab, [output]);
+    await tab.route("**/api/tool-output?*", (route) => route.fulfill({ status: 503, json: { error: "Unavailable" } }));
+    await open(tab);
+
+    await tab.getByTestId("show-full").click();
+    const box = tab.getByTestId("output");
+    await expect(box.getByRole("status")).toHaveText("Could not load the full output.", { timeout: 2_000 });
+    await captureThemes(tab, box, "show-all-read-error");
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("empty Find offers earlier search", async ({ page: tab }, info) => {
   await tab.route("**/api/rows?*", async (route) => {
     if (!new URL(route.request().url()).searchParams.has("before")) return route.fulfill({ json: rows([row("a2", "Current message")], 100, {}, { a2: [{ f: "text" }] }) });
