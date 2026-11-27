@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Snapshot } from "../src/core/api";
-import { captureThemes, mockRows, mockStream, open, row, streamFrame } from "./ux-helpers";
+import { captureThemes, mockRows, mockStream, open, row, streamFrame, waitFrames } from "./ux-helpers";
 
 test("the status line names the work and keeps the turn clock outside the log", async ({ page }) => {
   const session = process.env.SWARM_E2E_LIVE!;
@@ -107,7 +107,7 @@ test("a slow sidebar read does not delay the turn clock sample", async ({ page }
     hold = true;
     const [reply] = await Promise.all([page.waitForResponse("**/api/snapshot"), streamFrame(page, "snapshot", { version: 700 })]);
     await reply.finished();
-    await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    await waitFrames(page);
 
     await page.clock.fastForward(5_000);
     release();

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { captureThemes, mockRows, mockStream, open, row, rows, streamFrame } from "./ux-helpers";
+import { captureThemes, mockRows, mockStream, open, row, rows, streamFrame, waitFrames } from "./ux-helpers";
 import type { Block, Inline, Snapshot } from "../src/core/api";
 
 const lines = (last: string) => Array.from({ length: 16 }, (_, i) => i === 15 ? last : `Check result ${i + 1}`).join("\n");
@@ -103,7 +103,7 @@ for (const place of ["away", "bottom"] as const) {
       await transcript.hover();
       await expect.poll(async () => {
         await page.mouse.wheel(0, place === "bottom" ? 20_000 : -2_000);
-        await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+        await waitFrames(page);
         return position();
       }, { timeout: 3_000 }).toBeLessThan(limit);
 
@@ -116,7 +116,7 @@ for (const place of ["away", "bottom"] as const) {
         end_offset: 501,
       });
       await expect(page.getByTestId("find-count")).toContainText("of 2");
-      await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => done())))));
+      await waitFrames(page, 3);
       expect(Math.abs(await position() - before)).toBeLessThan(5);
     } finally {
       await page.unrouteAll({ behavior: "ignoreErrors" });

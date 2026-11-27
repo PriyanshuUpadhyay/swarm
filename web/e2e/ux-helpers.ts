@@ -70,6 +70,12 @@ export async function mockRows(tab: Page, items: Row[], older = 0, patch: Record
   await tab.route("**/api/rows?*", (route) => route.fulfill({ json: rows(items, older, patch, find) }));
 }
 
+export function waitFrames(page: Page, count = 2) {
+  return page.evaluate(async (frames) => {
+    for (let i = 0; i < frames; i++) await new Promise<number>(requestAnimationFrame);
+  }, count);
+}
+
 export async function captureThemes(page: Page, target: Locator | Page, name: string) {
   const dir = process.env.DESIGN_B_SHOTS;
   if (!dir) return;
