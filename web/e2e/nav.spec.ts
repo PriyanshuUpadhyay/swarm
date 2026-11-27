@@ -74,7 +74,7 @@ test("workspaces no longer move or drag; the menu still pins and unpins", async 
   await expect(tab.getByRole("menuitem", { name: "Pin workspace" })).toBeVisible();
   await expect(tab.getByRole("menuitem", { name: "Move Up", exact: true })).toHaveCount(0);
   await expect(tab.getByRole("menuitem", { name: "Move Down", exact: true })).toHaveCount(0);
-  expect(await workspace.evaluate((element) => element.draggable)).toBe(false);
+  await expect(workspace).toHaveJSProperty("draggable", false);
   await tab.keyboard.press("Escape");
 
   await menu(live, "Pin workspace");
