@@ -118,6 +118,6 @@ export function streamFrame(tab: Page, event: string, data: unknown) {
   return tab.evaluate(({ event, data }) => window.swarmStream.send(event, data), { event, data });
 }
 
-export function streamControl(tab: Page, action: "drop" | "restore") {
+export function streamControl(tab: Page, action: Exclude<keyof StreamFixture, "send">) {
   return tab.evaluate((mode) => window.swarmStream[mode](), action);
 }
