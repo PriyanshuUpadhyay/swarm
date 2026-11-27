@@ -463,6 +463,14 @@ impl FieldReader {
             keep
         });
 
+        if self
+            .cut_path
+            .as_ref()
+            .is_some_and(|path| !github.contains(path))
+        {
+            self.cut_path = None;
+        }
+
         self.diff_at.retain(|path, (_, branch)| {
             let keep = branches.get(path.as_str()).copied() == Some(branch.as_str());
             if !keep && let Some(fields) = self.fields.get_mut(path) {

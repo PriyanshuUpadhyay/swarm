@@ -294,6 +294,49 @@ fn a_timed_out_pr_read_keeps_the_facts_and_retries_first() {
 }
 
 #[test]
+fn a_workspace_that_rejoins_the_read_set_gets_its_first_retry() {
+    let mut tree = tree();
+    let owner = owner();
+    let slow = "/repo/wt/feature";
+    let next = "/repo/wt/main";
+    let mut cache = FieldReader::default();
+
+    for (at, missing, order) in [
+        (1, false, &[slow, next][..]),
+        (121, false, &[slow][..]),
+        (122, true, &[next][..]),
+        (242, false, &[slow][..]),
+        (243, false, &[slow][..]),
+    ] {
+        tree.projects
+            .iter_mut()
+            .flat_map(|p| &mut p.workspaces)
+            .find(|w| w.path == slow)
+            .unwrap()
+            .missing = missing;
+
+        let mut reads = Vec::new();
+        cache.refresh_fields_with(
+            &tree,
+            &owner,
+            at,
+            |_, _| None,
+            |path, _, _| {
+                reads.push(path.to_owned());
+                if path == slow && at > 1 {
+                    Err(LookupError::Deadline)
+                } else {
+                    Ok(None)
+                }
+            },
+            |_, _, _| None,
+        );
+
+        assert_eq!(reads, order, "lookup order at {at}");
+    }
+}
+
+#[test]
 fn only_the_selected_workspace_reads_branch_totals() {
     let tree = tree();
     let owner = owner();
