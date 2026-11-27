@@ -91,7 +91,7 @@ pub fn continuation_logs(
                 strftime('%Y/%m/%d', s.created_at - 86400, 'unixepoch'),
                 strftime('%Y/%m/%d', s.created_at, 'unixepoch'),
                 strftime('%Y/%m/%d', s.created_at + 86400, 'unixepoch')
-         FROM chain JOIN session s ON s.id = chain.id ORDER BY s.id",
+         FROM chain JOIN session s ON s.id = chain.id ORDER BY chain.id",
     )?;
     let mut rows = read.query([leaf])?;
     let first = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
