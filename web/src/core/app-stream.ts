@@ -28,6 +28,8 @@ export class AppStream {
     for (const [id, input] of this.app.inputs)
       if (input.answering && this.app.composing.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
     for (const chat of this.app.chats.values()) {
+      if (chat.agent === "chair" && chat.linkedTail === false && hasLinkedHistory(snap, chat.sessionId))
+        this.app.panes.loadChair(chat);
       const items = this.app.composing.chair(chat.id).queue;
       const queue = items.map<Row>((q, i) => ({
         id: q.id,

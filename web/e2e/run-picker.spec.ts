@@ -35,14 +35,16 @@ test("the same tab pages both CLI logs and reads tool output from its original s
     writeFileSync(log, `${JSON.stringify(model)}\n${JSON.stringify(line)}\n`);
     sql(`UPDATE session SET chair_log = ${quote(log)} WHERE id = ${quote(leaf)};
           INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${quote(leaf)}, 'orchestrator', 'codex', unixepoch(), ${quote(log)});`);
+    const row = tab.getByTestId("tree-row").and(tab.locator(`[data-session="${leaf}"]`));
+    const transcript = tab.getByTestId("transcript").and(tab.locator(`[data-chat="${leaf}"]`));
+    await row.click();
+    await expect(transcript.getByText("After the CLI switch")).toBeVisible();
+
     call("session", "continue", leaf, root);
     await expect.poll(async () => (await readTree()).sections.flatMap((s) => s.rows).some((row) => row.selection?.chat === leaf)).toBe(true);
-    await tab.reload();
-    const row = tab.getByTestId("tree-row").and(tab.locator(`[data-session="${leaf}"]`));
     await expect(row).toHaveAttribute("data-id", rowId!);
     await row.click();
     await expect(tab.getByTestId("tab").and(tab.locator(`[data-session="${leaf}"]`))).toHaveAttribute("data-id", tabId!);
-    const transcript = tab.getByTestId("transcript").and(tab.locator(`[data-chat="${leaf}"]`));
     await expect(transcript.getByText("After the CLI switch")).toBeVisible();
 
     const loadOlder = tab.getByTestId("load-older");

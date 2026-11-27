@@ -128,8 +128,11 @@ export class AppPanes {
 
   /** A linked chair can show earlier rows before its own log exists. */
   loadChair(chat: Chat) {
-    if (chat.loaded || (!hasLinkedHistory(this.app.snapshot, chat.sessionId) && !this.chairHasLog(chat.sessionId))) return;
+    const linked = hasLinkedHistory(this.app.snapshot, chat.sessionId);
+    const justLinked = linked && chat.linkedTail === false;
+    if ((chat.loaded && !justLinked) || (!linked && !this.chairHasLog(chat.sessionId))) return;
     chat.loaded = true;
+    if (justLinked) chat.older = 0; // A numeric cursor from the old log is no longer valid.
     void this.app.reading.loadTail(chat).then(() => {
       this.app.streaming.syncSubscriptions();
       if (this.app.openId === chat.sessionId) this.app.notify();

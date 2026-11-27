@@ -5,6 +5,7 @@ import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay
 import { ApiError, type Row, type RowPage } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
+import { hasLinkedHistory } from "./app-panes";
 
 const nextOlder = ({ page }: RowPage) => page.older_cursor ?? page.start_offset;
 
@@ -109,8 +110,11 @@ export class AppReader {
   }
 
   async loadTail(chat: Chat) {
+    const linked = chat.agent === "chair" && hasLinkedHistory(this.app.snapshot, chat.sessionId);
+    chat.linkedTail = linked;
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL);
+      if (chat.linkedTail !== linked) return;
       noteDisplay(page.rows, page.display);
       noteBody(page.rows, page.body);
       notePatch(page.rows, page.patch);
@@ -123,6 +127,7 @@ export class AppReader {
       chat.state = "ready";
       chat.error = null;
     } catch (err) {
+      if (chat.linkedTail !== linked) return;
       chat.state = "error";
       chat.error = String(err);
     }
@@ -256,11 +261,13 @@ export class AppReader {
   async loadOlder(id?: string) {
     const chat = this.chat(id);
     if (!chat || chat.state !== "ready" || chat.loadingOlder || !chat.older) return;
+    const linked = chat.linkedTail;
     chat.loadingOlder = true;
     chat.error = null;
     this.app.notify();
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL, chat.older);
+      if (chat.linkedTail !== linked) return;
       noteDisplay(page.rows, page.display);
       noteBody(page.rows, page.body);
       notePatch(page.rows, page.patch);
@@ -271,7 +278,7 @@ export class AppReader {
       chat.version++;
       chat.shift = true;
     } catch (err) {
-      chat.error = String(err);
+      if (chat.linkedTail === linked) chat.error = String(err);
     } finally {
       chat.loadingOlder = false;
     }

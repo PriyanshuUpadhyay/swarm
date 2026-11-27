@@ -21,6 +21,8 @@ export type Chat = {
   key: string;
   /** False for a child's chat until its column first shows. */
   loaded: boolean;
+  /** Whether the last chair tail request knew the session was a continuation. */
+  linkedTail?: boolean;
   rows: Row[];
   /** A linked cursor or a single-log byte offset; 0 means no older rows. */
   older: number | string;
