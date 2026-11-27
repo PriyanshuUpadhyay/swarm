@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { ISSUES } from "./serve";
+import { ISSUES, seedEndedChat } from "./serve";
 import { api, compose, header, holdChatStart, open, readTree, shoot, showOtherProjects } from "./lifecycle-helpers";
 
 // The cases share one server home with every spec, and a repeat finds the workspaces of the run
@@ -178,15 +178,9 @@ test("archive asks while agents run and restores; delete asks and removes the fo
   const logs = join(home, ".claude/projects/e2e");
   const log = join(logs, `${chair}.jsonl`);
   copyFileSync(join(import.meta.dirname, "../../tests/fixtures/provider-logs/claude-edit.jsonl"), log);
-  const session = execFileSync(process.env.SWARM_E2E_SWARM!, ["session", "new", "lane", "--chair", `claude:${chair}`], {
-    cwd: path, env: { PATH: process.env.PATH, HOME: home, SWARM_HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude") },
-  }).toString().trim().split("\n").pop()!;
-  const sql = (value: string) => `'${value.replaceAll("'", "''")}'`;
-  execFileSync("sqlite3", [join(home, ".swarm/swarm.db"), `
-    UPDATE session SET adapter = 'tmux-swarm' WHERE id = ${sql(session)};
-    INSERT INTO agent (id, session_id, role, provider, created_at, log)
-    VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});
-  `]);
+  const session = seedEndedChat(path, log, {
+    PATH: process.env.PATH, HOME: home, SWARM_HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"),
+  });
 
   const errors = await open(tab);
   const row = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
