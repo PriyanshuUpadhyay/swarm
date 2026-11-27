@@ -119,7 +119,7 @@ test.describe("prompt layout and chat identity", () => {
 
 test("a question that takes text sends the typed answer", async ({ page: tab }, info) => {
   const session = process.env.SWARM_E2E_LIVE!;
-  await showPrompt(tab, [session], { id: "typed", question: "Please describe the arrow behavior you expect.", choices: [], input: true });
+  await showPrompt(tab, [session], { id: "typed", question: "Please describe the arrow behavior you expect.", choices: ["Change projects", "Stay here"], input: true });
   const sent: unknown[] = [];
   await tab.route("**/api/chat/answer", async (route) => {
     sent.push(route.request().postDataJSON());
@@ -127,10 +127,18 @@ test("a question that takes text sends the typed answer", async ({ page: tab }, 
   });
   await openChat(tab, session);
   const field = tab.getByTestId("prompt-card").getByTestId("prompt-text");
-  await field.fill("Up and Down switch projects");
-  await field.press("Enter");
-  await expect.poll(() => sent).toEqual([expect.objectContaining({ prompt_id: "typed", text: "Up and Down switch projects" })]);
-  await tab.screenshot({ path: info.outputPath("typed-question.png") });
+  try {
+    await field.press("2");
+    await expect(field).toHaveValue("2", { timeout: 2_000 });
+    expect(sent).toEqual([]);
+
+    await field.fill("2 arrow keys switch projects");
+    await field.press("Enter");
+    await expect.poll(() => sent).toEqual([expect.objectContaining({ prompt_id: "typed", text: "2 arrow keys switch projects" })]);
+    await tab.screenshot({ path: info.outputPath("typed-question.png") });
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 test("a question puts its answer field and Send after eleven choices", async ({ page: tab }) => {

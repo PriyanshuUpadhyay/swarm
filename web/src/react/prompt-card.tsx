@@ -74,7 +74,7 @@ export function PromptCard({
     if (line && busy === null) void app.answer(sessionId, prompt, { text: line });
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (prompt.screen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !/^[1-9]$/.test(e.key)) return;
+    if (prompt.screen || e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || !/^[1-9]$/.test(e.key)) return;
     const i = Number(e.key) - 1;
     if (i >= prompt.choices.length) return;
     e.preventDefault();
