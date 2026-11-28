@@ -5,12 +5,15 @@ import type { Snapshot } from "./api";
 import { fuzzySearchItems } from "./fuzzy-search";
 
 export type Status = "ended" | "done" | "working" | "error" | "blocked";
+
+/** Translate stored and wire states only at the display boundary. */
+export const shownStatus = (status: Status | "idle") => status === "blocked" ? "waiting" : status === "error" ? "failed" : status;
 export type Field = { field: string; text: string; status?: Status };
 export type Selection = { workspace: string | null; chat: string | null; agentSession: string | null; agent: string | null };
 
 export type SidebarRow = {
   id: string;
-  kind: "workspace" | "chat" | "child" | "more" | "worktrees" | "archived" | "archived-chat";
+  kind: "workspace" | "chat" | "child" | "more" | "archived" | "archived-chat";
   depth: number;
   parentId: string | null;
   expanded: boolean;
@@ -29,6 +32,7 @@ export type SidebarRow = {
   // A hub's main: the composer starts a project's new chat here, in its own worktree (ADR 0146).
   startsChatWorktree: boolean;
   dimmed: boolean;
+  standsForWorkspace?: boolean;
   fields: Field[];
   // Null on a "more" or archived row (Option<Selection> in src/view/sidebar.rs).
   selection: Selection | null;
@@ -36,7 +40,7 @@ export type SidebarRow = {
 
 export type Section = {
   id: string;
-  kind: "pinned" | "project";
+  kind: "needs-you" | "pinned" | "project" | "more-projects";
   path: string | null;
   /** A plain folder project: it has no header, and its one workspace row stands for it. */
   folder: boolean;
@@ -46,6 +50,24 @@ export type Section = {
   status: Status | null;
   fields: Field[];
   rows: SidebarRow[];
+  parentId?: string;
+  count?: number;
+};
+
+export type PrFact = { number: number; url: string; state: "open" | "draft" | "merged"; ci: "passed" | "failed" | "pending" | "unknown" };
+export type LineTotals = { addedLines: number; removedLines: number };
+export type ProjectFacts = { path: string; title: string; folder: boolean };
+export type WorkspaceFacts = {
+  projectPath: string;
+  title: string;
+  missing: boolean;
+  archived: boolean;
+  pinned: boolean;
+  newChatEnabled: boolean;
+  startsChatWorktree: boolean;
+  branch: string | null;
+  diff: LineTotals | null;
+  pr: PrFact | null;
 };
 
 export type TreeName = "workspaces" | "archived";
@@ -56,7 +78,9 @@ export type TreeView = {
   view: TreeName;
   sections: Section[];
   /** All live chats, independent of sidebar folds and list limits. */
-  chats?: SidebarRow[];
+  chats: SidebarRow[];
+  projects: ProjectFacts[];
+  workspaces: Record<string, WorkspaceFacts>;
   selectedRow: string | null;
   archivedStatus: Status | null;
   choicesError: string | null;
@@ -111,9 +135,8 @@ export type TabsView = { version: number; revision: string; view: Tabs };
 /** One `POST /api/choices` operation (P2a). The app adds the revision. */
 export type ChoiceOp =
   | { op: "pin" | "unpin"; workspace: string }
-  | { op: "reorder_workspace"; workspace: string; target: string }
   | { op: "collapse" | "expand"; id: string }
-  | { op: "expand_list"; workspace: string }
+  | { op: "expand_list"; id: string; expanded?: boolean }
   | { op: "rename_workspace"; workspace: string; name: string }
   | { op: "rename_chat"; workspace: string; chat: string; name: string }
   | { op: "rename_project"; project: string; name: string }
@@ -151,7 +174,7 @@ export function shareTree(old: TreeView | null, next: TreeView): TreeView {
 /** One sidebar line: a section header, or a tree row under it. */
 export type NavRow = {
   id: string;
-  kind: "pinned" | "project" | SidebarRow["kind"];
+  kind: Section["kind"] | SidebarRow["kind"];
   /** aria-level: 1 for a header, 2 for a workspace, and so on. */
   level: number;
   /** True or false for a row that folds; null for one that does not. */
@@ -169,8 +192,10 @@ export function navRows(tree: TreeView | null, folds: ReadonlyMap<string, boolea
   const archive = tree.view === "archived";
   const out: NavRow[] = [];
   for (const section of tree.sections) {
-    const expanded = archive || section.folder ? true : (folds.get(section.collapseId) ?? section.expanded);
-    if (!section.folder) out.push({ id: section.id, kind: section.kind, level: 1, expanded: archive ? null : expanded, parentId: null, section, row: null });
+    if (section.parentId && folds.get(section.parentId) === false) continue;
+    const expanded = archive || section.folder || section.kind === "needs-you" || (folds.get(section.collapseId) ?? section.expanded);
+    const level = section.parentId ? 2 : 1;
+    if (!section.folder) out.push({ id: section.id, kind: section.kind, level, expanded: archive || section.kind === "needs-you" ? null : expanded, parentId: section.parentId ?? null, section, row: null });
     if (!expanded) continue;
     // Rows under a folded row are skipped until the depth comes back up.
     let hideBelow = Infinity;
@@ -180,20 +205,28 @@ export function navRows(tree: TreeView | null, folds: ReadonlyMap<string, boolea
       const open = row.hasChildren ? (folds.get(row.id) ?? row.expanded) : null;
       if (open === false) hideBelow = row.depth;
       // A folder has no header, so its rows move up one level.
-      const parentId = row.parentId ?? (section.folder ? null : section.id);
-      out.push({ id: row.id, kind: row.kind, level: row.depth + (section.folder ? 1 : 2), expanded: open, parentId, section, row });
+      const parentId = row.parentId ?? (section.folder ? section.parentId ?? null : section.id);
+      out.push({ id: row.id, kind: row.kind, level: row.depth + level + (section.folder ? 0 : 1), expanded: open, parentId, section, row });
     }
   }
   return out;
 }
 
+export function workspaceSection(sections: readonly Section[], workspace: string, project: string | undefined): Section | undefined {
+  return sections.find((s) => s.path === project) ?? sections.find((s) =>
+    s.kind !== "needs-you" && s.rows.some((r) => r.selection?.workspace === workspace));
+}
+
 /** The visible chat row, else its workspace row or the header of its folded section. */
-export function currentRow(rows: NavRow[], openId: string | null, workspace: string | null): string | null {
+export function currentRow(rows: NavRow[], openId: string | null, workspace: string | null, tree?: TreeView | null): string | null {
   const chat = openId ? rows.find((r) => r.kind === "chat" && r.row?.selection?.chat === openId) : undefined;
   if (chat) return chat.id;
+  if (!workspace) return null;
   const owner = rows.find((r) => r.kind === "workspace" && r.id === workspace);
   if (owner) return owner.id;
-  return rows.find((r) => !r.row && r.section.rows.some((row) => row.kind === "workspace" && row.id === workspace))?.id ?? null;
+  const project = workspaceRow(tree ?? null, workspace)?.projectPath;
+  const header = workspaceSection(rows.flatMap((r) => r.row ? [] : [r.section]), workspace, project);
+  return header?.id ?? (project && rows.some((r) => r.kind === "more-projects") ? "more-projects" : null);
 }
 
 /** The session of an `archived-chat:<session>` row. */
@@ -204,42 +237,25 @@ export const foldId = (r: NavRow) => (r.row ? r.id : r.section.collapseId);
 
 /** Every tree row with a chat, across both sections. */
 export function chatRows(tree: TreeView | null): SidebarRow[] {
-  return tree?.chats ?? (tree ? tree.sections.flatMap((s) => s.rows.filter((r) => r.kind === "chat")) : []);
+  return tree?.chats ?? [];
 }
 
 /** The workspace a session belongs to: from the tree, else from the snapshot. */
 export function workspaceOf(tree: TreeView | null, snapshot: Snapshot | null, session: string): string | null {
-  for (const s of tree?.sections ?? []) for (const r of s.rows) if (r.selection?.chat === session && r.selection?.workspace) return r.selection?.workspace;
+  const workspace = chatRows(tree).find((r) => r.selection?.chat === session)?.selection?.workspace;
+  if (workspace) return workspace;
   const row = snapshot?.sessions.find((s) => s.id === session);
   return row ? (row.workspace ?? row.cwd) : null;
 }
 
-/** The workspace row, wherever it is listed. */
-export function workspaceRow(tree: TreeView | null, path: string | null): SidebarRow | undefined {
-  if (!tree || !path) return undefined;
-  for (const s of tree.sections) for (const r of s.rows) if (r.kind === "workspace" && r.id === path) return r;
-  return undefined;
+/** The canonical workspace facts, even when the sidebar has no workspace row. */
+export function workspaceRow(tree: TreeView | null, path: string | null): WorkspaceFacts | undefined {
+  return path && tree && Object.hasOwn(tree.workspaces, path) ? tree.workspaces[path] : undefined;
 }
 
 /** The project path of a workspace, from the snapshot's sessions in it. */
 function projectOf(snapshot: Snapshot | null, workspace: string): string | null {
   return snapshot?.sessions.find((s) => (s.workspace ?? s.cwd) === workspace)?.project ?? null;
-}
-
-/** Move Up (-1) or Down (+1): the neighbour in the same project with the same pin state
- *  (WorkspaceNavigation.workspaceMoveTarget). A project section lists exactly those; the pinned
- *  section mixes projects, so its siblings are the pinned rows of the same project. */
-export function moveTarget(tree: TreeView | null, snapshot: Snapshot | null, path: string, offset: -1 | 1): string | null {
-  const section = tree?.sections.find((s) => s.rows.some((r) => r.kind === "workspace" && r.id === path));
-  const row = section?.rows.find((r) => r.id === path);
-  if (!section || !row || row.archived) return null;
-  let siblings = section.rows.filter((r) => r.kind === "workspace" && !r.archived).map((r) => r.id);
-  if (section.kind === "pinned") {
-    const project = projectOf(snapshot, path);
-    siblings = siblings.filter((p) => projectOf(snapshot, p) === project);
-  }
-  const i = siblings.indexOf(path);
-  return siblings[i + offset] ?? null;
 }
 
 /** When a session last did something, in seconds: its newest message, agent state, or start. */
@@ -263,20 +279,21 @@ export type RecentChat = {
   unread: boolean;
 };
 
+export function projectTitle(tree: TreeView | null, path: string | undefined): string | undefined {
+  return tree?.projects.find((project) => project.path === path)?.title;
+}
+
 /** The listed chats across all projects, newest activity first, at most `limit` (HomeModel.recentWork). */
 export function recentWork(tree: TreeView | null, snapshot: Snapshot | null, limit = 8): RecentChat[] {
   const seen = new Set<string>();
   const out: (RecentChat & { at: number })[] = [];
   for (const row of chatRows(tree)) {
-    const section = tree?.sections.find((s) => s.rows.some((r) => r.id === row.selection?.workspace));
     const session = row.selection?.chat;
     if (row.kind !== "chat" || !session || seen.has(session)) continue;
     seen.add(session);
     const path = row.selection?.workspace ?? "";
     const ws = workspaceRow(tree, path);
-    // The pinned section mixes projects; its project is the one whose section also lists the workspace.
-    const home = section?.kind === "project" ? section : tree!.sections.find((s) => s.kind === "project" && s.rows.some((r) => r.id === path));
-    const project = home?.title ?? projectOf(snapshot, path)?.split("/").pop() ?? "";
+    const project = projectTitle(tree, ws?.projectPath) ?? projectOf(snapshot, path)?.split("/").pop() ?? "";
     out.push({
       session,
       title: row.title,
@@ -291,17 +308,6 @@ export function recentWork(tree: TreeView | null, snapshot: Snapshot | null, lim
   }
   out.sort((a, b) => b.at - a.at || (a.session < b.session ? -1 : 1));
   return out.slice(0, limit).map(({ at: _, ...r }) => r);
-}
-
-/** The Recent list in the user's dragged order. A chat not yet in `order` goes on top, newest first,
- *  and keeps that place after. `order` comes back with the new chats added; ids of chats the list
- *  does not show now stay in it, so a chat in a folded workspace keeps its place. */
-export function inOrder(list: RecentChat[], order: string[]): { list: RecentChat[]; order: string[] } {
-  const known = new Set(order);
-  const fresh = list.filter((r) => !known.has(r.session)).map((r) => r.session);
-  const next = fresh.length ? [...fresh, ...order] : order;
-  const at = new Map(next.map((id, i) => [id, i]));
-  return { list: [...list].sort((a, b) => at.get(a.session)! - at.get(b.session)!), order: next };
 }
 
 /** One palette result (PaletteItem). */
@@ -357,19 +363,31 @@ export function paletteSections(items: PaletteItem[], query: string): { title: s
   return sections.filter((s) => s.items.length);
 }
 
-/** Workspaces and chats for the palette: pinned first, then the rest by activity
- *  (PaletteSource.workspaces). Titles carry the project, since the palette has no headers. */
+/** Workspaces and their full chat catalog for Search, outside the sidebar projection. */
 export function paletteSources(tree: TreeView | null, snapshot: Snapshot | null) {
-  const workspaces: { row: SidebarRow; project: string; at: number | null; chats: SidebarRow[] }[] = [];
-  for (const section of tree?.sections ?? [])
-    for (const row of section.rows) {
-      if (row.kind !== "workspace" || workspaces.some((w) => w.row.id === row.id)) continue;
-      const chats = chatRows(tree).filter((r) => r.selection?.workspace === row.id);
-      const ats = chats.map((c) => (c.selection?.chat ? recency(snapshot, c.selection?.chat) : null)).filter((a): a is number => a != null);
-      workspaces.push({ row, project: section.kind === "project" ? section.title : "", at: ats.length ? Math.max(...ats) : null, chats });
-    }
-  const byActivity = [...workspaces].sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || (a.row.id < b.row.id ? -1 : 1));
-  return [...byActivity.filter((w) => w.row.pinned), ...byActivity.filter((w) => !w.row.pinned)];
+  if (!tree) return [];
+  const projectTitles = new Map(tree.projects.map((p) => [p.path, p.title]));
+
+  const grouped = new Map<string, SidebarRow[]>();
+  for (const chat of chatRows(tree)) {
+    const workspace = chat.selection?.workspace;
+    if (!workspace) continue;
+    const chats = grouped.get(workspace) ?? [];
+    chats.push(chat);
+    grouped.set(workspace, chats);
+  }
+
+  const statusOrder: Status[] = ["blocked", "error", "working", "done", "ended"];
+  return Object.entries(tree.workspaces).filter(([, w]) => !w.archived).map(([path, facts]) => {
+    const chats = grouped.get(path) ?? [];
+    const at = chats.reduce<number | null>((latest, chat) => {
+      const activity = chat.selection?.chat ? recency(snapshot, chat.selection.chat) : null;
+      return latest == null ? activity : activity == null ? latest : Math.max(latest, activity);
+    }, null);
+    const status = statusOrder.find((state) => chats.some((chat) => chat.status === state)) ?? null;
+    const { pinned } = facts;
+    return { path, facts, status, pinned, at, chats, project: projectTitles.get(facts.projectPath) ?? "" };
+  }).sort((a, b) => Number(b.pinned) - Number(a.pinned) || (b.at ?? 0) - (a.at ?? 0) || a.path.localeCompare(b.path));
 }
 
 /** The first blocked chat after `current` in sidebar order, wrapping; null when none is blocked. */

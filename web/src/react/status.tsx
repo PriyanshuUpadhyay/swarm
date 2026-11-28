@@ -1,13 +1,9 @@
 import { CircleAlertIcon, CircleCheckIcon, CircleIcon, OctagonXIcon } from "lucide-react";
 import { Glyph } from "./glyph";
 
-export type Status = "working" | "blocked" | "error" | "done" | "ended" | "idle";
+import { shownStatus, type Status as WireStatus } from "../core/nav";
 
-function shownStatus(status: Status) {
-  if (status === "blocked") return "waiting";
-  if (status === "error") return "failed";
-  return status;
-}
+export type Status = WireStatus | "idle";
 
 const TITLE = {
   working: "Working",

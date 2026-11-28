@@ -158,6 +158,10 @@ pub struct ArchivedChat {
     pub archived_at: i64,
 }
 impl Workspace {
+    pub(super) fn can_start_chat(&self, archived: bool) -> bool {
+        !self.missing && !self.removed && !archived
+    }
+
     pub fn chat(&self, id: &str) -> Option<&Chat> {
         self.chats
             .iter()
@@ -193,8 +197,6 @@ pub struct Project {
     pub main_path: Option<String>,
     pub launch_directory: String,
     pub workspaces: Vec<Workspace>,
-    /// Worktrees that the sidebar does not list; "N more worktrees" opens them from "+".
-    pub hidden: usize,
 }
 #[derive(Clone, Debug, Default)]
 pub struct Tree {
@@ -520,7 +522,8 @@ fn chats(sessions: Vec<Value>, snapshot: &Value, owner: &OwnerChoices) -> (Vec<C
     (result, unlisted)
 }
 
-pub use super::sidebar::{Section, Selection, SidebarRow, sections};
+pub use super::navigation::{Section, Selection, SidebarRow};
+pub use super::sidebar::{chat_catalog, sections};
 
 #[cfg(test)]
 mod tests {

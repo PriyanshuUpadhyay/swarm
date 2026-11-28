@@ -63,13 +63,13 @@ export function PromptCard({
       tabIndex={0}
       role="group"
       data-testid="prompt-card"
-      aria-label={`${who ?? "The chair"} is blocked: ${prompt.screen ? "its screen is shown below" : prompt.question}`}
+      aria-label={`${who ?? "The chair"} is waiting: ${prompt.screen ? "its screen is shown below" : prompt.question}`}
       className="grid gap-2 rounded-xl border border-waiting/40 bg-waiting/10 p-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       onKeyDown={onKeyDown}
     >
       <div className="flex items-center gap-1.5 text-xs font-semibold text-waiting">
         <CircleHelpIcon className="size-3.5" />
-        <span className="flex-1">{who ?? "The chair"} is blocked on you</span>
+        <span className="flex-1">{who ?? "The chair"} is waiting for you</span>
         {showColumn && (
           <button type="button" className="t-link font-normal" onClick={showColumn}>
             Show column

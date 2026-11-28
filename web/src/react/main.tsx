@@ -25,6 +25,8 @@ import { SkillsDialog } from "./skills";
 import { BranchPicker, Palette } from "./palette";
 import { PaneStrip } from "./panes";
 import { Sidebar } from "./sidebar";
+import { SidebarRail } from "./sidebar-rail";
+import { BranchBar } from "./branch-bar";
 import { store } from "./store";
 import { TabStrip } from "./tabs";
 import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
@@ -35,6 +37,12 @@ import { watchUpdates } from "./update";
 
 // Sidebar side and width stay in this browser until P3b adds their owner choices.
 const SIDE_KEY = "swarm.sidebar.side";
+const railMedia = window.matchMedia("(width < 1024px)");
+const subscribeRail = (change: () => void) => {
+  railMedia.addEventListener("change", change);
+  return () => railMedia.removeEventListener("change", change);
+};
+const showRail = () => railMedia.matches;
 // ⌘B and ⇧⌘B are registered before the panel exists; Root points them at it.
 const frame = { toggle: () => {}, move: () => {} };
 // ⌘J likewise; ChatColumn points it at the background panel. Open or not stays in this browser.
@@ -49,9 +57,11 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   useEffect(() => watchUpdates(app), [app]);
   const theme = useTheme();
   const sidebar = usePanelRef();
+  const narrow = useSyncExternalStore(subscribeRail, showRail);
   const [side, setSide] = useState(store.getItem(SIDE_KEY) === "right" ? "right" : "left");
   useEffect(() => {
     frame.toggle = () => {
+      if (showRail()) return;
       const panel = sidebar.current;
       if (panel?.isCollapsed()) panel.expand();
       else panel?.collapse();
@@ -70,13 +80,13 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
       key="side"
       id="side-panel"
       panelRef={sidebar}
-      defaultSize="260px"
+      defaultSize="264px"
       minSize="180px"
       maxSize="560px"
       collapsible
       groupResizeBehavior="preserve-pixel-size"
     >
-      <Sidebar app={app} />
+      {narrow ? <SidebarRail app={app} /> : <Sidebar app={app} />}
     </ResizablePanel>
   );
   const main = (
@@ -86,8 +96,14 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   );
   return (
     <TooltipProvider>
-      <ResizablePanelGroup key={side} orientation="horizontal" data-side={side} defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
-        {side === "left" ? [side_, <ResizableHandle key="h" />, main] : [main, <ResizableHandle key="h" />, side_]}
+      {/* Keep both panels registered so their pixel sizes survive the breakpoint. */}
+      <ResizablePanelGroup key={side} orientation="horizontal" data-side={side} data-rail={narrow || undefined}
+        defaultLayout={layout.defaultLayout} onLayoutChanged={narrow ? undefined : layout.onLayoutChanged}>
+        {side === "left" && side_}
+        {side === "right" && main}
+        <ResizableHandle disabled={narrow} hidden={narrow} />
+        {side === "left" && main}
+        {side === "right" && side_}
       </ResizablePanelGroup>
       <Palette app={app} />
       <BranchPicker app={app} />
@@ -121,6 +137,7 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
           <PanelToggles changes={changes} />
         </div>
       )}
+      {workspace && openId && <BranchBar app={app} workspace={workspace} />}
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
           {start ? <StartingView app={app} start={start} /> : openId ? <ChatColumn app={app} openId={openId} /> : workspace ? <WorkspaceLanding app={app} /> : <Home app={app} />}

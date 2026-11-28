@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type Api, type Snapshot } from "./api";
 import { App } from "./app";
 import { type ChoiceOp, type SidebarRow, type Tabs, type TreeView } from "./nav";
+import { folderFacts } from "./nav-fixtures";
 
 const workspace = "/r/app";
 const session = "12345678-abcd-4321-abcd-123456789abc";
@@ -22,7 +23,8 @@ const row: SidebarRow = {
 };
 const tree: TreeView = {
   version: 1, revision: "rev-1", view: "workspaces", selectedRow: null, archivedStatus: null,
-  choicesError: null, prefs: {},
+  choicesError: null, prefs: {}, chats: [row],
+  projects: [{ path: "/r", title: "r", folder: false }], workspaces: { [workspace]: folderFacts("/r", "app") },
   sections: [{ id: "/r", kind: "project", path: "/r", folder: false, collapseId: "project:/r", expanded: true,
     title: "r", status: null, fields: [], rows: [row] }],
 };

@@ -3,8 +3,9 @@ use serde_json::json;
 use sidebar_fixture::*;
 use swarm::view::{
     choices::ViewState,
-    discovery::{Discovery, dirty_count, parse_worktrees},
-    fields::{self, RowFieldLists},
+    discovery::{DeadlineExpired, dirty_count, parse_worktrees},
+    fields::{self, FieldReader, RowFieldLists},
+    github::LookupError,
     tree,
 };
 #[test]
@@ -143,82 +144,95 @@ fn unread_baseline_refresh_and_pruning() {
 #[test]
 fn requested_paths_and_independent_cache_intervals() {
     let t = tree();
+    let plain = tree::build(&folder_snapshot(vec![], json!({})), &owner());
     let mut o = owner();
-    let mut cache = Discovery::default();
+    let mut cache = FieldReader::default();
     let mut dirty = 0;
     let mut github = 0;
     assert!(!cache.refresh_fields_with(
-        &t,
+        &plain,
         &o,
         0,
-        |_| {
+        |_, _| {
             dirty += 1;
             Some(2)
         },
-        |_| {
+        |_, _, _| {
             github += 1;
-            None
-        }
+            Ok(None)
+        },
+        |_, _, _| None,
     ));
     assert_eq!((dirty, github), (0, 0));
+
     o.fields.chat.push("dirty".into());
     o.fields.tab.push("ci".into());
     assert!(cache.refresh_fields_with(
         &t,
         &o,
         1,
-        |_| {
+        |_, _| {
             dirty += 1;
             Some(2)
         },
-        |_| {
+        |_, _, _| {
             github += 1;
-            Some(json!({"number":1,"statusCheckRollup":[{"state":"SUCCESS"}]}))
-        }
+            Ok(Some(
+                json!({"number":1,"statusCheckRollup":[{"state":"SUCCESS"}]}),
+            ))
+        },
+        |_, _, _| None,
     ));
     assert_eq!((dirty, github), (2, 2));
+
     cache.refresh_fields_with(
         &t,
         &o,
         10,
-        |_| {
+        |_, _| {
             dirty += 1;
             Some(2)
         },
-        |_| {
+        |_, _, _| {
             github += 1;
-            None
+            Ok(None)
         },
+        |_, _, _| None,
     );
     assert_eq!((dirty, github), (2, 2));
+
     cache.refresh_fields_with(
         &t,
         &o,
         11,
-        |_| {
+        |_, _| {
             dirty += 1;
             Some(2)
         },
-        |_| {
+        |_, _, _| {
             github += 1;
-            None
+            Ok(None)
         },
+        |_, _, _| None,
     );
     assert_eq!((dirty, github), (4, 2));
+
     cache.refresh_fields_with(
         &t,
         &o,
         121,
-        |_| {
+        |_, _| {
             dirty += 1;
             None
         },
-        |_| {
+        |_, _, _| {
             github += 1;
-            None
+            Ok(None)
         },
+        |_, _, _| None,
     );
     assert_eq!((dirty, github), (6, 4));
+
     assert!(
         cache
             .fields
@@ -228,6 +242,122 @@ fn requested_paths_and_independent_cache_intervals() {
     o.fields.workspace.push("dirty".into());
     assert_eq!(fields::requested_paths("dirty", &t, &o.fields).len(), 3);
 }
+#[test]
+fn a_timed_out_pr_read_keeps_the_facts_and_retries_first() {
+    let tree = tree();
+    let owner = owner();
+    let slow = "/repo/wt/feature";
+    let next = "/repo/wt/main";
+    let mut cache = FieldReader::default();
+    let pr = json!({
+        "number": 7, "state": "OPEN", "url": "https://github.com/example/repo/pull/7",
+        "statusCheckRollup": [{"state": "SUCCESS"}],
+    });
+
+    cache.refresh_fields_with(
+        &tree,
+        &owner,
+        1,
+        |_, _| None,
+        |_, _, _| Ok(Some(pr.clone())),
+        |_, _, _| None,
+    );
+    let facts = cache.fields[slow].clone();
+
+    for (at, order) in [
+        (121, &[slow][..]),
+        (122, &[slow][..]),
+        (123, &[next, slow][..]),
+    ] {
+        let mut reads = Vec::new();
+        cache.refresh_fields_with(
+            &tree,
+            &owner,
+            at,
+            |_, _| None,
+            |path, _, _| {
+                reads.push(path.to_owned());
+
+                if path == slow {
+                    Err(LookupError::Deadline(DeadlineExpired))
+                } else {
+                    Ok(None)
+                }
+            },
+            |_, _, _| None,
+        );
+
+        assert_eq!(reads, order, "lookup order at {at}");
+        assert_eq!(cache.fields[slow], facts);
+    }
+    assert!(cache.fields[next].pr_fact.is_none());
+}
+
+#[test]
+fn a_workspace_that_rejoins_the_read_set_gets_its_first_retry() {
+    let mut tree = tree();
+    let owner = owner();
+    let slow = "/repo/wt/feature";
+    let next = "/repo/wt/main";
+    let mut cache = FieldReader::default();
+
+    for (at, missing, order) in [
+        (1, false, &[slow, next][..]),
+        (121, false, &[slow][..]),
+        (122, true, &[next][..]),
+        (242, false, &[slow][..]),
+        (243, false, &[slow][..]),
+    ] {
+        tree.projects
+            .iter_mut()
+            .flat_map(|p| &mut p.workspaces)
+            .find(|w| w.path == slow)
+            .unwrap()
+            .missing = missing;
+
+        let mut reads = Vec::new();
+        cache.refresh_fields_with(
+            &tree,
+            &owner,
+            at,
+            |_, _| None,
+            |path, _, _| {
+                reads.push(path.to_owned());
+                if path == slow && at > 1 {
+                    Err(LookupError::Deadline(DeadlineExpired))
+                } else {
+                    Ok(None)
+                }
+            },
+            |_, _, _| None,
+        );
+
+        assert_eq!(reads, order, "lookup order at {at}");
+    }
+}
+
+#[test]
+fn only_the_selected_workspace_reads_branch_totals() {
+    let tree = tree();
+    let owner = owner();
+    let mut cache = FieldReader::default();
+    cache.select(Some("/repo/wt/feature"));
+    let mut reads = Vec::new();
+
+    cache.refresh_fields_with(
+        &tree,
+        &owner,
+        100,
+        |_, _| None,
+        |_, _, _| Ok(None),
+        |path, _, _| {
+            reads.push(path.to_owned());
+            None
+        },
+    );
+    assert_eq!(reads, ["/repo/wt/feature"]);
+}
+
 #[test]
 fn check_states() {
     for (checks, expected) in [
@@ -273,7 +403,7 @@ fn slow_fields_follow_each_surface_and_continued_chats_keep_unread() {
     let mut o = owner();
     let t = tree::build(
         &snapshot(
-            vec![a, b],
+            vec![a, b, session("second", "/repo/wt/main", 1)],
             json!({"old":[agent("orchestrator","ended")],"new":[agent("orchestrator","working")]}),
         ),
         &o,
@@ -294,6 +424,7 @@ fn slow_fields_follow_each_surface_and_continued_chats_keep_unread() {
             dirty_count: None,
             pr: Some("PR #7".into()),
             ci: Some("CI pending".into()),
+            ..Default::default()
         },
     )]);
     let sections = tree::sections(&t, &o, &state, false, 100, &cache);

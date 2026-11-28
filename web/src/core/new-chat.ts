@@ -118,7 +118,7 @@ export class NewChat {
   open(at?: string, place?: Place, run: ComposerRun | null = null) {
     const list = targets(this.app.view.tree, at ?? this.app.view.workspace);
     // A project of the tree with no folder to start in must not open the composer on another one.
-    const project = this.app.view.tree?.sections.some((s) => s.kind === "project" && s.path === at);
+    const project = this.app.view.tree?.projects.some((p) => p.path === at);
     if (project && !canStartIn(this.app.view.tree, at ?? null)) return this.app.notice("This project has no folder that a new chat can start in.");
     const target = (at && list.find((t) => t.cwd === at || t.project === at)) || defaultTarget(list, this.app.view.tree, at ?? this.app.view.workspace);
     if (!target) return this.app.notice("Import or create a project first.");

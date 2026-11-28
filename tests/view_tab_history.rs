@@ -197,7 +197,7 @@ fn child_badges_count_live_and_first_blocked() {
     )
     .unwrap();
     let children = view.tabs[0].children.as_ref().unwrap();
-    assert_eq!(children.text, "3 · 2 blocked");
+    assert_eq!(children.text, "3 · 2 waiting");
     assert_eq!(children.first_blocked.as_deref(), Some("analyst"));
     let mut named = session("design", "/repo/wt/main", 1);
     named["chair_id"] = json!("chair-custom");

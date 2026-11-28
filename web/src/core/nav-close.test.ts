@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError, type Api, type Snapshot } from "./api";
 import { App } from "./app";
 import { type ChoiceOp, type SidebarRow, type Tab, type Tabs, type TreeView } from "./nav";
+import { folderFacts } from "./nav-fixtures";
 
 const workspace = "/r/app";
 const tab = (session: string): Tab => ({
@@ -28,14 +29,18 @@ function harness(options: { live?: boolean; beforeClose?: () => Promise<void>; b
     pinned: false, archived: false, missing: false, newChatEnabled: true, startsChatWorktree: false, dimmed: false, fields: [],
     selection: { workspace, chat: null, agentSession: null, agent: null },
   };
-  const tree = (): TreeView => ({
-    version: 1, revision: `rev-${revision}`, view: "workspaces", selectedRow: null, archivedStatus: null,
-    choicesError: null, prefs: {},
-    sections: [{ id: "/r", kind: "project", path: "/r", folder: false, collapseId: "project:/r", expanded: true,
-      title: "r", status: null, fields: [], rows: [row, ...tabs.tabs.map((t) => ({
-        ...row, id: `chat:${t.session}`, kind: "chat" as const, selection: { ...row.selection!, chat: t.session },
-      }))] }],
-  });
+  const tree = (): TreeView => {
+    const chats: SidebarRow[] = tabs.tabs.map((t) => ({
+      ...row, id: `chat:${t.session}`, kind: "chat", selection: { ...row.selection!, chat: t.session },
+    }));
+    return {
+      version: 1, revision: `rev-${revision}`, view: "workspaces", selectedRow: null, archivedStatus: null,
+      choicesError: null, prefs: {}, chats,
+      projects: [{ path: "/r", title: "r", folder: false }], workspaces: { [workspace]: folderFacts("/r", "app") },
+      sections: [{ id: "/r", kind: "project", path: "/r", folder: false, collapseId: "project:/r", expanded: true,
+        title: "r", status: null, fields: [], rows: [row, ...chats] }],
+    };
+  };
   const snapshot: Snapshot = {
     version: 1, sessions: ["older", "next", "open"].map((id) => ({ id, cwd: workspace, workspace, project: "/r", created_at: 1, chair_provider: null, adapter: null })),
     agents: options.live ? { open: [{ id: "orchestrator", role: "o", state: "working", alive: true }] } : {},
