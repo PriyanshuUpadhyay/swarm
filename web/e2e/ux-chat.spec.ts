@@ -184,7 +184,7 @@ test("a malformed first hello does not subscribe the open chat", async ({ page: 
 
 test("stream loss keeps the last list and accepted update, then clears after hello", async ({ page: tab }) => {
   const session = process.env.SWARM_E2E_LIVE!;
-  await tab.setViewportSize({ width: 960, height: 540 });
+  await tab.setViewportSize({ width: 1280, height: 720 });
 
   await tab.route("**/api/snapshot", async (route) => {
     const snapshot = await (await route.fetch()).json() as Snapshot;
