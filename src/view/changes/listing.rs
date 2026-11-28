@@ -111,7 +111,11 @@ pub(super) fn comparison_refs(read: &ReadCommands<'_>) -> Result<String> {
     )
 }
 
-pub(in crate::view) fn branch_totals(root: &str, branch: &str, deadline: Instant) -> Option<LineTotals> {
+pub(in crate::view) fn branch_totals(
+    root: &str,
+    branch: &str,
+    deadline: Instant,
+) -> Option<LineTotals> {
     let mut read = ReadCommands::new(root);
     read.deadline = read.deadline.min(deadline);
     let before = identity(&read, None).ok()?;

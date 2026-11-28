@@ -53,9 +53,13 @@ pub(super) fn run_before(
 }
 
 pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String> {
-    run_command_deadline(command, || Instant::now() + Duration::from_secs(seconds), None)
-        .map(|(output, _)| output)
-        .map_err(|error| error.to_string())
+    run_command_deadline(
+        command,
+        || Instant::now() + Duration::from_secs(seconds),
+        None,
+    )
+    .map(|(output, _)| output)
+    .map_err(|error| error.to_string())
 }
 
 /// Stops the command at the first byte over `limit`. An overflow can return a killed status.
@@ -64,8 +68,12 @@ pub fn run_command_capped(
     seconds: u64,
     limit: usize,
 ) -> Result<(Output, bool), String> {
-    run_command_deadline(command, || Instant::now() + Duration::from_secs(seconds), Some(limit))
-        .map_err(|error| error.to_string())
+    run_command_deadline(
+        command,
+        || Instant::now() + Duration::from_secs(seconds),
+        Some(limit),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn run_command_deadline(
