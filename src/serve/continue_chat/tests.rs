@@ -2,15 +2,18 @@ use super::*;
 use crate::serve::test_support::*;
 use swarm::bus::CLI_DEFAULT_MODEL_FLAG;
 
-fn linked_launch_fixture() -> (Fixture, std::process::Command) {
+fn launch_fixture() -> Fixture {
     let fixture = Fixture::new();
-    let home = fixture.app.root.parent().unwrap();
     std::fs::write(
         fixture.app.root.join("adapters/fake.conf"),
         "self = true\nspawn = printf pane\nring = true\nlist = true\nclose = true\ncapture = true\n",
     )
     .unwrap();
+    fixture
+}
 
+fn test_launch(fixture: &Fixture, session: &str) -> std::process::Command {
+    let home = fixture.app.root.parent().unwrap();
     let mut launch = std::process::Command::new(fixture.app.sources.worker_cli.as_ref().unwrap());
     launch
         .env_clear()
@@ -18,18 +21,17 @@ fn linked_launch_fixture() -> (Fixture, std::process::Command) {
         .env("PATH", "/usr/bin:/bin")
         .env("SWARM_HOME", home)
         .env("SWARM_ADAPTER", "fake")
-        .env("SWARM_SESSION_ID", &fixture.session)
+        .env("SWARM_SESSION_ID", session)
         .env("SWARM_AGENT_ID", "orchestrator")
-        .current_dir(home);
+        .current_dir(home)
+        .args(["launch", "orchestrator", "chat"]);
+    launch
+}
 
-    launch.args([
-        "launch",
-        "orchestrator",
-        "chat",
-        "--provider",
-        "codex",
-        CLI_DEFAULT_MODEL_FLAG,
-    ]);
+fn linked_launch_fixture() -> (Fixture, std::process::Command) {
+    let fixture = launch_fixture();
+    let mut launch = test_launch(&fixture, &fixture.session);
+    launch.args(["--provider", "codex", CLI_DEFAULT_MODEL_FLAG]);
     (fixture, launch)
 }
 
@@ -88,6 +90,75 @@ async fn cli_default_launch_leaves_no_model_to_remember() {
         (chair.model, saved.owner.prefs.get("recentModels")),
         (None, None)
     );
+}
+
+fn ended_default_pi_chair() -> (Fixture, rusqlite::Connection) {
+    let fixture = launch_fixture();
+    let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let mut launch = test_launch(&fixture, &fixture.session);
+    run_test_launch(launch.args([
+        "--provider",
+        "pi",
+        CLI_DEFAULT_MODEL_FLAG,
+        "--effort",
+        "low",
+    ]));
+    swarm::store::clear_pane(&db, &fixture.session, "orchestrator").unwrap();
+    (fixture, db)
+}
+
+fn run_test_launch(launch: &mut std::process::Command) {
+    let output = launch.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn assert_pi_cli_default(fixture: &Fixture, db: &rusqlite::Connection, session: &str) -> String {
+    let script = fixture
+        .app
+        .root
+        .join("runs")
+        .join(session)
+        .join("orchestrator.sh");
+    let command = std::fs::read_to_string(script).unwrap();
+    let chair = swarm::store::agents(db, session)
+        .unwrap()
+        .into_iter()
+        .find(|agent| agent.id == "orchestrator")
+        .unwrap();
+
+    assert!(command.contains("'pi' '--thinking' 'low'"), "{command}");
+    assert!(!command.contains("'--model'"), "{command}");
+    assert_eq!(chair.model, None);
+    command
+}
+
+#[test]
+fn resume_a_pi_chair_without_a_model_uses_the_cli_default() {
+    let (fixture, db) = ended_default_pi_chair();
+    run_test_launch(test_launch(&fixture, &fixture.session).arg("--resume"));
+
+    let command = assert_pi_cli_default(&fixture, &db, &fixture.session);
+    assert!(
+        command.contains(&format!(
+            "'--session-id' '{}-orchestrator'",
+            fixture.session
+        )),
+        "{command}"
+    );
+}
+
+#[test]
+fn branch_from_a_pi_chair_without_a_model_uses_the_cli_default() {
+    let (fixture, db) = ended_default_pi_chair();
+    let branch = new_test_session(&db, None);
+    swarm::store::branch_session(&db, &branch, &fixture.session, None).unwrap();
+    run_test_launch(test_launch(&fixture, &branch).args(["--provider", "pi", "--effort", "low"]));
+
+    assert_pi_cli_default(&fixture, &db, &branch);
 }
 
 fn ended_file_carry() -> (Fixture, ContinueChat) {

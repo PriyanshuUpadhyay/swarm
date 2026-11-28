@@ -1,7 +1,6 @@
 //! CLI commands launch.
 
 use super::*;
-use rusqlite::OptionalExtension;
 use swarm::bus::CLI_DEFAULT_MODEL_FLAG;
 
 pub(super) mod pi;
@@ -94,9 +93,12 @@ pub(crate) fn commands_launch(
                 Some(resume_target(connection, &session)?)
             }
         };
-        // A plain Resume runs the role's runner (ADR 0107). Only a chat whose profile has no
-        // runner for its CLI, such as pi or AGY, runs its last model and level (ADR 0110). The
-        // stored model is the transcript id, which drops a `[1m]` suffix.
+
+        // A plain Resume uses the role runner if it exists. Otherwise keep the last model and
+        // level (ADR 0110), or repeat a no-model Pi or AGY start.
+        if let Some((provider, _)) = &resume {
+            requested_provider = Some(provider.id());
+        }
         let no_runner = |provider: Provider| {
             swarm::config::load().is_ok_and(|(config, _)| {
                 config
@@ -104,25 +106,35 @@ pub(crate) fn commands_launch(
                     .is_ok_and(|profile| !profile.runners.iter().any(|r| r.provider == provider))
             })
         };
-        let stored: Option<(Option<String>, Option<String>)> = match (&resume, requested_model) {
-            (Some((provider, _)), None) if role == "chat" && no_runner(*provider) => connection
-                .query_row(
-                    "SELECT model, effort FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
-                    [session_id()?],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?,
+        let provider = requested_provider.and_then(Provider::parse);
+        let can_repeat_default = matches!(provider, Some(Provider::Pi | Provider::Agy));
+        let stored = match provider {
+            Some(provider)
+                if role == "chat"
+                    && agent_id == "orchestrator"
+                    && requested_model.is_none()
+                    && !cli_default
+                    && (resume.is_some() || (can_repeat_default && !force && extra.is_empty()))
+                    && no_runner(provider) =>
+            {
+                swarm::store::previous_chair_run(
+                    connection,
+                    &session_id()?,
+                    provider.id(),
+                    resume.is_some(),
+                )?
+            }
             _ => None,
         };
-        if let Some((model, stored_effort)) = &stored
-            && let Some(model) = model
+        let cli_default = cli_default
+            || (can_repeat_default && stored.as_ref().is_some_and(|run| run.model.is_none()));
+        if let Some(run) = &stored
+            && (run.model.is_some() || cli_default)
         {
-            requested_model = Some(model.as_str());
-            effort = effort.or(stored_effort.as_deref());
+            requested_model = run.model.as_deref();
+            effort = effort.or(run.effort.as_deref());
         }
-        if let Some((provider, _)) = &resume {
-            requested_provider = Some(provider.id());
-        }
+
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;

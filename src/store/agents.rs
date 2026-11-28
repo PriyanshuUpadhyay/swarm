@@ -232,6 +232,38 @@ pub struct AgentRow {
     pub tokens: Option<i64>,
 }
 
+pub struct ChairRun {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+/// Reads the resumed chair's run, or a new branch's same-CLI parent if it had no model.
+pub fn previous_chair_run(
+    connection: &Connection,
+    session_id: &str,
+    provider: &str,
+    resume: bool,
+) -> rusqlite::Result<Option<ChairRun>> {
+    connection
+        .query_row(
+            "SELECT run.model, run.effort FROM session AS s
+             LEFT JOIN agent AS own ON own.session_id = s.id AND own.id = 'orchestrator'
+             LEFT JOIN session AS parent ON parent.id = s.branch_of AND parent.chair_provider = ?2
+             JOIN agent AS run ON run.id = 'orchestrator' AND run.session_id = CASE
+                 WHEN ?3 AND own.id IS NOT NULL THEN s.id
+                 WHEN own.id IS NULL THEN parent.id END
+             WHERE s.id = ?1 AND (run.session_id = s.id OR run.model IS NULL)",
+            (session_id, provider, resume),
+            |row| {
+                Ok(ChairRun {
+                    model: row.get(0)?,
+                    effort: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+}
+
 /// Store the runner selected by launch; absent account means the provider's own login.
 pub fn set_launch(
     connection: &Connection,
