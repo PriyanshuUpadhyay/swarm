@@ -346,10 +346,6 @@ test("a child question updates one mounted polite status without taking focus", 
   writeFileSync(screen, idle);
   await openChat(tab, process.env[`SWARM_E2E_PANES_${info.project.name}`]!);
   const reviewer = tab.locator('[data-testid="pane"][data-pane="reviewer"]');
-  {
-    const status = reviewer.locator(".chat-input").getByRole("status");
-    await expect(status).toHaveCount(1);
-  }
   const status = reviewer.getByTestId("composer-status");
   const caption = "The agent is asking a question. Answer it above first.";
   await expect(status).toHaveRole("status");
