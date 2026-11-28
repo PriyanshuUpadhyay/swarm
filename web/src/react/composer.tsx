@@ -1,9 +1,9 @@
-import { ArrowUpIcon, Maximize2Icon, Minimize2Icon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, Maximize2Icon, Minimize2Icon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SENT, type App, type Composer } from "../core/app";
 import { hasPendingImage, imagePaths } from "../core/images";
 import { historyStep, type Browse } from "../core/history";
-import { canBranch, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
+import { canBranch, canPullQueued, inputTarget, outgoing, sends, usageLabel, usageTitle } from "../core/composer";
 import { editPicks, menuAt, pick, picksAndSends, skillFirst, skillNames, toSend, type MenuRow, type SkillPick } from "../core/slash";
 import { Button } from "../components/ui/button";
 import { dragOverFiles, dropImage, pasteImage } from "./composer-image";
@@ -16,10 +16,10 @@ import { cn } from "../lib/utils";
 /** Two Escapes within this many ms count as Esc Esc. */
 const DOUBLE_ESC_MS = 500;
 
-export function ComposerBox({ app, composer }: { app: App; composer: Composer }) {
+export function ComposerBox({ app, composer, lockDraft }: { app: App; composer: Composer; lockDraft: boolean }) {
   const { id: sessionId, agent: chair, state } = composer;
   // "the chair" means nothing to a new owner, so the chat's own agent is named.
-  const target = chair.who ?? (chair.provider ? `the ${chair.provider} agent` : "the agent");
+  const target = inputTarget(chair);
   const [text, setText] = useState(() => app.draft(sessionId));
   const [picks, setPicks] = useState(() => app.draftPicks(sessionId));
   const box = useRef<HTMLTextAreaElement>(null);
@@ -96,7 +96,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
   // True while a pi send waits for pi's skill list, which can take the probe's 15 s deadline.
   const [listing, setListing] = useState(false);
   const canSend = outgoing(text) !== null && !hasPendingImage(text) && !state.sending && !listing && !state.pulling && !chair.disabled;
-  const canPullBack = chair.pullBack && !chair.disabled && composer.queued > 0;
+  const canPullBack = canPullQueued(chair, composer.queued, text === "");
   const branchable = canBranch(chair);
   const lastEscape = useRef(-Infinity);
   const skills = skillNames(list);
@@ -184,7 +184,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         app.setBranchPicker(true);
       }
       lastEscape.current = e.timeStamp;
-    } else if (e.key === "ArrowUp" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && text === "" && canPullBack) {
+    } else if (e.key === "ArrowUp" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && canPullBack) {
       // The CLI's queue comes back before the history, as in Claude Code (ADR 0038).
       e.preventDefault();
       void app.pullBack(sessionId);
@@ -214,7 +214,7 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
         ? "Pulling back…"
         : state.alreadySent
           ? "Already sent"
-          : canPullBack && text === ""
+          : canPullBack
             ? "↑ to edit queued messages"
             : text === "" && app.stashed(sessionId)
               ? "Draft cleared. Esc brings it back."
@@ -247,9 +247,10 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
             rows={2}
             className={cn("block w-full", expanded ? "h-[60vh]" : "max-h-[200px]", "resize-none bg-transparent px-3 pt-2.5 text-md outline-none placeholder:text-muted-foreground", chair.provider === "pi" && "composer-text relative")}
             data-testid="composer"
+            disabled={lockDraft}
             aria-label={`Message ${target}`}
             placeholder={chair.who ? `Message ${target}` : `Message ${target}. Press ⌘L to focus.`}
-            aria-expanded={open}
+            aria-autocomplete="list"
             aria-controls={open ? listId : undefined}
             aria-activedescendant={open && rows.length ? `${listId}-${current}` : undefined}
             value={text}
@@ -285,7 +286,6 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
           <button type="button" data-testid="usage" className="rounded-md px-1.5 py-1 tabular-nums hover:bg-hover" title={usageTitle(composer.usage)}>
             {usageLabel(composer.usage)}
           </button>
-          {showStop && !chair.who && <span className="text-muted-foreground">⌘. stops</span>}
           <span className="flex-1" />
           <Button
             variant="ghost"
@@ -300,20 +300,6 @@ export function ComposerBox({ app, composer }: { app: App; composer: Composer })
           >
             {expanded ? <Minimize2Icon className="size-3.5" /> : <Maximize2Icon className="size-3.5" />}
           </Button>
-          {showStop && (
-            <Button
-              variant="outline"
-              size="icon"
-              data-testid="stop"
-              aria-label={`Stop ${target}`}
-              title={chair.who ? `Stop ${target}` : `Stop ${target} (⌘.)`}
-              className="rounded-md text-failed"
-              disabled={state.stopping}
-              onClick={() => void app.interrupt(sessionId)}
-            >
-              <SquareIcon className="size-3 fill-current" />
-            </Button>
-          )}
           {(!showStop || outgoing(text) !== null) && (
             <Button
               size="send"

@@ -21,6 +21,7 @@ pub(super) struct PanelQuery {
     pub(super) base: Option<String>,
     pub(super) path: Option<String>,
     pub(super) layer: Option<String>,
+    pub(super) full: Option<String>,
 }
 pub(super) async fn panel_read(
     State(app): State<App>,
@@ -52,6 +53,37 @@ pub(super) async fn panel_read(
                 .as_deref()
                 .ok_or_else(|| error(StatusCode::BAD_REQUEST, "Select a file path"))
         };
+
+        if let Some(full) = query.full.as_deref() {
+            if full != "1" || uri.path() != "/api/changes/diff" {
+                return Err(error(
+                    StatusCode::BAD_REQUEST,
+                    "Use full=1 on a Changes diff",
+                ));
+            }
+            return changes::full_patch(
+                &query.workspace,
+                path()?,
+                &query.mode,
+                query.base.as_deref(),
+                query.layer.as_deref(),
+            )
+            .map_err(lifecycle_error)?
+            .map(Json)
+            .ok_or_else(|| {
+                let lines = changes::FULL_LINES;
+                error(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    &format!(
+                        "The complete diff exceeds {} MiB or {},{:03} lines. The preview stays open.",
+                        changes::FULL_BYTES / (1024 * 1024),
+                        lines / 1_000,
+                        lines % 1_000,
+                    ),
+                )
+            });
+        }
+
         let result = match uri.path() {
             "/api/changes" => changes::list(&query.workspace, &query.mode, query.base.as_deref()),
             "/api/changes/diff" => changes::patch(

@@ -1,5 +1,15 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Block, Display, FindPart, Inline, PatchInfo, Row, RowPage } from "../src/core/api";
+
+export const changeRow = (tab: Page, path: string) => tab.getByTestId("change-row").and(tab.locator(`[data-path="${path}"]`));
+
+export async function openChanges(tab: Page, path: string) {
+  await open(tab, process.env.SWARM_E2E_GIT!);
+  await tab.getByTestId("show-changes").click();
+  await changeRow(tab, path).click();
+}
 
 export const row = (id: string, text: string, kind: Row["kind"] = "assistant"): Row => ({ id, kind, text, order: [Number(id.replace(/\D/g, "")) || 1, 0] });
 function displayOf(item: Row): Display {
@@ -58,4 +68,68 @@ export async function open(tab: Page, session = process.env.SWARM_E2E_LIVE!) {
 }
 export async function mockRows(tab: Page, items: Row[], older = 0, patch: Record<string, PatchInfo> = {}, find: Record<string, FindPart[]> = {}) {
   await tab.route("**/api/rows?*", (route) => route.fulfill({ json: rows(items, older, patch, find) }));
+}
+
+export function waitFrames(page: Page, count = 2) {
+  return page.evaluate(async (frames) => {
+    for (let i = 0; i < frames; i++) await new Promise<number>(requestAnimationFrame);
+  }, count);
+}
+
+export async function captureThemes(page: Page, target: Locator | Page, name: string) {
+  const dir = process.env.DESIGN_B_SHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  for (const theme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    await target.screenshot({ path: resolve(dir, `${name}-${theme}.png`), animations: "disabled" });
+  }
+}
+
+type StreamFixture = {
+  send: (event: string, data: unknown) => void;
+  drop: () => void;
+  restore: () => void;
+};
+
+declare global {
+  interface Window {
+    swarmStream: StreamFixture;
+  }
+}
+
+export async function mockStream(tab: Page, stream: string, first: unknown = { stream, build: "fixture" }) {
+  await tab.route("**/api/subscribe", (route) => route.fulfill({ json: { ok: true } }));
+
+  await tab.addInitScript((first) => {
+    const fetch = window.fetch.bind(window);
+    let down = false;
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.endsWith("/api/stream")) return fetch(input, init);
+      const headers = { "Content-Type": "text/event-stream" };
+      if (down) return new Response("", { headers });
+
+      const body = new ReadableStream<Uint8Array>({ start(controller) {
+        const encoder = new TextEncoder();
+        const send = (event: string, data: unknown) => controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        window.swarmStream = {
+          send,
+          drop: () => { down = true; controller.close(); },
+          restore: () => { down = false; },
+        };
+        send("hello", first);
+      } });
+      return new Response(body, { headers });
+    };
+  }, first);
+}
+
+export function streamFrame(tab: Page, event: string, data: unknown) {
+  return tab.evaluate(({ event, data }) => window.swarmStream.send(event, data), { event, data });
+}
+
+export function streamControl(tab: Page, action: Exclude<keyof StreamFixture, "send">) {
+  return tab.evaluate((mode) => window.swarmStream[mode](), action);
 }

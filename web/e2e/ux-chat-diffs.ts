@@ -1,5 +1,8 @@
-import { expect, test } from "@playwright/test";
-import { bodyMode, row, rows, open, mockRows } from "./ux-helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { bodyMode, captureThemes, changeRow, row, rows, open, openChanges, mockRows } from "./ux-helpers";
+import type { ChangeList } from "../src/core/changes-types";
 import fencePainter from "../../tests/fixtures/s6c/painter.json" with { type: "json" };
 import type { Display, PatchInfo } from "../src/core/api";
 import previewPatch from "./fixtures/s6a-preview.json" with { type: "json" };
@@ -14,6 +17,130 @@ const currentLine = (tab: import("@playwright/test").Page) => tab.evaluate(() =>
   return range?.startContainer.parentElement?.closest("[data-line]")?.getAttribute("data-line") ?? null;
 });
 
+const fullDiffCut = (page: Page) => page.getByTestId("diff-capped");
+const expand = (page: Page) => fullDiffCut(page).getByRole("button", { name: "Show all", exact: true }).click();
+
+test("Show all reports a failed full diff even if Git sends no text", async ({ page }) => {
+  let error = "";
+  await page.route("**/api/changes/diff?**", (route) => new URL(route.request().url()).searchParams.has("full")
+    ? route.fulfill({ status: 500, json: { error } }) : route.continue());
+
+  try {
+    await openChanges(page, "big.txt");
+    const notice = fullDiffCut(page).getByRole("status");
+    await expand(page);
+    await expect(notice).toHaveText("Could not load the full diff.", { timeout: 2_000 });
+    await captureThemes(page, fullDiffCut(page), "full-read-empty-error");
+
+    error = "Git could not read this file.";
+    await expand(page);
+    await expect(notice).toHaveText(error);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+async function checkNextFile(page: Page, failure: boolean) {
+  const later = "fix6-later.txt";
+  const file = join(process.env.SWARM_E2E_GIT_DIR!, later);
+  const paths = ["README.md", "big.txt", "notes.md", ...(failure ? [] : [later])];
+  let state: "initial" | "failed" | "removed" = "initial";
+  await page.route("**/api/changes?**", async (route) => {
+    if (state === "failed") return route.fulfill({ status: 503, json: { error: "List unavailable" } });
+    const response = await route.fetch();
+    const data = await response.json() as ChangeList;
+    const visible = state === "initial" ? paths : paths.filter((path) => path !== "big.txt" && (failure || path !== "README.md"));
+    await route.fulfill({ response, json: { ...data, files: visible.map((path) => data.files.find((f) => f.path === path)) } });
+  });
+
+  try {
+    if (!failure) writeFileSync(file, "A later change\n");
+    await openChanges(page, "big.txt");
+    await expand(page);
+    await expect(fullDiffCut(page)).toBeHidden();
+    const diffPath = page.getByTestId("diff-path");
+    const refresh = () => page.evaluate(() => dispatchEvent(new Event("focus")));
+    if (failure) {
+      state = "failed";
+      await refresh();
+      await expect(page.getByText("List unavailable", { exact: true })).toBeVisible();
+      await expect(diffPath).toHaveText("big.txt");
+    }
+
+    state = "removed";
+    await refresh();
+    await expect(changeRow(page, "big.txt")).toHaveCount(0);
+    await expect(diffPath).toHaveText("notes.md", { timeout: 2_000 });
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    if (!failure) rmSync(file, { force: true });
+  }
+}
+
+test("a full diff advances to the next surviving file across a failed refresh", async ({ page }) => {
+  await checkNextFile(page, true);
+});
+
+test("a full diff advances to the next surviving file when an earlier file also leaves", async ({ page }) => {
+  await checkNextFile(page, false);
+});
+
+async function heldCommentAdd(page: Page, status?: number) {
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  await page.route("**/api/changes/comment-range", async (route) => {
+    await held;
+    if (status) await route.fulfill({ status, json: { error: "Could not add this comment." } });
+    else await route.continue();
+  });
+  return release;
+}
+
+test("failed Add returns focus to the comment field", async ({ page }) => {
+  const release = await heldCommentAdd(page, 503);
+  try {
+    await openChanges(page, "README.md");
+    const diff = page.getByTestId("diff-body");
+    await diff.press("j");
+    await diff.press("Enter");
+    const input = page.getByTestId("comment-input");
+    await input.fill("Keep this draft on failure.");
+    await input.press("Enter");
+    await expect(input).toBeDisabled();
+
+    release();
+    await expect(input).toBeEnabled();
+    await expect(input).toBeFocused({ timeout: 2_000 });
+    await expect(input).toHaveValue("Keep this draft on failure.");
+    await captureThemes(page, page.getByTestId("comment-box"), "comment-add-failure-focus");
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+test("a line number cannot replace the range while Add waits", async ({ page }) => {
+  const release = await heldCommentAdd(page);
+  try {
+    await openChanges(page, "README.md");
+    const diff = page.getByTestId("diff-body");
+    await diff.locator('[data-gutter] > [data-column-number="1"]').first().click();
+    const input = page.getByTestId("comment-input");
+    await input.fill("Save this original line.");
+    await page.getByTestId("comment-add").click();
+    await expect(input).toBeDisabled();
+
+    await diff.locator('[data-gutter] > [data-column-number="2"]').first().click();
+    await expect(input).toBeDisabled({ timeout: 2_000 });
+    release();
+    await expect(page.getByTestId("comment-card")).toContainText("Save this original line.", { timeout: 2_000 });
+    await expect(input).toHaveCount(0);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
 test("Find reaches repeated matches in a loaded full patch in Unified and Split views", async ({ page: tab }) => {
   const r = row("d1", "", "diff");
   r.diff = { id: "patch-output", path: "app.ts", patch: "@@ -1 +1 @@\n-old\n+preview", added: 1, removed: 1, omitted_lines: 900, shortened_lines: 0, full_lines: 1001, full_bytes: 20000 };
@@ -21,7 +148,7 @@ test("Find reaches repeated matches in a loaded full patch in Unified and Split 
   const patch = ["@@ -1,1000 +1,1000 @@", ...Array.from({ length: 1000 }, (_, i) => ` ${i === 100 || i === 900 ? "repeated needle" : `line ${i}`}`)].join("\n");
   await tab.route("**/api/tool-output?*", (route) => route.fulfill({ json: { text: patch, patch: { lines: fullLines0.concat(fullLines1, fullLines2), split: fullSplit0 } } }));
   await open(tab);
-  await tab.getByRole("button", { name: "Show full patch", exact: true }).click();
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
   for (const mode of ["Unified", "Split"]) {
     await tab.getByRole("button", { name: mode, exact: true }).click();
     await tab.keyboard.press("Meta+f");
@@ -105,11 +232,13 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
     Object.defineProperty(window, "s6cCopies", { value: captured });
     Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text: string) => { captured.push(text); } } });
   });
+
   const fence = row("fence1", "raw Markdown deliberately differs from display");
   const tool = row("tool2", "", "diff");
   tool.diff = { id: "fence-tool", path: "x", patch: "@@ -1 +1 @@\n-tool-raw\n+tool-raw\n", added: 1, removed: 1, omitted_lines: 0, shortened_lines: 0, full_lines: 5, full_bytes: 48 };
   const page = rows([fence, tool], 0, { "fence-tool": fencePainter.patch as PatchInfo });
   page.display![fence.id] = structuredClone(fencePainter.display) as Display;
+
   page.display![fence.id].blocks.push({ type: "code", value: {
     label: "diff", text: "multi-file raw copy text", diff: {
       lines: [
@@ -124,8 +253,10 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
     },
   } });
   page.body![fence.id] = bodyMode(page.display![fence.id]);
+
   await tab.route("**/api/rows?*", route => route.fulfill({ json: page }));
   await open(tab);
+
   const hunk = tab.locator('[data-id="fence1"] .md-code').nth(0);
   const prefix = tab.locator('[data-id="fence1"] .md-code').nth(1);
   const card = tab.getByTestId("diff");
@@ -140,9 +271,18 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
     await expect(numberOf(box, "change-addition")).toHaveText("1");
     await expect(box.locator("script, b")).toHaveCount(0);
   }
-  await hunk.locator('[data-diff-layout="1"]').click();
+
+  const unified = hunk.getByRole("button", { name: "Unified", exact: true });
+  const split = hunk.getByRole("button", { name: "Split", exact: true });
+  const wrap = hunk.getByRole("button", { name: "Wrap", exact: true });
+  await expect(unified).toHaveAttribute("aria-pressed", "true", { timeout: 2_000 });
+  await split.click();
+  await expect(unified).toHaveAttribute("aria-pressed", "false");
+  await expect(split).toHaveAttribute("aria-pressed", "true");
   await expect(card.getByRole("button", { name: "Split", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await hunk.locator("[data-wrap-toggle]").click();
+
+  await wrap.click();
+  await expect(wrap).toHaveAttribute("aria-pressed", "true");
   await expect(card.getByRole("button", { name: "Wrap", exact: true })).toHaveAttribute("aria-pressed", "true");
   for (const box of [hunk, card]) {
     await expect(box.locator('pre[data-diff-type="split"]')).toHaveCount(1);
@@ -151,6 +291,7 @@ test("a fence and a tool share wire rows and layout while Copy keeps full text",
     await expect(rowOf(box, "change-deletion", "[data-deletions]")).toHaveText("<script>x</script>");
     await expect(rowOf(box, "change-addition", "[data-additions]")).toHaveText("<b>&new</b>");
   }
+
   await card.getByRole("button", { name: "Unified", exact: true }).click();
   for (const box of [hunk, card]) {
     await expect(box.locator('pre[data-diff-type="split"]')).toHaveCount(0);

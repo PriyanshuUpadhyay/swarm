@@ -2,30 +2,28 @@
 
 use super::*;
 
+use super::s6b_changes::git;
+
 #[test]
 fn changes_routes_read_a_large_file_in_both_modes() {
     let server = Server::configured(false, true);
     let project = server.dir.join("project");
-    let git = |args: &[&str]| {
-        let output = Command::new("/usr/bin/git")
-            .arg("-C")
-            .arg(&project)
-            .args(args)
-            .env("GIT_CEILING_DIRECTORIES", &server.dir)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{:?}", output);
-    };
-    git(&["config", "user.name", "Fixture"]);
-    git(&["config", "user.email", "fixture@example.com"]);
+    git(&server, &["config", "user.name", "Fixture"]);
+    git(&server, &["config", "user.email", "fixture@example.com"]);
     fs::write(project.join("large.txt"), "base\n").unwrap();
-    git(&["add", "."]);
-    git(&["-c", "commit.gpgsign=false", "commit", "-qm", "base"]);
-    git(&["switch", "-qc", "feature"]);
+    git(&server, &["add", "."]);
+    git(
+        &server,
+        &["-c", "commit.gpgsign=false", "commit", "-qm", "base"],
+    );
+    git(&server, &["switch", "-qc", "feature"]);
+
     fs::write(project.join("large.txt"), "new\n".repeat(20_000)).unwrap();
-    git(&["add", "."]);
-    git(&["-c", "commit.gpgsign=false", "commit", "-qm", "large"]);
+    git(&server, &["add", "."]);
+    git(
+        &server,
+        &["-c", "commit.gpgsign=false", "commit", "-qm", "large"],
+    );
     fs::write(project.join("large.txt"), "local\n".repeat(20_000)).unwrap();
     let mut observed = Vec::new();
     let mut expected = Vec::new();
@@ -47,6 +45,57 @@ fn changes_routes_read_a_large_file_in_both_modes() {
         }
     }
     assert_eq!(json!(observed), json!(expected));
+}
+
+#[test]
+fn changes_diff_reports_a_failed_git_read_as_a_server_error() {
+    let server = Server::configured(false, true);
+    let project = server.dir.join("project");
+    fs::write(project.join("tracked.txt"), "old\n").unwrap();
+    git(&server, &["add", "tracked.txt"]);
+    fs::write(project.join(".git/index"), "broken index").unwrap();
+
+    let url = format!(
+        "/api/changes/diff?workspace={}&path=tracked.txt&layer=staged",
+        project.display()
+    );
+    let (status, _, body) = server.request("GET", &url, "", "", true);
+    assert_eq!(status, 500, "{body}");
+    let error: Value = serde_json::from_str(&body).unwrap();
+    assert!(error["error"].as_str().unwrap().contains("index"));
+}
+
+#[test]
+fn full_changes_rejects_output_over_cap_without_changing_the_preview() {
+    let server = Server::configured(false, true);
+    let project = server.dir.join("project");
+    let path = project.join("large.txt");
+    fs::write(&path, "old\n").unwrap();
+    git(&server, &["add", "large.txt"]);
+    fs::write(&path, "x".repeat(2_097_152)).unwrap();
+
+    let url = format!(
+        "/api/changes/diff?workspace={}&path=large.txt&layer=unstaged",
+        project.display()
+    );
+    let (status, _, body) = server.request("GET", &url, "", "", true);
+    assert_eq!(status, 200, "{body}");
+    let preview: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(preview["is_truncated"], true);
+    assert_eq!(preview["partial_last_line"], true);
+
+    let (status, _, body) = server.request("GET", &format!("{url}&full=1"), "", "", true);
+    assert_eq!(status, 413, "{body}");
+    assert!(body.contains("2 MiB or 20,010 lines"), "{body}");
+
+    // Leave stdout open after the cap so waiting for EOF would hit the command deadline.
+    let mut command = Command::new("sh");
+    command.args(["-c", "printf 12345; exec sleep 30"]);
+    let (output, overflow) =
+        swarm::view::discovery::run_command_capped(&mut command, 1, 4).unwrap();
+    assert!(overflow);
+    assert_eq!(output.stdout, b"1234");
+    assert_eq!(output.stdout.capacity(), 4);
 }
 
 #[test]

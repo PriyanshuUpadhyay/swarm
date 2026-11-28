@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mockRows, open, row, rows } from "./ux-helpers";
+import { captureThemes, mockRows, mockStream, open, row, rows, streamFrame } from "./ux-helpers";
 import type { PatchInfo, Row, TextPreview } from "../src/core/api";
 
 // The served paths differ from the raw text, so a browser reparse cannot pass.
@@ -26,20 +26,7 @@ test("images paint served paths on pages, older rows, upserts and snapshot queue
     ];
     await route.fulfill({ json: snapshot });
   });
-  await tab.route("**/api/subscribe", route => route.fulfill({ json: { ok: true } }));
-  await tab.addInitScript(() => {
-    const fetch = window.fetch.bind(window);
-    const scope = window as unknown as { s8dFrame?: (event: string, data: unknown) => void };
-    window.fetch = async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      if (!url.endsWith("/api/stream")) return fetch(input, init);
-      const body = new ReadableStream<Uint8Array>({ start(controller) {
-        scope.s8dFrame = (event, data) => controller.enqueue(new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-        scope.s8dFrame("hello", { stream: "s8d", build: "fixture" });
-      } });
-      return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
-    };
-  });
+  await mockStream(tab, "s8d");
   await open(tab);
   const names = (id: string) => tab.locator(`[data-testid="row"][data-id="${id}"]`).getByTestId("image-thumb").locator("img");
   const previews = (id: string, expected: string[]) => expect.poll(() => names(id).evaluateAll(els => els.map(el => el.getAttribute("alt")))).toEqual(expected);
@@ -53,19 +40,13 @@ test("images paint served paths on pages, older rows, upserts and snapshot queue
   if (await earlier.isVisible()) await earlier.click();
   await previews("u0", [bName]);
   const key = `${process.env.SWARM_E2E_LIVE!}:chair`;
-  const send = (upsert: ReturnType<typeof row>[], images?: Record<string, string[]>) => tab.evaluate(({ key, upsert, images }) => {
-    const scope = window as unknown as { s8dFrame: (event: string, data: unknown) => void };
-    scope.s8dFrame("rows", { key, upsert, images, end_offset: 600 });
-  }, { key, upsert, images });
+  const send = (upsert: ReturnType<typeof row>[], images?: Record<string, string[]>) => streamFrame(tab, "rows", { key, upsert, images, end_offset: 600 });
   await send([row("u1", a, "user")], { u1: [b] });
   await previews("u1", [bName]);
   await send([row("u1", a, "user")]);
   await previews("u1", []);
   queueImages = [b, a];
-  await tab.evaluate(() => {
-    const scope = window as unknown as { s8dFrame: (event: string, data: unknown) => void };
-    scope.s8dFrame("snapshot", {});
-  });
+  await streamFrame(tab, "snapshot", {});
   await previews("served-queue", [bName, aName]);
   expect([...new Set(requested)].sort()).toEqual([aName, bName]);
   await tab.screenshot({ path: info.outputPath("s8d-served-images.png") });
@@ -101,7 +82,9 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
     ...row(id, command, "toolUse"),
     tool: { name: "Bash", input: { command }, command, output, state: "finished", header_title: command },
   });
-  const chunk: TextPreview = { id: "chunk-out", text: "--- a.ts\n+++ a.ts.new\n@@ -1 +1 @@", is_truncated: true, full_lines: 5, full_bytes: 40, hidden_lines: 2 };
+  const header = "--- a.ts\n+++ a.ts.new\n@@ -1,40 +1,40 @@";
+  const full = `${header}\n-old line\n+new line\n${Array.from({ length: 39 }, (_, i) => ` context ${i + 2}`).join("\n")}`;
+  const chunk: TextPreview = { id: "chunk-out", text: header, is_truncated: true, full_lines: 44, full_bytes: full.length, hidden_lines: 41 };
   const fold: Row = {
     ...row("f1", "2 commands", "fold"),
     default_open: false,
@@ -110,24 +93,39 @@ test("a shown chunk diff opens outside its closed fold with the whole patch in U
   };
   const layout = (text: string): PatchInfo => {
     const kinds = { "-": "del", "+": "add", "@": "hunk" } as const;
-    const lines = text.split("\n").map((t) => ({ kind: t.startsWith("---") || t.startsWith("+++") ? "meta" : (kinds[t[0] as keyof typeof kinds] ?? "ctx"), text: t, ...(t.startsWith("-") && !t.startsWith("---") && { old: 1 }), ...(t.startsWith("+") && !t.startsWith("+++") && { new: 1 }) })) as Extract<PatchInfo, { lines: unknown }>["lines"];
-    const split = lines.length > 3 ? [{ h: 2 }, { l: 3, r: 4 }] : [{ h: 2 }];
+    const lines = text.split("\n").map((t, i) => ({ kind: i < 2 ? "meta" : (kinds[t[0] as keyof typeof kinds] ?? "ctx"), text: i < 3 ? t : t.slice(1), ...(i === 3 && { old: 1 }), ...(i === 4 && { new: 1 }), ...(i > 4 && { old: i - 3, new: i - 3 }) })) as Extract<PatchInfo, { lines: unknown }>["lines"];
+    const split = lines.length > 3 ? [{ h: 2 }, { l: 3, r: 4 }, ...lines.slice(5).map((_, i) => ({ l: i + 5, r: i + 5 }))] : [{ h: 2 }];
     return { lines, split };
   };
   await mockRows(tab, [fold], 0, { "chunk-out": layout(chunk.text) });
   const asked: string[] = [];
-  const full = "--- a.ts\n+++ a.ts.new\n@@ -1 +1 @@\n-old line\n+new line";
   await tab.route("**/api/tool-output?*", (route) => {
     asked.push(new URL(route.request().url()).searchParams.get("diff") ?? "");
+    if (asked.length === 1) return route.fulfill({ status: 503, json: { error: "Temporary failure" } });
     return route.fulfill({ json: { text: full, patch: layout(full) } });
   });
   await open(tab);
 
   const shown = tab.getByTestId("shown-diff");
-  await expect(shown).toContainText("new line");
+  const retry = shown.getByRole("button", { name: "Retry", exact: true });
+  await expect(retry).toBeVisible({ timeout: 2000 });
   expect(asked).toEqual(["true"]);
+  await captureThemes(tab, shown, "shown-diff-error");
+  await retry.click();
+  await expect(shown).toContainText("new line");
+  await expect(shown.locator(".diff-head")).toContainText("44 lines");
+
+  const box = shown.locator(".patch");
+  expect(await box.evaluate((el) => el.clientHeight)).toBeLessThanOrEqual(360);
+  await box.evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect(box.getByText("context 40", { exact: true })).toBeInViewport();
+  await box.evaluate((el) => { el.scrollTop = 0; });
+  expect(asked).toEqual(["true", "true"]);
   await expect(tab.getByText("a.ts", { exact: true })).toBeHidden();
+
   await shown.getByRole("button", { name: "Split", exact: true }).click();
   await expect(shown).toHaveAttribute("data-split", "true");
   await expect(shown).toContainText("old line");
+
+  await captureThemes(tab, shown, "shown-diff");
 });

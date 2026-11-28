@@ -39,7 +39,10 @@ export function WorkspacePanel({ app, changes }: { app: App; changes: Changes })
   const view = useSyncExternalStore(changes.subscribe, () => changes.view);
   useEffect(() => {
     if (!view.open || !view.workspace) return;
-    const refresh = () => { if (!document.hidden && changes.view.list.state !== "loading" && changes.view.pr.state !== "loading") changes.reload(); };
+    const refresh = () => {
+      const now = changes.view;
+      if (!document.hidden && now.list.state !== "loading" && now.pr.state !== "loading") changes.reload(true);
+    };
     const timer = window.setInterval(refresh, 5000);
     window.addEventListener("focus", refresh);
     return () => { clearInterval(timer); window.removeEventListener("focus", refresh); };
@@ -210,7 +213,7 @@ function Drafts({ app, changes, files }: { app: App; changes: Changes; files: Ch
             >
               <span className="text-foreground">{c.path.slice(c.path.lastIndexOf("/") + 1)}</span> <span className="text-muted-foreground">{c.lines}</span> {c.text}
             </button>
-            <button className="icon-btn" aria-label="Remove comment" onClick={() => changes.removeComment(c.id)}>
+            <button className="icon-btn" aria-label="Remove comment" onClick={() => changes.confirmRemoveComment(c.id)}>
               <XIcon />
             </button>
           </li>

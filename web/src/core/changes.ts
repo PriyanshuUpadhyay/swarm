@@ -2,89 +2,20 @@
 // and diff line comments that go to the open chat's agent as one message. It follows `App`'s
 // workspace and keeps its own view; `App` stays unaware of it.
 
-import type { PatchLineWire, TextPreview } from "./api";
+import { ApiError } from "./api";
 import type { App } from "./app";
 import { readStore, writeStore } from "./app-types";
+import { sameRange } from "./changes-range";
+import type { ChangeFile, ChangeList, ChangesView, Check, CommentEditor, DiffComment, FileDiff, FilePreview, Layer, Load, Mode, PrView, Tab } from "./changes-types";
 import type { Command } from "./commands";
 
-export type Layer = "staged" | "unstaged" | "untracked" | "conflicted" | "branch";
-export type Mode = "local" | "branch";
-
-/** One changed file. A file in both the staged and unstaged layers is two entries. Binary files and
- *  symlinks have null counts. */
-export type ChangeFile = { path: string; status: string; layer: Layer; added: number | null; removed: number | null };
-export type ChangeList = { files: ChangeFile[]; refs: string[]; comparison: string[]; identity: { head: string | null; branch: string | null } };
-/** A capped patch (200 lines, 12,000 characters) with the full counts, or a notice for a binary file. */
-export type FileDiff = {
-  path: string;
-  layer?: Layer;
-  patch?: string;
-  display?: { lines: PatchLineWire[] };
-  is_truncated?: boolean;
-  full_lines?: number;
-  hidden_lines?: number;
-  added: number | null;
-  removed: number | null;
-  notice?: string;
-};
-export type FilePreview = { path: string; preview?: TextPreview; notice?: string };
-
-export type Check = {
-  __typename?: string;
-  name?: string;
-  context?: string;
-  workflowName?: string;
-  status?: string;
-  conclusion?: string | null;
-  state?: string;
-  detailsUrl?: string;
-  targetUrl?: string;
-};
-export type PullRequest = {
-  number: number;
-  title: string;
-  state: string;
-  isDraft: boolean;
-  baseRefName: string;
-  headRefName: string;
-  reviewDecision: string | null;
-  url: string;
-};
-export type PrView = { pullRequest: PullRequest | null; checks: Check[] | null; differsFromLocalHead?: boolean };
-
-export type Load<T> = { state: "idle" } | { state: "loading" } | { state: "ready"; data: T } | { state: "error"; error: string };
-
-/** One draft comment on a diff: the file, the line range label, the quoted lines with their +/-
- *  marks, and the owner's text. `at` is the display line it shows under. */
-export type DiffComment = { id: number; path: string; layer: Layer; lines: string; quoted: string[]; text: string; at: number };
-
-export type CommentEditor = { anchor: number; cursor: number; text: string };
-
-export type Tab = "changes" | "pr";
-
-export type ChangesView = {
-  open: boolean;
-  tab: Tab;
-  workspace: string | null;
-  mode: Mode;
-  base: string | null;
-  list: Load<ChangeList>;
-  /** `fileKey` of the file whose diff shows. */
-  selected: string | null;
-  /** Diff, or the read-only file. */
-  showFile: boolean;
-  diff: Load<FileDiff>;
-  file: Load<FilePreview>;
-  /** Drafts of this workspace, oldest first. They survive a file switch and a closed panel. */
-  comments: DiffComment[];
-  sending: boolean;
-  pr: Load<PrView>;
-};
+export type { ChangeFile, ChangeList, ChangesView, Check, CommentEditor, DiffComment, FileDiff, FilePreview, Layer, Load, Mode, PrView, PullRequest, Tab } from "./changes-types";
 
 const IDLE = { state: "idle" } as const;
 const LOADING = { state: "loading" } as const;
 const NO_COMMENTS: DiffComment[] = [];
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+const stringPairs = (v: unknown) => Array.isArray(v) ? v.filter((x): x is [string, string] => Array.isArray(x) && x.length === 2 && x.every((s) => typeof s === "string")) : [];
 
 export const fileKey = (f: Pick<ChangeFile, "path" | "layer">) => `${f.layer}\n${f.path}`;
 
@@ -117,9 +48,14 @@ export class Changes {
   private mode: Mode = "local";
   private bases = new Map<string, string>();
   private list: Load<ChangeList> = IDLE;
+
+  // A failed automatic read can hide the list without closing the full diff.
+  private listedFiles: ChangeFile[] = [];
+
   private selected: string | null = null;
   private showFile = false;
   private diff: Load<FileDiff> = IDLE;
+  private full: Load<FileDiff> = IDLE;
   private file: Load<FilePreview> = IDLE;
   private drafts = new Map<string, DiffComment[]>();
   private commentSeq = 0;
@@ -130,6 +66,7 @@ export class Changes {
   private seq = { list: 0, diff: 0, file: 0, pr: 0 };
 
   private editors = new Map<string, CommentEditor>();
+  private unfinished = new Map<string, string>();
 
   constructor(private readonly app: App) {
     try {
@@ -138,7 +75,9 @@ export class Changes {
         this.open = saved.open === true;
         this.tab = saved.tab === "pr" ? "pr" : "changes";
         this.mode = saved.mode === "branch" ? "branch" : "local";
-        if (Array.isArray(saved.bases)) this.bases = new Map(saved.bases.filter((x: unknown) => Array.isArray(x) && x.length === 2 && x.every((s) => typeof s === "string")));
+
+        this.bases = new Map(stringPairs(saved.bases));
+        this.unfinished = new Map(stringPairs(saved.unfinished));
         if (Array.isArray(saved.drafts)) this.drafts = new Map(saved.drafts.filter((x: unknown) => Array.isArray(x) && typeof x[0] === "string" && Array.isArray(x[1]) && x[1].every((c) => typeof c.id === "number" && typeof c.path === "string" && typeof c.text === "string" && typeof c.lines === "string" && typeof c.layer === "string" && typeof c.at === "number" && Array.isArray(c.quoted) && c.quoted.every((q: unknown) => typeof q === "string"))));
         this.commentSeq = Math.max(0, ...[...this.drafts.values()].flat().map((c) => c.id));
       }
@@ -156,7 +95,7 @@ export class Changes {
   };
 
   private notify() {
-    writeStore("swarm.changes.v1", JSON.stringify({ open: this.open, tab: this.tab, mode: this.mode, bases: [...this.bases], drafts: [...this.drafts] }));
+    writeStore("swarm.changes.v1", JSON.stringify({ open: this.open, tab: this.tab, mode: this.mode, bases: [...this.bases], drafts: [...this.drafts], unfinished: [...this.unfinished] }));
     this.view = this.makeView();
     for (const fn of this.listeners) fn();
   }
@@ -171,7 +110,8 @@ export class Changes {
       list: this.list,
       selected: this.selected,
       showFile: this.showFile,
-      diff: this.diff,
+      diff: this.full.state === "ready" ? this.full : this.diff,
+      full: this.full,
       file: this.file,
       comments: (this.workspace && this.drafts.get(this.workspace)) || NO_COMMENTS,
       sending: this.sending,
@@ -198,8 +138,10 @@ export class Changes {
   }
 
   private clearFile() {
+    this.listedFiles = [];
     this.selected = null;
     this.diff = IDLE;
+    this.full = IDLE;
     this.file = IDLE;
     this.seq.diff++;
     this.seq.file++;
@@ -232,9 +174,15 @@ export class Changes {
   }
 
   /** Reads the shown tab again. */
-  reload() {
+  reload(automatic = false) {
     if (this.tab === "pr") void this.loadPr();
-    else void this.loadList();
+    else {
+      if (!automatic) {
+        if (this.full.state !== "idle") this.seq.diff++;
+        this.full = IDLE;
+      }
+      void this.loadList(automatic);
+    }
     this.notify();
   }
 
@@ -255,37 +203,23 @@ export class Changes {
     } else this.notify();
   }
 
-  private query(extra: Record<string, string> = {}): URLSearchParams {
-    const q = new URLSearchParams({ workspace: this.workspace ?? "", mode: this.mode, ...extra });
+  private query(extra: Record<string, string> = {}) {
     const base = this.base();
-    if (this.mode === "branch" && base) q.set("base", base);
-    return q;
+    return { workspace: this.workspace ?? "", mode: this.mode, ...extra, ...(this.mode === "branch" && base ? { base } : {}) };
   }
 
-  private async read<T>(path: string, q: URLSearchParams): Promise<T> {
-    const res = await this.app.api.fetch(`${path}?${q}`, { headers: this.app.api.headers() });
-    const text = await res.text();
-    if (res.ok) return JSON.parse(text) as T;
-    let error = text || `${res.status} ${res.statusText}`;
-    try {
-      error = String(JSON.parse(text).error ?? error);
-    } catch {
-      // Not JSON: keep the body text.
-    }
-    throw new Error(error);
-  }
-
-  private async loadList() {
+  private async loadList(automatic = false) {
     if (!this.workspace) return;
     const workspace = this.workspace;
     const seq = ++this.seq.list;
     const keep = this.list.state === "ready";
     if (!keep) this.list = LOADING;
     this.notify();
+
     // Branch mode needs a base; the first read in local mode lists the refs.
     if (this.mode === "branch" && !this.base()) {
       try {
-        const local = await this.read<ChangeList>("/api/changes", new URLSearchParams({ workspace: this.workspace, mode: "local" }));
+        const local = await this.app.api.get<ChangeList>("/api/changes", { workspace: this.workspace, mode: "local" });
         if (seq !== this.seq.list || workspace !== this.workspace) return;
         if (local.refs.length === 0) throw new Error("This workspace has no branch to compare with.");
         this.list = { state: "ready", data: { ...local, files: [] } };
@@ -295,37 +229,56 @@ export class Changes {
         return this.notify();
       }
     }
+
     let next: Load<ChangeList>;
     try {
-      next = { state: "ready", data: await this.read<ChangeList>("/api/changes", this.query()) };
+      next = { state: "ready", data: await this.app.api.get<ChangeList>("/api/changes", this.query()) };
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
     if (seq !== this.seq.list || workspace !== this.workspace) return;
+    const previous = this.listedFiles;
+    const previousIndex = previous.findIndex((file) => fileKey(file) === this.selected);
     this.list = next;
     const files = next.state === "ready" ? next.data.files : [];
-    // The shown file stays when it is still changed; else the first file shows.
+    if (next.state === "ready") this.listedFiles = files;
+
     const still = files.find((f) => fileKey(f) === this.selected);
-    if (still) void this.select(still, true);
-    else if (files.length) void this.select(files[0]);
-    else {
-      this.clearFile();
-      this.notify();
+    if (automatic && (still || next.state !== "ready") && (this.full.state === "loading" || this.full.state === "ready")) return this.notify();
+
+    if (automatic && (still || next.state !== "ready") && this.full.state === "error" && this.full.rangeMismatch && this.diff.state === "ready") {
+      const { path, layer = "branch" } = this.diff.data;
+      if (this.editor(path, layer)?.open) return this.notify();
     }
+
+    if (still) return this.select(still, true, automatic);
+    if (!files.length) {
+      this.clearFile();
+      return this.notify();
+    }
+    if (previousIndex < 0) return this.select(files[0]);
+
+    const byKey = new Map(files.map((file) => [fileKey(file), file]));
+    for (const file of previous.slice(previousIndex + 1)) {
+      const successor = byKey.get(fileKey(file));
+      if (successor) return this.select(successor);
+    }
+    return this.select(files[files.length - 1]);
   }
 
   /** Shows a file's diff (or its contents, in file mode). `again` reads it even if it shows. */
-  async select(f: ChangeFile, again = false) {
+  async select(f: ChangeFile, again = false, automatic = false) {
     const key = fileKey(f);
     if (key === this.selected && !again) return;
     this.selected = key;
     this.file = IDLE;
+    if (!automatic) this.full = IDLE;
     const seq = ++this.seq.diff;
     if (this.diff.state !== "ready" || !again) this.diff = LOADING;
     this.notify();
     let next: Load<FileDiff>;
     try {
-      next = { state: "ready", data: await this.read<FileDiff>("/api/changes/diff", this.query({ path: f.path, layer: f.layer })) };
+      next = { state: "ready", data: await this.app.api.get<FileDiff>("/api/changes/diff", this.query({ path: f.path, layer: f.layer })) };
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
@@ -333,6 +286,32 @@ export class Changes {
     this.diff = next;
     if (this.showFile) void this.loadFile(f.path);
     this.notify();
+  }
+
+  async expandDiff() {
+    if (this.diff.state !== "ready" || !this.diff.data.is_truncated || (this.full.state !== "idle" && !(this.full.state === "error" && !this.full.capped))) return;
+    const preview = this.diff.data;
+    const { path, layer = "branch" } = preview;
+    const seq = ++this.seq.diff;
+    this.full = LOADING;
+    this.notify();
+
+    try {
+      const data = await this.app.api.get<FileDiff>("/api/changes/diff", this.query({ path, layer, full: "1" }));
+      if (seq !== this.seq.diff) return;
+      const editor = this.editor(path, layer);
+      this.full = sameRange(preview, data, editor) ? { state: "ready", data } : {
+        state: "error", rangeMismatch: true, error: "The selected lines changed. The preview stays open.",
+      };
+      this.notify();
+    } catch (err) {
+      if (seq !== this.seq.diff) return;
+
+      const capped = err instanceof ApiError && err.status === 413;
+      const detail = err instanceof ApiError && (capped || err.status === 500) ? message(err) : "";
+      this.full = { state: "error", capped, error: detail || "Could not load the full diff." };
+      this.notify();
+    }
   }
 
   /** j/k and the arrows in the file list. */
@@ -358,7 +337,7 @@ export class Changes {
     this.notify();
     let next: Load<FilePreview>;
     try {
-      next = { state: "ready", data: await this.read<FilePreview>("/api/changes/file", new URLSearchParams({ workspace: this.workspace ?? "", path })) };
+      next = { state: "ready", data: await this.app.api.get<FilePreview>("/api/changes/file", { workspace: this.workspace ?? "", path }) };
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
@@ -375,7 +354,7 @@ export class Changes {
     this.notify();
     let next: Load<PrView>;
     try {
-      next = { state: "ready", data: await this.read<PrView>("/api/pr", new URLSearchParams({ workspace: this.workspace })) };
+      next = { state: "ready", data: await this.app.api.get<PrView>("/api/pr", { workspace: this.workspace }) };
     } catch (err) {
       next = { state: "error", error: message(err) };
     }
@@ -384,45 +363,76 @@ export class Changes {
     this.notify();
   }
 
-  editor(path: string, layer: Layer): CommentEditor | null {
-    return this.editors.get(`${this.workspace}\n${fileKey({ path, layer })}`) ?? null;
+  private editorKey(path: string, layer: Layer) {
+    return `${this.workspace}\n${fileKey({ path, layer })}`;
   }
 
-  setEditor(path: string, layer: Layer, value: CommentEditor | null) {
-    const key = `${this.workspace}\n${fileKey({ path, layer })}`;
+  editor(path: string, layer: Layer): CommentEditor | null {
+    return this.editors.get(this.editorKey(path, layer)) ?? null;
+  }
+
+  unfinishedText(path: string, layer: Layer) {
+    return this.unfinished.get(this.editorKey(path, layer)) ?? "";
+  }
+
+  setEditor(path: string, layer: Layer, value: CommentEditor | null, keepText = false) {
+    const key = this.editorKey(path, layer);
     if (value) this.editors.set(key, value);
     else this.editors.delete(key);
+
+    if (value?.open && value.text) this.unfinished.set(key, value.text);
+    else if (value?.open || (!value && !keepText)) this.unfinished.delete(key);
     this.notify();
   }
 
   // ---- diff line comments ----
 
+  get addingComment() { return this.adding; }
+
   /** Adds a draft for display lines `from`..`to` of the shown diff. */
-  async addComment(from: number, to: number, text: string): Promise<boolean> {
+  async addComment(from: number, to: number, text: string, rangePatch?: string): Promise<boolean> {
     const ws = this.workspace;
-    const d = this.diff.state === "ready" ? this.diff.data : null;
+    const d = this.view.diff.state === "ready" ? this.view.diff.data : null;
     if (!ws || !d?.patch || !d.display || !text.trim() || this.adding) return false;
     const layer = d.layer ?? "branch";
     const editor = this.editor(d.path, layer);
     const seq = this.seq.diff;
     this.adding = true;
+
     try {
-      const range = await this.app.api.post<{ lines: string; quoted: string[] }>("/api/changes/comment-range", { op: "range", patch: d.patch, from, to });
-      if (ws !== this.workspace || ws !== this.app.view.workspace || seq !== this.seq.diff || this.diff.state !== "ready" || this.diff.data !== d || this.editor(d.path, layer) !== editor) return false;
+      const range = await this.app.api.post<{ lines: string; quoted: string[] }>("/api/changes/comment-range", { op: "range", ...(rangePatch ? { patch: rangePatch, from: 0, to: rangePatch.split("\n").length } : { patch: d.patch, from, to }) });
+      if (ws !== this.workspace || ws !== this.app.view.workspace) return false;
+      if (seq !== this.seq.diff || this.view.diff.state !== "ready" || this.view.diff.data !== d) {
+        this.app.notice("Could not add the comment. The diff changed. Try again.", true);
+        return false;
+      }
+      if (this.editor(d.path, layer) !== editor) return false;
       if (!range.lines) return false;
+
       const comment: DiffComment = { id: ++this.commentSeq, path: d.path, layer, ...range, text: text.trim(), at: Math.max(from, to) };
       this.drafts.set(ws, [...(this.drafts.get(ws) ?? []), comment]);
       this.notify();
       return true;
     } catch (err) {
-      this.app.notice(message(err), true);
+      this.app.notice(err instanceof ApiError && err.status === 413 ? "Could not add the comment. Select fewer lines." : message(err), true);
       return false;
     } finally {
       this.adding = false;
     }
   }
 
-  removeComment(id: number) {
+  confirmRemoveComment(id: number) {
+    // The dialog handles cancel and action errors, so the caller does not wait for it.
+    void this.app.life.ask({
+      title: "Remove this comment?",
+      body: "The saved comment will not be sent.",
+      action: "Remove",
+      cancelFirst: true,
+      run: async () => this.removeComment(id),
+    });
+  }
+
+  private removeComment(id: number) {
     const ws = this.workspace;
     if (!ws) return;
     this.drafts.set(ws, (this.drafts.get(ws) ?? []).filter((c) => c.id !== id));

@@ -12,7 +12,7 @@ fn fixture(name: &str) -> Value {
     .unwrap()
 }
 
-fn git(server: &Server, args: &[&str]) {
+pub(super) fn git(server: &Server, args: &[&str]) {
     let output = Command::new("/usr/bin/git")
         .arg("-C")
         .arg(server.dir.join("project"))

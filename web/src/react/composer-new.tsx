@@ -272,8 +272,9 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
   const runText = shown ? [cliName(shown.provider), shown.model ?? "Default model", shown.effort && levelWord(shown.effort)].filter(Boolean).join(" · ") : typeof profiles === "string" ? `Profiles unavailable: ${profiles}` : "Reading profiles…";
 
   return (
-    <div className={`grid w-full gap-3 ${overlay ? "max-w-[min(960px,calc(100vw-32px))]" : "max-w-[960px] px-4"}`} data-testid="new-chat-composer" data-cwd={target.cwd} data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
-      <div className="grid gap-3 min-[1000px]:grid-cols-[1fr_280px]">
+    <div className={`grid w-full min-w-0 gap-3 ${overlay ? "max-w-[min(680px,calc(100vw-32px))]" : "max-w-[min(680px,calc(100%-32px))]"}`} data-testid="new-chat-composer" data-cwd={target.cwd} data-overlay={overlay || undefined} onKeyDown={onKeyDown}>
+      <h1 className="text-center font-display text-display font-normal">What should we work on?</h1>
+      <div className="grid min-w-0 gap-3">
         <div className="grid gap-2 rounded-2xl border border-border bg-surface p-3 has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring">
           <ImageThumbs paths={imagePaths(text)} load={app.imageUrl} remove={(path) => prompt.change(text.split(path).join("").replace(/  +/g, " "))} />
           <div className="relative grid">
@@ -282,9 +283,9 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
               rows={overlay ? 4 : 5}
               data-testid="new-chat-prompt"
               aria-label="First prompt"
-              placeholder={`What should this chat do in ${target.title}?`}
+              placeholder="Describe the task…"
               className="min-h-[96px] w-full resize-none bg-transparent text-md outline-none"
-              aria-expanded={slash.open}
+              aria-autocomplete="list"
               aria-controls={slash.open ? slash.listId : undefined}
               aria-activedescendant={slash.open && slash.rows.length ? `${slash.listId}-${slash.current}` : undefined}
               value={text}

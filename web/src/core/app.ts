@@ -52,6 +52,7 @@ export class App {
   readonly notes = new Notes(this);
   view: View;
   snapshot: Snapshot | null = null;
+  snapshotReceivedAt = 0;
   tree: TreeView | null = null;
   archivedTree: TreeView | null = null;
   treeName: TreeName = "workspaces";
@@ -85,6 +86,7 @@ export class App {
   listeners = new Set<() => void>();
   streamId: string | null = null;
   reconnecting = false;
+  lastStreamUpdate: number | null = null;
   /** The server build of the first stream; a later stream from another build reloads the page. */
   serverBuild: string | null = null;
   sentKeys = "";
@@ -318,7 +320,9 @@ export class App {
   }
 
   setDraft(sessionId: string, text: string, picks?: readonly SkillPick[]) {
-    return this.composing.setDraft(sessionId, text, picks);
+    const empty = this.draft(sessionId) === "";
+    this.composing.setDraft(sessionId, text, picks);
+    if (empty !== (text === "")) this.notify();
   }
 
   history(sessionId: string): string[] {

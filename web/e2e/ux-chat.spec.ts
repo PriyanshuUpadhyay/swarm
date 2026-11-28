@@ -4,7 +4,8 @@ import "./ux-chat-diffs";
 import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { row, rows, open, mockRows } from "./ux-helpers";
+import { captureThemes, row, rows, open, mockRows, mockStream, streamControl, streamFrame } from "./ux-helpers";
+import type { Snapshot } from "../src/core/api";
 
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
@@ -52,6 +53,47 @@ test("Find searches loaded full output and reveals its virtual line", async ({ p
   await expect(tab.getByTestId("find-count")).toHaveText("1 of 1");
   await expect(tab.getByTestId("full-output").getByText("unique needle", { exact: true })).toBeVisible();
   await tab.screenshot({ path: info.outputPath("find-full-output.png") });
+});
+
+test("failed Show all reports the error in the cut line", async ({ page: tab }) => {
+  const output = row("read-failure", "Result", "toolResult");
+  output.output = { id: "read-failure", text: "Preview", full_lines: 30, hidden_lines: 29, full_bytes: 400, is_truncated: true };
+  try {
+    await mockRows(tab, [output]);
+    await tab.route("**/api/tool-output?*", (route) => route.fulfill({ status: 503, json: { error: "Unavailable" } }));
+    await open(tab);
+
+    await tab.getByTestId("show-full").click();
+    const box = tab.getByTestId("output");
+    await expect(box.getByRole("status")).toHaveText("Could not load the full output.", { timeout: 2_000 });
+    await captureThemes(tab, box, "show-all-read-error");
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+test("Find repaints the kept match after a row update", async ({ page: tab }) => {
+  const initial = row("find-live", "needle");
+  const find = { [initial.id]: [{ f: "text" as const }] };
+  const word = () => tab.evaluate(() => String(CSS.highlights.get("find-current")?.values().next().value));
+  try {
+    await mockStream(tab, "find-live");
+    await mockRows(tab, [initial], 0, {}, find);
+    await open(tab);
+
+    await tab.keyboard.press("Meta+f");
+    await tab.getByTestId("find-input").fill("needle");
+    await expect.poll(word).toBe("needle");
+    const text = "After the live update: needle";
+    await streamFrame(tab, "rows", {
+      key: `${process.env.SWARM_E2E_LIVE!}:chair`, upsert: [{ ...initial, text }], find, end_offset: 501,
+    });
+
+    await expect(tab.getByTestId("row").filter({ hasText: text })).toBeVisible();
+    await expect.poll(word, { timeout: 2_000 }).toBe("needle");
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 test("empty Find offers earlier search", async ({ page: tab }, info) => {
@@ -125,13 +167,59 @@ test("run picker accepts Down and Enter, retains Codex account wording and reloa
   await tab.screenshot({ path: info.outputPath("model-picker.png") });
 });
 
-test("stream loss shows Reconnecting and clears it after hello", async ({ page: tab }, info) => {
-  await tab.route("**/api/stream", (route) => route.fulfill({ contentType: "text/event-stream", body: "" }));
+test("a malformed first hello does not subscribe the open chat", async ({ page: tab }) => {
+  const subscriptions: string[] = [];
+  await mockStream(tab, "accepted-hello", { build: "fixture" });
+  await tab.route("**/api/subscribe", (route) => {
+    subscriptions.push(route.request().postDataJSON().stream);
+    return route.fulfill({ json: { ok: true } });
+  });
+  await mockRows(tab, [row("a1", "The chat is ready")]);
   await open(tab);
-  await expect(tab.getByTestId("reconnecting")).toBeVisible();
-  await tab.screenshot({ path: info.outputPath("reconnecting.png") });
-  await tab.unroute("**/api/stream");
-  await expect(tab.getByTestId("reconnecting")).toHaveCount(0);
+  await expect(tab.getByText("The chat is ready", { exact: true })).toBeVisible();
+
+  await streamFrame(tab, "hello", { stream: "accepted-hello", build: "fixture" });
+  await expect.poll(() => subscriptions, { timeout: 3000 }).toEqual(["accepted-hello"]);
+});
+
+test("stream loss keeps the last list and accepted update, then clears after hello", async ({ page: tab }) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await tab.setViewportSize({ width: 1280, height: 720 });
+
+  await tab.route("**/api/snapshot", async (route) => {
+    const snapshot = await (await route.fetch()).json() as Snapshot;
+    snapshot.agents[session][0].state = "working";
+    await route.fulfill({ json: snapshot });
+  });
+  await mockStream(tab, "offline-fixture");
+
+  await tab.clock.setFixedTime(new Date("2030-01-01T14:02:00Z"));
+  await open(tab);
+  const status = tab.getByTestId("chat-status-line");
+  await expect(status.locator('svg[data-form="working"]')).toBeVisible();
+
+  const accepted = "2030-01-01T14:02:10.000Z";
+  await tab.clock.setFixedTime(new Date(accepted));
+  const read = tab.waitForResponse("**/api/snapshot");
+  await streamFrame(tab, "snapshot", { version: 0 });
+  await read;
+
+  await tab.clock.setFixedTime(new Date("2030-01-01T14:02:30Z"));
+  await streamFrame(tab, "unsupported", {});
+  await streamControl(tab, "drop");
+  const banner = tab.getByTestId("reconnecting");
+  const lastList = tab.locator(`[data-testid="tree-row"][data-session="${session}"]`);
+  await expect(banner.locator("time")).toHaveAttribute("datetime", accepted, { timeout: 2000 });
+  await expect(banner).toHaveCSS("height", "28px");
+  await expect(banner.getByRole("button")).toHaveCount(0);
+  await expect(tab.getByText("Offline. Showing the last list.", { exact: true })).toBeVisible();
+  await expect(lastList).toBeVisible();
+  await expect(status.locator('svg[data-form="unlit"]')).toBeVisible();
+  await captureThemes(tab, tab, "offline");
+
+  await streamControl(tab, "restore");
+  await expect(banner).toHaveCount(0);
+  await expect(status.locator('svg[data-form="working"]')).toBeVisible();
 });
 
 test("an arriving question keeps an active draft and cannot turn a typed digit into approval", async ({ page: tab }) => {
@@ -174,13 +262,46 @@ test("Continue keeps the prior provider, model and account and supports keyboard
   await expect(tab.getByTestId("sm-start")).toBeEnabled();
 });
 
+test("only an editable queued message gets the Up hint", async ({ page: tab }) => {
+  const taken = { ...row("taken", "already taken"), system_kind: "queued_prompt" };
+  await mockRows(tab, [taken, row("held", "still in the queue", "queued")]);
+  await open(tab);
+  const saved = tab.locator('[data-id="taken"]');
+  await expect(saved).toContainText("already taken");
+  await expect(saved).not.toContainText("to edit queued messages");
+  const held = tab.locator('[data-id="held"]');
+  await expect(held).toContainText("to edit queued messages");
+  const composer = tab.getByTestId("composer");
+  await composer.fill("Draft for the next turn");
+  await expect(held).not.toContainText("to edit queued messages", { timeout: 2000 });
+  await composer.clear();
+  await expect(held).toContainText("to edit queued messages");
+});
+
+test("a queued message is cut at twelve lines", async ({ page: tab }) => {
+  const text = Array.from({ length: 16 }, (_, i) => `Queued step ${i + 1}`).join("\n\n");
+  await mockRows(tab, [row("q1", text, "queued")]);
+  await open(tab);
+  const held = tab.locator('[data-id="q1"]');
+  await expect(held).toContainText("Queued step 12");
+  const show = held.getByRole("button", { name: "Show all", exact: true });
+  await expect(show).toBeVisible({ timeout: 2000 });
+  await expect(held).not.toContainText("Queued step 13");
+  await captureThemes(tab, held, "queue-cut");
+  await show.click();
+  await expect(held).toContainText("Queued step 16");
+});
+
 test("modified Up keeps queued messages", async ({ page: tab }) => {
   await mockRows(tab, [...Array.from({ length: 60 }, (_, i) => row(`a${i}`, `message ${i} ` + "paragraph ".repeat(35))), row("q99", "queued text", "queued")]);
   let pulls = 0;
   await tab.route("**/api/chat/pull-back", (route) => { pulls++; return route.fulfill({ json: { outcome: "pulled", text: "queued text" } }); });
   await open(tab);
-  // Up pulls back only when the chair can take it; the hint shows that state, so wait for it before the first key.
-  await expect(tab.getByText("↑ to edit queued messages")).toBeVisible();
+  // Up pulls back only when the chair can take it; wait for the queued message and the input hint.
+  const queued = tab.getByTestId("row").filter({ hasText: "queued text" });
+  await expect(queued.getByText("↑", { exact: true })).toBeVisible();
+  await expect(tab.getByTestId("composer-status")).toHaveText("↑ to edit queued messages");
+  await captureThemes(tab, queued, "queue");
   const composer = tab.getByTestId("composer");
   await composer.focus();
   await composer.press("Meta+ArrowUp");

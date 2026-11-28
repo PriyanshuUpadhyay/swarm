@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { captureThemes } from "./ux-helpers";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Snapshot } from "../src/core/api";
 import type { Prompt } from "../src/core/composer";
@@ -64,6 +65,21 @@ test.describe("prompt layout and chat identity", () => {
     });
   }
 
+  test("Stop interrupts an agent while its question is open", async ({ page: tab }) => {
+    const session = process.env.SWARM_E2E_LIVE!;
+    await showPrompt(tab, [session], { id: "waiting-stop", question: "Run the tests?", choices: ["Yes", "No"] });
+    await tab.route("**/api/chat/interrupt", (route) => route.fulfill({ json: {} }));
+    await openChat(tab, session);
+    await expect(tab.getByTestId("prompt-card")).toBeVisible();
+    const status = tab.getByTestId("chat-status-line");
+    const stop = status.getByTestId("stop");
+    await expect(stop).toBeEnabled({ timeout: 2000 });
+    await captureThemes(tab, status, "waiting-stop");
+    const sent = tab.waitForRequest((request) => request.url().endsWith("/api/chat/interrupt") && request.method() === "POST");
+    await stop.click();
+    expect((await sent).postDataJSON()).toMatchObject({ session, agent: "chair" });
+  });
+
   test("a long question scrolls and its choices stay in view", async ({ page: tab }) => {
     const session = process.env.SWARM_E2E_LIVE!;
     const plan = Array.from({ length: 200 }, (_, i) => `Step ${i + 1}: do one part of the plan.`).join("\n");
@@ -96,7 +112,7 @@ test.describe("prompt layout and chat identity", () => {
 
 test("a question that takes text sends the typed answer", async ({ page: tab }, info) => {
   const session = process.env.SWARM_E2E_LIVE!;
-  await showPrompt(tab, [session], { id: "typed", question: "Please describe the arrow behavior you expect.", choices: [], input: true });
+  await showPrompt(tab, [session], { id: "typed", question: "Please describe the arrow behavior you expect.", choices: ["Change projects", "Stay here"], input: true });
   const sent: unknown[] = [];
   await tab.route("**/api/chat/answer", async (route) => {
     sent.push(route.request().postDataJSON());
@@ -104,10 +120,41 @@ test("a question that takes text sends the typed answer", async ({ page: tab }, 
   });
   await openChat(tab, session);
   const field = tab.getByTestId("prompt-card").getByTestId("prompt-text");
-  await field.fill("Up and Down switch projects");
-  await field.press("Enter");
-  await expect.poll(() => sent).toEqual([expect.objectContaining({ prompt_id: "typed", text: "Up and Down switch projects" })]);
-  await tab.screenshot({ path: info.outputPath("typed-question.png") });
+  try {
+    await field.press("2");
+    await expect(field).toHaveValue("2", { timeout: 2_000 });
+    expect(sent).toEqual([]);
+
+    await field.fill("2 arrow keys switch projects");
+    await field.press("Enter");
+    await expect.poll(() => sent).toEqual([expect.objectContaining({ prompt_id: "typed", text: "2 arrow keys switch projects" })]);
+    await tab.screenshot({ path: info.outputPath("typed-question.png") });
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+test("a question puts its answer field and Send after eleven choices", async ({ page: tab }) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await showPrompt(tab, [session], {
+    id: "eleven-choices", question: "Below which window width should the sidebar collapse to a rail?",
+    choices: Array.from({ length: 11 }, (_, i) => i < 9 ? `Option ${i + 1}` : i === 9 ? "Skip this for now" : "Ask the design seat"),
+    input: true,
+  });
+  await tab.setViewportSize({ width: 1280, height: 900 });
+  await openChat(tab, session);
+
+  const card = tab.getByTestId("prompt-card");
+  await expect(card.getByTestId("prompt-choice")).toHaveCount(11);
+  const bounds = await card.evaluate((el) => ({
+    lastChoice: [...el.querySelectorAll('[data-testid="prompt-choice"]')].at(-1)!.getBoundingClientRect().bottom,
+    answer: el.querySelector('[data-testid="prompt-text"]')!.getBoundingClientRect().top,
+    send: el.querySelector('[data-testid="prompt-send"]')!.getBoundingClientRect().top,
+  }));
+  console.log("Question y (last choice bottom, answer, Send):", bounds);
+  expect(bounds.answer).toBeGreaterThan(bounds.lastChoice);
+  expect(bounds.send).toBeGreaterThan(bounds.lastChoice);
+  await captureThemes(tab, card, "eleven");
 });
 
 test("a screen card shows the pane rows and sends one key per button", async ({ page: tab }, info) => {
@@ -144,6 +191,8 @@ test("a long error token wraps and keeps Retry and Dismiss inside the banner", a
     await composer.press("Meta+Enter");
     const banner = tab.getByTestId("chat-banner");
     await expect(banner).toContainText(error);
+    await expect(banner).toHaveCSS("padding-top", "6px", { timeout: 2000 });
+    await expect(banner).toHaveCSS("border-top-left-radius", "8px");
     expect(await banner.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     const box = (await banner.boundingBox())!;
     const input = (await tab.locator(".chat-input").boundingBox())!;
@@ -156,12 +205,113 @@ test("a long error token wraps and keeps Retry and Dismiss inside the banner", a
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(box.x + box.width + 1);
     }
     await tab.screenshot({ path: info.outputPath("long-error.png") });
+    await captureThemes(tab, banner, "action-error");
     await banner.getByRole("button", { name: "Dismiss" }).click();
     await expect(banner).toBeHidden();
   } finally {
     rmSync(join(home, "fail"), { force: true });
     await composer.fill("");
   }
+});
+
+test("a permission command opens in a scroll window without moving its choices out of view", async ({ page: tab }) => {
+  const home = process.env.SWARM_E2E_HOME!;
+  const screen = join(home, "screen");
+  const actions = join(home, "actions");
+  const start = existsSync(actions) ? readFileSync(actions, "utf8").length : 0;
+  const command = Array.from({ length: 27 }, (_, i) => `│ Command line ${i + 1}`).join("\n");
+  const session = process.env.SWARM_E2E_LIVE!;
+
+  // Extend the displayed command while keeping the real prompt ID and answer route.
+  await tab.route("**/api/snapshot", async (route) => {
+    const response = await route.fetch();
+    const snapshot: Snapshot = await response.json();
+    const prompt = snapshot.agents[session]?.find((agent) => agent.id === "orchestrator")?.prompt as Prompt | undefined;
+    if (prompt) prompt.question = prompt.question.replace("│ touch /tmp/work/probe.txt", command);
+    await route.fulfill({ response, json: snapshot });
+  });
+  writeFileSync(screen, idle);
+  await openChat(tab, session);
+  const composer = tab.locator(".strip-chat").getByTestId("composer");
+  await expect(composer).toBeEnabled();
+
+  try {
+    writeFileSync(screen, waiting);
+    const card = tab.getByTestId("prompt-card");
+    await expect(card).toBeVisible();
+    const show = card.getByRole("button", { name: "Show all" });
+    await expect(show).toBeVisible();
+    await expect(composer).toBeDisabled();
+    await expect(card).toContainText("23 more");
+    const preview = card.getByTestId("permission-command");
+    await expect(preview).toHaveText("Command line 1\nCommand line 2\nCommand line 3\nCommand line 4", { useInnerText: true });
+
+    const look = await card.evaluate((el) => {
+      const head = el.firstElementChild!;
+      const dot = head.firstElementChild!;
+      const inset = el.querySelector('[data-testid="permission-command"]')!.parentElement!;
+      return {
+        dot: dot.getBoundingClientRect().width,
+        dotColor: getComputedStyle(dot).backgroundColor,
+        labelColor: getComputedStyle(head).color,
+        panel: getComputedStyle(el).backgroundColor,
+        inset: getComputedStyle(inset).backgroundColor,
+        border: getComputedStyle(inset).borderTopWidth,
+      };
+    });
+    console.log("Permission card measurements:", look);
+
+    expect(look.dot).toBe(8);
+    expect(look.dotColor).not.toBe(look.labelColor);
+    expect(look.inset).not.toBe(look.panel);
+    expect(look.border).toBe("1px");
+    await captureThemes(tab, card, "permission-cut");
+
+    await show.click();
+    await expect(preview).toContainText("Command line 27");
+    expect(await preview.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+      return el.scrollTop > 0 && el.clientHeight <= 20 * parseFloat(getComputedStyle(el).lineHeight);
+    })).toBe(true);
+    await expect(card.getByRole("button", { name: /^3 No$/ })).toBeInViewport();
+
+    await captureThemes(tab, card, "permission");
+
+    await expect(preview).toBeFocused();
+    await tab.keyboard.press("3");
+    await expect.poll(() => existsSync(actions) ? readFileSync(actions, "utf8").slice(start) : "").toContain("key fixture-chair 3\n");
+  } finally {
+    writeFileSync(screen, idle);
+  }
+  await expect(tab.getByTestId("prompt-card")).toBeHidden();
+  await expect(tab.locator(".strip-chat").getByTestId("composer")).toBeEnabled();
+});
+
+test("a permission choice reveals hidden command lines before it can answer", async ({ page: tab }) => {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await showPrompt(tab, [session], {
+    id: "hidden-command", question: "Bash command\n│ line 1\n│ line 2\n│ line 3\n│ line 4\n│ line 5", choices: ["Yes", "No"],
+  });
+  const answers: unknown[] = [];
+  await tab.route("**/api/chat/answer", async (route) => {
+    answers.push(route.request().postDataJSON());
+    await route.fulfill({ json: {} });
+  });
+
+  await openChat(tab, session);
+  const card = tab.getByTestId("prompt-card");
+  const preview = card.getByTestId("permission-command");
+  await expect(preview).not.toContainText("line 5");
+  await card.focus();
+  await tab.keyboard.down("1");
+  await expect(preview).toContainText("line 5", { timeout: 2000 });
+  await expect(preview).toBeFocused();
+  await tab.keyboard.down("1");
+  await tab.keyboard.up("1");
+  expect(answers).toEqual([]);
+
+  await tab.keyboard.press("1");
+  await expect.poll(() => answers).toEqual([expect.objectContaining({ prompt_id: "hidden-command", choice: 0 })]);
 });
 
 test("a long question path wraps inside its labelled group", async ({ page: tab }, info) => {
@@ -196,9 +346,9 @@ test("a child question updates one mounted polite status without taking focus", 
   writeFileSync(screen, idle);
   await openChat(tab, process.env[`SWARM_E2E_PANES_${info.project.name}`]!);
   const reviewer = tab.locator('[data-testid="pane"][data-pane="reviewer"]');
-  const status = reviewer.locator(".chat-input").getByRole("status");
+  const status = reviewer.getByTestId("composer-status");
   const caption = "The agent is asking a question. Answer it above first.";
-  await expect(status).toHaveCount(1);
+  await expect(status).toHaveRole("status");
   await expect(status).toBeEmpty();
   const mounted = (await status.elementHandle())!;
   await status.evaluate((el, caption) => {

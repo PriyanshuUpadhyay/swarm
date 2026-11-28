@@ -16,7 +16,7 @@ import {
 } from "../core/skills";
 import { inputClass } from "../components/ui/input";
 import { useSkills } from "./skills";
-import { Detail, Dot, kindName, Library } from "./skills-library";
+import { Detail, KindMark, kindName, Library } from "./skills-library";
 
 /** Which occurrence is selected: a tree item by its key, or the library row. */
 type Sel = { id: string; where: "tree" | "list"; key: string };
@@ -168,7 +168,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
       return (
         <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-xl border border-dashed px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => e.target === e.currentTarget || !(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined}>
           <span className="flex items-center gap-2">
-            <Dot kind={b.kind} />
+            <KindMark kind={b.kind} />
             <code className="text-xs font-medium">{id}</code>
             <span className="text-xs text-muted-foreground">same block as in {where[0]}</span>
           </span>
@@ -179,7 +179,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
     return (
       <li key={key} {...item(key, 2, { "data-block": id, "aria-selected": isSel(key) })} {...hit(id)} className={`min-w-0 rounded-xl border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring ${ring}`} onClick={(e) => (!(e.target as HTMLElement).closest("[data-detail]") ? select({ id, where: "tree", key }) : undefined)}>
         <span className="flex items-center gap-2">
-          <Dot kind={b.kind} />
+          <KindMark kind={b.kind} />
           <code className="text-xs font-medium">{id}</code>
           <span className="text-xs text-muted-foreground">{kindName(b.kind)}</span>
           {also.length > 0 && <span className="ml-auto rounded border border-border px-1.5 text-xs text-muted-foreground">also in {also.join(", ")}</span>}
@@ -198,7 +198,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
       <li key={key} {...item(key, 2, { "aria-expanded": isOpen, "data-family": family })} className="min-w-0 rounded-xl border border-border px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <button type="button" tabIndex={-1} className="flex w-full items-center gap-2 text-left" onClick={() => toggle(key)}>
           <Chevron open={isOpen} />
-          <Dot kind="parent" />
+          <KindMark kind="parent" />
           <code className="text-xs font-medium">{family}</code>
           <span className="text-xs text-muted-foreground">family, {all.length} parts</span>
           <span className="ml-auto rounded border border-border px-1.5 text-xs text-muted-foreground">
@@ -216,7 +216,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
               return (
                 <li key={pk} {...item(pk, 3, { "data-block": p, "aria-selected": isSel(pk) })} {...hit(p)} className={`rounded-md px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSel(pk) ? "bg-selected" : "hover:bg-hover"} ${on ? "" : "opacity-60"}`} onClick={(e) => (!(e.target as HTMLElement).closest("[data-detail]") ? select({ id: p, where: "tree", key: pk }) : undefined)}>
                   <span className="flex items-center gap-2">
-                    <Dot kind={byId.get(p)?.kind ?? "rule"} />
+                    <KindMark kind={byId.get(p)?.kind ?? "rule"} />
                     <code className="text-xs">{p}</code>
                     <span className="ml-auto text-xs text-muted-foreground">{state}</span>
                   </span>
@@ -316,7 +316,7 @@ export function Blocks({ app, kit }: { app: App; kit: Kit }) {
                   const key = `o:${b.id}`;
                   return (
                     <span key={key} {...item(key, 2, { "data-block": b.id, "aria-selected": isSel(key) })} {...hit(b.id)} className={`flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed px-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSel(key) ? "border-ring bg-selected" : "border-border hover:border-ring"}`} onClick={() => select({ id: b.id, where: "tree", key })}>
-                      <Dot kind={b.kind} />
+                      <KindMark kind={b.kind} />
                       <code className="text-xs">{b.id}</code>
                     </span>
                   );

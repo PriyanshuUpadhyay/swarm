@@ -1,12 +1,12 @@
 import { ArrowDownIcon, ChevronDownIcon, ChevronUpIcon, MessageSquareDashedIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Virtualizer, type VirtualizerHandle } from "virtua";
+import type { Row } from "../core/api";
 import { PROMPT_JUMP, SENT, type App, type Pane, type Reader } from "../core/app";
 import { canBranch } from "../core/composer";
 import { promptIndex, type Line } from "../core/transcript";
 import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
-import { BackgroundLine } from "./background-line";
 import { ChatInput } from "./chat-input";
 import { copyText } from "./copy";
 import { focusInputOf } from "../core/focus";
@@ -27,7 +27,6 @@ export function ChatView({ app }: { app: App }) {
   return (
     <>
       <Transcript app={app} view={view} empty={view.openId ? "No messages yet. Send the first one below." : undefined} />
-      {view.openId && <BackgroundLine app={app} session={view.openId} />}
       {view.composer && <ChatInput app={app} composer={view.composer} />}
     </>
   );
@@ -52,8 +51,12 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
   const atBottom = useRef(true);
   const [away, setAway] = useState(false);
   const [source, setSource] = useState<Source | null>(null);
-  const { lines, id: openId, chatState, find } = view;
-  const current = find.open ? find.matches[find.index]?.id : undefined;
+  const [shownMessages] = useState(() => new Set<string>());
+  const [shownQueue] = useState(() => new WeakSet<Row>());
+  const { lines, id: openId, chatState, find, canPullBack } = view;
+  const selectedMatch = find.open ? find.matches[find.index] : undefined;
+  const current = selectedMatch?.id;
+  const findStep = useRef<number | null>(null);
   const notes = useTranscriptNotes(app, view, scrollRef);
 
   // A new chat, or its first page: start at the newest row.
@@ -75,27 +78,45 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
 
   // A find step brings its match into view. Declared after the follow effect, so it wins.
   useLayoutEffect(() => {
-    if (!current) return;
-    const i = lines.findIndex((l) => l.id === current);
+    if (!current || !selectedMatch) return;
+    const step = findStep.current !== find.seq;
+    const i = step ? lines.findIndex((l) => l.id === current) : -1;
     if (i >= 0) handle.current?.scrollToIndex(i, { align: "center" });
+
     let frame = 0;
     const timer = requestAnimationFrame(() => {
-      const match = find.matches[find.index];
+      const match = selectedMatch;
       const row = scrollRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(current)}"]`);
-      if (match?.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
+      if (step && match.preview) row?.dispatchEvent(new CustomEvent("swarm:find-output", { bubbles: true, detail: match }));
+
       frame = requestAnimationFrame(() => {
-        if (!row || !match) return;
+        // A fresh match object can cancel both frames without starting a new step.
+        if (step) findStep.current = find.seq;
+        if (!row) {
+          paintRanges("find-matches", []);
+          paintRanges("find-current", []);
+          return;
+        }
         const target = match.preview ? (match.line == null ? null : findLine(match.preview, match.line)) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] [data-output-line="${match.line}"]`) ?? row.querySelector<HTMLElement>(`[data-preview="${CSS.escape(match.preview)}"] .patch`) ?? row : row;
         const ranges = textRanges(target, find.query);
         const selected = ranges[match.preview ? match.lineOccurrence ?? 0 : match.occurrence];
         paintRanges("find-matches", textRanges(row, find.query));
         paintRanges("find-current", selected ? [selected] : []);
-        const rect = selected?.getBoundingClientRect();
-        if (rect && scrollRef.current) handle.current?.scrollToIndex(i, { align: "start", offset: rect.top - row.getBoundingClientRect().top - scrollRef.current.clientHeight / 2 });
+
+        if (i < 0 || !selected) return;
+        const box = selected.startContainer.parentElement?.closest<HTMLElement>("pre.scroll-window");
+        if (box) {
+          const hit = selected.getBoundingClientRect();
+          const visible = box.getBoundingClientRect();
+          if (hit.top < visible.top || hit.bottom > visible.bottom) box.scrollTop += hit.top - visible.top - box.clientHeight / 2;
+        }
+
+        const rect = selected.getBoundingClientRect();
+        if (scrollRef.current) handle.current?.scrollToIndex(i, { align: "start", offset: rect.top - row.getBoundingClientRect().top - scrollRef.current.clientHeight / 2 });
       });
     });
     return () => { cancelAnimationFrame(timer); cancelAnimationFrame(frame); };
-  }, [find.seq]);
+  }, [find.seq, find.query, selectedMatch, current]);
   useEffect(() => {
     if (!find.open) { paintRanges("find-matches", []); paintRanges("find-current", []); }
   }, [find.open]);
@@ -206,19 +227,29 @@ function Transcript({ app, view, testid = "transcript", empty }: { app: Reader; 
                   shift={view.shift}
                   onScroll={onScroll}
                 >
-                  {(line: Line, index: number) => (
-                    <LineView
+                  {(line: Line, index: number) => {
+                    const id = `${openId}\0${line.id}`;
+                    const row = line.row;
+                    // Queue wire IDs name positions. A changed queue creates new row objects.
+                    const cutState = row.kind === "queued"
+                      ? { key: row, shown: shownQueue.has(row), reveal: () => shownQueue.add(row) }
+                      : { key: id, shown: shownMessages.has(id), reveal: () => shownMessages.add(id) };
+
+                    return <LineView
                       key={line.id}
                       app={app}
                       line={line}
+                      cutState={cutState}
                       index={index}
                       full={view.full}
                       // An unreachable agent shows no text box, so its rows offer no Reuse.
                       composerId={view.composer && !view.composer.agent.unreachable ? view.composer.id : undefined}
                       branches={!!view.composer && canBranch(view.composer.agent)}
                       match={line.id === current ? "current" : undefined}
-                    />
-                  )}
+                      queueStart={!!view.composer?.agent.pullBack && row.kind === "queued" && lines[index - 1]?.row.kind !== "queued"}
+                      showQueueHint={canPullBack}
+                    />;
+                  }}
                 </Virtualizer>
                 {notes.layer}
               </>
@@ -278,7 +309,7 @@ function FindBar({ app, view, listRef }: { app: Reader; view: Pane; listRef: Rea
         onChange={(e) => app.setFindQuery(e.target.value)}
         onKeyDown={onKeyDown}
       />
-      <span className="find-count" data-testid="find-count">
+      <span role="status" className="find-count" data-testid="find-count">
         {count}
       </span>
       {find.query.trim() && !find.matches.length && view.hasOlder && <button type="button" className="t-link" disabled={view.loadingOlder} onClick={() => void app.loadOlder()}>{view.loadingOlder ? "Searching earlier messages…" : "Search earlier messages"}</button>}

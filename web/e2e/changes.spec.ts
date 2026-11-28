@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { captureThemes, changeRow as row } from "./ux-helpers";
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -39,7 +40,6 @@ async function lineNumber(tab: Page, text: string) {
 }
 
 const rows = (tab: Page) => tab.getByTestId("change-row");
-const row = (tab: Page, path: string) => tab.locator(`[data-testid="change-row"][data-path="${path}"]`);
 const diffPath = (tab: Page) => tab.getByTestId("diff-path");
 
 test("Changes lists local layers and branch commits, and keys move the file list", async ({ page: tab }) => {
@@ -112,6 +112,66 @@ test("a 20,000-line diff opens capped", async ({ page: tab }) => {
   expect(await tab.locator(DIFF_ROWS).count()).toBeLessThanOrEqual(200);
   await expect(tab.getByTestId("diff-capped")).toContainText("20,004 lines");
   expect(errors).toEqual([]);
+});
+
+test("Show all windows the full diff, finds its tail and sends a range note", async ({ page: tab }) => {
+  const errors = await openGitChat(tab);
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "big.txt").click();
+  await expect(diffPath(tab)).toHaveText("big.txt");
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(tab.getByTestId("diff-capped")).toBeHidden();
+  const body = tab.getByTestId("diff-body");
+  await body.focus();
+  await tab.keyboard.press("Meta+f");
+  const find = tab.getByRole("textbox", { name: "Find in diff" });
+  await find.fill("generated line 20000");
+  const result = tab.getByRole("search", { name: "Find in diff" }).getByRole("status");
+  await expect(result).toHaveText("1 of 1", { timeout: 2_000 });
+  await expect(tab.locator(DIFF_ROWS).filter({ hasText: "generated line 20000" })).toBeVisible();
+  expect(await tab.locator(DIFF_ROWS).count()).toBeLessThan(200);
+
+  await captureThemes(tab, tab.getByTestId("diff-pane"), "changes-full");
+
+  await find.press("Escape");
+  await (await lineNumber(tab, "generated line 19999")).click();
+  const last = await lineNumber(tab, "generated line 20000");
+  await last.click({ modifiers: ["Shift"] });
+  await expect(tab.locator(`${DIFF_ROWS}[data-selected-line]`)).toHaveCount(2);
+  await expect(last).toHaveCSS("box-shadow", /2px 0px 0px 0px inset/);
+
+  await tab.getByTestId("comment-input").fill("Check the final two lines.");
+  await tab.getByTestId("comment-add").click();
+  await expect(tab.getByTestId("comment-card")).toContainText("Check the final two lines.");
+  await tab.getByTestId("send-comments").click();
+  await expect.poll(() => read("typed")).toContain("big.txt (lines 19999-20000):\n> +generated line 19999\n> +generated line 20000\nCheck the final two lines.");
+  expect(errors).toEqual([]);
+});
+
+test("a late full diff cannot replace the newly selected file", async ({ page: tab }) => {
+  await openGitChat(tab);
+  let release!: () => void;
+  let start!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  const started = new Promise<void>((done) => { start = done; });
+  const isFull = (url: string) => new URL(url).searchParams.get("full") === "1";
+  await tab.route("**/api/changes/diff?**", async (route) => {
+    if (isFull(route.request().url())) { start(); await held; }
+    await route.continue();
+  });
+
+  await tab.getByTestId("show-changes").click();
+  await row(tab, "big.txt").click();
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
+  await started;
+  await row(tab, "README.md").click();
+  const reply = tab.waitForResponse((response) => response.url().includes("/api/changes/diff?") && isFull(response.url()));
+  release();
+  await (await reply).finished();
+  await tab.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await expect(diffPath(tab)).toHaveText("README.md");
+
+  await expect(tab.locator(DIFF_ROWS).filter({ hasText: "A test repository, changed." })).toBeVisible();
 });
 
 test("a 20,000-line diff opens inside the 150 ms budget @perf", async ({ page: tab }, info) => {
@@ -255,46 +315,70 @@ test("the PR panel shows the branch's PR with passing, then failing checks", asy
 });
 
 
-test("late Add keeps newer editor text and failed Send keeps the draft", async ({ page: tab }) => {
+test("Add locks the comment text until its reply and failed Send keeps the draft", async ({ page: tab }) => {
   await openGitChat(tab);
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   let started!: () => void;
   const entered = new Promise<void>((resolve) => { started = resolve; });
-  let first = true;
   await tab.route("**/api/changes/comment-range", async (route) => {
-    const body = route.request().postDataJSON();
-    if (body.op === "message") {
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "offline" }) });
-      return;
+    if (route.request().postDataJSON().op === "message") {
+      return route.fulfill({ status: 503, json: { error: "offline" } });
     }
-    if (first) {
-      first = false;
-      started();
-      await held;
-    }
+    started();
+    await held;
     await route.continue();
   });
+
+  try {
+    await tab.getByTestId("show-changes").click();
+    await row(tab, "README.md").click();
+    await expect(diffPath(tab)).toHaveText("README.md");
+    await (await lineNumber(tab, "A test repository, changed.")).click();
+    const input = tab.getByTestId("comment-input");
+    await input.fill("Saved draft");
+    await tab.getByTestId("comment-add").click();
+    await entered;
+    await expect(input).toBeDisabled({ timeout: 2_000 });
+    await captureThemes(tab, tab.getByTestId("comment-box"), "comment-add-pending");
+
+    release();
+    const card = tab.getByTestId("comment-card");
+    await expect(card).toContainText("Saved draft");
+    const send = tab.getByTestId("send-comments");
+    await send.click();
+    await expect(send).toBeEnabled();
+    await expect(tab.getByTestId("drafts")).toContainText("1 comment");
+    await expect(card).toContainText("Saved draft");
+  } finally {
+    release();
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+test("a list refresh adds the new file without closing the full diff", async ({ page: tab }) => {
+  await openGitChat(tab);
   await tab.getByTestId("show-changes").click();
-  await row(tab, "README.md").click();
-  await expect(diffPath(tab)).toHaveText("README.md");
-  await (await lineNumber(tab, "A test repository, changed.")).click();
-  const input = tab.getByTestId("comment-input");
-  await input.fill("Old draft");
-  await tab.getByTestId("comment-add").click();
-  await entered;
-  await input.fill("Newer draft");
-  release();
-  await expect(tab.getByTestId("comment-add")).toBeEnabled();
-  await expect(input).toHaveValue("Newer draft");
-  await expect(tab.getByTestId("comment-card")).toHaveCount(0);
-  await tab.getByTestId("comment-add").click();
-  await expect(tab.getByTestId("comment-card")).toContainText("Newer draft");
-  const send = tab.getByTestId("send-comments");
-  await send.click();
-  await expect(send).toBeEnabled();
-  await expect(tab.getByTestId("drafts")).toContainText("1 comment");
-  await expect(tab.getByTestId("comment-card")).toContainText("Newer draft");
+  await row(tab, "big.txt").click();
+  await tab.getByRole("button", { name: "Show all", exact: true }).click();
+  await expect(tab.getByTestId("diff-capped")).toBeHidden();
+
+  const name = "refresh-added.txt";
+  await tab.route("**/api/changes?**", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    data.files.push({ path: name, status: "?", layer: "untracked", added: 1, removed: 0 });
+    await route.fulfill({ response, json: data });
+  });
+
+  try {
+    await tab.evaluate(() => dispatchEvent(new Event("focus")));
+    await expect(row(tab, name)).toBeVisible({ timeout: 2_000 });
+    await expect(diffPath(tab)).toHaveText("big.txt");
+    await expect(tab.getByTestId("diff-capped")).toBeHidden();
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 

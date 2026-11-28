@@ -94,7 +94,7 @@ function Banner({ app }: { app: App }) {
         <div role="alertdialog" aria-label={confirm.action} data-testid="settings-confirm" className="grid gap-2 rounded-md border border-border px-3 py-2 text-sm">
           <p>{confirm.text}</p>
           <div className="flex gap-2">
-            <Button size="sm" data-testid="settings-confirm-yes" onClick={() => void app.settings.answer(true)}>
+            <Button size="sm" variant="destructive" data-testid="settings-confirm-yes" onClick={() => void app.settings.answer(true)}>
               {confirm.action}
             </Button>
             <Button size="sm" variant="outline" data-safe onClick={() => void app.settings.answer(false)}>

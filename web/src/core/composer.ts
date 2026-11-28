@@ -55,12 +55,18 @@ export type AgentInput = {
   /** An unreachable chair whose own CLI session can start again in this chat (ADR 0107). */
   resumable: boolean;
   running: boolean;
+  waiting: boolean;
+  turnStartTimeS?: number;
+  turnClockTimeS?: number;
   prompt: Prompt | null;
   /** Claude and pi in tmux keep a queue that Up pulls back (ADR 0038). */
   pullBack: boolean;
   /** The messages the CLI holds, as its screen lists them; empty when swarm does not read them. */
   queue: QueuedMessage[];
 };
+
+/** The name used by the composer and by Stop. */
+export const inputTarget = (agent: AgentInput) => agent.who ?? (agent.provider ? `the ${agent.provider} agent` : "the agent");
 
 export const MISSING_ADAPTER = "This session does not record an adapter, so Swarm cannot reach its panes.";
 
@@ -69,6 +75,9 @@ const BRANCH_PROVIDERS = ["claude", "pi"];
 
 /** Esc Esc and Branch from here need the chair not working and of a CLI that can branch. */
 export const canBranch = (agent: AgentInput) => agent.who === null && !agent.running && BRANCH_PROVIDERS.includes(agent.provider ?? "");
+
+export const canPullQueued = (agent: AgentInput, queued: number, draftEmpty: boolean) =>
+  agent.pullBack && !agent.disabled && queued > 0 && draftEmpty;
 
 /** The chair's input, or the input of the child agent `child` (ChildColumnView). */
 export function agentInput(session: Session | undefined, agents: readonly Agent[] | undefined, child: string | null = null): AgentInput {
@@ -85,7 +94,8 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
   // A blocked agent has a dialog open, where Enter means yes, so typed text could approve a tool.
   // A picker that waits on the owner shows as a card too. The card is above the box, or comes with
   // the next listing.
-  if (!disabled && (agent?.state === "blocked" || prompt)) disabled = "The agent is asking a question. Answer it above first.";
+  const waiting = !unreachable && (agent?.state === "blocked" || prompt !== null);
+  if (waiting) disabled = "The agent is asking a question. Answer it above first.";
   return {
     who: child,
     provider,
@@ -96,6 +106,9 @@ export function agentInput(session: Session | undefined, agents: readonly Agent[
     unreachable,
     resumable: unreachable && !child && provider !== null && typeof session?.chair_id === "string",
     running: agent?.state === "working",
+    waiting,
+    turnStartTimeS: agent?.turn_start_time_s,
+    turnClockTimeS: agent?.turn_clock_time_s,
     prompt: unreachable ? null : prompt,
     pullBack: (provider === "claude" || provider === "pi") && (adapter === "tmux" || adapter === "tmux-swarm"),
     queue: (agent?.queue as QueuedMessage[] | undefined) ?? [],

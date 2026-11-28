@@ -3,10 +3,15 @@
 use super::super::tool;
 use super::checklist;
 use super::{
-    RECORD, Record, Row, RowKind, TextPreview, UNMAPPED, chip, is_record, key, meta, peer_text,
-    record_text, shell_row, shell_run, string, tagged, task_summary,
+    RECORD, Record, Row, RowKind, SUBAGENT_TOOL, TextPreview, UNMAPPED, chip, is_record, key, meta,
+    peer_text, record_text, shell_row, shell_run, string, tagged, task_summary,
 };
+use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashMap;
+
+use super::super::ToolState;
+use super::{ChildState, PI_CHILD_SLOTS, SubagentChild, SubagentRun};
 
 fn call_row_id(event: &Value) -> String {
     format!("{}:call", string(event, "tool_call_id"))
@@ -23,7 +28,7 @@ fn is_subagent_call(name: &str) -> bool {
         "task",
         "spawn_agent",
         "invoke_subagent",
-        "subagent",
+        SUBAGENT_TOOL,
     ]
     .iter()
     .any(|known| name.eq_ignore_ascii_case(known))
@@ -47,6 +52,96 @@ pub(in crate::view) fn subagent_labels(input: &Value, name: &str) -> (String, St
     (agent_type.into(), line.chars().take(LABEL_CHARS).collect())
 }
 
+type ChildStates = [Option<ChildState>; PI_CHILD_SLOTS];
+
+/// Results after a turn still belong to their unique earlier call in the same Pi log.
+pub(in crate::view) fn pi_child_facts(records: &[Record]) -> HashMap<usize, ChildStates> {
+    let mut calls = HashMap::new();
+    let mut facts: HashMap<usize, ChildStates> = HashMap::new();
+
+    for (index, record) in records.iter().enumerate() {
+        let event = &record.event;
+        let id = string(event, "tool_call_id");
+        if id.is_empty() {
+            continue;
+        }
+        let key = (meta(event, "session_id"), id);
+
+        match string(event, "type") {
+            "tool_call" if string(event, "name") == SUBAGENT_TOOL => {
+                calls
+                    .entry(key)
+                    .and_modify(|previous| *previous = None)
+                    .or_insert(Some(index));
+            }
+
+            "pi_child_results" => {
+                if let (Some(Some(call)), Some(states)) =
+                    (calls.get(&key), event["states"].as_array())
+                {
+                    for (state, found) in facts.entry(*call).or_default().iter_mut().zip(states) {
+                        let found = found
+                            .as_str()
+                            .and_then(|_| ChildState::deserialize(found).ok());
+                        if found.is_some()
+                            && !(found == Some(ChildState::Started) && state.is_some())
+                        {
+                            *state = found;
+                        }
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+    facts
+}
+
+pub(in crate::view) fn subagent_run(
+    event: &Value,
+    state: ToolState,
+    result: Option<TextPreview>,
+    observed: ChildStates,
+) -> SubagentRun {
+    let input = &event["input"];
+    let name = string(event, "name");
+    let call_id = string(event, "tool_call_id");
+    let (agent_type, description) = subagent_labels(input, name);
+
+    let mut run = SubagentRun {
+        call_id: call_id.into(),
+        other_call_ids: Vec::new(),
+        children: Vec::new(),
+        agent_type,
+        description,
+        state,
+        result,
+    };
+
+    if let Some(tasks) = input["tasks"]
+        .as_array()
+        .filter(|tasks| name == SUBAGENT_TOOL && tasks.len() > 1)
+    {
+        for (i, task) in tasks.iter().take(PI_CHILD_SLOTS).enumerate() {
+            let (_, description) = subagent_labels(task, name);
+            let id = if i == 0 {
+                call_id.to_owned()
+            } else {
+                format!("{call_id}.{}", i + 1)
+            };
+            if i != 0 {
+                run.other_call_ids.push(id.clone());
+            }
+            run.children.push(SubagentChild {
+                call_id: id,
+                description,
+                state: observed[i],
+            });
+        }
+    }
+    run
+}
+
 pub fn row(record: &Record) -> Option<Row> {
     let event = &record.event;
     let event_type = string(event, "type");
@@ -68,6 +163,7 @@ pub fn row(record: &Record) -> Option<Row> {
             row.subagent = Some(super::SubagentRun {
                 call_id: string(event, "agent_thread_id").into(),
                 other_call_ids: Vec::new(),
+                children: Vec::new(),
                 agent_type: path.into(),
                 description: String::new(),
                 state: tool::subagent_state(
@@ -315,7 +411,7 @@ pub fn row(record: &Record) -> Option<Row> {
         // A page marker is the tool's own window bound, not a log record.
         "page" => return None,
         // A group mark joins its tool call in the builder.
-        "tool_group" => return None,
+        "tool_group" | "pi_child_results" => return None,
         // A new event type shows as its JSON until the view learns it.
         _ => {
             let mut row = Row::new(

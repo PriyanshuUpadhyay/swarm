@@ -45,26 +45,42 @@ pub(super) fn run_before(
     }
     let mut command = Command::new(program);
     command.args(args);
-    match run_command_deadline(&mut command, || deadline) {
-        Ok(output) if output.status.success() => Ok(Some(output.stdout)),
+    match run_command_deadline(&mut command, || deadline, None) {
+        Ok((output, _)) if output.status.success() => Ok(Some(output.stdout)),
         Err(error) if error.kind() == io::ErrorKind::TimedOut => Err(DeadlineExpired),
         _ => Ok(None),
     }
 }
 
 pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String> {
-    run_command_deadline(command, || Instant::now() + Duration::from_secs(seconds))
-        .map_err(|error| error.to_string())
+    run_command_deadline(
+        command,
+        || Instant::now() + Duration::from_secs(seconds),
+        None,
+    )
+    .map(|(output, _)| output)
+    .map_err(|error| error.to_string())
 }
 
-fn timeout_error() -> io::Error {
-    io::Error::new(io::ErrorKind::TimedOut, "command timed out")
+/// Stops the command at the first byte over `limit`. An overflow can return a killed status.
+pub fn run_command_capped(
+    command: &mut Command,
+    seconds: u64,
+    limit: usize,
+) -> Result<(Output, bool), String> {
+    run_command_deadline(
+        command,
+        || Instant::now() + Duration::from_secs(seconds),
+        Some(limit),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn run_command_deadline(
     command: &mut Command,
     deadline: impl FnOnce() -> Instant,
-) -> io::Result<Output> {
+    cap: Option<usize>,
+) -> io::Result<(Output, bool)> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -82,89 +98,92 @@ fn run_command_deadline(
     let out_sender = output.clone();
 
     let out_read = std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let _ = out_sender.send((true, stdout.read_to_end(&mut bytes).map(|_| bytes)));
+        let read = || -> std::io::Result<_> {
+            let mut bytes = Vec::with_capacity(cap.unwrap_or(0));
+            let overflow = if let Some(cap) = cap {
+                std::io::copy(&mut stdout.by_ref().take(cap as u64), &mut bytes)?;
+                std::io::copy(&mut stdout.take(1), &mut std::io::sink())? != 0
+            } else {
+                stdout.read_to_end(&mut bytes)?;
+                false
+            };
+            Ok((bytes, overflow))
+        };
+        let _ = out_sender.send((true, read()));
     });
     let err_read = std::thread::spawn(move || {
         let mut bytes = Vec::new();
-        let _ = output.send((false, stderr.read_to_end(&mut bytes).map(|_| bytes)));
+        let _ = output.send((
+            false,
+            stderr.read_to_end(&mut bytes).map(|_| (bytes, false)),
+        ));
     });
 
     let deadline = deadline();
-    let pid = child.id();
-    let (finished, completion) = std::sync::mpsc::channel();
-    let wait = std::thread::spawn(move || {
-        let status = child.wait();
-        let _ = finished.send(());
-        (child, status)
-    });
-
-    let timed_out = completion
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .is_err();
-    if timed_out {
-        stop_group(pid);
-    }
-    let (mut child, status) = wait.join().expect("command wait thread");
-    if timed_out || status.is_err() {
-        stop(&mut child);
-    }
-
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
-    let mut failure = None;
+    let mut overflow = false;
 
+    // Only this thread signals the group. Keep the child unreaped until the pipe reads finish.
     for _ in 0..2 {
         match receive.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            Ok((out, Ok(bytes))) => {
-                if out {
-                    stdout = bytes;
-                } else {
-                    stderr = bytes;
+            Ok((true, Ok((bytes, excess)))) => {
+                stdout = bytes;
+                overflow = excess;
+                if overflow {
+                    crate::process::kill_group(child.id() as libc::pid_t);
                 }
             }
-
+            Ok((false, Ok((bytes, _)))) => stderr = bytes,
             other => {
                 stop(&mut child);
-                failure = Some(match other {
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => timeout_error(),
-                    other => io::Error::other(format!("command output failed: {other:?}")),
+                let message = format!("command output failed: {other:?}");
+                return Err(match other {
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        io::Error::new(io::ErrorKind::TimedOut, message)
+                    }
+                    _ => io::Error::other(message),
                 });
-                break;
             }
         }
     }
 
     let _ = out_read.join();
     let _ = err_read.join();
-    if timed_out {
-        return Err(timeout_error());
-    }
-    if let Some(error) = failure {
-        return Err(error);
-    }
-    Ok(Output {
-        status: status?,
-        stdout,
-        stderr,
-    })
+    let status = wait_until(&mut child, deadline)?;
+    Ok((
+        Output {
+            status,
+            stdout,
+            stderr,
+        },
+        overflow,
+    ))
 }
+
+fn wait_until(
+    child: &mut std::process::Child,
+    deadline: Instant,
+) -> io::Result<std::process::ExitStatus> {
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            stop(child);
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "command timed out or could not be read",
+            ));
+        }
+        std::thread::sleep(remaining.min(Duration::from_millis(10)));
+    }
+}
+
 fn stop(child: &mut std::process::Child) {
-    stop_group(child.id());
-    let _ = child.kill();
+    crate::process::kill_group(child.id() as libc::pid_t);
     let _ = child.wait();
-}
-fn stop_group(pid: u32) {
-    #[cfg(unix)]
-    {
-        unsafe extern "C" {
-            fn kill(pid: i32, signal: i32) -> i32;
-        }
-        // SAFETY: this child owns its process group; kill accepts plain integers.
-        unsafe {
-            kill(-(pid as i32), 9);
-        }
-    }
 }
 fn git(path: &str, args: &[&str]) -> Option<String> {
     let mut flags = vec!["-C", path];

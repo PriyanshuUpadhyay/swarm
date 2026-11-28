@@ -1,12 +1,10 @@
 //! Read-only Git changes and file previews. Paths never follow workspace symlinks.
 mod listing;
+pub(super) use listing::branch_totals;
+use listing::comparison_refs;
 pub use listing::list;
 
-use super::{
-    TextPreview, discovery,
-    fields::{LineTotals, MAX_SAFE_JSON_INTEGER},
-    lifecycle::Error,
-};
+use super::{TextPreview, discovery, lifecycle::Error};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -19,6 +17,9 @@ use std::{
 
 type Result<T> = std::result::Result<T, Error>;
 type Counts = (Option<usize>, Option<usize>);
+type FileCounts = BTreeMap<String, Counts>;
+pub const FULL_BYTES: usize = 2 * 1024 * 1024;
+pub const FULL_LINES: usize = 20_010;
 
 #[derive(Clone, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -54,13 +55,16 @@ impl<'a> ReadCommands<'a> {
             .saturating_duration_since(Instant::now())
             .as_secs();
         if seconds == 0 {
-            Err(Error::Failed("The workspace read timed out".into()))
+            Err(Error::Read("The workspace read timed out".into()))
         } else {
             Ok(seconds)
         }
     }
 }
 fn bytes(read: &ReadCommands<'_>, args: &[&str]) -> Result<Vec<u8>> {
+    Ok(git_bytes(read, args, false)?.0)
+}
+fn git_bytes(read: &ReadCommands<'_>, args: &[&str], capped: bool) -> Result<(Vec<u8>, bool)> {
     let mut command = Command::new("git");
     command
         .args(["-C", read.root, "--literal-pathspecs"])
@@ -68,13 +72,21 @@ fn bytes(read: &ReadCommands<'_>, args: &[&str]) -> Result<Vec<u8>> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("LC_ALL", "C");
-    let output = discovery::run_command(&mut command, read.remaining()?).map_err(Error::Failed)?;
-    if !output.status.success() {
-        return Err(Error::Failed(
+
+    let seconds = read.remaining()?;
+    let (output, overflow) = if capped {
+        discovery::run_command_capped(&mut command, seconds, FULL_BYTES)
+    } else {
+        discovery::run_command(&mut command, seconds).map(|output| (output, false))
+    }
+    .map_err(Error::Read)?;
+
+    if !overflow && !output.status.success() {
+        return Err(Error::Read(
             String::from_utf8_lossy(&output.stderr).trim().into(),
         ));
     }
-    Ok(output.stdout)
+    Ok((output.stdout, overflow))
 }
 fn text(read: &ReadCommands<'_>, args: &[&str]) -> Result<String> {
     String::from_utf8(bytes(read, args)?)
@@ -83,17 +95,6 @@ fn text(read: &ReadCommands<'_>, args: &[&str]) -> Result<String> {
 struct Comparison {
     pair: Vec<String>,
     refs: Vec<String>,
-}
-fn comparison_refs(read: &ReadCommands<'_>) -> Result<String> {
-    text(
-        read,
-        &[
-            "for-each-ref",
-            "--format=%(refname)%09%(objectname)%09%(objecttype)",
-            "refs/heads",
-            "refs/remotes",
-        ],
-    )
 }
 fn comparison(read: &ReadCommands<'_>, base: Option<&str>, identity: &Value) -> Result<Comparison> {
     let base = base.ok_or_else(|| Error::Invalid("Select a base ref".into()))?;
@@ -144,51 +145,6 @@ fn compare_to(
         refs: entries.iter().map(|entry| entry[0].to_owned()).collect(),
     })
 }
-pub(super) fn branch_totals(root: &str, branch: &str, deadline: Instant) -> Option<LineTotals> {
-    let mut read = ReadCommands::new(root);
-    read.deadline = read.deadline.min(deadline);
-    let before = identity(&read, None).ok()?;
-    if before["branch"] != branch {
-        return None;
-    }
-
-    let refs = comparison_refs(&read).ok()?;
-    let own = format!("refs/heads/{branch}");
-    let names = || {
-        refs.lines()
-            .filter_map(|line| line.split_once('\t').map(|(name, _)| name))
-    };
-    // Match the Changes pane's defaultBase order, not its current user selection.
-    let base = [
-        "refs/remotes/origin/HEAD",
-        "refs/remotes/origin/main",
-        "refs/remotes/origin/master",
-        "refs/heads/main",
-        "refs/heads/master",
-    ]
-    .into_iter()
-    .find(|name| *name != own && names().any(|r| r == *name))
-    .or_else(|| names().find(|r| *r != own))?;
-
-    let pair = compare_to(&read, &refs, base, &before).ok()?.pair;
-    let counts = stats(&diff(&read, "branch", &pair, &["--numstat", "-z"], None).ok()?).ok()?;
-    stable(&read, &Mode::Branch, Some(base), None, &before, &pair).ok()?;
-
-    let total = |sum: u64, count: Option<usize>| {
-        let sum = sum.checked_add(count.unwrap_or(0) as u64)?;
-        (sum <= MAX_SAFE_JSON_INTEGER).then_some(sum)
-    };
-    let (added_lines, removed_lines) = counts
-        .into_values()
-        .try_fold((0, 0), |(added, removed), (a, r)| {
-            Some((total(added, a)?, total(removed, r)?))
-        })?;
-    Some(LineTotals {
-        added_lines,
-        removed_lines,
-    })
-}
-
 fn stable(
     read: &ReadCommands<'_>,
     mode: &Mode,
@@ -243,20 +199,35 @@ fn diff(
     format: &[&str],
     path: Option<&str>,
 ) -> Result<Vec<u8>> {
+    Ok(diff_read(read, layer, pair, format, path, false)?.0)
+}
+fn diff_read(
+    read: &ReadCommands<'_>,
+    layer: &str,
+    pair: &[String],
+    format: &[&str],
+    path: Option<&str>,
+    capped: bool,
+) -> Result<(Vec<u8>, bool)> {
     let mut args = diff_args(layer, pair);
     args.extend(format.iter().map(|s| (*s).into()));
     args.push("--".into());
     args.extend(path.map(String::from));
-    bytes(read, &args.iter().map(String::as_str).collect::<Vec<_>>())
+    git_bytes(
+        read,
+        &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        capped,
+    )
 }
 fn patch_and_counts(
     read: &ReadCommands<'_>,
     layer: &str,
     pair: &[String],
     path: &str,
-) -> Result<(String, BTreeMap<String, Counts>)> {
+    capped: bool,
+) -> Result<Option<(String, FileCounts)>> {
     std::thread::scope(|scope| {
-        let patch = scope.spawn(|| diff(read, layer, pair, &[], Some(path)));
+        let patch = scope.spawn(|| diff_read(read, layer, pair, &[], Some(path), capped));
         let counts = scope.spawn(|| {
             diff(
                 read,
@@ -270,14 +241,19 @@ fn patch_and_counts(
                 Some(path),
             )
         });
-        Ok((
-            String::from_utf8(patch.join().expect("patch read")?)
-                .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))?,
-            stats(&counts.join().expect("patch counts")?)?,
-        ))
+
+        let (data, overflow) = patch.join().expect("patch read")?;
+        let counts = counts.join().expect("patch counts")?;
+
+        if overflow {
+            return Ok(None);
+        }
+        let patch = String::from_utf8(data)
+            .map_err(|_| Error::Failed("Git returned invalid UTF-8".into()))?;
+        Ok(Some((patch, stats(&counts)?)))
     })
 }
-fn stats(data: &[u8]) -> Result<BTreeMap<String, Counts>> {
+fn stats(data: &[u8]) -> Result<FileCounts> {
     data.split(|b| *b == 0)
         .filter(|v| !v.is_empty())
         .map(|entry| {
@@ -367,47 +343,80 @@ pub fn patch(
     base: Option<&str>,
     layer: Option<&str>,
 ) -> Result<Value> {
+    Ok(read_patch(root, path, mode, base, layer, false)?.expect("uncapped preview"))
+}
+
+/// `None`: the full patch exceeded a cap.
+pub fn full_patch(
+    root: &str,
+    path: &str,
+    mode: &Mode,
+    base: Option<&str>,
+    layer: Option<&str>,
+) -> Result<Option<Value>> {
+    read_patch(root, path, mode, base, layer, true)
+}
+
+fn fits_full(lines: usize, bytes: usize) -> bool {
+    lines <= FULL_LINES && bytes <= FULL_BYTES
+}
+
+fn read_patch(
+    root: &str,
+    path: &str,
+    mode: &Mode,
+    base: Option<&str>,
+    layer: Option<&str>,
+    expand: bool,
+) -> Result<Option<Value>> {
     validate_path(path)?;
     let read = ReadCommands::new(root);
     let before = identity(&read, Some(path))?;
+
     let pair = if matches!(mode, Mode::Branch) {
         comparison(&read, base, &before)?.pair
     } else {
         Vec::new()
     };
+
     let (candidates, mut source) = if matches!(mode, Mode::Branch) {
-        let (source, counts) = patch_and_counts(&read, "branch", &pair, path)?;
-        (
-            counts
-                .get(path)
-                .map(|&(added, removed)| Change {
-                    path: path.into(),
-                    status: String::new(),
-                    layer: "branch".into(),
-                    added,
-                    removed,
-                })
-                .into_iter()
-                .collect(),
-            Some(source),
-        )
+        if expand && layer.is_some_and(|layer| layer != "branch") {
+            return Err(Error::Invalid("Select a changed file and layer".into()));
+        }
+        let Some((source, counts)) = patch_and_counts(&read, "branch", &pair, path, expand)? else {
+            return Ok(None);
+        };
+
+        let files = counts
+            .get(path)
+            .map(|&(added, removed)| Change {
+                path: path.into(),
+                status: String::new(),
+                layer: "branch".into(),
+                added,
+                removed,
+            })
+            .into_iter()
+            .collect();
+
+        (files, Some(source))
     } else {
-        (
-            local_changes(&bytes(
-                &read,
-                &[
-                    "status",
-                    "--porcelain=v1",
-                    "-z",
-                    "--no-renames",
-                    "--untracked-files=all",
-                    "--",
-                    path,
-                ],
-            )?)?,
-            None,
-        )
+        let files = local_changes(&bytes(
+            &read,
+            &[
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--no-renames",
+                "--untracked-files=all",
+                "--",
+                path,
+            ],
+        )?)?;
+
+        (files, None)
     };
+
     let mut candidates: Vec<_> = candidates
         .into_iter()
         .filter(|f: &Change| f.path == path && layer.is_none_or(|l| f.layer == l))
@@ -421,18 +430,23 @@ pub fn patch(
         .pop()
         .ok_or_else(|| Error::Invalid("Select a changed file and layer".into()))?;
     let layer = file.layer.as_str();
+
     if !matches!(mode, Mode::Branch) && layer != "untracked" {
-        let (patch, counts) = patch_and_counts(&read, layer, &pair, path)?;
+        let Some((patch, counts)) = patch_and_counts(&read, layer, &pair, path, expand)? else {
+            return Ok(None);
+        };
         source = Some(patch);
         (file.added, file.removed) = counts.get(path).copied().unwrap_or((None, None));
     }
+
     let mut full = None;
     let source = if layer == "untracked" {
-        let Some(source) = untracked(&read, path)? else {
-            return Ok(
+        let Some(source) = untracked_source(&read, path, expand)? else {
+            return Ok(Some(
                 json!({"path":path,"notice":"Binary file or symbolic link","added":file.added,"removed":file.removed}),
-            );
+            ));
         };
+
         file.added = Some(source.full_lines);
         file.removed = Some(0);
         let name = serde_json::to_string(&format!("b/{path}")).unwrap();
@@ -445,38 +459,61 @@ pub fn patch(
         } else {
             ""
         };
-        full = Some((
-            source.full_lines + 4 + usize::from(!ending.is_empty()),
-            header.len() + source.full_bytes + source.full_lines + ending.len(),
-        ));
-        let patch = source
-            .text
-            .split_inclusive('\n')
-            .map(|l| format!("+{l}"))
-            .collect::<String>();
-        format!(
-            "{header}{patch}{}",
-            if source.text.len() == source.full_bytes {
-                ending
-            } else {
-                ""
-            }
-        )
+
+        let lines = source.full_lines + 4 + usize::from(!ending.is_empty());
+        let bytes = header.len() + source.full_bytes + source.full_lines + ending.len();
+        if expand && !fits_full(lines, bytes) {
+            return Ok(None);
+        }
+        full = Some((lines, bytes));
+
+        let mut patch = header;
+        for line in source.text.split_inclusive('\n') {
+            patch.push('+');
+            patch.push_str(line);
+        }
+        if source.text.len() == source.full_bytes {
+            patch.push_str(ending);
+        }
+        patch
     } else {
         source.expect("tracked patch")
     };
-    let mut preview = TextPreview::new(&source, 200);
+
+    let mut cut = false;
+    let mut preview = if expand {
+        let lines = source.lines().count();
+        let bytes = source.len();
+        if !fits_full(lines, bytes) {
+            return Ok(None);
+        }
+
+        TextPreview {
+            text: source,
+            full_lines: lines,
+            full_bytes: bytes,
+            ..Default::default()
+        }
+    } else {
+        let p = TextPreview::new(&source, 200);
+        cut = p.ends_with_partial_line(&source);
+        p
+    };
+
     if let Some((lines, bytes)) = full {
         preview.is_truncated |= bytes > preview.full_bytes;
         preview.full_lines = lines;
         preview.full_bytes = bytes;
         preview.hidden_lines = lines.saturating_sub(preview.text.lines().count());
     }
+
     stable(&read, mode, base, Some(path), &before, &pair)?;
-    Ok(
-        json!({"path":path,"layer":layer,"patch":preview.text,"display":super::transcript::patch_wire::changes_patch(&preview.text),"is_truncated":preview.is_truncated,
-        "full_lines":preview.full_lines,"full_bytes":preview.full_bytes,"hidden_lines":preview.hidden_lines,"added":file.added,"removed":file.removed}),
-    )
+    let mut reply = json!({"path":path,"layer":layer,"patch":preview.text,"display":super::transcript::patch_wire::changes_patch(&preview.text),"is_truncated":preview.is_truncated,
+        "full_lines":preview.full_lines,"full_bytes":preview.full_bytes,"hidden_lines":preview.hidden_lines,"added":file.added,"removed":file.removed});
+    if cut {
+        reply["partial_last_line"] = json!(true);
+    }
+    Ok(Some(reply))
 }
 
 fn validate_path(path: &str) -> Result<()> {
@@ -496,9 +533,13 @@ struct Untracked {
     ends_with_newline: bool,
 }
 fn untracked(read: &ReadCommands<'_>, path: &str) -> Result<Option<Untracked>> {
+    untracked_source(read, path, false)
+}
+fn untracked_source(read: &ReadCommands<'_>, path: &str, full: bool) -> Result<Option<Untracked>> {
     let Some(mut file) = open_file(read.root, path)? else {
         return Ok(None);
     };
+    let limit = if full { FULL_BYTES } else { 48_000 };
     let mut prefix = Vec::new();
     let mut buffer = [0; 8192];
     let (mut full_lines, mut full_bytes, mut ends_with_newline) = (0, 0, false);
@@ -515,7 +556,10 @@ fn untracked(read: &ReadCommands<'_>, path: &str) -> Result<Option<Untracked>> {
         full_bytes += size;
         full_lines += bytes.iter().filter(|b| **b == b'\n').count();
         ends_with_newline = bytes.last() == Some(&b'\n');
-        prefix.extend_from_slice(&bytes[..size.min(48_000 - prefix.len())]);
+        if full && !fits_full(full_lines, full_bytes) {
+            break;
+        }
+        prefix.extend_from_slice(&bytes[..size.min(limit - prefix.len())]);
     }
     full_lines += usize::from(full_bytes > 0 && !ends_with_newline);
     let text = match std::str::from_utf8(&prefix) {

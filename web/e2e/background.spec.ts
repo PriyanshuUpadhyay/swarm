@@ -1,4 +1,5 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { captureThemes } from "./ux-helpers";
 
 /** Opens the fixture chat that has two child agents. */
 async function openChat(tab: Page, info: TestInfo) {
@@ -42,6 +43,71 @@ test("Meta+J shows and hides the background panel with the chat's agents", async
   await expect.poll(background).toBe(before);
   await tab.keyboard.press("Meta+j");
   await expect(panel).toHaveCount(0);
+});
+
+test("the background list reports a task read failure", async ({ page: tab }, info) => {
+  await tab.route("**/api/background?*", (route) => route.fulfill({ status: 503, json: { error: "Unavailable" } }));
+  try {
+    await openChat(tab, info);
+    await tab.keyboard.press("Meta+j");
+    const panel = tab.getByTestId("background-panel").last();
+    await expect(panel.getByRole("alert")).toHaveText("Could not load background tasks.", { timeout: 2_000 });
+    await expect(panel.getByRole("button", { name: /reviewer/ })).toBeVisible();
+    await captureThemes(tab, panel, "background-read-error");
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+});
+
+// This must stay above POLL_MS in web/src/react/background-line.tsx.
+const POLL_ADVANCE_MS = 3_100;
+
+async function withReadFailure(
+  tab: Page, info: TestInfo, path: "background" | "shells",
+  check: (panel: Locator, fail: (value: boolean) => Promise<void>) => Promise<void>,
+) {
+  let failing = false;
+  await tab.clock.install();
+  await tab.route(`**/api/${path}?*`, (route) => failing
+    ? route.fulfill({ status: 503, json: { error: "Unavailable" } }) : route.continue());
+
+  try {
+    await openChat(tab, info);
+    await tab.keyboard.press("Meta+j");
+    const panel = tab.getByTestId("background-panel").last();
+    await expect(panel.getByRole("button", { name: /reviewer/ })).toBeVisible();
+    await check(panel, async (value) => {
+      failing = value;
+      await tab.clock.runFor(POLL_ADVANCE_MS);
+    });
+  } finally {
+    await tab.unrouteAll({ behavior: "ignoreErrors" });
+  }
+}
+
+test("a background read failure does not move the panel rows", async ({ page: tab }, info) => {
+  await withReadFailure(tab, info, "background", async (panel, fail) => {
+    const reviewer = panel.getByRole("button", { name: /reviewer/ });
+    const top = () => reviewer.evaluate((el) => el.getBoundingClientRect().top);
+    const before = await top();
+
+    await fail(true);
+    await expect(panel.getByRole("alert")).toHaveText("Could not load background tasks.", { timeout: 2_000 });
+    expect(await top()).toBeCloseTo(before, 1);
+    await captureThemes(tab, panel, "background-read-error-spacing");
+  });
+});
+
+test("a shell-list failure is shown until a good read", async ({ page: tab }, info) => {
+  await withReadFailure(tab, info, "shells", async (panel, fail) => {
+    const alert = panel.getByRole("alert");
+    await fail(true);
+    await expect(alert).toHaveText("Could not load shells.", { timeout: 2_000 });
+    await captureThemes(tab, panel, "background-shell-read-error");
+
+    await fail(false);
+    await expect(alert).toHaveCount(0, { timeout: 2_000 });
+  });
 });
 
 test("a resized panel keeps its height when Meta+J hides and shows it", async ({ page: tab }, info) => {
@@ -143,9 +209,46 @@ test("a running task shows a status line that opens its Cmd+J row", async ({ pag
   );
   await openChat(tab, info);
   const line = tab.getByTestId("background-line");
-  await expect(line).toContainText("Running · npm run dev");
+  await expect(line).toContainText("In background");
+  await expect(tab.locator(".chat-input").getByTestId("background-line")).toBeVisible();
   await expect(tab.getByTestId("background-panel")).toHaveCount(0);
   await line.getByRole("button", { name: "Open" }).click();
   const row = tab.getByTestId("background-panel").getByRole("button", { name: /npm run dev/ });
   await expect(row).toHaveAttribute("aria-current", "true");
+});
+
+test("Cmd+J groups nine tasks by state under their owners with the panels open", async ({ page: tab }, info) => {
+  await tab.setViewportSize({ width: 1440, height: 900 });
+  await tab.route(/\/api\/background\?/, (route) => route.fulfill({ json: {
+    tasks: Array.from({ length: 9 }, (_, i) => ({
+      id: `b${i}`, agent: i < 5 ? "reviewer" : "tester", kind: "shell", title: `Check job ${i}`,
+      status: i === 4 || i === 8 ? "failed" : "running", output: false,
+    })),
+  } }));
+  await tab.route(/\/api\/shells\?/, (route) => route.fulfill({ json: { shells: [{ id: "shell-mock", command: "vim" }] } }));
+
+  await openChat(tab, info);
+  await tab.keyboard.press("Meta+j");
+  await tab.getByTestId("show-changes").click();
+  const panel = tab.getByRole("list", { name: "Agents and background tasks" });
+  await expect(panel.getByRole("button", { name: /Check job 8/ })).toBeVisible();
+  await expect(panel.getByRole("button", { name: /Shell 1/ })).toBeVisible();
+
+  const order = await panel.getByRole("button").allTextContents();
+  const index = (title: string) => order.findIndex((text) => text.includes(title));
+  expect(index("reviewer")).toBeGreaterThan(index("Chat"));
+  expect(index("Check job 4")).toBeGreaterThan(index("reviewer"));
+  expect(index("Check job 0")).toBeGreaterThan(index("Check job 4"));
+  expect(index("tester")).toBeGreaterThan(index("Check job 0"));
+  expect(index("Check job 8")).toBeGreaterThan(index("tester"));
+  expect(index("Check job 5")).toBeGreaterThan(index("Check job 8"));
+  expect(index("Shell 1")).toBeGreaterThan(index("Check job 5"));
+
+  await expect(panel.getByText("Failed", { exact: true })).toHaveCount(2);
+  await expect(tab.getByTestId("background-line")).toContainText("8 shells");
+  await expect(tab.getByTestId("background-line")).toContainText("2 failed");
+  await expect(tab.locator(".chat-input").filter({ has: tab.getByTestId("background-line") }).getByTestId("composer")).toBeInViewport();
+  await expect(tab.getByTestId("workspace-panel")).toBeInViewport();
+
+  await captureThemes(tab, tab, "panels");
 });

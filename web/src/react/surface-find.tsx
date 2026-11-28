@@ -18,7 +18,7 @@ export function SurfaceFind({ surface, scope, search }: { surface: RefObject<HTM
       if (e.key === "Enter") { e.preventDefault(); setCount(search(query, e.shiftKey ? -1 : 1)); }
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); search("", 0); setOpen(false); surface.current?.focus(); }
     }} />
-    <span className="text-xs">{count}</span>
+    <span role="status" className="text-xs">{count}</span>
     <button type="button" aria-label={`Close ${scope} find`} onClick={() => { search("", 0); setOpen(false); surface.current?.focus(); }}>Close</button>
   </div>;
 }

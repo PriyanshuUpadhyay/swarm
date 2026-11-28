@@ -260,6 +260,53 @@ fn a_missed_listing_keeps_hook_changes_and_drops_the_old_prompt() {
     assert!(row["prompt"].is_null());
 }
 
+fn set_worker_states(connection: &rusqlite::Connection, session: &str, states: &[(&str, i64)]) {
+    for &(state, at) in states {
+        swarm::store::set_state(connection, session, "worker", state, "hook", None, None, at)
+            .unwrap();
+    }
+}
+
+#[test]
+fn answering_a_block_keeps_the_web_turn_start() {
+    let fixture = Fixture::new();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let mut previous = BTreeMap::new();
+
+    set_worker_states(
+        &connection,
+        &fixture.session,
+        &[("working", 100), ("blocked", 200), ("working", 300)],
+    );
+
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    let row = &snapshot[&fixture.session][0];
+    assert_eq!(row["state_at_s"], 300);
+    assert_eq!(row["turn_start_time_s"], 100);
+}
+
+#[test]
+fn a_question_after_a_finished_turn_starts_the_next_web_clock() {
+    let fixture = Fixture::new();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    let mut previous = BTreeMap::new();
+
+    set_worker_states(
+        &connection,
+        &fixture.session,
+        &[
+            ("working", 100),
+            ("done", 200),
+            ("blocked", 300),
+            ("working", 400),
+        ],
+    );
+
+    let snapshot = agent_snapshot(&connection, &BTreeMap::new(), &mut previous);
+    let row = &snapshot[&fixture.session][0];
+    assert_eq!(row["turn_start_time_s"], 300);
+}
+
 #[test]
 fn a_degraded_listing_drops_cached_observations_after_every_pane_is_cleared() {
     let (fixture, mut connection, mut previous) = cached_waiting_worker();

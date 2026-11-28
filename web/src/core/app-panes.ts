@@ -3,8 +3,22 @@
 import { movePane, paneCells, type Direction, type PaneCell } from "./panes";
 
 
-import { type Chat, type Pane, type Strip, type View, paneId, NO_FIND, WORKING, NO_PANE, NO_CELLS } from "./app-types";
+import { type Chat, type Pane, type Strip, type View, paneId, NO_FIND, NO_PANE, NO_CELLS } from "./app-types";
 import type { App } from "./app";
+import { canPullQueued } from "./composer";
+import { LIVE_THOUGHT, type Line } from "./transcript";
+
+function workLabel(lines: readonly Line[]): string {
+  let thinking = false;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const { row } = lines[i];
+    if (row.ends_turn || row.kind === "user") break;
+    if (row.fold?.is_running && row.fold.latest_title) return row.fold.latest_title;
+    if (row.tool?.state === "waiting" && row.tool.header_title) return row.tool.header_title;
+    if (row.id === LIVE_THOUGHT) thinking = true;
+  }
+  return thinking ? "Thinking" : "Working";
+}
 
 export class AppPanes {
   constructor(private readonly app: App) {}
@@ -27,6 +41,7 @@ export class AppPanes {
       treeName: this.app.treeName,
       error: this.app.error,
       reconnecting: this.app.reconnecting,
+      lastStreamUpdate: this.app.lastStreamUpdate,
       rows: this.app.rows,
       selected: this.app.selected,
       marked: this.app.marked,
@@ -46,23 +61,26 @@ export class AppPanes {
     const finds = chat.id === (this.app.findId ?? this.app.openId);
     const find = finds ? this.app.find : NO_FIND;
     const full = this.app.reading.fullDetail;
-    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, hasLog, full];
+    const draftEmpty = this.app.draft(chat.id) === "";
+    const sig = [chat.version, chat.state, chat.error, chat.loaded, chat.loadingOlder, find, this.app.snapshot, this.app.inputRev, hasLog, full, draftEmpty];
     if (chat.memo && sig.every((v, i) => v === chat.memo!.sig[i])) return chat.memo.pane;
     if (chat.built?.version !== chat.version || chat.built.full !== full) chat.built = { version: chat.version, full, lines: this.app.reading.build(chat) };
     const composer = this.app.composing.composerView(chat);
+    if (composer.agent.running) composer.workLabel = workLabel(chat.built.lines);
     const main = this.app.chats.get(chat.sessionId);
     const pane: Pane = {
       id: chat.id,
       // A child's column loads when it first shows; with no log yet it has nothing to load.
       chatState: chat.loaded ? chat.state : hasLog ? "loading" : "none",
       chatError: chat.error,
-      lines: this.app.composing.chair(chat.id).running ? chat.built.lines.concat(WORKING) : chat.built.lines,
+      lines: chat.built.lines,
       hasOlder: chat.older > 0,
       loadingOlder: chat.loadingOlder,
       shift: chat.shift,
       full: chat.full,
       find,
       composer,
+      canPullBack: canPullQueued(composer.agent, composer.queued, draftEmpty),
       noteComposer: chat.agent === "chair" ? composer : main ? this.app.composing.composerView(main) : null,
     };
     chat.memo = { sig, pane };

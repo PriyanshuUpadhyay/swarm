@@ -15,6 +15,24 @@ function textNodes(root: Node, nodes: Text[]) {
   return nodes;
 }
 
+function rangeAt(nodes: readonly Text[], at: number, length: number): Range | undefined {
+  const range = document.createRange();
+  let offset = 0;
+  let started = false;
+  for (const node of nodes) {
+    if (!started && at < offset + node.length) { range.setStart(node, at - offset); started = true; }
+    if (started && at + length <= offset + node.length) {
+      range.setEnd(node, at + length - offset);
+      return range;
+    }
+    offset += node.length;
+  }
+}
+
+export function textRangeAt(root: Node, offset: number, length: number): Range | undefined {
+  return rangeAt(textNodes(root, []), offset, length);
+}
+
 /** Text ranges can cross markdown spans without changing React's nodes. A range stays inside one
  *  shadow root, because a match is never longer than one line. */
 export function textRanges(root: Node, query: string): Range[] {
@@ -24,15 +42,8 @@ export function textRanges(root: Node, query: string): Range[] {
   const text = nodes.map((n) => n.data).join("").toLowerCase();
   const ranges: Range[] = [];
   for (let at = text.indexOf(q); at >= 0; at = text.indexOf(q, at + q.length)) {
-    const range = document.createRange();
-    let offset = 0;
-    let started = false;
-    for (const node of nodes) {
-      if (!started && at < offset + node.length) { range.setStart(node, at - offset); started = true; }
-      if (started && at + q.length <= offset + node.length) { range.setEnd(node, at + q.length - offset); break; }
-      offset += node.length;
-    }
-    ranges.push(range);
+    const range = rangeAt(nodes, at, q.length);
+    if (range) ranges.push(range);
   }
   return ranges;
 }

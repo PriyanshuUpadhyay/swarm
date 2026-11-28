@@ -5,6 +5,7 @@ reversals supersede, never edit. Add one row, newest first, with each new record
 
 | #    | Title                                                                | Tier | Status     | Date       | Refs                    |
 |------|----------------------------------------------------------------------|------|------------|------------|-------------------------|
+| 0174 | The background line follows the design file | 2 | accepted | 2026-11-27 | ↑0104 →0164 |
 | 0173 | The owner can force a task drop, and an agent cannot | 2 | accepted | 2026-11-26 | ↑0135 →0144 →0151 |
 | 0172 | Kit descriptions fit 160 characters with the trigger first | 2 | accepted | 2026-11-26 | →0136 |
 | 0171 | A CLI shows as its product mark, with a letter box when it has none | 2 | accepted | 2026-11-26 | →0094 →0167 |
