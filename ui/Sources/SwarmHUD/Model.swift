@@ -21,7 +21,7 @@ final class UsageModel {
     }
     /// Set by the app delegate: says a new popup line aloud for VoiceOver.
     @ObservationIgnored var announce: ((String) -> Void)?
-    /// Set by the app delegate: plays the sound for a chat that converged (ADR 0156).
+    /// Set by the app delegate: plays the sound for a chat that converged (ADR 0156) or an agent that waits.
     @ObservationIgnored var chime: (() -> Void)?
     /// The cursor is on the popup, so a done popup waits for it to leave.
     @ObservationIgnored var popupHovered = false
@@ -68,7 +68,7 @@ final class UsageModel {
     @ObservationIgnored var toggleFromKeyboard: (() -> Void)?
     /// Set by the app delegate: closes the card and the popup at once, after a click.
     @ObservationIgnored var closeHUD: (() -> Void)?
-    /// Set by the app delegate: Swarm.app is the front app, so the owner sees new items there.
+    /// Set by the app delegate: Swarm.app is the front app, so only a wait gets a popup.
     @ObservationIgnored var swarmInFront: (() -> Bool)?
     /// ⌃⌥⇧⌘U was registered; another app may hold it.
     var hotKeyReady = false
@@ -216,12 +216,12 @@ final class UsageModel {
         let new = newPopupItems(inbox, known: knownKeys)
         knownKeys = inboxKeys(inbox)
         // One sound per read, so a burst of chats that end together plays once.
-        if playsConvergedSound(inbox, new: new) { chime?() }
+        if playsSound(inbox, new: new) { chime?() }
         if inbox != self.inbox { self.inbox = inbox }
 
         var next = prunePopup(popup, inbox: inbox)
-        // The open card lists the same items, so it needs no popup. Swarm.app in front shows them too.
-        if !isOpen, swarmInFront?() != true { next = mergePopup(next, new: new, now: now) }
+        // The open card lists the same items, so it needs no popup.
+        if !isOpen { next = mergePopup(next, new: popupItems(new, swarmInFront: swarmInFront?() == true), now: now) }
         popup = next
 
         // The open card shows a new item at once, so VoiceOver hears it there too.

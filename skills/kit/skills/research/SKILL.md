@@ -1,6 +1,6 @@
 ---
 name: research
-description: Research one question in a short report with checked links, covering recent underrated finds and the origin of each core claim. Use when the user says research, look into, or find out, or asks where a claim comes from.
+description: Research one question in a short report with checked links. Use when the user says research, look into, find out, or asks where a claim comes from.
 ---
 
 # Research
@@ -29,7 +29,7 @@ folders up from this skill's folder. `reach` below means
      blocks a plain fetch.
    - Use the newest version of a paper. When versions give different numbers, say which version
      says what.
-   - A blog, a summary, or an abstract is a lead, never the origin. Name it "(secondary)" when you
+   - A blog, a summary, or an abstract is a lead, not the origin. Name it "(secondary)" when you
      cannot reach the origin.
 5. **Write the report** as `<kit root>/blocks/report/SKILL.md` says.
 6. **Check every link** as `<kit root>/blocks/link-check/SKILL.md` says. When a link backs a number or a
@@ -82,7 +82,7 @@ offered `tool-trial` block before `04-report`, so the candidates are tested hand
 
 ## 01-question
 
-Do Method step 1. Show the question and its decision and go on. If two readings of the question
+Do Method step 1 (show the question and its decision, then go on). If two readings of the question
 lead to different work, set the step to `waiting` with one question.
 
 ## 02-local
@@ -109,19 +109,15 @@ otherwise this session searches with its own tools. Either way the web part foll
 merged report is written. Its report is one source among the others, not the answer. If a trigger
 holds but this session cannot open visible seats, do the web part yourself and write in the gaps
 that `web-search` did not run and why. When no user can answer a web-seat gate,
-`blocks/worker-brief/SKILL.md` applies, and this is its default.
+`blocks/subagent-brief/SKILL.md` applies, and this is its default.
 
 When the question has a body of papers or reports behind it, map it first by
 `blocks/literature-map/SKILL.md`, before the open search.
 
 When the question is about how or why a technique, protocol, or implementation works, also apply
-the kit block `blocks/primary-sources/SKILL.md`. Example. The question is about SQL databases.
-A blog is the lead, and the answer rests on the paper it names.
+the kit block `blocks/primary-sources/SKILL.md`.
 
-Every run also searches off the usual path, as `blocks/deep-search/SKILL.md` says. Example. The
-question is "which state library should this React app use". The usual answers are libraries. An
-off-path search also finds a team that removed its state library and kept the state in the URL, so
-every view can be shared and reloaded.
+Every run also searches off the usual path, as `blocks/deep-search/SKILL.md` says.
 
 For X, Reddit, and other pages that a plain fetch cannot open, use the browser rows of the Reach
 tools in `web-search`. They read the page in the user's own signed-in browser. Each claim cites its
@@ -139,5 +135,5 @@ Send the reply by the loaded session reply rules. The kit's `blocks/report/SKILL
 ## Guards
 
 - Every claim cites the source that owns it, as `<kit root>/blocks/cite-sources/SKILL.md` says.
-- Do not edit any repository. Write only the report and your own notes.
+- A research run, top-level session and seats alike, edits no repository, because research reports and does not change code. Seats also follow `blocks/subagent-brief/SKILL.md`.
 - The source blocks named here share the rules in their parent `<kit root>/blocks/sources/SKILL.md`.

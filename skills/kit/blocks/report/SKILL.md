@@ -1,6 +1,6 @@
 ---
 name: report
-description: "Write a research answer as a short plain report: the answer first, then evidence with links, what is contested, off-path ideas, and dated sources. Use when a question ends in a written report."
+description: "Write a research report with the answer, evidence, disputed points, off-path ideas, and dated sources. Use when a question ends in a written report."
 license: MIT
 metadata:
   kind: step
@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- Write in plain words. Aim for about 800 words, and go longer when the evidence needs it. Never cut a claim, a caveat, or a source only to meet the number.
+- Write in plain words. Aim for about 800 words. Go longer to retain necessary claims, caveats, and sources.
 - Use this order:
   1. **Answer**: the answer first, in two or three sentences.
   2. **Evidence**: each claim with its link to the source that owns it.

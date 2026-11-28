@@ -1,11 +1,11 @@
-//! `swarm task land | drop [<branch>] | list | sweep [--apply]`: a chat's own worktree, which the
+//! `swarm task land | drop [<branch>] [--force] | list | sweep [--apply]`: a chat's own worktree, which the
 //! app made when the chat opened, landed by the swarm server.
 
 use super::*;
 use std::time::{Duration, Instant};
 
 const TASK_USAGE: &str =
-    "usage: swarm task land [<name>] [--merge] | drop [<name>] | list | sweep [--apply]";
+    "usage: swarm task land [<name>] [--merge] | drop [<name>] [--force] | list | sweep [--apply]";
 /// A Claude shell call stops at 2 minutes, so land waits less, and running it again keeps waiting.
 const LAND_WAIT: Duration = Duration::from_secs(100);
 
@@ -87,8 +87,24 @@ pub(crate) fn task(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 std::thread::sleep(Duration::from_millis(500));
             }
         }
-        [verb, rest @ ..] if verb == "drop" && rest.len() <= 1 => {
-            let task = swarm::task::drop(&root, &wt, &cwd, rest.first().map(String::as_str))?;
+        [verb, rest @ ..] if verb == "drop" => {
+            let force = rest.iter().any(|arg| arg == "--force");
+            let names: Vec<_> = rest.iter().filter(|arg| *arg != "--force").collect();
+            if names.len() > 1
+                || names.first().is_some_and(|name| name.starts_with('-'))
+                || rest.len() > names.len() + 1
+            {
+                return Err(TASK_USAGE.into());
+            }
+            let name = names.first().map(|name| name.as_str());
+            if force && swarm::task::agent_shell() {
+                return Err(format!(
+                    "swarm: `--force` is the owner's command, and an agent cannot run it; ask the owner to run `swarm task drop{} --force` in their own terminal",
+                    name.map(|name| format!(" {name}")).unwrap_or_default()
+                )
+                .into());
+            }
+            let task = swarm::task::drop(&root, &wt, &cwd, name, force)?;
             serde_json::json!({"dropped": task.branch, "path": task.path})
         }
         [verb] if verb == "list" => {

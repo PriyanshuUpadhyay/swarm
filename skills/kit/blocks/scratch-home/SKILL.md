@@ -1,6 +1,6 @@
 ---
 name: scratch-home
-description: "Run a trial, a setup test, or a test build in a temporary home and state folder, so the owner's live settings never change. Use when a check installs, configures, or writes tool state."
+description: "Run tests in a temporary home and state folder to protect live settings. Use when a check installs, configures, or writes tool state."
 license: MIT
 metadata:
   kind: rule

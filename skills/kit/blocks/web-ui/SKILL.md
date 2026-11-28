@@ -15,7 +15,7 @@ metadata:
 ---
 
 ## Rules
-- Run from the repo root when you use a block's script checks.
+- Run each page or diagram block's script checks from the repo root, so repo-relative paths resolve.
 
 Each part keeps its own checks.
 

@@ -309,23 +309,54 @@ fn find_task(root: &Path, cwd: &Path, name: Option<&str>) -> Result<(Hub, Task),
     Ok((hub, task))
 }
 
-/// Why a task worktree still holds work the default branch lacks, or None.
-fn unlanded(path: &Path, branch: &str, default: &str) -> Result<Option<String>, String> {
+/// True in an agent's shell. `drop --force` is the owner's command (ADR 0173).
+pub fn agent_shell() -> bool {
+    AGENT_MARKERS
+        .iter()
+        .chain(&["PI_CODING_AGENT"])
+        .any(|name| std::env::var_os(name).is_some())
+}
+
+/// Why a task worktree still holds work the default branch lacks, or None. With `force`, only
+/// uncommitted changes count: a squash or rebase merge leaves commits that the default branch
+/// holds under other ids.
+fn unlanded(
+    path: &Path,
+    branch: &str,
+    default: &str,
+    force: bool,
+) -> Result<Option<String>, String> {
     let status = git(path, &["status", "--porcelain"]).ok_or("git status failed")?;
     if !status.is_empty() {
-        return Ok(Some("it has uncommitted changes".into()));
+        return Ok(Some(
+            "it has uncommitted changes; land it with `swarm task land`, or ask the owner".into(),
+        ));
+    }
+    if force {
+        return Ok(None);
     }
     let ahead = git(
         path,
         &["rev-list", "--count", &format!("{default}..{branch}")],
     )
     .ok_or("git rev-list failed")?;
-    Ok((ahead != "0").then(|| format!("it has {ahead} commit(s) that {default} does not have")))
+    Ok((ahead != "0").then(|| {
+        format!(
+            "it has {ahead} commit(s) that {default} does not have; land it with `swarm task land`, or, when it merged as a squash or a rebase, ask the owner to run `swarm task drop {branch} --force`"
+        )
+    }))
 }
 
-/// `swarm task drop [<name>]`: remove a task worktree that holds no work the default branch
-/// lacks, and its record.
-pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Task, String> {
+/// `swarm task drop [<name>] [--force]`: remove a task worktree that holds no work the default
+/// branch lacks, and its record. `force` also removes one whose commits the default branch
+/// lacks, with its branch.
+pub fn drop(
+    root: &Path,
+    wt: &Path,
+    cwd: &Path,
+    name: Option<&str>,
+    force: bool,
+) -> Result<Task, String> {
     let (hub, task) = find_task(root, cwd, name)?;
     // The record is a file an agent can write, so the folder must be this hub's worktree of a
     // task branch before Worktrunk removes it.
@@ -346,20 +377,17 @@ pub fn drop(root: &Path, wt: &Path, cwd: &Path, name: Option<&str>) -> Result<Ta
         ));
     }
     if Path::new(&task.path).is_dir()
-        && let Some(why) = unlanded(Path::new(&task.path), &task.branch, &hub.default)?
+        && let Some(why) = unlanded(Path::new(&task.path), &task.branch, &hub.default, force)?
     {
-        return Err(format!(
-            "{} was not dropped, because {why}; land it with `swarm task land`, or ask the owner",
-            task.branch
-        ));
+        return Err(format!("{} was not dropped, because {why}", task.branch));
     }
     if Path::new(&task.path).is_dir() {
-        run(
-            wt,
-            &hub.main,
-            &["remove", &task.branch, "--foreground", "--format", "json"],
-            false,
-        )?;
+        let mut args = vec!["remove", &task.branch, "--foreground", "--format", "json"];
+        if force {
+            // Worktrunk keeps a branch that is not merged; the owner said its work landed.
+            args.push("--force-delete");
+        }
+        run(wt, &hub.main, &args, false)?;
     }
     let _ = std::fs::remove_file(record_path(root, &task.repo, &task.branch));
     Ok(task)

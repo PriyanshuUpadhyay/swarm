@@ -1,6 +1,6 @@
 ---
 name: build-site
-description: "Build a website as one form of a story piece, where sections replace shots and the loader, scroll, and page transitions carry the story. Use when the piece is a landing page, portfolio, or product site."
+description: "Build a story site with sections, a loader, and scroll and page transitions. Use when the piece is a landing page, portfolio, or product site."
 license: MIT
 metadata:
   kind: step
@@ -20,9 +20,9 @@ Scope
 Intake
 - Sections replace shots. For each section, record its job (what the reader learns or does), its content, and its start, settled, and end state as the reader scrolls.
 - Screen widths replace duration and fps. Design at the check widths of the `web-ui-basics` block, plus any width the user names.
-- Record the page's drivers. Load and scroll follow the Drivers section of build's `presets/build/references/story-and-motion.md`, and a click that starts a page transition is a gate there. Hover, cursor, and any other click change a state, not a time, so list each state with the element it changes.
+- Record the page's drivers. Load and scroll follow the Drivers section of build's [`presets/build/references/story-and-motion.md`](../../presets/build/references/story-and-motion.md), and a click that starts a page transition is a gate there. Hover, cursor, and any other click change a state, not a time, so list each state with the element it changes.
 - A screen recording is the best site reference. Record one full scroll at each width. Extract frames at each section's settled state, at each transition midpoint, and across the loader.
-- Choose research sources for sites from `blocks/reference-analysis/references/sources.md`.
+- Choose research sources for sites from [`blocks/reference-analysis/references/sources.md`](../reference-analysis/references/sources.md).
 - The caller names the step file that holds the look. When the page borrows a component or effect from a repo, record its licence and its last release date there.
 Look
 - Apply `blocks/web-ui/SKILL.md`, the shared rules of the page blocks this file names.
@@ -38,12 +38,11 @@ Style frames and animatic
 - Build a grey-box page: every section as flat boxes with the real text sizes, the final scroll lengths, the loader, and the real transitions. Capture a scroll-through at both widths with `?shot=<section>&u=` frames, and check that each settled state reads.
 QA
 - The page meets the `web-ui-basics` block at each width.
-- The loader ends on the painted hero, never on a blank frame. Record the time to the first painted hero on a throttled connection.
+- End the loader when the hero is painted so the viewer sees the first frame. Record the time to the first painted hero on a throttled connection.
 
 ## Example
-Initial state: the user screen-records a product site with a yellow page, a 3D handheld console as the hero, an ink-splash loader, and a page transition that tears the screen, and asks for "a site like this for my coffee brand".
-Action: the sections become loader, hero, three feature sections, and footer, each with its settled state. The look becomes a `DESIGN.md` plus the 3D and texture rules in the look file. The style frames are the hero at 1440 px and 390 px beside the reference at the same widths.
-Result: the coffee brand keeps its own name, logo, product, and copy. The page borrows the loader idea, the density, and the motion grammar.
+- Bad: copy a reference site's product, logo, and copy along with its loader.
+- Good: use the reference's ink-splash loader idea and motion, with the user's coffee brand and copy. Compare the hero at 1440 px and 390 px.
 
 ## Check (script)
 - none: the page checks are the script checks of the `web-ui-basics`, `design-tokens`, and `headless-shot` blocks.

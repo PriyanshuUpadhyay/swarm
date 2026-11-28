@@ -1,6 +1,6 @@
 ---
 name: build-canvas
-description: "Build a drawn piece as a small story engine of tokens, entities, scenes, a shot list, and transitions, rendered from time and one seed. Use when the piece is a canvas, p5, or three.js reel or plate."
+description: "Build a seeded story engine with tokens, scenes, a shot list, and transitions. Use when the piece is a canvas, p5, or three.js reel or plate."
 license: MIT
 metadata:
   kind: pack
@@ -14,8 +14,8 @@ metadata:
 ---
 
 ## Rules
-- Run from the repo root when you use this block's script checks.
-The item file `blocks/build-canvas/references/mark-making.md` in the kit holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
+- Use the check location that `blocks/web-ui/SKILL.md` sets.
+The item file [`blocks/build-canvas/references/mark-making.md`](references/mark-making.md) in the kit holds the mark-making recipes: density, tone, texture, the mass stack, line, surface, depth, generative plates, and libraries. Read it before a detail pass.
 
 Architecture
 Build a small story engine, so the story, the look, and the motion change in one place each. Each entity of the story sheet becomes a draw function with parameters (pose, expression, state, seed), not a one-off drawing, so it appears in many shots and states without new code:
@@ -70,18 +70,17 @@ Determinism
 - Store one seed with the output.
 - Reset p5 `randomSeed()` and `noiseSeed()` predictably. Seed decor per entity or scene type, not per
   frame.
-- Never use wall-clock values for render state. Live playback only advances `t`.
+- Derive render state from `t` and the seed so the same inputs reproduce each frame. Live playback only advances `t`.
 - Accept `?t=` (or a frame number) so any single frame renders alone. Frame export and QA need this.
   A scroll or gate story has no single clock, so accept `?shot=<id>&u=` instead.
 - Expose `stateAt(t)` (or `stateAt(shot, u)`): the camera and each carrier's screen position. The
-  seam-vector check in build's `presets/build/references/qa.md` compares these values on both sides of a cut.
+  seam-vector check in build's [`presets/build/references/qa.md`](../../presets/build/references/qa.md) compares these values on both sides of a cut.
 - A stateful simulation (particles with physics, reaction-diffusion, fluid) cannot jump to any `t`.
   Step it with a fixed time step from frame 0, export frames in order in one session, and keep
   checkpoints every N frames so `?t=` can resume from the nearest one.
-- On the GPU, `seek(t)` resolves only after the frame is on the canvas, so a screenshot never
-  catches a half frame. Render, then wait for `device.queue.onSubmittedWorkDone()` and two
-  animation frames. Do not await `renderer.renderAsync()`, because three.js deprecated it in r181.
-  A 2026-09-30 three.js WebGPU trial captured full frames this way.
+- On the GPU, resolve `seek(t)` after the complete frame is on the canvas so capture gets that frame.
+  Render, then wait for `device.queue.onSubmittedWorkDone()` and two animation frames. Use the
+  current render API, because three.js deprecated `renderer.renderAsync()` in r181.
 
 Debug modes
 Give toggles for:
@@ -95,9 +94,9 @@ Give toggles for:
 - a reference overlay when rights and source allow it.
 
 Performance
-Prototype at reduced resolution. Cache static textures. Do not redraw costly grain or thousands of
-hatch marks every frame unless they move. Profile before cutting visual detail. Export from a fixed
-timestep so slow rendering does not change the motion.
+Prototype at reduced resolution. Cache static textures, grain, and large sets of static hatch
+marks. Profile before cutting visual detail. Export from a fixed timestep so slow rendering does
+not change the motion.
 
 Toolbox
 Choose tools for the look and the story, not for a small build. Dependencies, a loading screen, 3D
@@ -118,14 +117,12 @@ dots only in the shadow band, and a paper pass multiplies over the frame. This i
 | Simulation at scale (millions of particles, reaction-diffusion, fluid, flocking) | WebGPU compute (three.js TSL compute or WGSL) | stateful, see Determinism |
 | Shader function library (noise, dither, filters, SDFs) | Lygia | Prosperity licence, free only for non-commercial work |
 | Timeline, easing, text choreography | GSAP (free no-charge licence, not open source) | drive a paused timeline with `tl.seek(t)` |
-| Scroll-driven story | GSAP ScrollTrigger or CSS scroll timelines | see the scroll driver in build's `presets/build/references/story-and-motion.md` |
+| Scroll-driven story | GSAP ScrollTrigger or CSS scroll timelines | see the scroll driver in build's [`presets/build/references/story-and-motion.md`](../../presets/build/references/story-and-motion.md) |
 | Sound | Web Audio | cues from the shot list |
 
-Procedural 3D can read as a game, not as an illustration. In a 2026-09-30 trial, a three.js scene
-built from plain boxes read as a cel-shaded game. A 2D Canvas build of the same reference read as
-illustration. For an illustrated look, draw the masses in 2D and place them as cards in 3D space
-(2.5D parallax). Or give 3D shapes irregular silhouettes, bevels, and dense set dressing (props
-that fill the scene). Use full 3D when the camera move is the story.
+For an illustrated look, draw the masses in 2D and place them as cards in 3D space
+(2.5D parallax). Or use 3D shapes with irregular silhouettes, bevels, and dense set dressing.
+Use full 3D when the camera move is the story.
 
 Measure first-frame load time and show a loading state that fits the look. Load time is a trade-off,
 not a limit.
@@ -137,9 +134,8 @@ Delivery
 - Offline delivery: vendor dependencies explicitly, in a `vendor/` folder.
 
 ## Example
-Initial state: a reel of five beats has the shot list, the `look` tokens, and one scene module per place.
-Action: the user asks for the storm to last two seconds longer. Edit only the `storm` entry's `dur` in the shot list, then render `?t=` at the storm key frame and at both transition midpoints with the stored seed.
-Result: the scene modules, the entities, and the tokens are unchanged, and each frame renders alone with the same pixels on a second run.
+- Bad: change the storm duration by editing each scene that uses it.
+- Good: change only the storm entry in the shot list. Render its key frame and both transition midpoints with the saved seed.
 
 ## Check (script)
 - `rg -n -g '*.html' -g '*.js' -g '*.mjs' -g '*.ts' -g '!**/vendor/**' -g '!**/node_modules/**' -g '!*.min.js' 'Math\.random\(|Date\.now\(' {{site}}` prints nothing: no render state in the piece's own code comes from an unseeded random or the wall clock.

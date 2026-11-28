@@ -8,10 +8,10 @@ review scripts. A review run does not need it.
 Each rule is one line: ``- `ID` flag → ask. Files: `<glob>, <glob>`. Applies: `<regex>`. Source: …``.
 `Files:` is optional and falls back to the file's own `Files:` header line. `Applies:` is one
 Python regex on the unit's code, new and removed; with none, the rule applies to every unit of a
-matching file. A regex must never skip a unit that can break the rule, so leave it out when in
+matching file. A regex skips no unit that can break the rule, so leave it out when in
 doubt. `Scope: added` matches `Applies:` against the unit's added lines only. Use it only when the
-token on the added line is the defect itself, never for a rule about callers, aliases, or data
-flow. Add a `lens-<name>.md` for a new language or platform in the same shape.
+token on the added line is the defect itself; a rule about callers, aliases, or data
+flow needs the whole unit. Add a `lens-<name>.md` for a new language or platform in the same shape.
 
 `Check: <tool>:<rule>` names the lint rule that proves the whole rule text. The tool is `oxlint`
 or `ruff`. The build gate owns the ID for a unit only when the repo's `CI:` line names a lint

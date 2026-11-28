@@ -1,6 +1,6 @@
 ---
 name: pair-programming
-description: Write code with the user one approved diff at a time, committing each finished behavior. Use when the user says pair, pair with me, or let's pair, or when an implement run builds in pair mode.
+description: "Write code with the user one approved diff at a time. Use when the user says pair, let's pair, or pair with me, or when an implement run builds in pair mode."
 ---
 
 # Pair programming
@@ -42,8 +42,7 @@ to user-facing output. The chunk loop below owns the diff shown for approval.
 
 ## Base check first
 
-In two real runs the branch was behind the shared branch: one chunk later conflicted, and another
-wrote a helper that the shared branch already had. So before the behavior list:
+A branch behind the shared branch causes later conflicts and duplicate helpers (`evals/results.md`). Before the behavior list:
 
 1. Find the upstream branch: the branch's tracked upstream, else `origin/<default branch>`.
 2. Run `git fetch` for it, then `git rev-list --count HEAD..<upstream>`.
@@ -65,7 +64,7 @@ settled, and give each a recommended answer. A plain `yes` accepts the recommend
 Start the first round with a playback: one or two sentences, in your own words, that say the
 problem, the goal, and the result the user will see. Name a boundary only when the request states
 it, with its source. The user corrects the playback in the same reply as the answers; it needs no
-turn of its own. It never stands in for the user's example or exclusion below.
+turn of its own. It does not replace the user's example or exclusion below.
 
 Before the round, check each kind of direction-changing choice: accepted behavior, a public
 surface, data or state ownership, a dependency or substrate, failure policy (timeouts, retries,
@@ -73,17 +72,13 @@ partial success), blast radius (which other callers get the change), rollout ord
 callers, and an irreversible action. Ask each open one with its default. When an open choice
 depends on a project or code to copy and the repository has no precedent, ask for one.
 
-- Never ask what the code or the task already answers; look it up. A question that restates the
-  task text, or a choice already recorded as an A-line, is never asked. When the task text states a
-  value, record it as an A-line marked `typed` with the words `from the request` and go on. In a
-  real run the agent asked "Print to stdout, with the line `size_gate 1` and nothing else?", which
-  the task text already stated, and later asked again about a choice it had recorded as accepted.
-- Each number, size, or limit that the agent invents is a question, with the number as its default.
 - Before any question, here and under a diff, test it: does the request text, an A-line, or the
-  current code already answer it? If yes, do not ask. State the fact with its source in one line,
-  such as "`*.lock` only, as the request says" or "extra arguments keep the usage error,
-  `size_gate.py:NN`". A question is for a choice whose answers lead to different code and that none
-  of the three sources settles.
+  current code already answer it? If yes, state the fact with its source in one line instead, such
+  as "`*.lock` only, as the request says" or "extra arguments keep the usage error,
+  `size_gate.py:NN`". When the task text states a value, record it as an A-line marked `typed` with
+  the words `from the request`. A question is for a choice whose answers lead to different code and
+  that none of the three sources settles. Stories behind this rule: `evals/results.md`.
+- Each number, size, or limit that the agent invents is a question, with the number as its default.
 - A behavior the code already has is not a question. When it matters, name it as kept behavior in
   the behavior list.
 - A task with no open choice gets no question round. See the small-task block below.
@@ -100,7 +95,7 @@ the owner's `yes` message as its source.
 
 When Align had at least one open choice, ask the user, before the behavior list, to write one
 acceptance example (start state, action, expected result) and one exclusion, in their own words.
-The agent never drafts them. When the task text already holds such an example, quote it and ask
+The user writes them; the agent does not draft them, because a drafted example would hide the user's intent. When the task text already holds such an example, quote it and ask
 only for what is missing. Record them under `Acceptance:` and `Not built:`. They keep a run of
 `yes` answers from standing in for the user's intent.
 
@@ -124,11 +119,7 @@ Not built: nothing beyond the request; add an exclusion if you have one.
 
 Quote `Acceptance:` from the task text when it states a result; ask the owner for an example only
 when the task text states none. The owner's approval of the behavior list accepts the block, and
-the exclusion is not a required answer. In two blind eval runs on small, clear tasks (`*.lock`
-files not counted, and `--version` printing `size_gate 1`), the agent asked about `package-lock.json`
-and about `--version extra`, which the request and the existing `len(argv) != 1` branch already
-answered, and asked for an exclusion although the request defined the full scope. The grader
-counted all three as noise.
+the exclusion is not a required answer.
 
 ## Plan first, short
 
@@ -160,12 +151,12 @@ lines is two behaviors, so split the list, not the chunk. Show three things and 
 1. one line of intent that names each input case the chunk handles, for example "reject an empty
    name (`""`)";
 2. the exact target `file:line`;
-3. the change as a unified diff that a CLI tool made and `cat` shows, never a prose
-   description of the change and never a retyped copy.
+3. the change as a unified diff that a CLI tool made and `cat` shows, not a prose
+   description and not a retyped copy.
 
 To make the diff, `cp` the target file into the scratchpad, make the one edit on that copy, and
-run `diff -u <target> <copy> > <scratchpad>/chunk-<N>.diff`. Never write the whole proposed file
-out by hand; the copy plus one edit types only the changed lines. For a new file, write it in the
+run `diff -u <target> <copy> > <scratchpad>/chunk-<N>.diff`. The copy plus one edit types only the
+changed lines; writing the whole proposed file by hand costs output and can drift. For a new file, write it in the
 scratchpad and diff against `/dev/null`. Keep the diff to the hunks of the chunk.
 
 Then show it with one command whose only argument is the file: `cat <scratchpad>/chunk-<N>.diff`.
@@ -173,11 +164,10 @@ The Swarm app shows that output as an open diff card in place, so the reply does
 A retyped copy costs output and can differ from the file that `patch` applies. In a host that folds
 tool output, such as a terminal CLI, also paste the `cat` output as is in a `diff` fence.
 
-A chunk touches only what its behavior sentence names. No new helper, field, export, flag, case, or
-todo goes in unless the sentence names it. In two real runs the user removed handling the behavior
-did not ask for, a cache key and an edge case they called useless. A case that the sentence does not
+A chunk touches only what its behavior sentence names. A new helper, field, export, flag, case, or
+todo goes in only when the sentence names it, because users removed unrequested handling in past runs. A case that the sentence does not
 name, such as a whitespace-only or very long value next to "reject an empty name", is a question in
-one line under the diff, never code in it, and only after the Align test above finds that the
+one line under the diff, not code in it, and only after the Align test above finds that the
 request, an A-line, and the current code leave it open. Otherwise state the settled fact with its
 source in that line. Before you write a helper, search the repository for one
 that does the same job, and call it. Apply the kit block `blocks/checked-units/SKILL.md` for a new
@@ -188,8 +178,7 @@ Code stays inline by default. Before a chunk adds or splits out a function, file
 the kit block `blocks/when-to-extract/SKILL.md`, and name the reason that holds in the
 intent line.
 
-A file delete, a rename, or a merge-conflict resolution is its own chunk and never rides along
-with an edit. Its diff is `git diff --stat` for that change plus the file list, and for a
+A file delete, a rename, or a merge-conflict resolution is its own chunk, apart from any edit. Its diff is `git diff --stat` for that change plus the file list, and for a
 conflict the resolved hunk from `diff -u`. It waits for `approve` like any other chunk.
 
 Then wait for one of three replies:
@@ -204,11 +193,11 @@ The check line is the check's own output, such as `1 passed`, and `1 passed, a1b
 behavior commit.
 
 On `approve`, apply the shown file yourself with
-`patch <target> <scratchpad>/chunk-<N>.diff`. Never spawn a chunk writer or any other worker; the
+`patch <target> <scratchpad>/chunk-<N>.diff`. Do the apply yourself, with no chunk writer or other worker; the
 diff already is the change, and a worker would only re-type it. Pair mode is an explicit exception
 to a host contract that sends edits to a coding seat.
 
-Never apply a chunk before `approve`. Never bundle two chunks into one proposal. Exactly one chunk
+Apply a chunk only after `approve`, because the user owns what lands in the tree. Propose one chunk per turn. Exactly one chunk
 stands in front of the user at a time, however many agents or panes are working; the others wait in
 the task file.
 
@@ -219,7 +208,7 @@ uncommitted in the working tree, so one behavior is one commit. The agent writes
 imperative, under 60 characters, that names the file or unit and the change; a body is optional
 and goes in only when the chunk cut a corner, left a risk open on purpose (name the risk and the
 reason), or rejected an option, in two sentences at most.
-Never ask "yes to commit" and never ask the user for a commit message.
+The approve already orders the commit, so ask neither "yes to commit" nor for a commit message.
 
 ## Behavior done
 
@@ -242,7 +231,7 @@ After the last behavior of a standalone run:
    (short hash), the action, and the observed output or screenshot path. When no tool can drive the
    product, say so and name the nearest check.
 2. Ask for one fresh review seat on `Base..HEAD`, one round, by the small route's review rule in
-   `skills/kit/skills/implement/references/small.md`, steps 4-5. Each fix is an approved chunk. A
+   `<kit root>/skills/implement/references/small.md`, steps 4-5. Each fix is an approved chunk. A
    second `REQUEST CHANGES` goes to the user. When the session cannot start a seat, say
    `needs review seat: <base>..<head>` and stop there.
 3. The user ships. `Status: active` stays until the user says so.
@@ -253,5 +242,5 @@ is right and the code is wrong, it is a fix chunk.
 ## Guards
 
 - Update the task file after every approved chunk.
-- Keep replies to the chunk itself. No progress essays, no restated plan, and never a file path
-  in place of the list or a chunk.
+- Keep replies to the chunk itself. No progress essays and no restated plan. Show the list or the chunk itself, not a file path
+  that stands in for it.

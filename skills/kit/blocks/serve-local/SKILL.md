@@ -1,6 +1,6 @@
 ---
 name: serve-local
-description: "Serve a project's build with its own dev or preview command on a loopback URL, and record its stop command. Use when a page needs a dev server, module scripts, storage, or its own files."
+description: "Run the project's dev or preview server on loopback and record its stop command. Use when a page needs a server, module scripts, storage, or files."
 license: MIT
 metadata:
   kind: step
@@ -15,7 +15,7 @@ metadata:
 
 ## Rules
 - Use this block only for a page that the `page-shelf` block cannot carry: one that needs a dev server, module scripts, local storage, or a fetch of its own files. Give every other page by `page-shelf`.
-- Use the project's own dev or preview command (`npm run preview`, `vite preview`, or the README's command), bound to `127.0.0.1`. A folder with no such command is not served here. Make it one self-contained page for `page-shelf`, or add a `package.json` with a Vite `dev` script and use that. Never bind to `0.0.0.0` or a public address.
+- Use the project's own dev or preview command (`npm run preview`, `vite preview`, or the README's command), bound to `127.0.0.1`. A folder with no such command is not served here. Make it one self-contained page for `page-shelf`, or add a `package.json` with a Vite `dev` script and use that. Keep the server reachable only from this machine to protect the local preview.
 - Serve the build that the checks ran on. Record the URL, the folder, the commit (`git rev-parse --short HEAD`, and say so when the tree has changes), and the stop command with the process id.
 - The server runs until you stop it, so start it where a tool time limit cannot stop it. Check that `curl -sI <url>` answers before you give the URL to anyone.
 - When the step that needs the server ends, stop it, and check that the port is free.

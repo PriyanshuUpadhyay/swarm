@@ -197,6 +197,8 @@ pub(super) fn mirror_parts(records: &[Record], scopes: &[usize]) -> HashMap<usiz
             .get(&(base.0, base.1, base.2, base.3, id))
             .filter(|_| !id.is_empty());
         let text = if id.is_empty() { &texts } else { &idless_texts };
+        let key = (base.0, base.1, base.2, base.3, string(event, "text"));
+
         let candidates = identity.or_else(|| {
             if matches!(
                 base.2,
@@ -204,15 +206,23 @@ pub(super) fn mirror_parts(records: &[Record], scopes: &[usize]) -> HashMap<usiz
             ) {
                 None
             } else {
-                text.get(&(base.0, base.1, base.2, base.3, string(event, "text")))
+                text.get(&key)
             }
         });
 
-        if let Some(target) =
-            candidates.and_then(|items| items.iter().min_by_key(|&&other| other.abs_diff(index)))
-            && *target != index
-        {
-            parts.entry(*target).or_default().push(index);
+        let target = candidates
+            .and_then(|items| items.iter().min_by_key(|&&other| other.abs_diff(index)))
+            .copied()
+            .or_else(|| {
+                // Codex can give a user message's completion a different ID from its response item.
+                let previous = index.checked_sub(1)?;
+                (base.2 == "user_message_chunk"
+                    && texts.get(&key)?.binary_search(&previous).is_ok())
+                .then_some(previous)
+            });
+
+        if let Some(target) = target.filter(|&target| target != index) {
+            parts.entry(target).or_default().push(index);
         }
     }
 

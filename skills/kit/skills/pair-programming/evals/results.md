@@ -110,3 +110,9 @@ question. Neither Claude small-case loss is on an Align expectation.
 
 Verdict: 3 wins, 2 losses, so the rule says fix. The owner merged it on 2026-11-24, because neither
 loss is on an Align expectation. `08a53f7f` landed as `0f984e72` after a rebase, with the same skill text.
+
+## Evidence moved out of `SKILL.md`
+
+- Align question noise. In a real run the agent asked "Print to stdout, with the line `size_gate 1` and nothing else?", which the task text already stated, and later asked again about a choice it had recorded as accepted.
+- Small task, no open choice. In two blind eval runs on small, clear tasks (`*.lock` files not counted, and `--version` printing `size_gate 1`), the agent asked about `package-lock.json` and about `--version extra`, which the request and the existing `len(argv) != 1` branch already answered, and asked for an exclusion although the request defined the full scope. The grader counted all three as noise.
+- Base check. In two real runs the branch was behind the shared branch: one chunk later conflicted, and another wrote a helper that the shared branch already had.

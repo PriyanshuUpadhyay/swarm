@@ -1,6 +1,6 @@
 ---
 name: swarm
-description: Plan and run any task from kit blocks, starting from a preset when one fits; show the chart, get approval, run the steps. Use when asked to build, implement, review, research, explain, run a council, or plan a task.
+description: Plan and run any task from kit blocks; show the chart, get approval, run. Use when asked to build, implement, review, research, explain, or plan.
 ---
 
 # Swarm
@@ -10,7 +10,7 @@ preset, so the agent reads `skills/research/SKILL.md` in full. The planner copie
 `plan.md`, adds no block, and the chart shows five steps. The preset says `Stop: owner`, so the
 owner clicks approve in Plannotator, and `start_plan.py` makes the five step files.
 
-For the approval gate, apply `blocks/worker-brief/SKILL.md`. The default is to return the checked draft and leave its steps unstarted.
+For the approval gate, apply `blocks/subagent-brief/SKILL.md`. The default is to return the checked draft and leave its steps unstarted.
 
 The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 

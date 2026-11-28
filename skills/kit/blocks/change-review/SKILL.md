@@ -1,6 +1,6 @@
 ---
 name: change-review
-description: "Run the review check on the commits that a plan's build steps made, or review a piece's written files outside any repo, and pass on the verdict. Use when a plan wrote work that needs a review verdict."
+description: "Get a review verdict on plan-built commits or written files outside a repo. Use when a plan produced work that needs review."
 license: MIT
 metadata:
   kind: step
@@ -14,12 +14,12 @@ metadata:
 ---
 
 ## Rules
-- The kit root is two folders up from this file. Read `<kit root>/skills/code-review/references/check.md` and run it whole on `<base>..<head>`: the commit before the first build step, up to the last build commit. Inside a repo, this block adds no rule, lens, or verdict of its own.
-- The session that wrote the change never fills the checklist. The rows come from new seats, as that file says, started by the `run-workers` block.
+- The kit root is two folders up from this file. Read [commit review contract](../../skills/code-review/references/check.md) and run it whole on `<base>..<head>`: the commit before the first build step, up to the last build commit. Inside a repo, this block adds no rule, lens, or verdict of its own.
+- Have new seats fill the checklist, as that file says, so the review is independent. Start them with the `run-workers` block.
 - Inside a repo, pass on only the verdict line that `review_check.py verdict` printed. `INCOMPLETE` is not a pass.
 - On `REQUEST CHANGES`, fix each finding as its own unit by the `checked-units` block, then review the new range again.
 - When `git -C <repo-root> rev-parse` finds no work tree, the piece has no commits, so new seats review its files instead. Each seat writes rows `| file or claim | pass, fix, or note | evidence |` to `<run>/file-review.md`, with evidence: a rendered frame, a command output, or a `file:line`. Full rows go to the deliverable and to each done-when claim of the frame. Notes, proof files, frames, and run files get one `consistency` row each, which checks only that they agree with the deliverable.
-- `<kit root>/blocks/change-review/scripts/file_review.py` owns the stop. After every seat reports, the chair runs it with `--close`, which writes the one verdict line. With fix rows, fix them, run `--next`, and in the next round review only the files changed since the last round. The cap is 2 rounds. At the cap, `--close` writes `Verdict: BLOCKED (<n> fix)`, and the open rows go to the owner; that is no approval. Only an owner line `continue: file-review` in `<run>/answers.md` allows one more round. Inside a repo, a file review never replaces the commit review, and `review_check.py` owns its loop.
+- `<kit root>/blocks/change-review/scripts/file_review.py` owns the stop. After every seat reports, the chair runs it with `--close`, which writes the one verdict line. With fix rows, fix them, run `--next`, and in the next round review only the files changed since the last round. The cap is 2 rounds. At the cap, `--close` writes `Verdict: BLOCKED (<n> fix)`, and the open rows go to the owner; that is no approval. Only an owner line `continue: file-review` in `<run>/answers.md` allows one more round. Inside a repo, run the commit review under `review_check.py` for the verdict.
 
 ## Example
 Initial state: the build steps made the commits `a1b2c3d..HEAD`.

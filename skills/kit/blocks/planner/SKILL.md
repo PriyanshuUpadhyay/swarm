@@ -1,6 +1,6 @@
 ---
 name: planner
-description: "Turn a task into a plan file: a done-when line and a step table that names one or more blocks per step, what each step needs, and why. Use when any task starts, before work."
+description: "Write a plan with a done-when and a step table that names the blocks, needs, and reason for each step. Use when any task starts."
 license: MIT
 metadata:
   kind: step
@@ -14,8 +14,8 @@ metadata:
 ---
 
 ## Rules
-- The kit's `references/plan-layout.md` owns how this file's schema fits the reply layout.
-- Make the run folder by the kit's `references/run-folder.md`, and write `plan.md` in it.
+- The kit's [`references/plan-layout.md`](../../references/plan-layout.md) owns how this file's schema fits the reply layout.
+- Make the run folder by the kit's [`references/run-folder.md`](../../references/run-folder.md), and write `plan.md` in it.
 - Before drafting the plan for approval, apply `Align in rounds` in `skills/pair-programming/SKILL.md`. That section owns the conversation and its short `## Align` record in this plan.
 - When a verb sent the task, start from that verb's preset, as `skills/swarm/SKILL.md` defines it. Copy its table into `plan.md`, add the Writes column below, and write `Preset: <verb>` on the line under the title. Add a mode, as in `Preset: code-review walk`, only for a verb whose modes have their own presets. Add blocks or steps where the task needs them, but keep the steps and Needs of the implement preset, because `skills/implement/SKILL.md` says its `start` refuses any other. When you drop a preset step, add a line `Dropped steps: <step> (<reason>), ...` under the step table, so the owner sees it.
 - When the preset has an `Offers:` line, read each offered block's line. Add it to a step when the task needs it. For each offered block that no step loads, add an `Offered` row to the blocks table with why it stays off, so the owner can say "add Y".
@@ -44,9 +44,9 @@ metadata:
 - After the step table, add the blocks table with the header `| Block | Status | Why |`. It holds one `Chosen` row for each block, each with one reason, and one `Offered` row for each offered block that no step loads. `Chosen` is exactly the set of blocks that the steps load, after the parent and part expansion that `blocks/blocks.toml` sets. Sub-blocks are the parts of a parent block, as its `metadata.parts` names them. They have their own rows, and `plan-chart` shows them under their parent.
 - Two blocks that name each other in `conflicts` cannot both be in the plan. Keep one, and say why in its Why cell.
 - `Amend: <N>` on its own line after the step table lets a run add N steps that write `none` with `step_run.py amend`, with no new approval. In a research plan, amend refuses a step that loads `deep-search`, because its seed searches need the owner. Leave it out (N is 0) unless the owner sets it.
-- When no block fits a step, write the step with the nearest block and say what is missing in Why. Do not invent a block id.
+- When no block fits a step, write the step with the nearest block and say what is missing in Why. Use a registered block ID so the plan can load it.
 - Then run the `plan-chart` block, then the `plan-review` block. Work starts only after the owner approves.
-- The owner reads the plan on the page that `plan-chart` draws, with each skill block and its description. The reply that asks for approval says in two or three lines what the plan does. The owner changes the plan with "drop X", "add Y", or "add sub-block Z". Change the steps, the step table, and the blocks table to match, run `plan-chart` again, and show the new page. Never start work on a changed plan that the owner has not seen.
+- The owner reads the plan on the page that `plan-chart` draws, with each skill block and its description. The reply that asks for approval says in two or three lines what the plan does. The owner changes the plan with "drop X", "add Y", or "add sub-block Z". Change the steps, the step table, and the blocks table to match, run `plan-chart` again, and show the new page. Show the changed plan and get the owner's approval before work starts, so the approval covers the current plan.
 
 ## Example
 Initial state: the research verb sends "can a call show the user's own number as caller ID?" in a repo that calls Twilio.
