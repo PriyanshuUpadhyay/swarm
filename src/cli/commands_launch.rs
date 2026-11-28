@@ -385,6 +385,7 @@ pub(crate) fn commands_launch(
         command.extend(extra);
         // Every adapter's spawn verb opens the pane in the working directory it runs in.
         env::set_current_dir(&pane_dir)?;
+
         spawn_agent(
             connection,
             root,
