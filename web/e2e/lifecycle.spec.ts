@@ -2,7 +2,8 @@ import { expect, test } from "@playwright/test";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { api, clickTarget, header, open, readTree, server, shoot, showOtherProjects, workspace } from "./lifecycle-helpers";
+import type { Snapshot } from "../src/core/api";
+import { api, clickTarget, fixtureSql, header, open, patchTreePrefs, readTree, server, shoot, showOtherProjects, workspace } from "./lifecycle-helpers";
 
 const chatIn = async (title: string) => {
   const session = async () => {
@@ -95,59 +96,47 @@ test("Archive opens the archived chat list and restores its chat", async ({ page
   expect(errors).toEqual([]);
 });
 
-test("A chat whose chair has no pane shows only its log, and Continue chat opens Switch model", async ({ page: tab }) => {
+test("A chat whose chair has no pane shows its log and the same model picker", async ({ page: tab }) => {
   const errors = await open(tab);
   const session = await chatIn("ws-edit");
   await tab.locator(`[data-testid="tree-row"][data-session="${session}"]`).click();
   await expect(tab.locator(`[data-testid="transcript"][data-chat="${session}"][data-state="ready"]`)).toBeVisible();
   await expect(tab.getByTestId("composer")).toHaveCount(0);
   await expect(tab.getByTestId("composer-status")).toHaveCount(0);
-  await tab.getByTestId("continue-chat").click();
-  await expect(tab.getByTestId("switch-model")).toBeVisible();
+  await tab.getByTestId("model-chip").click();
+  await expect(tab.getByTestId("run-popover")).toBeVisible();
+  await expect(tab.getByTestId("resume-chat")).toBeVisible();
   await tab.keyboard.press("Escape");
   expect(errors).toEqual([]);
 });
 
-test("The run chip hands off to another CLI with a summary, and Cancel stops it while the chair writes it", async ({ page: tab }, info) => {
-  const errors = await open(tab);
+test("An instant cross-CLI pick uses saved Summary, and Cancel stops it while the chair writes it", async ({ page: tab }, info) => {
   const live = process.env.SWARM_E2E_LIVE!;
+  // Clear the last Summary send before the server checks for an idle chair.
+  fixtureSql(`UPDATE agent SET sent_at = NULL WHERE session_id = '${live}' AND id = 'orchestrator'`);
+  // The browser can still receive the previous listing until the next coordinator pass.
+  const idle = await api<Snapshot>("/api/snapshot");
+  const chair = idle.agents[live]?.find((agent) => agent.id === "orchestrator");
+  if (chair?.state === "working") chair.state = "done";
+  let picked = false;
+  tab.on("request", (request) => { if (request.url().endsWith("/api/chat/continue")) picked = true; });
+  await tab.route("**/api/snapshot", (route) => picked ? route.continue() : route.fulfill({ json: idle }));
+  await patchTreePrefs(tab, (prefs) => { prefs.switchCarry = "summary"; });
+  const errors = await open(tab);
   const chats = async () => (await readTree()).sections.flatMap((s) => s.rows).filter((r) => r.kind === "chat").length;
   const before = await chats();
   await tab.locator(`[data-testid="tree-row"][data-session="${live}"]`).click();
   await tab.getByTestId("model-chip").click();
   const dialog = tab.getByRole("dialog", { name: "Change model, thinking, or account" });
-  await expect(dialog).toBeVisible();
-  // Focus moves into the popover, so typing searches at once.
   await expect(dialog.getByTestId("run-query")).toBeFocused();
+  await dialog.getByRole("button", { name: "Codex", exact: true }).click();
   await dialog.getByTestId("run-query").fill("gpt-e2e");
-  // The same CLI restarts its own session and asks nothing.
-  await dialog.getByTestId("run-custom-claude").click();
-  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Restarts this chat on gpt-e2e\b.* History stays\. The next reply re-reads the whole chat once, so it costs more\.$/);
-  await expect(dialog.getByTestId("run-apply")).toHaveText("Restart and apply");
-  await expect(dialog.getByTestId("run-carry")).toHaveCount(0);
-  await dialog.getByTestId("run-custom-codex").click();
-  // Another CLI asks what to bring, with Summary as the default.
-  const summary = dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Summary" });
-  await expect(summary).toHaveAttribute("aria-checked", "true");
-  // The choice is one tab stop, and the arrow keys move it.
-  await summary.focus();
-  await tab.keyboard.press("ArrowRight");
-  await expect(dialog.getByTestId("run-carry-choice").getByRole("radio", { name: "Start clean" })).toBeFocused();
-  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Starts a new Codex chat on gpt-e2e\b.* with nothing from this one\. This chat stays as it is\.$/);
-  await expect(dialog.locator('[data-provider="codex"]')).toContainText("new chat");
-  await tab.keyboard.press("ArrowLeft");
-  await expect(summary).toHaveAttribute("aria-checked", "true");
-  await expect(dialog.getByTestId("run-outcome")).toHaveText(/^Starts a new Codex chat on gpt-e2e\b.* with a summary of this one\. This chat stays as it is\.$/);
-  await expect(dialog.locator('[data-provider="codex"]')).toContainText("new chat + summary");
-  await expect(dialog.getByTestId("run-apply")).toHaveText("Start new chat");
+  await expect(dialog.getByTestId("run-apply")).toHaveCount(0);
   await shoot(tab, "run-popover", info.project.name);
-  await dialog.getByTestId("run-apply").click();
+  await dialog.getByTestId("run-custom-codex").click();
   const progress = dialog.getByTestId("sm-progress");
-  // The live chair was asked for a summary and does not answer, so the switch waits here.
   await expect(progress).toHaveAttribute("data-phase", "summarizing");
-  // The open popover says the switch runs, so the chip's own status stays quiet until it closes.
   await expect(tab.getByTestId("run-chip-status")).toHaveText("");
-  await shoot(tab, "switch-model", info.project.name);
   await tab.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(tab.getByTestId("run-chip-status")).toHaveText("Switching…");
@@ -156,8 +145,6 @@ test("The run chip hands off to another CLI with a summary, and Cancel stops it 
   await expect(progress).toHaveAttribute("data-phase", "cancelled");
   await expect(progress).toContainText("Cancelled. This chat is unchanged.");
   expect(await chats()).toBe(before);
-  await tab.keyboard.press("Escape");
-  await expect(tab.locator(`[data-testid="transcript"][data-chat="${live}"]`)).toBeVisible();
   expect(errors).toEqual([]);
 });
 

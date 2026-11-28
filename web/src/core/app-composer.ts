@@ -8,6 +8,7 @@ import {
   type Input,
   type Composer,
   DRAFT_PREFIX,
+  MOVED_DRAFT,
   PICKS_PREFIX,
   HISTORY_PREFIX,
   STASH_PREFIX,
@@ -17,7 +18,12 @@ import {
 } from "./app-types";
 import type { App } from "./app";
 
+type Draft = { text: string; picks: SkillPick[]; from?: string };
+type MovedDraft = Draft & { from: string; mirrorBefore?: string | null };
+
 export class AppComposer {
+  private readonly unsavedDrafts = new Set<string>();
+  private readonly draftSources = new Map<string, string>();
   private captionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly app: App) {}
@@ -71,31 +77,97 @@ export class AppComposer {
 
   /** Each chat keeps its draft, also across a reload (ComposerDraftStore). */
   draft(sessionId: string): string {
-    let d = this.app.drafts.get(sessionId);
-    if (d === undefined) this.app.drafts.set(sessionId, (d = readStore(DRAFT_PREFIX + sessionId) ?? ""));
-    return d;
+    if (!this.app.drafts.has(sessionId)) this.cacheDraft(sessionId, this.storedDraft(sessionId));
+    return this.app.drafts.get(sessionId) ?? "";
   }
 
   /** Pick ranges persist beside the draft text; old drafts need no migration. */
   draftPicks(sessionId: string): SkillPick[] {
-    let picks = this.app.picks.get(sessionId);
-    if (!picks) {
-      try {
-        const stored = JSON.parse(readStore(PICKS_PREFIX + sessionId) ?? "[]");
-        picks = validPicks(this.draft(sessionId), Array.isArray(stored) ? stored : []);
-      } catch { picks = []; }
-      this.app.picks.set(sessionId, picks);
+    if (!this.app.picks.has(sessionId)) this.draft(sessionId);
+    return this.app.picks.get(sessionId) ?? [];
+  }
+
+  private movedDraft(id: string): MovedDraft | undefined {
+    try {
+      const draft = JSON.parse(readStore(MOVED_DRAFT + id) ?? "null");
+      if (typeof draft?.from === "string" && typeof draft.text === "string" && Array.isArray(draft.picks)) {
+        const mirrorBefore = typeof draft.mirrorBefore === "string" || draft.mirrorBefore === null ? draft.mirrorBefore : undefined;
+        return { from: draft.from, text: draft.text, picks: validPicks(draft.text, draft.picks), mirrorBefore };
+      }
+    } catch { return undefined; }
+  }
+
+  private storedDraft(id: string): Draft {
+    const text = readStore(DRAFT_PREFIX + id) ?? "";
+    const moved = this.movedDraft(id);
+    if (moved) {
+      // Keep an interrupted mirror's result. After a complete write, an older tab can edit the mirror.
+      const before = moved.mirrorBefore;
+      if (typeof before === "string" && (text === before || text === moved.text)) return moved;
+      if (before === undefined && readStore(DRAFT_PREFIX + moved.from)) return moved;
     }
-    return picks;
+
+    return { text, picks: this.storedPicks(id, text), from: moved?.from };
+  }
+
+  private cacheDraft(id: string, draft: Draft) {
+    this.app.drafts.set(id, draft.text);
+    this.app.picks.set(id, draft.picks);
+    if (draft.from) this.draftSources.set(id, draft.from);
+  }
+
+  private storedPicks(sessionId: string, text: string): SkillPick[] {
+    try {
+      const stored = JSON.parse(readStore(PICKS_PREFIX + sessionId) ?? "[]");
+      return validPicks(text, Array.isArray(stored) ? stored : []);
+    } catch { return []; }
   }
 
   /** The box calls this on each edit; it does not render. */
   setDraft(sessionId: string, text: string, picks?: readonly SkillPick[]) {
     const next = picks ? validPicks(text, picks) : editPicks(this.draft(sessionId), text, this.draftPicks(sessionId));
-    this.app.drafts.set(sessionId, text);
-    this.app.picks.set(sessionId, next);
-    writeStore(DRAFT_PREFIX + sessionId, text);
-    writeStore(PICKS_PREFIX + sessionId, next.length ? JSON.stringify(next) : "");
+    const from = this.draftSources.get(sessionId) ?? this.movedDraft(sessionId)?.from;
+    return this.saveDraft(sessionId, { text, picks: next, from });
+  }
+
+  private saveDraft(id: string, draft: Draft): boolean {
+    this.cacheDraft(id, draft);
+    const textKey = DRAFT_PREFIX + id;
+    const movedKey = MOVED_DRAFT + id;
+    // Save the receipt before changing either legacy key. A null mirror records completion.
+    const savedMove = !draft.from || writeStore(movedKey, JSON.stringify({ ...draft, mirrorBefore: readStore(textKey) ?? "" }));
+    const savedText = savedMove && writeStore(textKey, draft.text);
+    const savedPicks = savedText && writeStore(PICKS_PREFIX + id, draft.picks.length ? JSON.stringify(draft.picks) : "");
+    const saved = savedPicks && (!draft.from || writeStore(movedKey, JSON.stringify({ ...draft, mirrorBefore: null })));
+
+    if (saved) this.unsavedDrafts.delete(id);
+    else this.unsavedDrafts.add(id);
+    return saved;
+  }
+
+  continueDraft(from: string, to: string) {
+    const read = (id: string): Draft => this.unsavedDrafts.has(id)
+      ? { text: this.draft(id), picks: this.draftPicks(id), from: this.draftSources.get(id) }
+      : this.storedDraft(id);
+    const old = read(from);
+    const next = read(to);
+
+    if (old.text) {
+      let moved = next;
+      if (next.from !== from) {
+        const prefix = old.text + (next.text ? "\n\n" : "");
+        const picks = [...old.picks, ...next.picks.map((pick) => ({ ...pick, start: pick.start + prefix.length }))];
+        moved = { from, text: prefix + next.text, picks };
+      }
+
+      if (this.saveDraft(to, moved)) this.setDraft(from, "", []);
+      else this.app.notice("The browser could not save the moved draft. The original draft was not deleted.", true);
+    } else if (this.app.drafts.has(to) && !this.unsavedDrafts.has(to)) {
+      // Another tab can move the stored draft first; replace this tab's cached copy.
+      this.cacheDraft(to, next);
+    } else return;
+
+    this.update(to, { draftRev: this.input(to).draftRev + 1 });
   }
 
   /** History is per workspace, so a new chat recalls the prompts of the workspace's other chats. */

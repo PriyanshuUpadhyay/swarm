@@ -1,4 +1,4 @@
-import { sleep, snapshotReceivedAt, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
+import { hasLinkedHistory, sleep, snapshotReceivedAt, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import type { Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { bodyModeOf, displayOf, imagesOf, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, units } from "./transcript";
@@ -20,13 +20,30 @@ export class AppStream {
   constructor(private readonly app: App) {}
 
   applySnapshot(snap: Snapshot) {
+    const previous = this.app.snapshot;
     this.app.snapshot = snap;
     this.app.snapshotReceivedAt = snapshotReceivedAt(snap) ?? performance.now();
 
+
+    if (hasLinkedHistory(snap)) {
+      const known = new Set(previous?.sessions.filter((session) => session.continuation_of).map((session) => session.id));
+      // A reconnect can discover several links at once. Move oldest first so notes and text
+      // reach the active leaf without changing the stored chat-link order.
+      const links = snap.sessions.flatMap<[string, string]>(({ id, continuation_of: from }) =>
+        from && !known.has(id) ? [[from, id]] : [],
+      ).sort((a, b) => a[1].localeCompare(b[1]));
+
+      for (const [from, to] of links) this.app.composing.continueDraft(from, to);
+      this.app.notes.continueNotes(links);
+    }
+
+    this.app.life?.reconcileRunPicks(snap);
     // A card stays busy until its question goes; the same question shown again is a new ask.
     for (const [id, input] of this.app.inputs)
       if (input.answering && this.app.composing.chair(id).prompt?.id !== input.answering.prompt) input.answering = null;
     for (const chat of this.app.chats.values()) {
+      if (chat.agent === "chair" && chat.linkedTail === false && hasLinkedHistory(snap, chat.sessionId))
+        this.app.panes.loadChair(chat);
       const items = this.app.composing.chair(chat.id).queue;
       const queue = items.map<Row>((q, i) => ({
         id: q.id,
@@ -60,6 +77,8 @@ export class AppStream {
     }
     // A chair's and a child's log can show up after the chat opens.
     if (this.app.reading.open) this.app.panes.loadChair(this.app.reading.open);
+    // A linked chat already has a reader when the leaf's native log first becomes available.
+    if (hasLinkedHistory(snap)) this.syncSubscriptions();
     for (const id of this.app.visible) this.app.panes.loadPane(id);
     if (this.app.liveAll) void this.loadAllForLive();
   }
@@ -287,7 +306,8 @@ export class AppStream {
     const keys: SubscribeKey[] = [];
     for (const id of [...chairs, ...panes]) {
       const chat = this.app.chats.get(id);
-      if (chat?.state === "ready") keys.push({ key: chat.key, from: chat.end, view: "rows" });
+      const awaitingLog = chat?.agent === "chair" && hasLinkedHistory(this.app.snapshot, chat.sessionId) && !this.app.panes.chairHasLog(chat.sessionId);
+      if (chat?.state === "ready" && !awaitingLog) keys.push({ key: chat.key, from: chat.end, view: "rows" });
       if (keys.length === MAX_KEYS) break;
     }
     const sig = keys.map((k) => k.key).sort().join(",");

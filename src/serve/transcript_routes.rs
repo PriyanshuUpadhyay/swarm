@@ -19,10 +19,18 @@ pub(super) struct Log {
 }
 
 pub(super) fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log, ApiError> {
+    resolve_log_if_present(root, session, agent)?.ok_or_else(no_transcript_log)
+}
+
+pub(super) fn resolve_log_if_present(
+    root: &Path,
+    session: &str,
+    agent: &str,
+) -> Result<Option<Log>, ApiError> {
     // A subagent's chat is its own log, read-only (ADR 0140).
     subagent::check_depth(agent)?;
     if let Some((parent, call)) = subagent::split(agent) {
-        return subagent::child_log(&resolve_log(root, session, parent)?, call);
+        return subagent::child_log(&resolve_log(root, session, parent)?, call).map(Some);
     }
 
     let connection = read_connection(root)
@@ -70,16 +78,54 @@ pub(super) fn resolve_log(root: &Path, session: &str, agent: &str) -> Result<Log
             .flatten()
             .map(|path| path.to_string_lossy().into_owned())
     });
-    let path = path.ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript log"))?;
+    path.map(|path| checked_log(Some(path.into()), format.as_deref()))
+        .transpose()
+}
+
+pub(super) fn stored_link_path(row: &swarm::store::ContinuationLog) -> Option<&Path> {
+    row.path
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .map(Path::new)
+}
+
+pub(super) fn resolve_link_log(row: &swarm::store::ContinuationLog) -> Result<Log, ApiError> {
+    let format = row.provider.as_deref();
+
+    let path = stored_link_path(row).map(Path::to_path_buf).or_else(|| {
+        let id = row.native_id.as_deref()?;
+        if format == Some("pi") {
+            return crate::pi_chair_log(id);
+        }
+
+        if row.archived || !crate::valid_chair_id(id) {
+            return None;
+        }
+        match format {
+            Some("claude") => crate::claude_chair_log(id),
+            Some("codex") => crate::codex_chair_log(id, &row.days),
+            _ => None,
+        }
+    });
+
+    checked_log(path, format)
+}
+
+fn no_transcript_log() -> ApiError {
+    error(StatusCode::NOT_FOUND, "no transcript log")
+}
+
+fn checked_log(path: Option<PathBuf>, format: Option<&str>) -> Result<Log, ApiError> {
+    let path = path.ok_or_else(no_transcript_log)?;
     let format = format
-        .filter(|format| swarm::view::transcript::LOG_FORMATS.contains(&format.as_str()))
+        .filter(|format| swarm::view::transcript::LOG_FORMATS.contains(format))
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "no transcript format"))?;
-    if !Path::new(&path).is_file() {
+    if !path.is_file() {
         return Err(error(StatusCode::NOT_FOUND, "transcript log unavailable"));
     }
     Ok(Log {
-        path: path.into(),
-        format,
+        path,
+        format: format.to_owned(),
     })
 }
 

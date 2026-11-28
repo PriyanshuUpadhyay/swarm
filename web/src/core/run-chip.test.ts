@@ -1,8 +1,8 @@
-// The run chip: its label, the outcome of a draft, and when Apply is blocked.
+// The run chip: its label, the outcome of a pick, and the saved carry mode.
 
 import { describe, expect, it } from "vitest";
 import { chair, session } from "./chat-fixtures";
-import { accountCli, accountColor, agentInput, applyBlock, chooseModel, cliName, levelWord, limitText, runLabel, runTip, switchOutcome, usageLabel, usageTitle } from "./composer";
+import { accountCli, accountColor, agentInput, chooseModel, cliName, levelWord, limitText, runLabel, runTip, savedCarry, switchOutcome, usageLabel, usageTitle } from "./composer";
 import type { Meter } from "./settings";
 
 
@@ -66,12 +66,10 @@ describe("run chip", () => {
     expect(runLabel(agentInput(session({ chair_provider: "agy" }), [chair({ provider: "agy" })]))).toBe("AGY · Default model");
   });
 
-  it("blocks Apply with no model, with no known CLI, or while the agent works", () => {
-    const idle = agentInput(session(), [chair({ provider: "claude" })]);
-    expect(applyBlock(idle, run("claude", "b"))).toBeNull();
-    expect(applyBlock({ ...idle, running: true }, run("claude", "b"))).toBe("Wait for this turn to end, or stop it.");
-    expect(applyBlock(idle, run("claude", null))).toBe("Pick a model.");
-    expect(applyBlock({ ...idle, provider: null }, run("claude", "b"))).toBe("This chat does not record its CLI, so it cannot switch.");
+  it("uses File when no carry mode is saved and keeps explicit choices", () => {
+    expect(savedCarry(undefined)).toBe("file");
+    expect(savedCarry({ switchCarry: "summary" })).toBe("summary");
+    expect(savedCarry({ switchCarry: "clean" })).toBe("clean");
   });
 
   it("names an unknown CLI by its id, also one that is an Object key", () => {

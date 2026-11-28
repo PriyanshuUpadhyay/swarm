@@ -212,3 +212,59 @@ async fn resume_chat_route_launches_the_chair_with_resume_in_its_chat() {
     let refused = call_action(&fixture, "/api/chat/resume", unknown).await;
     assert_eq!(refused.unwrap_err().0, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn ended_resume_launches_the_picked_run_in_the_same_session() {
+    let fixture = action_fixture();
+
+    let response = call_action(
+        &fixture,
+        "/api/chat/resume",
+        json!({
+            "session": fixture.session, "model": "sonnet", "effort": "high", "account": "work"
+        }),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(response["session"], fixture.session);
+    let calls = action_calls(&fixture);
+    assert!(
+        calls.starts_with(&format!("tmux-swarm|{}|", fixture.session)),
+        "{calls}"
+    );
+    assert!(
+        calls.ends_with(
+            "|launch orchestrator chat --resume --model sonnet --effort high --account work\n"
+        ),
+        "{calls}"
+    );
+}
+
+#[tokio::test]
+async fn recent_models_include_the_model_an_ended_resume_started() {
+    let fixture = action_fixture();
+    let db = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    // The stand-in launch does not publish runtime metadata; provide the stores it would update.
+    db.execute("UPDATE agent SET provider = 'claude', model = 'sonnet' WHERE session_id = ?1 AND id = 'orchestrator'", [&fixture.session]).unwrap();
+
+    let prefs = || {
+        choices_store::load(&fixture.app.root, false)
+            .unwrap()
+            .owner
+            .prefs
+    };
+    assert!(prefs()["recentModels"].is_null());
+    let response = call_action(
+        &fixture,
+        "/api/chat/resume",
+        json!({"session": fixture.session}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response["session"], json!(fixture.session));
+    assert_eq!(
+        prefs()["recentModels"],
+        json!([{"provider":"claude", "model":"sonnet"}])
+    );
+}

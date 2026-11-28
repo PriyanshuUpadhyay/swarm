@@ -122,10 +122,7 @@ pub enum ChoiceOp {
         list: String,
         fields: Vec<String>,
     },
-    /// One owner preference under `prefs`, in the Swift `Prefs` keys: `theme`, `fontSans`, `fontMono`, `usageHUDAsked`,
-    /// `switchCarry` (what a switch to another CLI brings, ADR 0110), `terminalHost` (`pty` or
-    /// `tmux`, where a new chat runs, ADR 0131), `chatDetail` (`compact` or `full`, ADR 0047), or a
-    /// notice switch `notices.post|sound|done|badge` that `swarm notices --due` reads (ADR 0077).
+    /// One owner preference under `prefs`. `apply` checks the key and its allowed values.
     Pref {
         key: String,
         value: Value,
@@ -345,7 +342,16 @@ pub fn apply(
         ChoiceOp::Pref { key, value } => {
             let valid = match key.as_str() {
                 "theme" => matches!(value.as_str(), Some("system" | "light" | "dark")),
-                "switchCarry" => matches!(value.as_str(), Some("summary" | "clean")),
+                "switchCarry" => matches!(value.as_str(), Some("file" | "summary" | "clean")),
+                "newChatModel" => value.is_null() || valid_model_choice(&value),
+                "recentModels" => valid_model_choice(&value),
+                "favoriteModels" => value.as_array().is_some_and(|models| {
+                    let mut seen = std::collections::BTreeSet::new();
+                    models.iter().all(|model| {
+                        valid_model_choice(model)
+                            && seen.insert((model["provider"].as_str(), model["model"].as_str()))
+                    })
+                }),
                 "terminalHost" => matches!(value.as_str(), Some("pty" | "tmux")),
                 "fontSans" => matches!(
                     value.as_str(),
@@ -368,7 +374,14 @@ pub fn apply(
                 .map_or((None, key.as_str()), |(section, name)| {
                     (Some(section), name)
                 });
-            prefs_object(&mut owner.prefs, section)?.insert(name.into(), value);
+            let prefs = prefs_object(&mut owner.prefs, section)?;
+            if key == "recentModels" {
+                put_recent(prefs, value);
+            } else if key == "newChatModel" && value.is_null() {
+                prefs.remove(name);
+            } else {
+                prefs.insert(name.into(), value);
+            }
         }
         ChoiceOp::MuteProject { project, muted } => {
             if !tree.projects.iter().any(|p| p.path == project) {
@@ -387,6 +400,63 @@ pub fn apply(
         op => apply_tab(owner, state, tree, op)?,
     }
     Ok(())
+}
+
+impl OwnerChoices {
+    pub fn remember_model(&mut self, provider: String, model: String) -> Result<bool, String> {
+        if !valid_recent_names(&provider, &model) {
+            return Err("invalid value for recentModels".into());
+        }
+        let value = serde_json::json!({ "provider": provider, "model": model });
+        Ok(put_recent(prefs_object(&mut self.prefs, None)?, value))
+    }
+}
+
+fn put_recent(prefs: &mut serde_json::Map<String, Value>, value: Value) -> bool {
+    let mut models = vec![value];
+    if let Some(old) = prefs.get("recentModels").and_then(Value::as_array) {
+        for model in old.iter().filter(|model| {
+            model_choice(model).is_some_and(|(provider, model)| valid_recent_names(provider, model))
+        }) {
+            if !models.contains(model) {
+                models.push(model.clone());
+            }
+            if models.len() == 4 {
+                break;
+            }
+        }
+    }
+
+    let next = Value::Array(models);
+    if prefs.get("recentModels") == Some(&next) {
+        return false;
+    }
+    prefs.insert("recentModels".into(), next);
+    true
+}
+
+fn model_choice(value: &Value) -> Option<(&str, &str)> {
+    if value.as_object()?.len() != 2 {
+        return None;
+    }
+
+    value["provider"].as_str().zip(value["model"].as_str())
+}
+
+fn valid_model_choice(value: &Value) -> bool {
+    model_choice(value).is_some_and(|(provider, model)| valid_model_names(provider, model))
+}
+
+fn valid_recent_names(provider: &str, model: &str) -> bool {
+    valid_model_names(provider, model)
+        // Already-started Pi settings can name an ID with spaces. Recent shows it, but
+        // a choice from the browser must still pass the launch's one-word guard.
+        || (provider == "pi" && model.contains(' ') && !model.trim().is_empty()
+            && !model.starts_with('-') && !model.chars().any(char::is_control))
+}
+
+fn valid_model_names(provider: &str, model: &str) -> bool {
+    crate::providers::Provider::parse(provider).is_some() && crate::config::valid_name(model)
 }
 
 /// `prefs`, or its `section` object made when absent. A value of another type is refused, not

@@ -4,6 +4,89 @@ use super::*;
 use crate::serve::test_support::*;
 
 #[tokio::test]
+async fn linked_history_pages_across_logs_without_changing_the_leaf_offsets() {
+    let fixture = Fixture::new();
+    let leaf = {
+        let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+        new_linked_test_session(&connection, &fixture.session, Some(("codex", "second")))
+    };
+
+    let user = json!({"type":"user","message":{"content":"older"}});
+    std::fs::write(&fixture.log, format!("{user}\n")).unwrap();
+    let read = |older_cursor: Option<String>| {
+        transcript_rows(
+            State(fixture.app.clone()),
+            Query(RowsQuery {
+                session: leaf.clone(),
+                agent: "chair".into(),
+                tail: 1,
+                before: None,
+                older_cursor,
+            }),
+        )
+    };
+    let Json(missing) = read(None).await.unwrap();
+    assert_eq!(row_texts(&missing), vec!["older"]);
+    assert_eq!(missing["page"]["end_offset"], 0);
+    assert_eq!(missing["rows"][1]["text"], "codex from here");
+
+    let leaf_log = fixture.dir.join("leaf.jsonl");
+    let model = json!({"type":"turn_context","payload":{"model":"gpt-5"}});
+    let content = format!("{model}\n{}", codex_line(0));
+    std::fs::write(&leaf_log, &content).unwrap();
+    let connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
+    swarm::store::set_chair_log(&connection, &leaf, &leaf_log).unwrap();
+    let Json(current) = read(None).await.unwrap();
+    assert_eq!(current["page"]["end_offset"], content.len());
+    assert_eq!(current["rows"][0]["kind"], "model_change");
+    assert_eq!(current["rows"][0]["id"], missing["rows"][1]["id"]);
+    let cursor = current["page"]["older_cursor"].as_str().unwrap();
+    let Json(first_leaf_page) = read(Some(cursor.into())).await.unwrap();
+    assert_eq!(first_leaf_page["rows"][0]["id"], current["rows"][0]["id"]);
+    assert_eq!(
+        first_leaf_page["rows"][0]["text"],
+        "codex · gpt-5 from here"
+    );
+    let cursor = first_leaf_page["page"]["older_cursor"].as_str().unwrap();
+    let Json(older) = read(Some(cursor.into())).await.unwrap();
+    assert_eq!(row_texts(&older), vec!["older"]);
+    let row = &older["rows"][0];
+    assert_eq!(row["source_session"], fixture.session);
+    assert_ne!(row["id"], current["rows"][1]["id"]);
+    assert!(older["body"].get(row["id"].as_str().unwrap()).is_some());
+    assert!(older["page"]["older_cursor"].is_null());
+    assert_eq!(
+        read(Some("foreign:0".into())).await.unwrap_err().0,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+fn model_change_before_tail() -> Fixture {
+    let fixture = Fixture::new();
+    codex_log(&fixture, 0);
+    let model = |id: &str| json!({"type":"turn_context","payload":{"model":id}});
+    let mut history = format!("{}\n", model("before"));
+    history.extend((0..220).map(codex_line));
+    history.push_str(&format!("{}\n{}", model("after"), codex_line(220)));
+    std::fs::write(&fixture.log, history).unwrap();
+    fixture
+}
+
+#[tokio::test]
+async fn cold_tail_shows_a_change_from_the_model_before_its_window() {
+    let fixture = model_change_before_tail();
+    let tail = row_page(&fixture, 200, None).await.unwrap();
+    let changes: Vec<_> = tail["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["kind"] == "model_change")
+        .map(|row| row["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(changes, ["before → after"]);
+}
+
+#[tokio::test]
 async fn older_page_sends_only_new_and_changed_rows_in_thousand_row_history() {
     let fixture = Fixture::new();
     codex_log(&fixture, 0);
@@ -102,11 +185,7 @@ async fn pages() {
     let again = row_page(&fixture, 100, Some(0)).await.unwrap();
     assert_eq!(again["rows"], json!([]));
 }
-#[tokio::test]
-async fn append_while_paging() {
-    let fixture = Fixture::new();
-    codex_log(&fixture, 200);
-    let first = row_page(&fixture, 100, None).await.unwrap();
+async fn follow_rows(fixture: &Fixture, from: u64) -> Events {
     fixture
         .app
         .hub
@@ -114,20 +193,60 @@ async fn append_while_paging() {
         .unwrap()
         .streams
         .insert("live".into(), client(&[]));
+
     let key = format!("{}:chair", fixture.session);
     let _ = subscribe(
         State(fixture.app.clone()),
         Json(Subscription {
             stream: "live".into(),
             keys: vec![SubscriptionKey {
-                key: key.clone(),
-                from: first["page"]["end_offset"].as_u64().unwrap(),
+                key,
+                from,
                 view: Some("rows".into()),
             }],
         }),
     )
     .await
     .unwrap();
+    Events {
+        app: fixture.app.clone(),
+        id: "live".into(),
+    }
+}
+
+async fn finish_following(stream: Events, key: &str) {
+    let mut done = stream.app.hub.lock().unwrap().followers[key].done.clone();
+    drop(stream);
+    done.wait_for(|finished| *finished).await.unwrap();
+}
+
+#[tokio::test]
+async fn follower_cached_tail_keeps_the_prior_model_change() {
+    let fixture = model_change_before_tail();
+    let end = std::fs::metadata(&fixture.log).unwrap().len();
+    let stream = follow_rows(&fixture, end).await;
+
+    let key = format!("{}:chair", fixture.session);
+    let tail = row_page(&fixture, 200, None).await.unwrap();
+    finish_following(stream, &key).await;
+
+    assert!(
+        tail["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["kind"] == "model_change" && row["text"] == "before → after")
+    );
+}
+
+#[tokio::test]
+async fn append_while_paging() {
+    let fixture = Fixture::new();
+    codex_log(&fixture, 200);
+    let first = row_page(&fixture, 100, None).await.unwrap();
+    let stream = follow_rows(&fixture, first["page"]["end_offset"].as_u64().unwrap()).await;
+    let key = format!("{}:chair", fixture.session);
+
     let older = row_page(&fixture, 100, first["page"]["start_offset"].as_u64());
     let append = async {
         std::fs::OpenOptions::new()
@@ -162,12 +281,7 @@ async fn append_while_paging() {
         row_texts(&row_page(&fixture, 1, None).await.unwrap()).len(),
         201
     );
-    let mut done = fixture.app.hub.lock().unwrap().followers[&key].done.clone();
-    drop(Events {
-        app: fixture.app.clone(),
-        id: "live".into(),
-    });
-    done.wait_for(|finished| *finished).await.unwrap();
+    finish_following(stream, &key).await;
 }
 #[tokio::test]
 async fn retry_history() {

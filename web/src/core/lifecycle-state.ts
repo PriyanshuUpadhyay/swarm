@@ -1,4 +1,4 @@
-import type { SwitchCarry } from "./composer";
+import type { Run, SwitchCarry } from "./composer";
 
 /** The fields of `GET /api/workspace/new-options` that the place menu reads. */
 export type NewOptions = {
@@ -66,6 +66,10 @@ export type LifeState = {
   setupScript: { project: string; title: string } | null;
   /** The chat that Switch model continues. */
   switchModel: string | null;
+  favoritePick?: { session: string; label: string };
+  pendingSwitch?: Readonly<Record<string, Run>>;
+  endedRun?: Readonly<Record<string, Run>>;
+  resuming?: Readonly<Record<string, boolean>>;
   /** Each chat's switch, by its session; a switch blocks only its own chat. */
   handoffs: Record<string, Handoff>;
   confirm: Confirm | null;

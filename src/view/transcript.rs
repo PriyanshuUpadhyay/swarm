@@ -30,7 +30,8 @@ pub use records::Record;
 pub(super) use shell::shell_row;
 pub use shell::{clean_shell, command_output_text, shell_output_text, shell_run, strip_terminal};
 pub use state::{
-    ChatUsage, UsageState, clear_boundary, queued, usage, view_rows, view_rows_with_context,
+    ChatUsage, UsageState, clear_boundary, model_fact, queued, usage, view_rows,
+    view_rows_with_context,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -49,6 +50,8 @@ pub enum RowKind {
     Result,
     Shell,
     Divider,
+    #[serde(rename = "model_change")]
+    ModelChange,
     Fold,
     Queued,
     TodoList,
@@ -137,6 +140,9 @@ pub struct Row {
     pub subagent: Option<SubagentRun>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub source_ids: Vec<String>,
+    /// On a linked page, the older chair session that owns this row and its source IDs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_session: Option<String>,
     #[serde(skip)]
     pub anchor_source_id: String,
     /// The group that the agent's CLI draws this tool call in (`fold_rows`); empty when none.
@@ -187,6 +193,7 @@ impl Row {
             command: None,
             subagent: None,
             source_ids: Vec::new(),
+            source_session: None,
             anchor_source_id: String::new(),
             group: String::new(),
             group_part: String::new(),
@@ -200,6 +207,57 @@ impl Row {
             todo: Vec::new(),
             default_open: false,
             order: [0, 0],
+        }
+    }
+    pub fn scoped_id(session: &str, id: &str) -> String {
+        format!("{session}:{id}")
+    }
+
+    fn scope_id(id: &mut String, session: &str) {
+        if !id.is_empty() {
+            *id = Self::scoped_id(session, id);
+        }
+    }
+
+    pub fn scope_to(&mut self, session: &str) {
+        self.source_session = Some(session.into());
+        Self::scope_id(&mut self.id, session);
+
+        if let Some(diff) = &mut self.diff {
+            Self::scope_id(&mut diff.id, session);
+        }
+        let command = self.command.as_mut();
+        for preview in [
+            self.output.as_mut(),
+            self.shell.as_mut().map(|shell| &mut shell.output),
+            self.subagent.as_mut().and_then(|run| run.result.as_mut()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            Self::scope_id(&mut preview.id, session);
+        }
+        if let Some(tool) = &mut self.tool {
+            for diff in &mut tool.diffs {
+                Self::scope_id(&mut diff.id, session);
+            }
+            for preview in [&mut tool.output, &mut tool.skill_body]
+                .into_iter()
+                .flatten()
+            {
+                Self::scope_id(&mut preview.id, session);
+            }
+        }
+        if let Some(command) = command {
+            for preview in [&mut command.output, &mut command.skill_body]
+                .into_iter()
+                .flatten()
+            {
+                Self::scope_id(&mut preview.id, session);
+            }
+        }
+        for step in &mut self.steps {
+            step.scope_to(session);
         }
     }
     pub fn opens_turn(&self) -> bool {
@@ -228,6 +286,7 @@ impl Row {
             RowKind::Result => "Turn".into(),
             RowKind::Shell => "Shell".into(),
             RowKind::Divider => "Context cleared".into(),
+            RowKind::ModelChange => "Model changed".into(),
             RowKind::Fold => "Steps".into(),
             RowKind::Queued => "Queued".into(),
             RowKind::TodoList => "To-do".into(),

@@ -1,8 +1,12 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { pierreUnloadNoise } from "./console-noise";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { TreeView } from "../src/core/nav";
+import type { Agent, Snapshot } from "../src/core/api";
+import type { Prefs, TreeView } from "../src/core/nav";
+import type { ModelInfo } from "../src/core/run-catalog";
+import type { Account, ProviderInfo } from "../src/core/settings-types";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 const token = () => {
@@ -24,6 +28,9 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
 
 const readTree = (view = "workspaces") => api<TreeView>(`/api/tree?view=${view}`);
 
+export const fixtureSql = (statement: string) =>
+  execFileSync("sqlite3", ["-cmd", ".timeout 5000", process.env.SWARM_E2E_DB!, statement]);
+
 async function open(tab: Page) {
   const errors: string[] = [];
   tab.on("pageerror", (e) => !e.message.startsWith("ResizeObserver loop") && errors.push(e.message));
@@ -40,10 +47,8 @@ const workspace = (tab: Page, title: string) => tab.locator('[data-testid="tree-
 
 /** Screenshots for the result, in both themes, only when E2E_SHOTS is set and in WebKit. */
 async function shoot(tab: Page, name: string, browser: string) {
-  if (!process.env.E2E_SHOTS || browser !== "webkit") return;
-  for (const theme of ["dark", "light"])
-    await tab.evaluate((t) => (document.documentElement.dataset.theme = t), theme).then(() => tab.screenshot({ path: join(SHOTS, `s3-${name}-${theme}.png`) }));
-  await tab.evaluate(() => delete document.documentElement.dataset.theme);
+  if (browser !== "webkit") return;
+  await shootThemes(tab, join(SHOTS, `s3-${name}`));
 }
 
 /** Opens the composer on `project` from its "+" and types `prompt`. */
@@ -70,6 +75,53 @@ async function holdChatStart(tab: Page) {
 }
 
 export { server, token, api, readTree, open, header, workspace, shoot, holdChatStart, compose };
+
+export async function patchTreePrefs(tab: Page, patch: (prefs: Prefs) => void) {
+  await tab.route("**/api/tree?*", async (route) => {
+    const tree: TreeView = await (await route.fetch()).json();
+    patch(tree.prefs);
+    await route.fulfill({ json: tree });
+  });
+}
+
+export async function patchLiveChair(tab: Page, patch: (chair: Agent, snapshot: Snapshot, session: string) => void) {
+  const session = process.env.SWARM_E2E_LIVE!;
+  await tab.route("**/api/snapshot", async (route) => {
+    const snapshot: Snapshot = await (await route.fetch()).json();
+    patch(snapshot.agents[session][0], snapshot, session);
+    await route.fulfill({ json: snapshot });
+  });
+}
+
+export async function mockRunCatalog(tab: Page, { providers, models, accounts = [] }: {
+  providers: (Pick<ProviderInfo, "id"> & Partial<ProviderInfo>)[];
+  models: ModelInfo[] | ((provider: string | null) => ModelInfo[]);
+  accounts?: (Pick<Account, "name" | "email"> & Partial<Account>)[];
+}) {
+  await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers } }));
+  await tab.route("**/api/models?*", (route) => {
+    const provider = new URL(route.request().url()).searchParams.get("provider");
+    return route.fulfill({ json: { models: typeof models === "function" ? models(provider) : models } });
+  });
+  await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts } }));
+}
+
+export async function captureRunPost(tab: Page, action: "continue" | "resume", onPost?: () => void | Promise<void>) {
+  const bodies: Record<string, unknown>[] = [];
+  await tab.route(`**/api/chat/${action}`, async (route) => {
+    bodies.push(route.request().postDataJSON());
+    if (onPost) await onPost();
+    await route.fulfill({ json: { session: process.env.SWARM_E2E_LIVE } });
+  });
+  return bodies;
+}
+
+export async function shootThemes(tab: Page, prefix: string) {
+  if (!process.env.E2E_SHOTS) return;
+  for (const theme of ["dark", "light"])
+    await tab.evaluate((t) => (document.documentElement.dataset.theme = t), theme).then(() => tab.screenshot({ path: `${prefix}-${theme}.png` }));
+  await tab.evaluate(() => delete document.documentElement.dataset.theme);
+}
 
 export function saveSidebarState() {
   const home = process.env.SWARM_E2E_HOME;

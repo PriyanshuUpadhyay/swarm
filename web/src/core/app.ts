@@ -2,13 +2,13 @@
 
 import { Api, type RowFrame, type Snapshot } from "./api";
 import { installKeys, Registry } from "./commands";
-import { type AgentInput, type Answer, type Prompt } from "./composer";
+import { canBranch, type AgentInput, type Answer, type Prompt } from "./composer";
 import { whenPainted } from "./perf";
 import { focusOpenedChat, keepFocus } from "./focus";
 import { chatFromPath, resolveChat } from "./route";
 import { type Direction, type PaneCell } from "./panes";
 import { type HistoryEntry } from "./history";
-import { type Line } from "./transcript";
+import { scopedRowId, type Line } from "./transcript";
 import { Lifecycle } from "./lifecycle";
 import { type CommandList, type SkillPick } from "./slash";
 import { Settings } from "./settings";
@@ -399,7 +399,14 @@ export class App {
 
   /** Branch from here on a user row of the open chat. */
   branch(row: string) {
-    if (this.openId) void this.actions.branch(this.openId, row);
+    if (!this.openId) return;
+    const source = this.reading.open?.rows.find((r) => r.id === row)?.source_session;
+    const scoped = source ? scopedRowId(row) : null;
+    void this.actions.branch(source ?? this.openId, scoped?.local ?? row);
+  }
+
+  canBranchFrom(session: string): boolean {
+    return canBranch(this.composing.chair(session));
   }
 
   /** The Esc Esc picker of the open chat's messages to branch from. */

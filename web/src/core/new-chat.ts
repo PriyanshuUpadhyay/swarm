@@ -5,6 +5,7 @@ import type { App } from "./app";
 import { firstLine, message } from "./app-types";
 import { hasPendingImage, type Draft } from "./images";
 import type { Run } from "./composer";
+import type { Prefs } from "./nav";
 import { setupFrame, type SetupRun } from "./lifecycle-state";
 import { fileRows, type CommandList } from "./slash";
 import { canStartIn, defaultPlace, defaultTarget, targets, type Place, type Preview } from "./new-chat-places";
@@ -54,11 +55,16 @@ type NewChatState = {
  *  the server's default holds there. */
 export const DEFAULT_ROLE = "chat";
 
+export function defaultRun(prefs: Pick<Prefs, "newChatModel"> | undefined): Run | null {
+  return prefs?.newChatModel ? { ...prefs.newChatModel, effort: null, account: null } : null;
+}
+
 /** How long the start's POST may take. The server answers in under a second, after its checks. */
 const START_TIMEOUT_MS = 10_000;
 
 type StartOptions = {
   composer?: boolean;
+  useSavedDefault?: boolean;
   submittedText?: string;
   queued?: string[];
   /** Lets an upload finish in the start's draft after the composer closes. */
@@ -196,9 +202,18 @@ export class NewChat {
 
   /** Posts the start and shows its tab at once; the steps come as `chat-start` frames. Only a
    *  start that the composer sent closes it and takes its text. */
-  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, submittedText, queued = [], bindUpload }: StartOptions = {}): Promise<boolean> {
+  async start(cwd: string, prompt: string, place: Place, run: ComposerRun, { composer: fromComposer = false, useSavedDefault = !run.run && run.role === undefined, submittedText, queued = [], bindUpload }: StartOptions = {}): Promise<boolean> {
+    const saved = useSavedDefault ? defaultRun(this.app.tree?.prefs) : null;
+    if (useSavedDefault) run = { ...run, run: saved };
     // A second press while one start is posted would start a second chat.
     if (this.posting) return false;
+    const models = saved?.model ? this.app.life.runs.loadedModels(saved.provider) : undefined;
+    if (models?.length && !models.some((model) => model.id === saved?.model)) {
+      if (!fromComposer) this.open(cwd, place);
+      this.app.notice("The default model for new chats is no longer listed. Reset it in the run picker or pick a new model.", true);
+      return false;
+    }
+
     this.posting = true;
     // Read before the wait: a move during the POST then shows the start in the old workspace's
     // strip and not over the view the owner moved to.

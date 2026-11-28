@@ -16,13 +16,17 @@ export function moveOption(e: KeyboardEvent<HTMLElement>) {
   options[Math.max(0, Math.min(options.length - 1, next))]?.focus();
 }
 
-export function RunMenu({ app, current, draft, setDraft }: { app: App; current: Run; draft: Run; setDraft: (run: Run) => void }) {
-  const catalog = useRunCatalog(app, current.provider);
+export function RunMenu({ app, draft, setDraft }: { app: App; draft: Run; setDraft: (run: Run) => void }) {
+  const catalog = useRunCatalog(app, draft.provider);
   return (
-    <>
-      <RunPicker app={app} catalog={catalog} current={current} draft={draft} setDraft={setDraft} />
-      <ErrorLine text={catalog.error} />
-    </>
+    <div className="w-full max-w-[560px] rounded-xl border border-menu-border bg-popover text-popover-foreground">
+      <RunPicker app={app} catalog={catalog} draft={draft} setDraft={setDraft} foot={
+        <div className="grid gap-1 px-2 py-1.5">
+          <span>A pick sets the run for this new chat.</span>
+          <ErrorLine text={catalog.error} />
+        </div>
+      } />
+    </div>
   );
 }
 

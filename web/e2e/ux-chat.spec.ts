@@ -5,8 +5,10 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { captureThemes, row, rows, open, mockRows, mockStream, streamControl, streamFrame } from "./ux-helpers";
+import { captureRunPost, mockRunCatalog, patchLiveChair } from "./lifecycle-helpers";
 import type { Snapshot } from "../src/core/api";
 
+test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
 
 test("Find steps through occurrences inside a long answer and paints the selected word", async ({ page: tab }, info) => {
   await mockRows(tab, [row("a1", `needle\n\n${"A paragraph with ordinary text.\n\n".repeat(70)}needle`)], 0, {}, { a1: [{ f: "text" }] });
@@ -136,35 +138,34 @@ test("image upload blocks Send and preserves edits made while it waits", async (
 });
 
 test("run picker accepts Down and Enter, retains Codex account wording and reloads cached usage", async ({ page: tab }, info) => {
-  await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers: [{ id: "codex", label: "Codex", accounts: true, efforts: ["high"], default_effort: "high" }] } }));
-  await tab.route("**/api/models?*", (route) => route.fulfill({ json: { models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] } }));
-  await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts: [{ name: "work", email: null, summary: null }] } }));
-  await tab.route("**/api/snapshot", async (route) => {
-    const snap = await (await route.fetch()).json();
-    const session = process.env.SWARM_E2E_LIVE!;
-    snap.sessions.find((s: { id: string }) => s.id === session).chair_provider = "codex";
-    Object.assign(snap.agents[session][0], { provider: "codex", account: "work", model: "model-a" });
-    await route.fulfill({ json: snap });
+  await mockRunCatalog(tab, {
+    providers: [{ id: "codex", label: "Codex", accounts: true, efforts: ["high"], default_effort: "high" }],
+    models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }],
+    accounts: [{ name: "work", email: null, summary: null }],
   });
+  await patchLiveChair(tab, (chair, snapshot, session) => {
+    snapshot.sessions.find((s) => s.id === session)!.chair_provider = "codex";
+    Object.assign(chair, { provider: "codex", account: "work", model: "model-a" });
+  });
+  const picks = await captureRunPost(tab, "continue");
   let reads = 0;
   await tab.route("**/api/usage", (route) => { reads++; return route.fulfill({ json: { meters: [] } }); });
   await open(tab);
   await tab.getByTestId("model-chip").click();
-  await expect(tab.getByTestId("run-popover").getByText("Codex", { exact: true })).toBeVisible();
+  await expect(tab.getByTestId("run-popover").getByRole("button", { name: "Codex", exact: true })).toBeVisible();
+  await expect(tab.getByRole("button", { name: "Keep current account (work)", exact: true })).toBeVisible();
+  await tab.screenshot({ path: info.outputPath("model-picker.png") });
   await tab.getByTestId("run-query").fill("model-b");
   await tab.getByTestId("run-query").press("ArrowDown");
   await tab.keyboard.press("Enter");
-  await expect(tab.getByTestId("run-models").locator('button[aria-pressed="true"]')).toContainText("Model B");
-  await expect(tab.getByTestId("run-apply")).toBeEnabled();
-  await expect(tab.getByRole("button", { name: "Keep current account (work)", exact: true })).toBeVisible();
+  await expect.poll(() => picks.map((p) => p.model)).toEqual(["model-b"]);
   const first = reads;
-  await tab.getByTestId("run-popover").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(tab.getByTestId("run-popover")).toBeHidden();
   await tab.getByTestId("model-chip").click();
   await expect.poll(() => reads).toBeGreaterThan(first);
   await tab.getByTestId("run-query").fill("custom-id");
   await tab.getByTestId("run-query").press("Enter");
-  await expect(tab.getByTestId("run-custom-codex")).toHaveAttribute("aria-pressed", "true");
-  await tab.screenshot({ path: info.outputPath("model-picker.png") });
+  await expect.poll(() => picks.map((p) => p.model)).toEqual(["model-b", "custom-id"]);
 });
 
 test("a malformed first hello does not subscribe the open chat", async ({ page: tab }) => {
@@ -241,25 +242,29 @@ test("an arriving question keeps an active draft and cannot turn a typed digit i
   } finally { writeFileSync(screen, initial); }
 });
 
-test("Continue keeps the prior provider, model and account and supports keyboard model selection", async ({ page: tab }) => {
-  await tab.route("**/api/snapshot", async (route) => {
-    const snap = await (await route.fetch()).json();
-    Object.assign(snap.agents[process.env.SWARM_E2E_LIVE!][0], { provider: "codex", account: "work", model: "model-a", alive: false });
-    await route.fulfill({ json: snap });
+test("Ended Resume keeps the prior provider and account and uses the keyboard model pick", async ({ page: tab }) => {
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "codex", account: "work", model: "model-a", alive: false }); });
+  await mockRunCatalog(tab, {
+    providers: [{ id: "codex", label: "Codex", accounts: true }],
+    models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }],
+    accounts: [{ name: "work", email: null }],
   });
-  await tab.route("**/api/providers", (route) => route.fulfill({ json: { providers: [{ id: "codex", label: "Codex", accounts: true }] } }));
-  await tab.route("**/api/models?*", (route) => route.fulfill({ json: { models: [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] } }));
-  await tab.route("**/api/accounts?*", (route) => route.fulfill({ json: { accounts: [{ name: "work", email: null }] } }));
+
+  const resumes = await captureRunPost(tab, "resume");
   await open(tab);
-  await tab.getByTestId("continue-chat").click();
-  await expect(tab.getByTestId("sm-provider")).toHaveValue("codex");
-  await expect(tab.getByTestId("sm-account")).toHaveValue("work");
-  await expect(tab.getByTestId("sm-models").locator('[aria-pressed="true"]')).toHaveText("Model A");
-  await tab.getByTestId("sm-query").fill("model-b");
-  await tab.getByTestId("sm-query").press("ArrowDown");
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await expect(picker.getByRole("button", { name: "Codex", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(picker.getByRole("button", { name: "work", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(picker.getByTestId("run-models").locator('[aria-pressed="true"]')).toContainText("Model A");
+  await picker.getByTestId("run-query").fill("model-b");
+  await picker.getByTestId("run-query").press("ArrowDown");
   await tab.keyboard.press("Enter");
-  await expect(tab.getByTestId("sm-models").locator('[aria-pressed="true"]')).toHaveText("Model B");
-  await expect(tab.getByTestId("sm-start")).toBeEnabled();
+  await expect(picker.getByTestId("run-models").locator('[aria-pressed="true"]')).toContainText("Model B");
+  expect(resumes).toEqual([]);
+  await tab.keyboard.press("Escape");
+  await tab.getByTestId("resume-chat").click();
+  await expect.poll(() => resumes).toEqual([{ session: process.env.SWARM_E2E_LIVE, model: "model-b", account: "work" }]);
 });
 
 test("only an editable queued message gets the Up hint", async ({ page: tab }) => {

@@ -3,7 +3,7 @@ import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon,
 import { useState } from "react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
-import { duration, imagesOf, LIVE_THOUGHT, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
+import { duration, imagesOf, isCliJoin, LIVE_THOUGHT, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
 import { fold, type FoldLevel } from "../core/fold-display";
 import { Kbd } from "../components/ui/kbd";
 import { copyText } from "./copy";
@@ -135,7 +135,10 @@ function RowBody(ctx: Ctx) {
   if (row.kind === "fold") return <FoldLine app={app} line={line} />;
   if (row.kind === "todoList") return <TodoRow row={row} />;
   if (row.kind === "proposedPlan") return <PlanRow row={row} />;
-  if (row.subagent) return <SubagentRow run={row.subagent} title={row.text} />;
+  if (row.subagent) return <SubagentRow run={row.subagent} title={row.text} sourceSession={row.source_session} />;
+  if (row.kind === "model_change") return isCliJoin(row)
+    ? <div className="divider" data-testid="model-change"><span className="min-w-0 text-center break-words">{row.text}</span></div>
+    : <div className="quiet" data-testid="model-change">{row.text}</div>;
   if (row.tool) return <ToolCard {...ctx} />;
   if (row.kind === "divider")
     return (
@@ -184,7 +187,7 @@ function RowBody(ctx: Ctx) {
         row={row}
         queued={isQueued(row)}
         reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
-        branch={row.kind === "user" && ctx.branches && app.branch ? () => app.branch?.(row.id) : undefined}
+        branch={row.kind === "user" && app.branch && (row.source_session ? app.canBranchFrom?.(row.source_session) : ctx.branches) ? () => app.branch?.(row.id) : undefined}
       >
         <MessageCut {...ctx} />
         <ImageThumbs paths={imagesOf(row)} load={app.imageUrl} />

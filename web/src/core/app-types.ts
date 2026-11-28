@@ -21,9 +21,11 @@ export type Chat = {
   key: string;
   /** False for a child's chat until its column first shows. */
   loaded: boolean;
+  /** Whether the last chair tail request knew the session was a continuation. */
+  linkedTail?: boolean;
   rows: Row[];
-  /** The next older page ends here; 0 means no older rows. */
-  older: number;
+  /** A linked cursor or a single-log byte offset; 0 means no older rows. */
+  older: number | string;
   end: number;
   state: "loading" | "ready" | "error";
   error: string | null;
@@ -157,6 +159,7 @@ export type Reader = {
   closeFind(): void;
   /** Reuse on a sent prompt: puts its text in the composer `composerId`. */
   reuse(composerId: string, text: string): void;
+  canBranchFrom?(session: string): boolean;
   /** Branch from here on a user row; only the open chat's chair transcript has it. */
   branch?(row: string): void;
   /** The notes on agent replies, kept per main chat (ADR 0162). */
@@ -171,6 +174,7 @@ export const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 /** The chat id of a child agent's column. It is also the agent's stream key. */
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 export const DRAFT_PREFIX = "composer.draft.";
+export const MOVED_DRAFT = "composer.moved.";
 /** The window event that moves the chat's transcript to the owner's previous (-1) or next (1) prompt. */
 export const PROMPT_JUMP = "swarm:prompt-jump";
 /** The window event of a send from a composer; its detail is the chat id, whose transcript moves to the end. */

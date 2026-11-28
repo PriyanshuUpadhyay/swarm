@@ -231,11 +231,11 @@ test("a chat with no text box offers no Reuse", async ({ page: tab }) => {
   const url = new URL(process.env.SWARM_SERVE_URL!);
   await tab.goto(`${url.origin}/${url.hash}`);
   await tab.waitForFunction(() => window.__swarmReady === true);
-  // ws-build's chair has no pane, so the chat shows Continue chat in place of the composer.
+  // ws-build's ended chair shows a run chip instead of the composer.
   const project = tab.locator('[data-testid="tree-row"][data-kind="project"]').filter({ hasText: "ws-build" });
   if ((await project.getAttribute("aria-expanded")) === "false") await project.click();
   await tab.locator('[data-testid="tree-row"][data-kind="chat"]').filter({ hasText: "Check the worker inbox and fix the failing build." }).first().click();
-  await expect(tab.getByTestId("continue-chat")).toBeVisible();
+  await expect(tab.getByTestId("model-chip")).toBeVisible();
   const userRow = tab.locator('[data-testid="row"][data-kind="user"]').first();
   await expect(userRow).toBeVisible();
   await userRow.hover();

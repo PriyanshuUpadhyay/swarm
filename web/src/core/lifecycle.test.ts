@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { ApiError } from "./api";
-import type { App } from "./app";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Api, ApiError, type Session, type Snapshot } from "./api";
+import { App } from "./app";
+import { DRAFT_PREFIX, PICKS_PREFIX } from "./app-types";
+import { session } from "./chat-fixtures";
 import { Lifecycle } from "./lifecycle";
+import { STORE_KEY as NOTES_STORE } from "./notes";
 
 /** An App stand-in that records what Lifecycle asks of it. `post` answers by path. */
 function fakeApp(post: (path: string, body: Record<string, unknown>) => Promise<unknown>, agents: { id: string; alive: boolean; state?: string }[] = [], importable: { id: string; workspace: string }[] = []) {
@@ -71,12 +74,59 @@ describe("chats", () => {
     expect(group.calls.filter((c) => c.startsWith("leave"))).toEqual(["leave chat-1", "leave chat-2"]);
   });
 
+  function endedWithoutTurn(provider: string) {
+    const app = new App(new Api("test"));
+    const ended = session({
+      id: "ended", cwd: "/work", created_at: 1, chair_provider: provider,
+      chair_id: provider === "codex" ? null : "native", chair_log: null, workspace: null,
+    });
+    app.snapshot = { version: 1, agents: {}, sessions: [ended] };
+    const post = vi.spyOn(app.api, "post").mockResolvedValue({ session: "new" });
+    vi.spyOn(app, "refresh").mockResolvedValue(undefined);
+    return { app, post };
+  }
+
+  it.each([
+    ["codex", "claude", "sonnet"],
+    ["claude", "codex", "gpt-test"],
+    ["pi", "claude", "sonnet"],
+  ])("starts the picked CLI without history for an ended %s chat with no turn", async (source, provider, model) => {
+    const { app, post } = endedWithoutTurn(source);
+    app.life.pickRun("ended", { provider, model, effort: null, account: null });
+    await app.life.resumeChat("ended");
+
+    expect(post).toHaveBeenCalledWith("/api/chat/continue", {
+      old_session: "ended", provider, model, carry: "clean",
+    });
+  });
+
+  it.each(["codex", "claude", "pi"])("links a same-CLI session when an ended %s chat has no turn", async (provider) => {
+    const { app, post } = endedWithoutTurn(provider);
+    await app.life.resumeChat("ended");
+    expect(post).toHaveBeenCalledWith("/api/chat/continue", { old_session: "ended", provider, carry: "clean" });
+  });
+
+  it("drops an ended pick when the chair returns in another window", () => {
+    const { life } = fakeApp(async () => ({}));
+    const app = (life as unknown as { app: App }).app;
+    const snap = { version: 1, sessions: [{ id: "chat-1" } as Session], agents: {} };
+    app.snapshot = snap;
+    let unreachable = true;
+    Object.assign(app, { composing: { chair: () => ({ provider: "claude", unreachable }) } });
+    const run = { provider: "claude", model: "sonnet", effort: null, account: null };
+    life.pickRun("chat-1", run);
+    expect(life.state.endedRun?.["chat-1"]).toEqual(run);
+    unreachable = false;
+    life.reconcileRunPicks(snap);
+    expect(life.state.endedRun?.["chat-1"]).toBeUndefined();
+  });
+
   it("marks a refused switch as cancelled only for the server's cancel text", async () => {
     const cancelled = fakeApp(async () => {
       throw new ApiError(409, "model switch cancelled");
     });
     await cancelled.life.switchModel("chat-1", "codex", "gpt-5", null);
-    expect(cancelled.life.state.handoffs["chat-1"]).toEqual({ old: "chat-1", phase: "cancelled", canCancel: false, error: null, carry: "summary" });
+    expect(cancelled.life.state.handoffs["chat-1"]).toEqual({ old: "chat-1", phase: "cancelled", canCancel: false, error: null, carry: "file" });
 
     const failed = fakeApp(async () => {
       throw new ApiError(409, "Wait for the current reply to finish, or stop it before switching model.");
@@ -156,13 +206,151 @@ describe("chats", () => {
 
   it("follows handoff frames for its own chat until a final phase", () => {
     const { life } = fakeApp(() => new Promise(() => {}));
-    void life.switchModel("chat-1", "codex", "gpt-5", null);
+    void life.switchModel("chat-1", "codex", "gpt-5", null, null, "summary");
     life.onHandoff({ old_session: "other-chat", phase: "starting", canCancel: false });
     life.onHandoff({ old_session: "chat-1", phase: "summarizing", canCancel: true });
     expect(life.state.handoffs["chat-1"]).toEqual({ old: "chat-1", phase: "summarizing", canCancel: true, error: null, carry: "summary" });
     life.onHandoff({ old_session: "chat-1", phase: "cancelled", canCancel: false });
     life.onHandoff({ old_session: "chat-1", phase: "starting", canCancel: false });
     expect(life.state.handoffs["chat-1"]?.phase).toBe("cancelled");
+  });
+});
+
+describe("automatic starts", () => {
+  it("posts the start at once when the default model list has not loaded", async () => {
+    const requests: string[] = [];
+    const app = new App(new Api("test", async (request) => {
+      const path = String(request);
+      requests.push(path);
+      return Response.json(path === "/api/chat/new" ? { start: "pending" } : { models: [] });
+    }));
+    app.tree = {
+      version: 1, revision: "test", view: "workspaces", sections: [], selectedRow: null,
+      chats: [], projects: [], workspaces: {},
+      archivedStatus: null, choicesError: null, prefs: { newChatModel: { provider: "agy", model: "model-a" } },
+    };
+
+    const start = app.newChat.start("/work", "", { kind: "here" }, { run: null });
+    expect(requests).toEqual(["/api/chat/new"]);
+    expect(await start).toBe(true);
+  });
+});
+
+describe("linked chat draft and notes", () => {
+  const linkedSession = (id: string, continuation_of?: string) => session({
+    id, continuation_of, cwd: "/work", created_at: 1, adapter: null, workspace: null,
+  });
+  const linked: Snapshot = {
+    version: 1, agents: {}, sessions: [linkedSession("root"), linkedSession("leaf", "root")],
+  };
+
+  let blocked = false;
+  function mockStorage() {
+    blocked = false;
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (blocked) throw new Error("storage full");
+        store.set(key, value);
+      },
+      removeItem: (key: string) => store.delete(key),
+    });
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("does not append the original draft again after a failed move, an edit, and reload", () => {
+    mockStorage();
+    const tab = new App(new Api("test"));
+    tab.setDraft("root", "Earlier draft");
+    tab.setDraft("leaf", "Later draft");
+    blocked = true;
+    tab.streaming.applySnapshot(linked);
+    expect(tab.draft("leaf")).toBe("Earlier draft\n\nLater draft");
+
+    blocked = false;
+    tab.setDraft("leaf", "Changed the earlier part\n\nLater draft");
+    const reload = new App(new Api("test"));
+    reload.streaming.applySnapshot(linked);
+    expect(reload.draft("leaf")).toBe("Changed the earlier part\n\nLater draft");
+  });
+
+  it("keeps a draft edit made by an older page after the move", () => {
+    mockStorage();
+    const tab = new App(new Api("test"));
+    tab.setDraft("root", "Earlier draft");
+    tab.streaming.applySnapshot(linked);
+
+    const picks = [{ start: 0, insert: "/skill:review" }];
+    const edited = "/skill:review Draft from the older page";
+    localStorage.setItem(DRAFT_PREFIX + "leaf", edited);
+    localStorage.setItem(PICKS_PREFIX + "leaf", JSON.stringify(picks));
+    const reload = new App(new Api("test"));
+    reload.streaming.applySnapshot(linked);
+    expect(reload.draft("leaf")).toBe(edited);
+    expect(reload.composing.draftPicks("leaf")).toEqual(picks);
+  });
+
+  it("does not duplicate an edited note after a failed move and reload", () => {
+    mockStorage();
+    const tab = new App(new Api("test"));
+    tab.notes.add("root", { kind: "reply", rowId: "row-1", quote: "An earlier reply" });
+    blocked = true;
+    tab.streaming.applySnapshot(linked);
+    const [note] = tab.notes.list("leaf");
+
+    blocked = false;
+    tab.notes.setText("leaf", note.id, "Edited note");
+    const reload = new App(new Api("test"));
+    reload.streaming.applySnapshot(linked);
+    expect(reload.notes.list("leaf").map((item) => item.text)).toEqual(["Edited note"]);
+  });
+
+  it.each(["remove", "add to message"])("does not restore a note after a failed move and %s", (action) => {
+    mockStorage();
+    const tab = new App(new Api("test"));
+    tab.notes.add("root", { kind: "reply", rowId: "row-1", quote: "An earlier reply" });
+    blocked = true;
+    tab.streaming.applySnapshot(linked);
+    const [note] = tab.notes.list("leaf");
+
+    blocked = false;
+    if (action === "remove") tab.notes.remove("leaf", note.id);
+    else tab.notes.toBox("leaf", "append");
+    const reload = new App(new Api("test"));
+    reload.streaming.applySnapshot(linked);
+    expect(reload.notes.list("leaf")).toEqual([]);
+  });
+
+  it("moves notes through a batch of links with one storage write", () => {
+    mockStorage();
+    const tab = new App(new Api("test"));
+    tab.notes.add("root", { kind: "reply", rowId: "row-1", quote: "An earlier reply" });
+    const write = vi.spyOn(localStorage, "setItem");
+    tab.streaming.applySnapshot({ ...linked, sessions: [...linked.sessions, linkedSession("next", "leaf")] });
+
+    expect(write.mock.calls.filter(([key]) => key === NOTES_STORE)).toHaveLength(1);
+    expect(new App(new Api("test")).notes.list("next").map((note) => note.quote)).toEqual(["An earlier reply"]);
+  });
+});
+
+describe("linked chat reader", () => {
+  it("clears the older-page spinner when a stale reply arrives after linkage", async () => {
+    let reply!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => { reply = resolve; });
+    const app = new App(new Api("test", () => response));
+    const chat = app.reading.newChat("leaf");
+    app.openId = chat.id;
+    Object.assign(chat, { loaded: true, state: "ready", older: 12, linkedTail: false });
+    const older = app.reading.loadOlder();
+    expect(app.view.loadingOlder).toBe(true);
+
+    Object.assign(chat, { linkedTail: true, older: "leaf:12" });
+    app.notify();
+    reply(Response.json({ page: { start_offset: 0, end_offset: 12 }, rows: [], usage: null }));
+    await older;
+    expect(app.view.loadingOlder).toBe(false);
   });
 });
 

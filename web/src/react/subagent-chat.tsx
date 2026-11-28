@@ -20,13 +20,13 @@ const CHILD_AT = 5;
 const STATES = ["failed", "started", "done", "unknown"] as const;
 const GLYPHS: Record<typeof STATES[number], ToolState> = { failed: "failed", started: "waiting", done: "finished", unknown: "unreported" };
 
-function openChild(e: MouseEvent<HTMLButtonElement>, callId: string, title: string) {
+function openChild(e: MouseEvent<HTMLButtonElement>, callId: string, title: string, sourceSession?: string) {
   // Pane columns open a child from their own chat, not the main chat.
   const chatId = e.currentTarget.closest<HTMLElement>("[data-chat]")?.dataset.chat;
-  if (chatId) openSubagent({ chatId, callId, title });
+  if (chatId) openSubagent({ chatId, callId, title, sourceSession });
 }
 
-function ChildGroup({ children, title, state }: { children: SubagentChild[]; title: string; state: ToolState }) {
+function ChildGroup({ children, title, state, sourceSession }: { children: SubagentChild[]; title: string; state: ToolState; sourceSession?: string }) {
   const [showAll, setShowAll] = useState(false);
 
   const groups = STATES.map((state) => ({ state, items: children.filter((c) => state === "unknown" ? !STATES.slice(0, 3).some((s) => c.state === s) : c.state === state) }));
@@ -42,7 +42,7 @@ function ChildGroup({ children, title, state }: { children: SubagentChild[]; tit
       <ul className="m-0 list-none px-2 pb-1">
         {(showAll ? ordered : ordered.slice(0, CHILD_AT)).map((child) => (
           <li key={child.call_id}>
-            <button type="button" className="card-head" onClick={(e) => openChild(e, child.call_id, child.description)}>
+            <button type="button" className="card-head" onClick={(e) => openChild(e, child.call_id, child.description, sourceSession)}>
               <StatusGlyph state={GLYPHS[child.state]} />
               <span className="min-w-0 flex-1 truncate">{child.description}</span>
               <span className="shrink-0 text-xs text-muted-foreground capitalize">{child.state}</span>
@@ -55,15 +55,15 @@ function ChildGroup({ children, title, state }: { children: SubagentChild[]; tit
   );
 }
 
-export function SubagentRow({ run, title }: { run: SubagentRun; title: string }) {
+export function SubagentRow({ run, title, sourceSession }: { run: SubagentRun; title: string; sourceSession?: string }) {
   const result = run.result?.text.trim().split("\n", 1)[0] ?? "";
   const children = run.children?.map((child, i) => ({ ...child, description: child.description || `Child ${i + 1}` }))
     ?? (run.other_call_ids?.length ? [run.call_id, ...run.other_call_ids].map((call_id, i) => ({ call_id, description: i ? `Child ${i + 1}` : run.description || title })) : []);
 
   return (
     <div className="card" data-testid="subagent-row" data-state={run.state}>
-      {children.length > 1 ? <ChildGroup children={children} title={title} state={run.state} /> : (
-        <button type="button" className="card-head" title="Open the subagent's own work" onClick={(e) => openChild(e, run.call_id, title)}>
+      {children.length > 1 ? <ChildGroup children={children} title={title} state={run.state} sourceSession={sourceSession} /> : (
+        <button type="button" className="card-head" title="Open the subagent's own work" onClick={(e) => openChild(e, run.call_id, title, sourceSession)}>
           <StatusGlyph state={run.state} />
           <span className="truncate">{title}</span>
           {result && <span className="truncate text-muted-foreground">{result}</span>}
@@ -78,7 +78,7 @@ export function SubagentOverlay({ app }: { app: App }) {
   const open = useSyncExternalStore(subscribeSubagent, currentSubagent);
   const parent = open ? app.chats.get(open.chatId) : undefined;
   const agent = parent && open ? subagentAgent(parent.agent, open.callId) : undefined;
-  const sessionId = parent?.sessionId;
+  const sessionId = open?.sourceSession ?? parent?.sessionId;
   const pane = useSyncExternalStore(app.subscribe, () => {
     const child = sessionId && agent ? app.chats.get(paneId(sessionId, agent)) : undefined;
     return child ? app.panes.paneView(child, true) : null;

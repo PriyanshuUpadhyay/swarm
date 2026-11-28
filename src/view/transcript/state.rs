@@ -20,19 +20,20 @@ pub struct UsageState {
 }
 impl UsageState {
     pub fn ingest(&mut self, event: &Value) {
+        if let Some(model) = model_fact(event) {
+            if self.model.as_ref().is_some_and(|old| old != model) {
+                self.context = None;
+            }
+            self.model = Some(model.into());
+            return;
+        }
+
         match (string(event, "type"), string(event, "kind")) {
             ("usage", "context") => {
                 self.context = Some(event.clone());
                 self.reported = true;
             }
             ("system_message", "compaction") => self.context = None,
-            ("session_info", "model") => {
-                let model = string(event, "value");
-                if self.model.as_ref().is_some_and(|old| old != model) {
-                    self.context = None;
-                }
-                self.model = Some(model.into());
-            }
             _ => (),
         }
     }
@@ -153,6 +154,35 @@ pub fn view_rows(
 ) -> Vec<Row> {
     view_rows_with_context(records, has_older, is_codex, shown, None)
 }
+fn model_value(event: &Value) -> Option<&str> {
+    (string(event, "type") == "session_info" && string(event, "kind") == "model")
+        .then(|| string(event, "value"))
+}
+
+pub fn model_fact(event: &Value) -> Option<&str> {
+    model_value(event).filter(|model| !model.trim().is_empty())
+}
+
+// Outer None means no edit; Some(None) clears a prior marker that is no longer valid.
+fn model_edit(record: &Record, current: &mut Option<String>) -> Option<Option<String>> {
+    let next = model_fact(&record.event)?;
+    let prior = current
+        .as_deref()
+        .or(record.prior_model.as_deref())
+        .filter(|old| *old != next);
+    let edit = (prior != record.prior_model.as_deref()).then(|| prior.map(str::to_owned));
+    if current.as_deref() != Some(next) {
+        *current = Some(next.into());
+    }
+    edit
+}
+
+pub(super) fn track_model(record: &mut Record, current: &mut Option<String>) {
+    if let Some(edit) = model_edit(record, current) {
+        record.prior_model = edit;
+    }
+}
+
 /// Context is (prompt_expected, turn_open) immediately before this record slice.
 pub fn view_rows_with_context(
     records: &[Record],
@@ -161,7 +191,16 @@ pub fn view_rows_with_context(
     shown: &HashSet<String>,
     context: Option<(bool, bool)>,
 ) -> Vec<Row> {
-    let mut result = super::builder::rows_with_context(records, has_older, is_codex, context);
+    let mut tracked = std::borrow::Cow::Borrowed(records);
+    let mut model = None;
+
+    for (index, record) in records.iter().enumerate() {
+        if let Some(edit) = model_edit(record, &mut model) {
+            tracked.to_mut()[index].prior_model = edit;
+        }
+    }
+
+    let mut result = super::builder::rows_with_context(&tracked, has_older, is_codex, context);
     clear_boundary(records, &mut result, !has_older && context.is_none());
     result.extend(queued(records));
     for row in &mut result {

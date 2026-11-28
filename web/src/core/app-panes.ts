@@ -5,6 +5,7 @@ import { movePane, paneCells, type Direction, type PaneCell } from "./panes";
 
 import { type Chat, type Pane, type Strip, type View, paneId, NO_FIND, NO_PANE, NO_CELLS } from "./app-types";
 import type { App } from "./app";
+import { hasLinkedHistory } from "./api";
 import { canPullQueued } from "./composer";
 import { LIVE_THOUGHT, type Line } from "./transcript";
 
@@ -74,7 +75,7 @@ export class AppPanes {
       chatState: chat.loaded ? chat.state : hasLog ? "loading" : "none",
       chatError: chat.error,
       lines: chat.built.lines,
-      hasOlder: chat.older > 0,
+      hasOlder: !!chat.older,
       loadingOlder: chat.loadingOlder,
       shift: chat.shift,
       full: chat.full,
@@ -136,10 +137,13 @@ export class AppPanes {
     return log !== null && log !== "";
   }
 
-  /** Loads a chair's chat once its log exists. */
+  /** A linked chair can show earlier rows before its own log exists. */
   loadChair(chat: Chat) {
-    if (chat.loaded || !this.chairHasLog(chat.sessionId)) return;
+    const linked = hasLinkedHistory(this.app.snapshot, chat.sessionId);
+    const justLinked = linked && chat.linkedTail === false;
+    if ((chat.loaded && !justLinked) || (!linked && !this.chairHasLog(chat.sessionId))) return;
     chat.loaded = true;
+    if (justLinked) chat.older = 0; // A numeric cursor from the old log is no longer valid.
     void this.app.reading.loadTail(chat).then(() => {
       this.app.streaming.syncSubscriptions();
       if (this.app.openId === chat.sessionId) this.app.notify();

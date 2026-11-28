@@ -1,7 +1,7 @@
 //! CLI commands launch.
 
 use super::*;
-use rusqlite::OptionalExtension;
+use swarm::bus::CLI_DEFAULT_MODEL_FLAG;
 
 pub(super) mod pi;
 
@@ -33,9 +33,10 @@ pub(crate) fn commands_launch(
         let resume = options.iter().any(|arg| arg == "--resume");
         // `--force` lets the role's own flags through in the extra args (ADR 0163).
         let force = options.iter().any(|arg| arg == "--force");
+        let cli_default = options.iter().any(|arg| arg == CLI_DEFAULT_MODEL_FLAG);
         let options: Vec<String> = options
             .iter()
-            .filter(|arg| *arg != "--resume" && *arg != "--force")
+            .filter(|arg| *arg != "--resume" && *arg != "--force" && *arg != CLI_DEFAULT_MODEL_FLAG)
             .cloned()
             .collect();
         let (mut account, mut cwd, mut requested_provider, mut requested_model, mut effort) =
@@ -52,6 +53,19 @@ pub(crate) fn commands_launch(
                 _ => return Err(USAGE.into()),
             }
         }
+
+        if cli_default
+            && (resume
+                || force
+                || !extra.is_empty()
+                || agent_id != "orchestrator"
+                || role != "chat"
+                || requested_provider.is_none()
+                || requested_model.is_some())
+        {
+            return Err(USAGE.into());
+        }
+
         let resume = match resume {
             false => None,
             true if agent_id != "orchestrator"
@@ -79,9 +93,13 @@ pub(crate) fn commands_launch(
                 Some(resume_target(connection, &session)?)
             }
         };
-        // A plain Resume runs the role's runner (ADR 0107). Only a chat whose profile has no
-        // runner for its CLI, such as pi or AGY, runs its last model and level (ADR 0110). The
-        // stored model is the transcript id, which drops a `[1m]` suffix.
+
+        // A plain Resume uses the role runner if it exists. Otherwise keep the last model and
+        // level (ADR 0110), or repeat a no-model Pi or AGY start.
+        if let Some((provider, _)) = &resume {
+            requested_provider = Some(provider.id());
+        }
+
         let no_runner = |provider: Provider| {
             swarm::config::load().is_ok_and(|(config, _)| {
                 config
@@ -89,29 +107,44 @@ pub(crate) fn commands_launch(
                     .is_ok_and(|profile| !profile.runners.iter().any(|r| r.provider == provider))
             })
         };
-        let stored: Option<(Option<String>, Option<String>)> = match (&resume, requested_model) {
-            (Some((provider, _)), None) if role == "chat" && no_runner(*provider) => connection
-                .query_row(
-                    "SELECT model, effort FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
-                    [session_id()?],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?,
+
+        let provider = requested_provider.and_then(Provider::parse);
+        let can_repeat_default = matches!(provider, Some(Provider::Pi | Provider::Agy));
+        let stored = match provider {
+            Some(provider)
+                if role == "chat"
+                    && agent_id == "orchestrator"
+                    && requested_model.is_none()
+                    && !cli_default
+                    && (resume.is_some() || (can_repeat_default && !force && extra.is_empty()))
+                    && no_runner(provider) =>
+            {
+                swarm::store::previous_chair_run(
+                    connection,
+                    &session_id()?,
+                    provider.id(),
+                    resume.is_some(),
+                )?
+            }
             _ => None,
         };
-        if let Some((model, stored_effort)) = &stored
-            && let Some(model) = model
+
+        let cli_default = cli_default
+            || (can_repeat_default && stored.as_ref().is_some_and(|run| run.model.is_none()));
+        if let Some(run) = &stored
+            && (run.model.is_some() || cli_default)
         {
-            requested_model = Some(model.as_str());
-            effort = effort.or(stored_effort.as_deref());
+            requested_model = run.model.as_deref();
+            effort = effort.or(run.effort.as_deref());
         }
-        if let Some((provider, _)) = &resume {
-            requested_provider = Some(provider.id());
-        }
+
         let cwd = cwd.map_or_else(env::current_dir, Ok)?;
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
-        let (mut runner, probe): (swarm::config::Runner, Probe) = match requested_model {
+
+        // CLI-default mode keeps the one-off provider settings without using a role model.
+        let model = requested_model.or(cli_default.then_some("default"));
+        let (mut runner, probe): (swarm::config::Runner, Probe) = match model {
             // A one-off model runs exactly that runner, with no fallback (ADR 0033). It keeps the
             // role's runner for that provider, so its sandbox and permission stay (ADR 0163).
             Some(model) => {
@@ -144,7 +177,8 @@ pub(crate) fn commands_launch(
         };
         // A switch keeps the chat and changes only its run, so the effort is the owner's pick.
         // pi's `default` hides which login it runs on, so the chat shows no account to switch.
-        if runner.provider == Provider::Pi
+        if !cli_default
+            && runner.provider == Provider::Pi
             && runner.model == "default"
             && let Some(model) = swarm::providers::pi_default_model()
         {
@@ -160,7 +194,13 @@ pub(crate) fn commands_launch(
         if let Some(reason) = swarm::bus::fable_refusal(agent_id, role, &runner.model) {
             return Err(reason.into());
         }
-        let mut command = swarm::bus::argv(agent_id, role, &runner, &swarm::paths::home()?, &cwd)?;
+
+        let argv = if cli_default {
+            swarm::bus::argv_with_cli_default
+        } else {
+            swarm::bus::argv
+        };
+        let mut command = argv(agent_id, role, &runner, &swarm::paths::home()?, &cwd)?;
         let kind = runner.provider;
         let mut extra = swarm::bus::extra_args(kind, extra, force)?;
         if let Some((_, id)) = &resume {
@@ -348,6 +388,7 @@ pub(crate) fn commands_launch(
         command.extend(extra);
         // Every adapter's spawn verb opens the pane in the working directory it runs in.
         env::set_current_dir(&pane_dir)?;
+
         spawn_agent(
             connection,
             root,
@@ -358,6 +399,7 @@ pub(crate) fn commands_launch(
                 account: picked.as_ref(),
                 command: &command,
                 runner: &runner,
+                cli_default_model: cli_default,
             },
             account_deadline,
         )?;

@@ -11,6 +11,7 @@ use serde_json::Value;
 pub struct Record {
     pub source_id: String,
     pub event: Value,
+    pub(super) prior_model: Option<String>,
     pub text_preview: Option<TextPreview>,
     pub diff_preview: Option<DiffPreview>,
     pub output_exit_code: Option<i64>,
@@ -94,6 +95,7 @@ impl Record {
         Self {
             source_id,
             event,
+            prior_model: None,
             text_preview,
             diff_preview,
             output_exit_code,

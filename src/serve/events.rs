@@ -149,7 +149,8 @@ pub(super) async fn subscribe(
                     .await
                     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "rows seed task failed"))?
                     .map_err(|_| error(StatusCode::NOT_FOUND, "transcript log unavailable"))?;
-            let mut seed = read_row_window(&app, &entry.key, log, start, end).await?;
+
+            let mut seed = source_backend::window(&app, &entry.key, log, start, end, true).await?;
             seed.last_rows = seed.rows();
             let previous = seed.last_rows.clone();
             seed.prepare(previous);

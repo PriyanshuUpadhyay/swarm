@@ -208,11 +208,30 @@ export function cut(d: Display, n: number): Display {
   return { blocks: take(d.blocks) };
 }
 
+export function isCliJoin(row: Row): boolean {
+  return row.kind === "model_change" && row.id.startsWith(row.source_session ? `${row.source_session}:cli-join:` : "cli-join:");
+}
+
 /** A queued row waits for the agent, so it sits after every logged row. */
 function compare(a: Row, b: Row): number {
   const qa = a.kind === "queued" ? 1 : 0;
   const qb = b.kind === "queued" ? 1 : 0;
-  return qa - qb || a.order[0] - b.order[0] || a.order[1] - b.order[1];
+  const sourceA = a.source_session ?? "~";
+  const sourceB = b.source_session ?? "~";
+  const segment = sourceA < sourceB ? -1 : sourceA > sourceB ? 1 : 0;
+  return qa - qb || segment || Number(isCliJoin(b)) - Number(isCliJoin(a)) || a.order[0] - b.order[0] || a.order[1] - b.order[1];
+}
+
+/** A historical row ID starts with the UUID of its source session. */
+export function scopedRowId(id: string): { session: string; local: string } | null {
+  const match = /^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}):(.+)$/i.exec(id);
+  return match ? { session: match[1], local: match[2] } : null;
+}
+
+/** A historical output locator prefixes its log byte locator with the owning session. */
+export function sourceLocator(id: string): { session: string; local: string } | null {
+  const scoped = scopedRowId(id);
+  return scoped && /^raw-.+$/i.test(scoped.local) ? scoped : null;
 }
 
 /** Applies `remove` and `upsert` by id. A known row keeps its place; a new row goes in by `order`.

@@ -9,13 +9,14 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, typ
 import type { App } from "../core/app";
 import { cliName, levelWord, profileRun, sameRun, type Run } from "../core/composer";
 import { type Profile } from "../core/lifecycle";
-import { DEFAULT_ROLE, defaultPlace, type ComposerRun, placeLabel, placeReady, defaultTarget, targets, type Place, type Target } from "../core/new-chat";
+import { DEFAULT_ROLE, defaultPlace, defaultRun, type ComposerRun, placeLabel, placeReady, defaultTarget, targets, type Place, type Target } from "../core/new-chat";
 import { Button } from "../components/ui/button";
 import { Kbd } from "../components/ui/kbd";
 import { hasPendingImage, imagePaths } from "../core/images";
 import { pick, toSend, type MenuRow } from "../core/slash";
 import { dragOverFiles, dropImage, pasteImage, type Draft } from "./composer-image";
 import { Chip, RunMenu, moveOption } from "./composer-new-parts";
+import { CliMark } from "./cli-mark";
 import { PreviewCard, usePreview } from "./composer-new-preview";
 import { ImageThumbs } from "./images";
 import { message } from "./lifecycle-shared";
@@ -115,6 +116,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
   const [profiles, setProfiles] = useState<Profile[] | string | null>(null);
   // Edit and retry opens on the profile and run that the start posted.
   const [role, setRole] = useState(firstRun?.role ?? DEFAULT_ROLE);
+  const [explicitProfile, setExplicitProfile] = useState(firstRun !== null && firstRun !== undefined);
   const [run, setRun] = useState<Run | null>(firstRun?.run ?? null);
   const [sending, setSending] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -124,7 +126,8 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
 
   const profile = Array.isArray(profiles) ? (profiles.find((p) => p.name === role) ?? profiles[0]) : undefined;
   const base = profileRun(profile);
-  const shown = run ?? base;
+  const appDefault = explicitProfile ? null : defaultRun(app.view.tree?.prefs);
+  const shown = run ?? appDefault ?? base;
   // The run on screen now, for a step that ends after an await.
   const shownNow = useRef(shown);
   useLayoutEffect(() => {
@@ -189,15 +192,18 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     if (sending || hasPendingImage(text)) return;
     if (!ready) return setMenu("place");
     setSending(true);
+
     const changed = run && !sameRun(run, base) ? run : null;
     // pi runs a skill only at the message's start, so the first prompt goes as the chat box sends it.
     const first = provider ? (await toSend(text, provider, slash.list, () => app.newChat.commands(target.cwd, provider))).text : text;
     const ok = await app.newChat.start(target.cwd, first, place, { role: profile?.name ?? role, run: changed }, {
       composer: true,
+      useSavedDefault: !run && !explicitProfile,
       submittedText: text,
       bindUpload: (draft) => { uploadTarget.current = draft; },
     });
     setSending(false);
+
     if (ok && textNow.current === text) {
       textNow.current = "";
       setText("");
@@ -312,6 +318,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
               {placeLabel(place, target)}
             </Chip>
             <Chip testid="chip-run" on={menu === "run"} title="Run (⌘/), thinking (⌘⇧/)" onClick={() => setMenu((m) => (m === "run" ? null : "run"))}>
+              {shown && <span className="mr-1.5"><CliMark provider={shown.provider} selected={menu === "run"} /></span>}
               {profile ? `${profile.name} · ` : ""}
               {runText}
             </Chip>
@@ -348,6 +355,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
                       className={PRESSED_PILL}
                       onClick={() => {
                         setRole(p.name);
+                        setExplicitProfile(true);
                         setRun(null);
                       }}
                     >
@@ -356,7 +364,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
                   ))}
                 </div>
               )}
-              {shown && <RunMenu app={app} current={base ?? shown} draft={shown} setDraft={setRun} />}
+              {shown && <RunMenu app={app} draft={shown} setDraft={setRun} />}
             </div>
           )}
         </div>

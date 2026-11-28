@@ -373,6 +373,12 @@ pub fn row(record: &Record) -> Option<Row> {
             row.output = record.text_preview.clone();
             row
         }
+
+        "session_info" if let Some(old) = &record.prior_model => Row::new(
+            RowKind::ModelChange,
+            format!("{old} → {}", string(event, "value")),
+            key(record, "model-change"),
+        ),
         "session_info" => Row::new(
             RowKind::Notice,
             format!("{}: {}", string(event, "kind"), string(event, "value")),

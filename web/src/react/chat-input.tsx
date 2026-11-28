@@ -1,6 +1,8 @@
 import { TriangleAlertIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
+import { RunChip, useRunState } from "./run-chip";
 import type { App, Banner, Composer } from "../core/app";
+import { savedCarry, type AgentInput } from "../core/composer";
 import { Button } from "../components/ui/button";
 import { BackgroundLine } from "./background-line";
 import { ComposerBox } from "./composer";
@@ -38,20 +40,14 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
         {!agent.who && <BackgroundLine key={`background:${id}`} session={id} />}
         {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
         {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
-        {/* A child with no pane shows only the reason (ChildColumnView). A chair with none shows
-            only its log; Resume starts its own CLI session again (ADR 0107), and Continue chat
-            starts a new chat from its summary (ADR 0083). */}
+        {!agent.unreachable && <RunChip.Pending app={app} sessionId={id} chair={agent} />}
+        {/* An ended chair can pick its next run without starting it. */}
         {agent.who && agent.unreachable ? (
           <p className="text-xs text-muted-foreground" data-testid="composer-status">
             {agent.disabled}
           </p>
         ) : agent.unreachable ? (
-          <div className="flex justify-center gap-2">
-            {agent.resumable && <ResumeButton app={app} sessionId={id} />}
-            <Button variant="outline" size="sm" data-testid="continue-chat" onClick={() => app.life.openSwitchModel(id)}>
-              Continue chat
-            </Button>
-          </div>
+          <EndedControls app={app} sessionId={id} chair={agent} />
         ) : (
           <ComposerBox key={id} app={app} composer={composer} lockDraft={lockDraft} />
         )}
@@ -60,17 +56,25 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
   );
 }
 
-function ResumeButton({ app, sessionId }: { app: App; sessionId: string }) {
-  const [busy, setBusy] = useState(false);
-  const resume = async () => {
-    setBusy(true);
-    await app.life.resumeChat(sessionId);
-    setBusy(false);
-  };
+function EndedControls({ app, sessionId, chair }: { app: App; sessionId: string; chair: AgentInput }) {
+  const state = useRunState(app);
+  const run = state.endedRun?.[sessionId];
+  const busy = state.resuming?.[sessionId] === true;
+  const canResume = chair.resumable || chair.provider !== null;
+  const saved = savedCarry(app.view.tree?.prefs);
+  const carry = app.life.endedRunCarry(sessionId, run?.provider ?? chair.provider);
+  const label = saved === "summary" && carry === "file" ? "Resume with File" : "Resume";
+
   return (
-    <Button size="sm" data-testid="resume-chat" disabled={busy} onClick={resume}>
-      {busy ? "Resuming…" : "Resume"}
-    </Button>
+    <div className="grid justify-items-center gap-2">
+      <div className="flex items-center gap-2">
+        <RunChip app={app} sessionId={sessionId} chair={chair} ended />
+        {canResume && <Button size="sm" data-testid="resume-chat" disabled={busy} onClick={() => void app.life.resumeChat(sessionId)}>
+          {busy ? "Resuming…" : label}
+        </Button>}
+      </div>
+      {canResume && <p className={`text-sm/4 text-muted-foreground ${state.switchModel === sessionId ? "invisible" : ""}`}>Resume goes on in this chat</p>}
+    </div>
   );
 }
 

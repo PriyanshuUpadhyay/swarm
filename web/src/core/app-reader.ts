@@ -1,10 +1,12 @@
 
 
 import type { Usage } from "./composer";
-import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, wantsLayout, type Line } from "./transcript";
-import { ApiError, type Row } from "./api";
+import { FoldChoices, LIVE_THOUGHT, cut, lines, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, partsOf, sourceLocator, wantsLayout, type Line } from "./transcript";
+import { ApiError, hasLinkedHistory, type Row, type RowPage } from "./api";
 import { TAIL, LRU_SIZE, type FullText, type Chat, type Find, type Reader, paneId } from "./app-types";
 import type { App } from "./app";
+
+const nextOlder = ({ page }: RowPage) => page.older_cursor ?? page.start_offset;
 
 /** Builds only the live rows that the server says to show. */
 export function liveRows(text: string | null, thinking: string | null, hides: { hideText: boolean; hideThinking: boolean }): Row[] {
@@ -107,20 +109,24 @@ export class AppReader {
   }
 
   async loadTail(chat: Chat) {
+    const linked = chat.agent === "chair" && hasLinkedHistory(this.app.snapshot, chat.sessionId);
+    chat.linkedTail = linked;
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL);
+      if (chat.linkedTail !== linked) return;
       noteDisplay(page.rows, page.display);
       noteBody(page.rows, page.body);
       notePatch(page.rows, page.patch);
       noteFind(page.rows, page.find);
       noteImages(page.rows, page.images);
       chat.rows = mergeRows([], page.rows);
-      chat.older = page.page.start_offset;
+      chat.older = nextOlder(page);
       chat.end = page.page.end_offset;
       chat.usage = page.usage as Usage;
       chat.state = "ready";
       chat.error = null;
     } catch (err) {
+      if (chat.linkedTail !== linked) return;
       chat.state = "error";
       chat.error = String(err);
     }
@@ -204,7 +210,7 @@ export class AppReader {
     this.changed(chat);
     let next: FullText;
     try {
-      const { text, patch } = await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId, wantsLayout(previewId));
+      const { text, patch } = await this.toolOutputOf(chat, previewId, wantsLayout(previewId));
       next = { state: "ready", text, lines: text.split("\n"), patch };
     } catch (err) {
       next = { state: "error", error: String(err) };
@@ -231,7 +237,12 @@ export class AppReader {
     const have = chat?.full.get(previewId);
     if (have?.state === "ready") return have.text;
     if (!chat) throw new Error("no chat open");
-    return (await this.app.api.toolOutput(chat.sessionId, chat.agent, previewId)).text;
+    return (await this.toolOutputOf(chat, previewId)).text;
+  }
+
+  private toolOutputOf(chat: Chat, previewId: string, layout?: boolean) {
+    const source = sourceLocator(previewId);
+    return this.app.api.toolOutput(source?.session ?? chat.sessionId, chat.agent, source?.local ?? previewId, layout);
   }
 
   async retryRows(id?: string) {
@@ -248,27 +259,29 @@ export class AppReader {
   /** Pages older rows in above the current ones. */
   async loadOlder(id?: string) {
     const chat = this.chat(id);
-    if (!chat || chat.state !== "ready" || chat.loadingOlder || chat.older <= 0) return;
+    if (!chat || chat.state !== "ready" || chat.loadingOlder || !chat.older) return;
+    const linked = chat.linkedTail;
     chat.loadingOlder = true;
     chat.error = null;
     this.app.notify();
     try {
       const page = await this.app.api.rows(chat.sessionId, chat.agent, TAIL, chat.older);
+      if (chat.linkedTail !== linked) return;
       noteDisplay(page.rows, page.display);
       noteBody(page.rows, page.body);
       notePatch(page.rows, page.patch);
       noteFind(page.rows, page.find);
       noteImages(page.rows, page.images);
       chat.rows = mergeRows(chat.rows, page.rows, page.remove);
-      chat.older = page.page.start_offset;
+      chat.older = nextOlder(page);
       chat.version++;
       chat.shift = true;
     } catch (err) {
-      chat.error = String(err);
+      if (chat.linkedTail === linked) chat.error = String(err);
     } finally {
       chat.loadingOlder = false;
+      if (this.app.openId === chat.sessionId) this.app.notify();
     }
-    if (this.app.openId === chat.sessionId) this.app.notify();
   }
 
   // ---- find ----

@@ -26,11 +26,45 @@ pub(super) async fn new_chat(app: &App, body: NewChat) -> Result<Value, ApiError
     Ok(json!({"ok": true, "start": id}))
 }
 
-/// A new chat that a model switch starts in `body.cwd`; it waits for the chat to start.
+/// Starts a handoff in the same folder. Keep the new id so a failed launch can be discarded.
 pub(super) async fn new_chat_now(app: &App, body: NewChat) -> Result<Value, ApiError> {
-    let (mut start, launch) = checked_start(app, body).await?;
-    let (session, workspace, _) = start.steps(&launch).await?;
-    Ok(json!({"ok": true, "session": session, "workspace": workspace}))
+    let (_, launch) = checked_start(app, body).await?;
+    let cwd = &launch.body.cwd;
+    let session = open_session(app, cwd).await?;
+
+    if let Err(err) = launch_chair(
+        app,
+        &launch.body,
+        &launch.role,
+        launch.account.as_deref(),
+        cwd,
+        &session,
+        launch.body.model.is_none(),
+    )
+    .await
+    {
+        discard_handoff(app, &chat_call(cwd, Some(&session)), &session).await;
+        return Err(err);
+    }
+    Ok(json!({"ok": true, "session": session, "workspace": cwd}))
+}
+
+pub(super) async fn discard_handoff(app: &App, next: &CliCall, session: &str) {
+    let _ = run_cli(app, next.args(&["close", "--now", "orchestrator"]), None).await;
+    if let Err(err) = archive_failed_session(app, next, session).await {
+        eprintln!(
+            "swarm: failed to archive handoff session {session}: {}",
+            shells::api_text(&err)
+        );
+    }
+}
+
+async fn archive_failed_session(
+    app: &App,
+    call: &CliCall,
+    session: &str,
+) -> Result<String, ApiError> {
+    run_cli(app, call.args(&["session", "archive", session]), None).await
 }
 
 /// Checks a new chat request and the folder it names, before any change.
@@ -42,20 +76,13 @@ async fn checked_start(app: &App, body: NewChat) -> Result<(Start, Launch), ApiE
         None
     });
 
-    for value in [
+    validate_launch_options([
         Some(role.as_str()),
         body.provider.as_deref(),
         body.model.as_deref(),
         body.effort.as_deref(),
         account.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if !swarm::config::valid_name(value) {
-            return Err(error(StatusCode::BAD_REQUEST, "invalid launch option"));
-        }
-    }
+    ])?;
 
     if body.cwd.contains('\0') || !Path::new(&body.cwd).is_absolute() {
         return Err(error(StatusCode::BAD_REQUEST, "absolute cwd required"));
@@ -247,7 +274,7 @@ async fn forget_chat(app: &App, cwd: &str, session: Option<&str>, branch: &str) 
         }
 
         // A session that stays must keep its folder.
-        if let Err(err) = run_cli(app, call.args(&["session", "archive", session]), None).await {
+        if let Err(err) = archive_failed_session(app, &call, session).await {
             eprintln!(
                 "swarm: kept the chat worktree {cwd}, because its session {session} stays: {}",
                 shells::api_text(&err)
@@ -287,8 +314,6 @@ async fn start_chair(
     session: &str,
     own_worktree: bool,
 ) -> Result<Option<String>, ApiError> {
-    let mut call = chat_call(cwd, Some(session));
-
     let mut warning = None;
     if own_worktree {
         let (root, path, id) = (app.root.clone(), cwd.to_owned(), session.to_owned());
@@ -304,21 +329,81 @@ async fn start_chair(
         warning = found;
     }
 
+    launch_chair(app, body, role, account, cwd, session, false).await?;
+    remember_started_model(app, session).await;
+    Ok(warning)
+}
+
+async fn launch_chair(
+    app: &App,
+    body: &NewChat,
+    role: &str,
+    account: Option<&str>,
+    cwd: &str,
+    session: &str,
+    cli_default_model: bool,
+) -> Result<(), ApiError> {
+    let mut call = chat_call(cwd, Some(session));
     call.args = vec!["launch".into(), "orchestrator".into(), role.to_owned()];
-    for (flag, value) in [
-        ("--provider", body.provider.as_deref()),
-        ("--model", body.model.as_deref()),
-        ("--effort", body.effort.as_deref()),
-        ("--account", account),
-    ] {
-        if let Some(value) = value {
-            call.args.extend([flag.to_owned(), value.to_owned()]);
-        }
+
+    if let Some(provider) = &body.provider {
+        call.args.extend(["--provider".into(), provider.clone()]);
     }
+    if cli_default_model {
+        call.args.push(swarm::bus::CLI_DEFAULT_MODEL_FLAG.into());
+    }
+    append_run_flags(
+        &mut call,
+        body.model.as_deref(),
+        body.effort.as_deref(),
+        account,
+    );
+
     let output = run_cli(app, call, None).await?;
     first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
-    Ok(warning)
+    Ok(())
+}
+
+/// The launch owns the actual model, including the runner an ordinary profile selected.
+pub(super) async fn remember_started_model(app: &App, session: &str) {
+    let root = app.root.clone();
+    let session = session.to_owned();
+
+    let saved = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+        let db = read_connection(&root).map_err(|err| err.to_string())?;
+        let pair = db
+            .query_row(
+                "SELECT provider, model FROM agent WHERE session_id = ?1 AND id = 'orchestrator'",
+                [&session],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|err| err.to_string())?;
+
+        let mut changed = false;
+        if let Some((Some(provider), Some(model))) = pair {
+            choices_store::update(&root, None, |owner, _| {
+                changed = owner.remember_model(provider, model)?;
+                Ok(())
+            })
+            .map_err(|err| err.to_string())?;
+        }
+        Ok(changed)
+    })
+    .await;
+
+    match saved {
+        Ok(Ok(true)) => app.hub.lock().unwrap().bump(),
+        Ok(Ok(false)) => {}
+        Ok(Err(err)) => eprintln!("swarm: could not record the recent model: {err}"),
+        Err(err) => eprintln!("swarm: recent model task failed: {err}"),
+    }
 }
 
 /// True when the workspace that holds `cwd` is archived, missing, or removed. That is the deepest
@@ -354,16 +439,97 @@ pub(super) fn first_line(output: &str) -> Option<&str> {
 
 /// Start the chat's own CLI session again in the chat, with its whole context (ADR 0107).
 pub(super) async fn resume_chat(app: &App, body: ResumeChat) -> Result<Value, ApiError> {
-    let mut call = action_session(app, &body.session)?;
+    validate_launch_options([
+        body.model.as_deref(),
+        body.effort.as_deref(),
+        body.account.as_deref(),
+    ])?;
+    let mut call = current_source(app, &body.session)?;
+
+    let mut account = body.account;
+    if account.is_none() && (body.model.is_some() || body.effort.is_some()) {
+        // A picked Codex run with no account stays in the account that owns its rollout.
+        account = read_connection(&app.root)
+            .and_then(|db| {
+                db.query_row(
+                    "SELECT s.chair_provider, a.account
+             FROM session AS s LEFT JOIN agent AS a
+               ON a.session_id = s.id AND a.id = 'orchestrator'
+             WHERE s.id = ?1",
+                    [&body.session],
+                    |row| {
+                        let provider: Option<String> = row.get(0)?;
+                        let current: Option<String> = row.get(1)?;
+                        Ok(resume_account(
+                            provider.as_deref().unwrap_or_default(),
+                            None,
+                            current.as_deref(),
+                        )
+                        .map(str::to_owned))
+                    },
+                )
+            })
+            .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "account read failed"))?;
+    }
     // An imported chat has no adapter until its first pane.
     call.adapter = "tmux-swarm".into();
-    call.args = ["launch", "orchestrator", "chat", "--resume"]
-        .map(String::from)
-        .to_vec();
-    let output = run_cli(app, call, None).await?;
+    let output = run_cli(
+        app,
+        resume_launch(
+            &call,
+            body.model.as_deref(),
+            body.effort.as_deref(),
+            account.as_deref(),
+        ),
+        None,
+    )
+    .await?;
     let pane = first_line(&output)
         .ok_or_else(|| error(StatusCode::INTERNAL_SERVER_ERROR, "swarm returned no pane"))?;
+
+    remember_started_model(app, &body.session).await;
     Ok(json!({"ok": true, "session": body.session, "agent": "orchestrator", "pane": pane}))
+}
+
+pub(super) fn validate_launch_options<'a>(
+    options: impl IntoIterator<Item = Option<&'a str>>,
+) -> Result<(), ApiError> {
+    if options
+        .into_iter()
+        .flatten()
+        .any(|value| !swarm::config::valid_name(value))
+    {
+        return Err(error(StatusCode::BAD_REQUEST, "invalid launch option"));
+    }
+    Ok(())
+}
+
+pub(super) fn resume_launch(
+    call: &CliCall,
+    model: Option<&str>,
+    effort: Option<&str>,
+    account: Option<&str>,
+) -> CliCall {
+    let mut launch = call.args(&["launch", "orchestrator", "chat", "--resume"]);
+    append_run_flags(&mut launch, model, effort, account);
+    launch
+}
+
+fn append_run_flags(
+    call: &mut CliCall,
+    model: Option<&str>,
+    effort: Option<&str>,
+    account: Option<&str>,
+) {
+    for (flag, value) in [
+        ("--model", model),
+        ("--effort", effort),
+        ("--account", account),
+    ] {
+        if let Some(value) = value {
+            call.args.extend([flag.to_owned(), value.to_owned()]);
+        }
+    }
 }
 
 #[path = "new_chat/preview.rs"]

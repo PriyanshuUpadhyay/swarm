@@ -76,6 +76,9 @@ pub(super) enum Place {
 #[serde(deny_unknown_fields)]
 pub(super) struct ResumeChat {
     pub(super) session: String,
+    pub(super) model: Option<String>,
+    pub(super) effort: Option<String>,
+    pub(super) account: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -115,6 +118,12 @@ pub(super) struct CliCall {
 }
 
 impl CliCall {
+    pub(super) fn default_adapter(&mut self) {
+        if self.adapter.is_empty() {
+            self.adapter = "tmux-swarm".into();
+        }
+    }
+
     pub(super) fn args(&self, args: &[&str]) -> Self {
         Self {
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
@@ -273,6 +282,10 @@ pub(super) fn start_action_queue(app: &App, mut queue: mpsc::Receiver<ActionJob>
 pub(super) fn action_session(app: &Server, session: &str) -> Result<CliCall, ApiError> {
     let connection = read_connection(&app.root)
         .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    session_call(&connection, session)
+}
+
+fn session_call(connection: &rusqlite::Connection, session: &str) -> Result<CliCall, ApiError> {
     let row = connection
         .query_row(
             "SELECT cwd, adapter FROM session WHERE id = ?1",
@@ -288,6 +301,61 @@ pub(super) fn action_session(app: &Server, session: &str) -> Result<CliCall, Api
         session: Some(session.to_owned()),
         adapter: adapter.unwrap_or_default(),
     })
+}
+
+pub(super) fn current_source(app: &App, id: &str) -> Result<CliCall, ApiError> {
+    let connection = read_connection(&app.root)
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    let call = session_call(&connection, id)?;
+
+    let (archived, continued) = swarm::store::continuation_source_state(&connection, id)
+        .map_err(|err| error(StatusCode::INTERNAL_SERVER_ERROR, &err.to_string()))?;
+    if archived {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "This chat is archived. Unarchive it first.",
+        ));
+    }
+
+    if continued {
+        return Err(error(
+            StatusCode::CONFLICT,
+            swarm::store::CHAT_CONTINUED_MESSAGE,
+        ));
+    }
+    Ok(call)
+}
+
+pub(super) fn history_read_error(err: rusqlite::Error) -> ApiError {
+    map_history_error(
+        err,
+        HistoryErrorMessages {
+            missing: "Chat not found. Open a chat from the sidebar.",
+            invalid: "This chat has an invalid history link. Open a different chat.",
+            failed: "Could not read this chat's history. Try again.",
+        },
+    )
+}
+
+pub(super) struct HistoryErrorMessages {
+    pub(super) missing: &'static str,
+    pub(super) invalid: &'static str,
+    pub(super) failed: &'static str,
+}
+
+pub(super) fn map_history_error(
+    err: rusqlite::Error,
+    HistoryErrorMessages {
+        missing,
+        invalid,
+        failed,
+    }: HistoryErrorMessages,
+) -> ApiError {
+    match err {
+        rusqlite::Error::QueryReturnedNoRows => error(StatusCode::NOT_FOUND, missing),
+        rusqlite::Error::InvalidQuery => error(StatusCode::CONFLICT, invalid),
+        _ => error(StatusCode::INTERNAL_SERVER_ERROR, failed),
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,339 @@
+import { expect, test, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { DRAFT_PREFIX } from "../src/core/app-types";
+import { STORE_KEY, savedNotes } from "../src/core/notes";
+import type { ModelChoice } from "../src/core/nav";
+import { captureRunPost, fixtureSql, holdChatStart, mockRunCatalog, open, patchLiveChair, patchTreePrefs, readTree, shootThemes } from "./lifecycle-helpers";
+
+// Live snapshot reads can still be in flight when the test page closes.
+test.afterEach(({ page }) => page.unrouteAll({ behavior: "ignoreErrors" }));
+
+const shots = (tab: Page, unit: number | "fix1" | "fix2" | "fix3" | "fix4", name: string) =>
+  shootThemes(tab, resolve(import.meta.dirname, `../../tmp/shots/${unit}/${name}`));
+
+test("the same tab pages both CLI logs and reads tool output from its original session", async ({ page: tab }) => {
+  const errors = await open(tab);
+  const root = process.env.SWARM_E2E_GIANT!;
+  const rootRow = tab.getByTestId("tree-row").and(tab.locator(`[data-session="${root}"]`));
+  await rootRow.click();
+  const priorTab = tab.getByTestId("tab").and(tab.locator(`[data-session="${root}"]`));
+  await expect(priorTab).toBeVisible();
+  const tabId = await priorTab.getAttribute("data-id");
+  const rowId = await rootRow.getAttribute("data-id");
+
+  const env = { PATH: process.env.PATH, HOME: process.env.SWARM_E2E_HOME, SWARM_HOME: process.env.SWARM_E2E_HOME, SWARM_ADAPTER: "tmux-swarm" };
+  const swarm = process.env.SWARM_E2E_SWARM!;
+  const dir = process.env.SWARM_E2E_DIR!;
+  const call = (...args: string[]) => execFileSync(swarm, args, { cwd: join(dir, "ws-giant"), env, encoding: "utf8" }).trim().split("\n").at(-1)!;
+  const leaf = call("session", "new", "lane", "--chair", `codex:${randomUUID()}`);
+  const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+  const log = join(dir, `${leaf}.jsonl`);
+  try {
+    const line = { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "After the CLI switch" }] } };
+    const model = { type: "turn_context", payload: { model: "gpt-6.1-terra" } };
+    writeFileSync(log, `${JSON.stringify(model)}\n${JSON.stringify(line)}\n`);
+    fixtureSql(`UPDATE session SET chair_log = ${quote(log)} WHERE id = ${quote(leaf)};
+          INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${quote(leaf)}, 'orchestrator', 'codex', unixepoch(), ${quote(log)});`);
+    const row = tab.getByTestId("tree-row").and(tab.locator(`[data-session="${leaf}"]`));
+    const transcript = tab.getByTestId("transcript").and(tab.locator(`[data-chat="${leaf}"]`));
+    await row.click();
+    await expect(transcript.getByText("After the CLI switch")).toBeVisible();
+    const note = { id: 1, kind: "item" as const, rowId: "raw-0-0", quote: "The earlier reply", text: "Review this", at: 1 };
+    await tab.evaluate((pairs) => {
+      for (const [key, value] of pairs) localStorage.setItem(key, value);
+    }, [[DRAFT_PREFIX + root, "Earlier draft"], [DRAFT_PREFIX + leaf, "Later draft"], [STORE_KEY, savedNotes([[root, [note]]])]]);
+
+    call("session", "continue", leaf, root);
+    await expect.poll(async () => (await readTree()).sections.flatMap((s) => s.rows).some((row) => row.selection?.chat === leaf)).toBe(true);
+    await expect(row).toHaveAttribute("data-id", rowId!);
+    await row.click();
+    await expect(tab.getByTestId("tab").and(tab.locator(`[data-session="${leaf}"]`))).toHaveAttribute("data-id", tabId!);
+    await expect(transcript.getByText("After the CLI switch")).toBeVisible();
+    await expect.poll(() => tab.evaluate(([draftKey, noteKey]) => [localStorage.getItem(draftKey), localStorage.getItem(noteKey)], [DRAFT_PREFIX + leaf, STORE_KEY])).toEqual([
+      "Earlier draft\n\nLater draft", savedNotes([[leaf, [{ ...note, origin: `${root}:${note.id}`, rowId: `${root}:${note.rowId}` }]]]),
+    ]);
+
+    const loadOlder = tab.getByTestId("load-older");
+    await expect(loadOlder).toBeVisible();
+    await loadOlder.click();
+    await expect(transcript.getByText("Show the build log")).toBeVisible();
+
+    const boundary = transcript.getByTestId("model-change");
+    await expect(boundary).toHaveText("codex · gpt-6.1-terra from here");
+    const form = await boundary.evaluate((row) => {
+      const box = row.getBoundingClientRect();
+      const label = row.firstElementChild!.getBoundingClientRect();
+      return {
+        left: label.left - box.left,
+        right: box.right - label.right,
+        rules: ["::before", "::after"].map((side) => getComputedStyle(row, side).borderTopWidth),
+        font: getComputedStyle(row).fontSize,
+      };
+    });
+    expect(Math.abs(form.left - form.right)).toBeLessThan(1);
+    expect(form.rules).toEqual(["1px", "1px"]);
+    if (process.env.E2E_SHOTS) console.log("cross-CLI marker CSS px", form);
+    await shots(tab, 5, "linked-transcript");
+    await shots(tab, "fix3", "cli-join");
+
+    await transcript.getByTestId("fold").click();
+    const card = transcript.getByTestId("tool-card").filter({ hasText: "cat big.log" });
+    await card.getByRole("button", { name: /cat big\.log/ }).click();
+    await card.getByTestId("show-full").click();
+    await expect(card.getByTestId("full-output")).toContainText("line 0 of the build log");
+  } finally {
+    fixtureSql(`DELETE FROM agent WHERE session_id = ${quote(leaf)}; DELETE FROM session WHERE id = ${quote(leaf)};`);
+    rmSync(log, { force: true });
+    await expect.poll(async () => (await readTree()).sections.flatMap((s) => s.rows).some((row) => row.selection?.chat === root)).toBe(true);
+  }
+  expect(errors).toEqual([]);
+});
+
+async function pickerCatalog(tab: Page) {
+  const providers = ["claude", "codex", "agy", "pi"].map((id) => ({ id, accounts: id === "claude" || id === "codex", efforts: ["low", "high"], default_effort: "high" }));
+  await mockRunCatalog(tab, {
+    providers,
+    models: (cli) => cli === "claude" ? [{ id: "model-a", label: "Model A" }, { id: "model-b", label: "Model B" }] : [{ id: "other", label: "Other model" }],
+  });
+}
+
+test("one idle picker opens by shortcut, keeps an unlisted current model and applies picks at once", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const live = process.env.SWARM_E2E_LIVE!;
+  const picked = await captureRunPost(tab, "continue");
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: picked.at(-1)?.model ?? "unlisted-model", effort: "high", state: "done", prompt: null }); });
+  await patchTreePrefs(tab, (prefs) => {
+    prefs.favoriteModels = [{ provider: "claude", model: "model-b" }];
+    prefs.recentModels = [{ provider: "codex", model: "other" }];
+    prefs.newChatModel = { provider: "codex", model: "other" };
+  });
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
+  await tab.keyboard.press("Shift+Meta+m");
+  const picker = tab.getByTestId("run-popover");
+  await expect(picker).toBeVisible();
+  await expect(picker.getByTestId("run-unavailable")).toContainText("unlisted-model");
+  await expect(picker.getByTestId("run-recent")).toContainText("Other model");
+  await expect(picker.getByTestId("run-apply")).toHaveCount(0);
+  await shots(tab, 6, "picker");
+  await picker.getByRole("button", { name: "Model A", exact: true }).click();
+  await expect.poll(() => picked.map((run) => run.model)).toEqual(["model-a"]);
+  await expect(tab.getByTestId("model-chip-label")).toContainText("model-a");
+  await tab.keyboard.press("Control+Meta+m");
+  await expect.poll(() => picked.map((run) => run.model)).toEqual(["model-a", "model-b"]);
+  await expect(tab.getByTestId("run-favorite-toast")).toHaveText("Model B");
+  await expect(picker).toBeHidden();
+
+  const starts = await holdChatStart(tab);
+  await tab.keyboard.press("Meta+t");
+  await expect.poll(() => starts.map((start) => [start.provider, start.model])).toEqual([["codex", "other"]]);
+});
+
+test("two quick star clicks keep both favorites", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const saved: ModelChoice[][] = [];
+  await patchTreePrefs(tab, (prefs) => { prefs.favoriteModels = saved.at(-1) ?? []; });
+  let release!: () => void;
+  const firstSave = new Promise<void>((resolve) => { release = resolve; });
+  await tab.route("**/api/choices", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.op !== "pref" || body.key !== "favoriteModels") return route.continue();
+    saved.push(body.value);
+    if (saved.length === 1) await firstSave;
+    await route.fulfill({ json: { revision: body.revision } });
+  });
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByTestId("model-chip").click();
+  const star = (model: string) => tab.locator(`[data-model-id="${model}"]`).locator("..").getByRole("button", { name: /favorites/i });
+  try {
+    await star("model-a").click();
+    await expect.poll(() => saved.length).toBe(1);
+    await star("model-b").click();
+  } finally { release(); }
+  await expect.poll(() => saved.at(-1)?.map((m) => m.model)).toEqual(["model-a", "model-b"]);
+});
+
+test("the run chip names its CLI and keeps its width while the account list loads", async ({ page: tab }) => {
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "codex", account: "long-work-account", model: "model-a" }); });
+  await tab.route("**/api/accounts?*", async (route) => {
+    await accountsReady;
+    await route.fulfill({ json: { accounts: [{ name: "long-work-account", email: null }] } });
+  });
+  let release!: () => void;
+  const accountsReady = new Promise<void>((resolve) => { release = resolve; });
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  const chip = tab.getByTestId("model-chip");
+  let before: number;
+  try {
+    await expect(chip.getByTestId("model-chip-label")).toContainText("long-work-account");
+    await expect(chip).toHaveAccessibleName(/Codex.*long-work-account/);
+    before = (await chip.boundingBox())!.width;
+  } finally { release(); }
+  await expect(chip.getByTestId("model-chip-label")).toContainText("Codex");
+  expect((await chip.boundingBox())!.width).toBe(before!);
+});
+
+test("a typed model stays available in the new-chat picker", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByTestId("tab-new-chat").click();
+  await tab.getByTestId("chip-run").click();
+  const query = tab.getByTestId("run-query");
+  await expect(tab.getByRole("button", { name: "Model A", exact: true })).toBeVisible();
+  await query.fill("custom-model");
+  await tab.getByRole("button", { name: "Use “custom-model”" }).click();
+  await query.clear();
+  const row = tab.getByTestId("run-models").getByRole("button", { name: "custom-model", exact: true });
+  await expect(row).toBeEnabled();
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row.locator("..").getByRole("button", { name: "Use for new chats" })).toHaveCount(0);
+  await shots(tab, "fix4", "typed-model");
+});
+
+test("the new-chat picker gives a catalog error space inside its footer", async ({ page: tab }) => {
+  await tab.route("**/api/providers", (route) => route.fulfill({ status: 503, json: { error: "catalog offline" } }));
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByTestId("tab-new-chat").click();
+  await tab.getByTestId("chip-run").click();
+  const overlay = tab.getByTestId("composer-overlay");
+  const error = overlay.getByRole("alert").filter({ hasText: "Could not read the CLIs" });
+  await expect(error).toBeVisible();
+  const rail = overlay.getByRole("group", { name: "Model groups" });
+  const railBox = (await rail.boundingBox())!;
+  expect((await error.boundingBox())!.x - (railBox.x + railBox.width)).toBeGreaterThanOrEqual(8);
+});
+
+test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const live = process.env.SWARM_E2E_LIVE!;
+  let working = true;
+  let stops = 0;
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null }); });
+  await tab.route("**/api/chat/interrupt", async (route) => {
+    stops++;
+    working = false;
+    await route.continue();
+  });
+  const switches = await captureRunPost(tab, "continue");
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await picker.getByRole("button", { name: "Model B", exact: true }).click();
+  await expect(picker.getByRole("status")).toContainText("model-b");
+  const stop = picker.getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeVisible();
+  await expect(tab.getByTestId("chat-status-line").getByTestId("stop")).toBeVisible();
+  await shots(tab, 7, "busy-picker");
+  const transcript = tab.getByTestId("transcript");
+  const height = (await transcript.boundingBox())!.height;
+  await stop.click();
+  await expect.poll(() => stops).toBe(1);
+  const banner = tab.getByTestId("switch-pending");
+  await expect(banner).toBeVisible();
+  const ready = tab.getByTestId("switch-ready");
+  await expect(ready).toHaveAttribute("role", "status");
+  await expect(ready).toContainText("Switch now");
+  expect((await transcript.boundingBox())!.height).toBe(height);
+  await shots(tab, "fix3", "switch-ready");
+  await expect(banner.getByText("Switch to model-b?")).toHaveCSS("font-size", "12px");
+  expect(switches).toEqual([]);
+  await shots(tab, "fix1", "switch-confirmation");
+  await tab.getByRole("button", { name: "Switch now" }).click();
+  await expect.poll(() => switches).toEqual([expect.objectContaining({ old_session: live, model: "model-b", carry: "resume" })]);
+});
+
+test("reload drops a busy pick rather than applying it on the now-idle chat", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const live = process.env.SWARM_E2E_LIVE!;
+  let working = true;
+  let switches = 0;
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: working ? "working" : "done", prompt: null }); });
+  await captureRunPost(tab, "continue", () => { switches++; });
+  await open(tab);
+  const row = tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`));
+  await row.click();
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await picker.getByRole("button", { name: "Model B", exact: true }).click();
+  await expect(picker.getByTestId("run-outcome")).toContainText("does not apply until you confirm");
+  working = false;
+  await tab.reload();
+  await row.click();
+  await expect(tab.getByTestId("model-chip-label")).toContainText("model-a");
+  await expect(tab.getByTestId("switch-pending")).toHaveCount(0);
+  expect(switches).toBe(0);
+});
+
+test("Resume links a new same-CLI session when the ended chat has no turn", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  await patchLiveChair(tab, (chair, snapshot, live) => {
+    Object.assign(chair, { provider: "claude", model: "model-a", alive: false, state: "done" });
+    snapshot.sessions.find((session) => session.id === live)!.chair_id = null;
+  });
+  const attempts = await captureRunPost(tab, "continue");
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect.poll(() => attempts).toEqual([{ old_session: process.env.SWARM_E2E_LIVE, provider: "claude", model: "model-a", carry: "clean" }]);
+});
+
+test("an ended cross-CLI resume offers File when the saved carry is Summary", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", alive: false, state: "done" }); });
+  await patchTreePrefs(tab, (prefs) => { prefs.switchCarry = "summary"; });
+  const attempts = await captureRunPost(tab, "continue");
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${process.env.SWARM_E2E_LIVE}"]`)).click();
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await picker.getByRole("button", { name: "Codex", exact: true }).click();
+  await picker.getByRole("button", { name: "Other model", exact: true }).click();
+  await expect(picker.getByTestId("run-outcome")).toContainText("chat text in a file");
+
+  await tab.keyboard.press("Escape");
+  await tab.getByRole("button", { name: "Resume with File" }).click();
+  await expect.poll(() => attempts.map((run) => run.carry)).toEqual(["file"]);
+});
+
+test("an ended chat keeps a foreign-CLI pick until Resume and uses File by default", async ({ page: tab }) => {
+  await pickerCatalog(tab);
+  const live = process.env.SWARM_E2E_LIVE!;
+  let release: () => void;
+  const finishing = new Promise<void>((resolve) => { release = resolve; });
+  await patchLiveChair(tab, (chair) => { Object.assign(chair, { provider: "claude", model: "model-a", state: "done", alive: false }); });
+  await patchTreePrefs(tab, (prefs) => { delete prefs.switchCarry; });
+  const attempts = await captureRunPost(tab, "continue", () => finishing);
+  await open(tab);
+  await tab.getByTestId("tree-row").and(tab.locator(`[data-session="${live}"]`)).click();
+  const caption = tab.getByText("Resume goes on in this chat", { exact: true });
+  await expect(caption).toBeVisible();
+  await expect(caption).toHaveCSS("font-size", "12px");
+  const closed = await tab.getByTestId("resume-chat").boundingBox();
+  const captionBox = await caption.boundingBox();
+  expect(captionBox!.y - (closed!.y + closed!.height)).toBe(8);
+  await shots(tab, "fix2", "ended-caption");
+
+  await tab.getByTestId("model-chip").click();
+  const picker = tab.getByTestId("run-popover");
+  await expect(caption).toBeHidden();
+  await picker.getByRole("button", { name: "Codex", exact: true }).click();
+  await picker.getByRole("button", { name: "Other model", exact: true }).click();
+  await expect(tab.getByTestId("model-chip-label")).toContainText("other");
+  expect(attempts).toEqual([]);
+  await shots(tab, 7, "ended-pick");
+  const resume = tab.getByTestId("resume-chat");
+  try {
+    await resume.click();
+    await expect(resume).toHaveText("Resuming…");
+    await expect(resume).toBeDisabled();
+    await expect.poll(() => attempts).toEqual([expect.objectContaining({ old_session: live, provider: "codex", model: "other", carry: "file" })]);
+  } finally { release!(); }
+});

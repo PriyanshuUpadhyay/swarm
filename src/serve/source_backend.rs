@@ -64,7 +64,10 @@ fn invalid() -> ApiError {
 }
 impl Lease {
     pub(super) async fn read(&self, operation: Operation) -> Result<Value, ApiError> {
-        let budget = Budget::new(Duration::from_secs(10)).map_err(|_| invalid())?;
+        self.read_in(operation, read_budget()?).await
+    }
+
+    async fn read_in(&self, operation: Operation, budget: Budget) -> Result<Value, ApiError> {
         let timeout = || error(StatusCode::GATEWAY_TIMEOUT, "transcript read timed out");
         let guard = budget
             .run(async { Ok(self.serial.lock().await) })
@@ -83,7 +86,13 @@ impl Lease {
     }
 }
 
-pub(super) fn lines(value: &Value) -> Result<Vec<(u64, u64, Vec<Value>)>, ApiError> {
+fn read_budget() -> Result<Budget, ApiError> {
+    Budget::new(Duration::from_secs(10)).map_err(|_| invalid())
+}
+
+type WindowLines = Vec<(u64, u64, Vec<Value>)>;
+
+pub(super) fn lines(value: &Value) -> Result<WindowLines, ApiError> {
     value["lines"]
         .as_array()
         .ok_or_else(invalid)?
@@ -99,22 +108,71 @@ pub(super) fn lines(value: &Value) -> Result<Vec<(u64, u64, Vec<Value>)>, ApiErr
         })
         .collect()
 }
+async fn window_lines(
+    source: &Lease,
+    start: u64,
+    end: u64,
+    budget: Budget,
+) -> Result<WindowLines, ApiError> {
+    let payload = source
+        .read_in(Operation::Window { start, end }, budget)
+        .await?;
+    if payload["start_byte"] != start || payload["end_byte"] != end {
+        return Err(invalid());
+    }
+    lines(&payload)
+}
+
 pub(super) async fn window(
     app: &App,
     key: &str,
     log: &Log,
     start: u64,
     end: u64,
+    seed_model: bool,
 ) -> Result<LiveRows, ApiError> {
     let source = acquire(app, key, log).await?;
-    let payload = source.read(Operation::Window { start, end }).await?;
-    if payload["start_byte"] != start || payload["end_byte"] != end {
-        return Err(invalid());
-    }
+    let budget = read_budget()?;
+    let lines = window_lines(&source, start, end, budget).await?;
+
     let mut state = LiveRows::empty(start, log.format == "codex");
-    for (start, end, events) in lines(&payload)? {
+    if seed_model
+        && lines
+            .iter()
+            .any(|(_, _, events)| events.iter().any(|event| view::model_fact(event).is_some()))
+        && let Some(model) = model_before(&source, log, start, budget).await
+    {
+        state.seed_model(model);
+    }
+
+    for (start, end, events) in lines {
         state.ingest(start, end, &events);
     }
     state.source = Some(source);
     Ok(state)
+}
+
+/// A model outside the tail is evidence, not a row. Stop on an unread range rather than
+/// guessing that an earlier fact stayed current through it.
+async fn model_before(source: &Lease, log: &Log, boundary: u64, budget: Budget) -> Option<String> {
+    let mut end = boundary;
+
+    while end > 0 && budget.check().is_ok() {
+        let (start, read_end) = row_offsets(&log.path, 200, Some(end)).ok()?;
+        if read_end != end || start >= end || boundary - start > ROWS_FIND_LIMIT as u64 {
+            return None;
+        }
+
+        let lines = window_lines(source, start, end, budget).await.ok()?;
+        if let Some(model) = lines
+            .iter()
+            .rev()
+            .flat_map(|(_, _, events)| events.iter().rev())
+            .find_map(view::model_fact)
+        {
+            return Some(model.to_owned());
+        }
+        end = start;
+    }
+    None
 }

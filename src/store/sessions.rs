@@ -20,6 +20,23 @@ pub fn create_session(
     Ok(id)
 }
 
+pub const CHAT_CONTINUED_MESSAGE: &str =
+    "This chat continued in a newer session. Open the newer chat.";
+
+const LIVE_CONTINUATION: &str =
+    "SELECT 1 FROM session WHERE continuation_of = :source AND archived_at IS NULL";
+
+pub fn continuation_source_state(
+    connection: &Connection,
+    id: &str,
+) -> rusqlite::Result<(bool, bool)> {
+    connection.query_row(
+        &format!("SELECT archived_at IS NOT NULL, EXISTS ({LIVE_CONTINUATION}) FROM session WHERE id = :source"),
+        rusqlite::named_params! { ":source": id },
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+}
+
 /// Link a newer session in the same directory; the link is written only after handoff delivery.
 pub fn continue_session(
     connection: &Connection,
@@ -27,17 +44,90 @@ pub fn continue_session(
     old_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let changed = connection.execute(
-        "UPDATE session SET continuation_of = ?2
-         WHERE id = ?1 AND continuation_of IS NULL AND archived_at IS NULL
-           AND EXISTS (SELECT 1 FROM session AS old
-                       WHERE old.id = ?2 AND old.archived_at IS NULL
-                         AND old.cwd = session.cwd AND old.id < session.id)",
-        (new_id, old_id),
+        &format!(
+            "UPDATE session SET continuation_of = :source
+             WHERE id = :target AND continuation_of IS NULL AND archived_at IS NULL
+               AND EXISTS (SELECT 1 FROM session AS old
+                           WHERE old.id = :source AND old.archived_at IS NULL
+                             AND old.cwd = session.cwd AND old.id < session.id)
+               AND NOT EXISTS ({LIVE_CONTINUATION})"
+        ),
+        rusqlite::named_params! { ":target": new_id, ":source": old_id },
     )?;
+
     if changed != 1 {
+        let continued: bool = connection.query_row(
+            &format!("SELECT EXISTS ({LIVE_CONTINUATION})"),
+            rusqlite::named_params! { ":source": old_id },
+            |row| row.get(0),
+        )?;
+        if continued {
+            return Err(CHAT_CONTINUED_MESSAGE.into());
+        }
         return Err("sessions cannot be linked as one chat".into());
     }
     Ok(())
+}
+
+const CHAIR_DAYS: &str = "strftime('%Y/%m/%d', created_at - 86400, 'unixepoch'),
+                          strftime('%Y/%m/%d', created_at, 'unixepoch'),
+                          strftime('%Y/%m/%d', created_at + 86400, 'unixepoch')";
+
+pub struct ContinuationLog {
+    pub id: String,
+    pub provider: Option<String>,
+    pub native_id: Option<String>,
+    pub path: Option<String>,
+    pub archived: bool,
+    pub days: [String; 3],
+}
+
+/// Reads each predecessor and its chair log location in one query, oldest first.
+pub fn continuation_logs(
+    connection: &Connection,
+    leaf: &str,
+) -> rusqlite::Result<Vec<ContinuationLog>> {
+    let mut read = connection.prepare_cached(&format!(
+        "WITH RECURSIVE chain(id, cwd, predecessor) AS (
+           SELECT id, cwd, continuation_of FROM session WHERE id = ?1
+           UNION ALL
+           SELECT s.id, s.cwd, s.continuation_of FROM chain
+           JOIN session s ON s.id = chain.predecessor AND s.id < chain.id AND s.cwd = chain.cwd
+         )
+         SELECT s.id, s.continuation_of, s.chair_provider, s.chair_id, s.chair_log,
+                s.archived_at IS NOT NULL, {CHAIR_DAYS}
+         FROM chain JOIN session s ON s.id = chain.id ORDER BY chain.id",
+    ))?;
+    let mut rows = read.query([leaf])?;
+    let first = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
+
+    if let Some(missing) = first.get::<_, Option<String>>(1)? {
+        if missing < first.get::<_, String>(0)? {
+            connection.query_row(
+                "SELECT 1 FROM session WHERE id = ?1",
+                [&missing],
+                |_| Ok(()),
+            )?;
+        }
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+
+    let log = |row: &rusqlite::Row<'_>| -> rusqlite::Result<ContinuationLog> {
+        Ok(ContinuationLog {
+            id: row.get(0)?,
+            provider: row.get(2)?,
+            native_id: row.get(3)?,
+            path: row.get(4)?,
+            archived: row.get(5)?,
+            days: [row.get(6)?, row.get(7)?, row.get(8)?],
+        })
+    };
+
+    let mut chain = vec![log(first)?];
+    while let Some(row) = rows.next()? {
+        chain.push(log(row)?);
+    }
+    Ok(chain)
 }
 
 /// Links new session `new_id` as a branch of `old_id` in the same folder, with the chair session
@@ -217,12 +307,9 @@ pub fn sessions_with_archived(
     connection: &Connection,
     include_archived: bool,
 ) -> Result<Vec<SessionRow>, Box<dyn std::error::Error>> {
-    let mut statement = connection.prepare(
+    let mut statement = connection.prepare(&format!(
         "SELECT session.id, talk_mode, adapter, cwd, session.created_at,
-                chair_provider, chair_id, chair_log, continuation_of,
-                strftime('%Y/%m/%d', session.created_at - 86400, 'unixepoch'),
-                strftime('%Y/%m/%d', session.created_at, 'unixepoch'),
-                strftime('%Y/%m/%d', session.created_at + 86400, 'unixepoch'),
+                chair_provider, chair_id, chair_log, continuation_of, {CHAIR_DAYS},
                 (SELECT count(*) FROM agent WHERE session_id = session.id),
                 (SELECT count(*) FROM message WHERE session_id = session.id),
                 (SELECT max(created_at) FROM message WHERE session_id = session.id),
@@ -234,7 +321,7 @@ pub fn sessions_with_archived(
          ))
          ORDER BY archived_at IS NOT NULL, coalesce(archived_at, session.created_at) DESC,
                   session.id DESC",
-    )?;
+    ))?;
     let rows = statement.query_map((include_archived, ARCHIVED_SESSIONS_LIMIT), |row| {
         Ok(SessionRow {
             id: row.get(0)?,

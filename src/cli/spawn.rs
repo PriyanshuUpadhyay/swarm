@@ -8,6 +8,7 @@ pub(crate) struct SpawnOptions<'a> {
     pub(crate) account: Option<&'a swarm::profiles::Account>,
     pub(crate) command: &'a [String],
     pub(crate) runner: &'a swarm::config::Runner,
+    pub(crate) cli_default_model: bool,
 }
 
 pub(crate) fn add_agent(
@@ -55,7 +56,7 @@ pub(crate) fn register_spawned_pane(
     role: &str,
     provider: Option<&str>,
     vars: &[(&str, &str)],
-    launch: Option<(&swarm::config::Runner, Option<&str>)>,
+    launch: Option<swarm::store::LaunchMetadata<'_>>,
     line: impl FnOnce() -> Result<Option<String>, Box<dyn std::error::Error>>,
 ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
     // A chair whose pane ended takes its row back, as `launch --resume` does (ADR 0107). Any other
@@ -102,8 +103,8 @@ pub(crate) fn register_spawned_pane(
         }
     };
     swarm::store::set_pane(connection, session_id, agent_id, &pane)?;
-    if let Some((runner, account)) = launch {
-        swarm::store::set_launch(connection, session_id, agent_id, role, runner, account)?;
+    if let Some(launch) = launch {
+        swarm::store::set_launch_metadata(connection, session_id, agent_id, role, launch)?;
     }
     let ring = text.filter(|_| !runs);
     Ok((pane, ring))
@@ -340,6 +341,12 @@ pub(crate) fn spawn_agent(
         let line = script_line(root, &session_id, agent_id, &format!("{path}{child}"))?;
         Ok(Some(format!("{line}; {hook}")))
     };
+
+    let launch = swarm::store::LaunchMetadata {
+        runner: options.runner,
+        account: options.account.map(|account| account.name.as_str()),
+        cli_default_model: options.cli_default_model,
+    };
     let (pane, ring) = register_spawned_pane(
         connection,
         &adapter,
@@ -348,12 +355,10 @@ pub(crate) fn spawn_agent(
         role,
         Some(provider.id()),
         &vars,
-        Some((
-            options.runner,
-            options.account.map(|account| account.name.as_str()),
-        )),
+        Some(launch),
         line,
     )?;
+
     if let Some(text) = ring {
         // The leading space keeps the line out of the pane shell's history when the shell ignores
         // such lines (zsh `hist_ignore_space`, bash `ignorespace`, fish by default).

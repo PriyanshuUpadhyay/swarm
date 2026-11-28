@@ -318,8 +318,9 @@ export function ComposerBox({ app, composer, lockDraft }: { app: App; composer: 
           )}
         </div>
       </div>
-      <div role="status" className="flex min-h-5 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
+      <div role="status" className="flex min-h-9 items-center gap-2 px-1 pt-1 text-xs text-muted-foreground" data-testid="composer-status">
         <span className="flex-1">{chair.disabled ?? caption}</span>
+        <RunChip.Status app={app} sessionId={sessionId} chair={chair} />
       </div>
     </div>
   );

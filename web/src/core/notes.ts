@@ -4,11 +4,12 @@
 
 import { readStore, writeStore } from "./app-types";
 import type { App } from "./app";
+import { scopedRowId } from "./transcript";
 
 const KINDS = ["text", "item", "reply"] as const;
 /** `rowId` only finds the row on screen; the agent never sees it. `quote` is the full text.
  *  `agent` is the child agent whose reply the note marks; absent, the chair's own reply. */
-export type Note = { id: number; kind: (typeof KINDS)[number]; rowId: string; quote: string; text: string; at: number; agent?: string };
+export type Note = { id: number; kind: (typeof KINDS)[number]; rowId: string; quote: string; text: string; at: number; agent?: string; origin?: string };
 
 /** The saved drafts: this key holds `savedNotes` of every chat with notes. */
 export const STORE_KEY = "swarm.notes.v1";
@@ -22,7 +23,8 @@ const isNote = (n: unknown): n is Note => {
   const r = n as Record<string, unknown>;
   return typeof r.id === "number" && (KINDS as readonly unknown[]).includes(r.kind) && typeof r.rowId === "string"
     && typeof r.quote === "string" && typeof r.text === "string" && typeof r.at === "number"
-    && (r.agent === undefined || typeof r.agent === "string");
+    && (r.agent === undefined || typeof r.agent === "string")
+    && (r.origin === undefined || typeof r.origin === "string");
 };
 
 /** The saved drafts; a value of any other shape gives none. */
@@ -63,6 +65,7 @@ export class Notes {
   private chats: Map<string, Note[]>;
   private seq: number;
   private saveRefused = false;
+  private movedFrom = new Map<string, Set<string>>();
   private listeners = new Set<() => void>();
   /** The card whose note box takes the caret once it shows. */
   private focusId: number | null = null;
@@ -92,10 +95,70 @@ export class Notes {
     const notes = this.list(chat);
     if (notes.length) saved.set(chat, [...notes]);
     else saved.delete(chat);
+    this.persist(saved, [chat], "The browser did not save the notes, maybe because its storage is full. They stay in this tab until it closes.");
+  }
+
+  private persist(saved: Map<string, Note[]>, targets: readonly string[], refusal: string) {
+    const sources = targets.flatMap((chat) => [...(this.movedFrom.get(chat) ?? [])]);
+    for (const source of sources) saved.delete(source);
     const chats = [...saved];
     const ok = writeStore(STORE_KEY, chats.length ? savedNotes(chats) : "");
-    if (!ok && !this.saveRefused) this.app.notice("The browser did not save the notes, maybe because its storage is full. They stay in this tab until it closes.", true);
+    if (ok) {
+      for (const source of sources) this.chats.delete(source);
+      for (const chat of targets) this.movedFrom.delete(chat);
+    } else if (!this.saveRefused) this.app.notice(refusal, true);
     this.saveRefused = !ok;
+  }
+
+  continueNotes(links: readonly (readonly [string, string])[]) {
+    if (!links.length) return;
+    const saved = readNotes();
+    const targets: string[] = [];
+    for (const [from, to] of links) {
+      if (this.moveNotes(saved, from, to)) targets.push(to);
+    }
+
+    if (!targets.length) return;
+    this.persist(saved, targets, "The browser could not save the moved notes. The original notes were not deleted.");
+    this.changed();
+  }
+
+  private moveNotes(saved: Map<string, Note[]>, from: string, to: string) {
+    const earlier = this.movedFrom.get(from);
+    const old = earlier ? this.list(from) : saved.get(from) ?? (this.saveRefused ? this.list(from) : NO_NOTES);
+    const next = this.movedFrom.has(to) ? this.list(to) : saved.get(to) ?? this.list(to);
+    if (!old.length && !earlier) {
+      if (saved.has(to)) this.chats.set(to, [...next]);
+      return false;
+    }
+
+    const ids = new Set(next.map((note) => note.id));
+    const origins = new Set(next.map((note) => note.origin));
+    this.seq = Math.max(this.seq, ...old.map((note) => note.id), ...ids);
+    const moved = old.flatMap((note) => {
+      const origin = note.origin ?? `${from}:${note.id}`;
+      if (origins.has(origin)) return [];
+      return [{
+        ...note,
+        origin,
+        id: ids.has(note.id) ? ++this.seq : note.id,
+        rowId: scopedRowId(note.rowId) ? note.rowId : `${from}:${note.rowId}`,
+      }];
+    });
+
+    const merged = [...moved, ...next];
+    saved.delete(from);
+    if (merged.length) saved.set(to, merged);
+    else saved.delete(to);
+    this.chats.set(to, merged);
+
+    // Keep the retirement until a save, even if the destination notes are removed first.
+    const sources = this.movedFrom.get(to) ?? new Set<string>();
+    sources.add(from);
+    for (const source of earlier ?? []) sources.add(source);
+    this.movedFrom.delete(from);
+    this.movedFrom.set(to, sources);
+    return true;
   }
 
   /** Where the notes of chat `id` live: a child's column keeps them in its main chat, under

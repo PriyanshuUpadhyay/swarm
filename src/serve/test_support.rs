@@ -14,6 +14,27 @@ pub(super) fn client(keys: &[(&str, u64)]) -> Client {
     }
 }
 
+pub(super) fn new_test_session(db: &rusqlite::Connection, chair: Option<(&str, &str)>) -> String {
+    swarm::store::create_session(
+        db,
+        "lane",
+        Path::new(env!("CARGO_MANIFEST_DIR")),
+        chair,
+        Some("tmux-swarm"),
+    )
+    .unwrap()
+}
+
+pub(super) fn new_linked_test_session(
+    db: &rusqlite::Connection,
+    predecessor: &str,
+    chair: Option<(&str, &str)>,
+) -> String {
+    let leaf = new_test_session(db, chair);
+    swarm::store::continue_session(db, &leaf, predecessor).unwrap();
+    leaf
+}
+
 pub(super) struct Fixture {
     pub(super) app: App,
     pub(super) dir: PathBuf,
@@ -128,14 +149,7 @@ impl Fixture {
         .unwrap();
         std::fs::write(root.join("swarm-home"), "swarm\n").unwrap();
         let connection = swarm::store::open(&root.join("swarm.db")).unwrap();
-        let session = swarm::store::create_session(
-            &connection,
-            "lane",
-            Path::new(env!("CARGO_MANIFEST_DIR")),
-            Some(("claude", "synthetic")),
-            Some("tmux-swarm"),
-        )
-        .unwrap();
+        let session = new_test_session(&connection, Some(("claude", "synthetic")));
         swarm::store::set_chair_log(&connection, &session, &log).unwrap();
         swarm::store::add_agent(&connection, &session, "worker", "chat").unwrap();
         let (actions, action_queue) = mpsc::channel(64);
@@ -342,11 +356,12 @@ pub(super) async fn row_page(
 ) -> Result<Value, ApiError> {
     transcript_rows(
         State(fixture.app.clone()),
-        Query(TranscriptQuery {
+        Query(RowsQuery {
             session: fixture.session.clone(),
             agent: "chair".into(),
             tail,
             before,
+            older_cursor: None,
         }),
     )
     .await

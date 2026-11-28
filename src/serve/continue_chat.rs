@@ -2,12 +2,15 @@
 
 use super::*;
 
+mod carry;
+use carry::prepare_carry;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ContinueChat {
     pub(super) old_session: String,
     pub(super) provider: String,
-    pub(super) model: String,
+    pub(super) model: Option<String>,
     pub(super) account: Option<String>,
     /// Absent keeps the profile's effort for that CLI.
     pub(super) effort: Option<String>,
@@ -20,10 +23,12 @@ pub(super) struct ContinueChat {
 pub(super) enum Carry {
     /// The same chat and CLI session, on the new run.
     Resume,
-    /// A new chat that gets this chat's summary.
+    /// Another CLI gets the whole history as a file.
     #[default]
+    File,
+    /// Another CLI gets an explicit summary.
     Summary,
-    /// A new chat with nothing from this one.
+    /// Another CLI gets no carried context.
     Clean,
 }
 #[derive(Deserialize)]
@@ -39,15 +44,19 @@ pub(super) fn register_continue(app: &App, body: &ContinueChat) -> Result<(), Ap
     if swarm::providers::Provider::parse(&body.provider).is_none() {
         return Err(error(StatusCode::BAD_REQUEST, "unknown provider"));
     }
-    if !swarm::config::valid_name(&body.model)
-        || [&body.account, &body.effort]
-            .into_iter()
-            .flatten()
-            .any(|value| !swarm::config::valid_name(value))
-    {
-        return Err(error(StatusCode::BAD_REQUEST, "invalid launch option"));
+    if body.carry == Carry::Resume && body.model.is_none() {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "a native model switch needs a model",
+        ));
     }
-    action_session(app, &body.old_session)?;
+
+    validate_launch_options([
+        body.model.as_deref(),
+        body.account.as_deref(),
+        body.effort.as_deref(),
+    ])?;
+    current_source(app, &body.old_session)?;
     let mut runs = app.handoffs.lock().unwrap();
     if runs.contains_key(&body.old_session) {
         return Err(error(
@@ -138,16 +147,22 @@ pub(super) fn continue_phase(app: &App, old: &str, phase: &'static str) -> Resul
     Ok(())
 }
 pub(super) async fn handoff_rows(app: &App, old: &str) -> Result<Vec<Row>, ApiError> {
-    let log = resolve_log(&app.root, old, "chair").map_err(|_| {
-        error(
-            StatusCode::CONFLICT,
-            "The current chat has no readable transcript to carry forward",
-        )
-    })?;
+    let log = resolve_log(&app.root, old, "chair").map_err(|_| unreadable_handoff_log())?;
+    read_handoff_log(app, old, &log).await
+}
+
+fn unreadable_handoff_log() -> ApiError {
+    error(
+        StatusCode::CONFLICT,
+        "The current chat has no readable transcript to carry forward",
+    )
+}
+
+async fn read_handoff_log(app: &App, old: &str, log: &Log) -> Result<Vec<Row>, ApiError> {
     let end = row_offsets(&log.path, 1, None)
         .map_err(|e| error(StatusCode::CONFLICT, &e.to_string()))?
         .1;
-    let state = read_row_window(app, &format!("{old}:chair"), &log, 0, end).await?;
+    let state = read_row_window(app, &format!("{old}:chair"), log, 0, end).await?;
     Ok(view::rows(
         &state.records.values().cloned().collect::<Vec<_>>(),
         false,
@@ -160,9 +175,7 @@ pub(super) async fn chair_agent(app: &App, call: &CliCall) -> Result<Value, ApiE
     let mut read = call.args(&["agents", "--json"]);
     // An imported chat has no adapter until its first pane. A chat on another adapter keeps it, so
     // the read lists that adapter's panes and not the app's own tmux server.
-    if read.adapter.is_empty() {
-        read.adapter = "tmux-swarm".into();
-    }
+    read.default_adapter();
     let output = run_cli(app, read, None).await?;
     let agents: Value = serde_json::from_str(&output)
         .map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid agents JSON from swarm"))?;
@@ -191,7 +204,7 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     if provider.as_deref() != Some(body.provider.as_str()) {
         return Err(error(
             StatusCode::CONFLICT,
-            "Only the chat's own CLI can keep this chat. Choose Summary or Start clean.",
+            "Native resume needs the chat's own CLI.",
         ));
     }
     // A Codex or AGY chat learns its session id from its first log; before that a resume has
@@ -214,17 +227,7 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     }
     let closed = chair["alive"] == true;
     if closed {
-        // A chat before its first turn has no log yet, and so no reply that runs.
-        if chair["state"] == "working"
-            || handoff_rows(app, old)
-                .await
-                .is_ok_and(|rows| view::is_active(&rows))
-        {
-            return Err(error(
-                StatusCode::CONFLICT,
-                "Wait for the current reply to finish, or stop it before switching model.",
-            ));
-        }
+        require_idle(app, old, &chair).await?;
         continue_phase(app, old, "starting")?;
         run_cli(app, call.args(&["close", "--now", "orchestrator"]), None).await?;
     } else {
@@ -239,21 +242,11 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     // An imported chat has no adapter until its first pane.
     call.adapter = "tmux-swarm".into();
     let launch = |model: Option<&str>, effort: Option<&str>, account: Option<&str>| {
-        let mut args = vec!["launch", "orchestrator", "chat", "--resume"];
-        for (flag, value) in [
-            ("--model", model),
-            ("--effort", effort),
-            ("--account", account),
-        ] {
-            if let Some(value) = value {
-                args.extend([flag, value]);
-            }
-        }
-        run_cli(app, call.args(&args), None)
+        run_cli(app, resume_launch(&call, model, effort, account), None)
     };
-    if let Err(refused) = launch(Some(&body.model), body.effort.as_deref(), account).await {
+    if let Err(refused) = launch(body.model.as_deref(), body.effort.as_deref(), account).await {
         // A chair closed by this switch starts again on its old run, so the chat keeps a pane.
-        // With no old model known, launch takes the role's runner, never the refused pick.
+        // With no old model known, launch uses the role runner or the CLI's own default.
         if closed
             && let Err(again) = launch(
                 chair["model"].as_str(),
@@ -312,85 +305,38 @@ pub(super) async fn execute_continue_timed(
     let result = async {
         let mut cancelled = app.handoffs.lock().unwrap().get(old).ok_or_else(|| error(StatusCode::CONFLICT, "model switch cancelled"))?.cancel.subscribe();
         if *cancelled.borrow() { return Err(error(StatusCode::CONFLICT, "model switch cancelled")); }
-        if body.carry == Carry::Resume { return resume_switch(app, &body).await; }
-        let prepare = async {
-            continue_phase(app, old, "preparing")?;
-            // Clean carries nothing, so it needs neither the log nor the chair.
-            if body.carry == Carry::Clean {
-                return Ok((action_session(app, old)?, String::new()));
-            }
-            let rows = handoff_rows(app, old).await?;
-            let call = action_session(app, old)?;
-            let output = run_cli(app, call.args(&["agents", "--json"]), None).await?;
-            let agents: Value = serde_json::from_str(&output).map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid agents JSON from swarm"))?;
-            let agents = agents["agents"].as_array().ok_or_else(|| error(StatusCode::BAD_GATEWAY, "missing agents list from swarm"))?;
-            let alive = agents.iter().any(|a| a["id"] == "orchestrator" && a["alive"] == true);
-            if alive && view::is_active(&rows) {
-                return Err(error(StatusCode::CONFLICT, "Wait for the current reply to finish, or stop it before switching model."));
-            }
-            if alive {
-                continue_phase(app, old, "summarizing")?;
-                run_cli(app, call.args(&["type", "orchestrator"]), Some(handoff::REQUEST.into())).await?;
-                let deadline = tokio::time::Instant::now() + summary_wait;
-                loop {
-                    let summary = tokio::time::timeout_at(deadline, async {
-                        tokio::time::sleep(poll).await;
-                        handoff_rows(app, old).await
-                    }).await;
-                    match summary {
-                        Ok(Ok(new_rows)) => match handoff::summary_turn(&new_rows, rows.len()) {
-                            Some(Some(context)) => return Ok((call, handoff::first_message(&context, true))),
-                            Some(None) => break,
-                            None => {}
-                        },
-                        Ok(Err(_)) => {}, // Swift keeps waiting if a summary poll cannot read the log.
-                        Err(_) => break,
-                    }
-                }
-            }
-            // No summary came, for example from a spent account, so the new agent gets the whole
-            // chat. Without a warm cache a summary turn costs the same full read.
-            let text = handoff::chat_text(&rows).ok_or_else(|| error(StatusCode::CONFLICT, "The current chat has no messages to carry forward"))?;
-            if text.chars().count() <= handoff::INLINE_LIMIT {
-                return Ok((call, handoff::first_message(&text, false)));
-            }
-            let path = chat_file(app, old, text).await?;
-            Ok((call, handoff::file_message(&path.to_string_lossy())))
-        };
-        let (call, first) = tokio::select! {
+        let mut call = current_source(app, old)?;
+
+        call.default_adapter();
+        if body.carry == Carry::Resume {
+            let resumed = resume_switch(app, &body).await?;
+            remember_started_model(app, old).await;
+            return Ok(resumed);
+        }
+        let first = tokio::select! {
             biased;
             _ = cancelled.changed() => return Err(error(StatusCode::CONFLICT, "model switch cancelled")),
-            prepared = prepare => prepared?,
+            prepared = prepare_carry(app, &body, &call, summary_wait, poll) => prepared?,
         };
         continue_phase(app, old, "starting")?;
-        let started = new_chat_now(app, NewChat { cwd: call.cwd.to_string_lossy().into_owned(), role: None, provider: Some(body.provider.clone()), model: Some(body.model.clone()), account: body.account.clone(), effort: body.effort.clone(), prompt: None, place: Some(Place::Here) }).await?;
+        let started = new_chat_now(app, NewChat { cwd: call.cwd.to_string_lossy().into_owned(), role: None, provider: Some(body.provider.clone()), model: body.model.clone(), account: body.account.clone(), effort: body.effort.clone(), prompt: None, place: Some(Place::Here) }).await?;
         let session = started["session"].as_str().unwrap();
-        if body.carry == Carry::Clean {
-            run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
-            return Ok(started);
-        }
-        let new_call = CliCall { args: vec![], cwd: call.cwd.clone(), session: Some(session.into()), adapter: "tmux-swarm".into() };
-        continue_phase(app, old, "waiting")?;
-        let deadline = tokio::time::Instant::now() + ready_wait;
-        let ready = tokio::time::timeout_at(deadline, async {
-            loop {
-                tokio::time::sleep(poll).await;
-                if body.provider == "agy" {
-                    let output = run_cli(app, new_call.args(&["agents", "--json"]), None).await?;
-                    if serde_json::from_str(&output).is_ok_and(|agents| handoff::agy_ready(&agents)) { return Ok::<_, ApiError>(()); }
-                    continue;
-                }
-                let output = run_cli(app, call.args(&["sessions", "--json"]), None).await?;
-                let listing: Value = serde_json::from_str(&output).map_err(|_| error(StatusCode::BAD_GATEWAY, "invalid sessions JSON from swarm"))?;
-                let sessions = listing["sessions"].as_array().ok_or_else(|| error(StatusCode::BAD_GATEWAY, "missing sessions list from swarm"))?;
-                if sessions.iter().any(|s| s["id"] == session && handoff::ready(s, &body.provider)) { return Ok::<_, ApiError>(()); }
+        let next = CliCall { args: vec![], cwd: call.cwd.clone(), session: Some(session.into()), adapter: "tmux-swarm".into() };
+        let done = async {
+            if let Some(first) = first {
+                continue_phase(app, old, "waiting")?;
+                wait_for_carry(app, &next, session, &body.provider, ready_wait, poll).await?;
+                continue_phase(app, old, "delivering")?;
+                run_cli(app, next.args(&["type", "orchestrator"]), Some(first)).await?;
             }
-        }).await;
-        ready.map_err(|_| error(StatusCode::GATEWAY_TIMEOUT, "The new agent did not become ready to receive the summary"))??;
-        continue_phase(app, old, "delivering")?;
-        run_cli(app, new_call.args(&["type", "orchestrator"]), Some(first)).await?;
-        run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
-        Ok(started)
+            run_cli(app, call.args(&["session", "continue", session, old]), None).await?;
+            remember_started_model(app, session).await;
+            Ok(())
+        }.await;
+        if done.is_err() {
+            discard_handoff(app, &next, session).await;
+        }
+        done.map(|()| started)
     }.await;
     let (phase, session, message) = match &result {
         Ok(value) => (
@@ -411,6 +357,68 @@ pub(super) async fn execute_continue_timed(
     app.hub.lock().unwrap().publish(Frame::new("handoff", json!({"old_session":old,"phase":phase,"canCancel":false,"session":session,"error":message}), None));
     app.handoffs.lock().unwrap().remove(old);
     result
+}
+
+async fn require_idle(app: &App, old: &str, chair: &Value) -> Result<(), ApiError> {
+    // Only a chat with no log yet can skip the transcript check.
+    let active = if chair["state"] == "working" {
+        true
+    } else if let Some(log) = resolve_log_if_present(&app.root, old, "chair")? {
+        view::is_active(&read_handoff_log(app, old, &log).await?)
+    } else {
+        false
+    };
+
+    if active {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "Wait for the current reply to finish, or stop it before switching model.",
+        ));
+    }
+    Ok(())
+}
+
+async fn wait_for_carry(
+    app: &App,
+    next: &CliCall,
+    session: &str,
+    provider: &str,
+    wait: Duration,
+    poll: Duration,
+) -> Result<(), ApiError> {
+    tokio::time::timeout(wait, async {
+        loop {
+            tokio::time::sleep(poll).await;
+            let agy = provider == "agy";
+            let cmd = if agy { "agents" } else { "sessions" };
+
+            let output = run_cli(app, next.args(&[cmd, "--json"]), None).await?;
+            let listing: Value = serde_json::from_str(&output).map_err(|_| {
+                error(
+                    StatusCode::BAD_GATEWAY,
+                    "invalid readiness listing from swarm",
+                )
+            })?;
+            let ready = if agy {
+                handoff::agy_ready(&listing)
+            } else {
+                listing[cmd].as_array().is_some_and(|rows| {
+                    rows.iter()
+                        .any(|s| s["id"] == session && handoff::ready(s, provider))
+                })
+            };
+            if ready {
+                return Ok(());
+            }
+        }
+    })
+    .await
+    .map_err(|_| {
+        error(
+            StatusCode::GATEWAY_TIMEOUT,
+            "The new agent did not become ready for the handoff",
+        )
+    })?
 }
 
 /// Saves the chat `text` of session `old` as `<swarm home>/handoffs/<old>.md`, mode 0600.
