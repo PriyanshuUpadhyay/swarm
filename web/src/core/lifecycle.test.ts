@@ -226,6 +226,7 @@ describe("automatic starts", () => {
     }));
     app.tree = {
       version: 1, revision: "test", view: "workspaces", sections: [], selectedRow: null,
+      chats: [], projects: [], workspaces: {},
       archivedStatus: null, choicesError: null, prefs: { newChatModel: { provider: "agy", model: "model-a" } },
     };
 
