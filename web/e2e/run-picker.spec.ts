@@ -230,7 +230,7 @@ test("a busy pick waits for a fresh Switch now after Stop", async ({ page: tab }
   await expect(picker.getByRole("status")).toContainText("model-b");
   const stop = picker.getByRole("button", { name: "Stop", exact: true });
   await expect(stop).toBeVisible();
-  await expect(tab.getByTestId("composer-status").getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect(tab.getByTestId("chat-status-line").getByTestId("stop")).toBeVisible();
   await shots(tab, 7, "busy-picker");
   const transcript = tab.getByTestId("transcript");
   const height = (await transcript.boundingBox())!.height;
