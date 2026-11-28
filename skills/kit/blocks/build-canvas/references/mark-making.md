@@ -34,7 +34,7 @@ marks:
 4. **Surface.** Paper, grain, misregistration, and ink voids, multiplied over the frame.
 5. **Editorial.** Captions and titles, kept out of the texture passes.
 
-Cache passes 2 and 4 per state. Do not redraw thousands of dots on every frame when nothing moved.
+Cache passes 2 and 4 per state so static dots are reused.
 
 Draw the style frames in this order with the real drawing code. When a character recurs, add a
 model sheet that shows its poses and expressions.
@@ -42,11 +42,10 @@ model sheet that shows its poses and expressions.
 ## Detail passes
 
 After the animatic, bring every scene up to the approved style frames. Add one system at a time,
-always through the look tokens, in this order: mass stacks, line hierarchy, tone marks, depth
+through the look tokens, in this order: mass stacks, line hierarchy, tone marks, depth
 layers and masks, surface texture, secondary motion and boil, lettering, and final colour.
 
-Re-render the same decisive frames after each pass, so a regression shows. Do not hide a mismatch
-under texture.
+Re-render the same decisive frames after each pass, so a regression shows. Fix a visible mismatch before adding texture.
 
 ## The mass stack
 
@@ -90,13 +89,12 @@ and canvas seams make a frame rich at a low cost.
 - **Colour.** Use the darkest palette role (navy, brown, or a darker tint of the fill). Use pure black
   only when the reference has it.
 - **Swell.** Width along the stroke is `w * (0.2 + 0.8 * Math.sin(Math.PI * u) ** 0.7)`, tapered over
-  the first and last 22 %. Never use one width for a whole contour. Build the stroke as a filled
+  the first and last 22 %. Build the stroke as a filled
   outline (`perfect-freehand` `getStroke`), or stroke short segments with a round cap.
 - **Hierarchy.** Silhouette 1, inner edges about 0.5, marks about 0.25. A frame with only silhouette
   lines reads as vector art. Add thin interior strokes, some broken, and a few hatch or speed strokes
   that cross a mass. Near objects are about 2.5 times
-  thicker than far ones. Under a camera zoom, scale the width by `zoom ** -0.55` so close-ups do not
-  get fat lines.
+  thicker than far ones. Under a camera zoom, scale the width by `zoom ** -0.55` to keep line weight under control in close-ups.
 - **Wobble.** Move each point along the line's normal by two summed sines with seeded phases.
   Sample every 6 px, with an amplitude of 0.6 px for clean ink and 1-2.5 px for a sketch.
 
@@ -120,7 +118,7 @@ const wob = s => amp * (0.72 * Math.sin(s * f1 + p1) + 0.28 * Math.sin(s * f2 + 
 - **Ordered dither.** Index a Bayer matrix by screen pixel, so the pattern stays fixed on screen.
 - **"Halftone only in shadow"** is a tone threshold, not a choice for each shape.
 
-Set a mark budget. More marks do not add quality, so put them where the form turns:
+Set a mark budget. Put marks where the form turns:
 
 - Hatch only the shadow edge, with 3-6 cuts. Hatching on every surface reads as fur or rain.
 - Use at most two plates in one area, and only one of them as a tint.

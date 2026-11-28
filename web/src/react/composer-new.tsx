@@ -186,7 +186,7 @@ function NewChatComposer({ app, initial, place: firstPlace, text: firstText, run
     setMenu(null);
   };
 
-  const ready = placeReady(place) && !sending && !hasPendingImage(text);
+  const ready = placeReady(place) && !(target.worktreeOnly && place.kind === "here") && !sending && !hasPendingImage(text);
   const send = async () => {
     // A second ⌘Enter while the first one posts does nothing.
     if (sending || hasPendingImage(text)) return;

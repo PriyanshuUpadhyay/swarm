@@ -21,7 +21,8 @@ ring for the best account's fullest limit; while agents run, the wings add the w
 model tags or "needs you", and at 95% the ring's number (ADR 0114). The open card shows the same
 mascot top left with its credit on hover, the inbox, the active chats (a click opens one), the running
 agents, and one table with a column per limit
-kind. When a chat converges, the HUD plays the system sound "Glass" while Settings' "Play a sound" is on.
+kind. When a chat converges or an agent waits on the owner, the HUD plays the system sound "Glass" while
+Settings' "Play a sound" is on. While Swarm.app is the front app, only a wait drops a popup.
 A Codex account row shows its usage limit resets under its name, or in the name's tooltip when
 more than 5 rows make each row one line; past the 660 pt cap the rows scroll. Swarm's own mascot, its
 bee, 17 open-licence guests and any pets installed for Codex (`$CODEX_HOME/pets`, by default

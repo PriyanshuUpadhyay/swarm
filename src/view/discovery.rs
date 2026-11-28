@@ -4,13 +4,12 @@ pub use titles::{last_reply, read_title};
 
 use super::{
     choices::OwnerChoices,
-    fields::{self, WorkspaceFields},
     tree::{self, ProjectFact, WorkspaceFact},
 };
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::Read,
+    io::{self, Read},
     path::Path,
     process::{Command, Output, Stdio},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -33,7 +32,39 @@ pub fn run(program: &str, args: &[&str], seconds: u64) -> Option<Vec<u8>> {
         .map(|output| output.stdout)
 }
 
+#[derive(Debug)]
+pub struct DeadlineExpired;
+
+pub(super) fn run_before(
+    program: &str,
+    args: &[&str],
+    deadline: Instant,
+) -> Result<Option<Vec<u8>>, DeadlineExpired> {
+    if command_seconds_left(deadline).is_none() {
+        return Err(DeadlineExpired);
+    }
+    let mut command = Command::new(program);
+    command.args(args);
+    match run_command_deadline(&mut command, || deadline) {
+        Ok(output) if output.status.success() => Ok(Some(output.stdout)),
+        Err(error) if error.kind() == io::ErrorKind::TimedOut => Err(DeadlineExpired),
+        _ => Ok(None),
+    }
+}
+
 pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String> {
+    run_command_deadline(command, || Instant::now() + Duration::from_secs(seconds))
+        .map_err(|error| error.to_string())
+}
+
+fn timeout_error() -> io::Error {
+    io::Error::new(io::ErrorKind::TimedOut, "command timed out")
+}
+
+fn run_command_deadline(
+    command: &mut Command,
+    deadline: impl FnOnce() -> Instant,
+) -> io::Result<Output> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -43,11 +74,13 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    let mut child = command.spawn().map_err(|e| e.to_string())?;
+
+    let mut child = command.spawn()?;
     let mut stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let (output, receive) = std::sync::mpsc::channel();
     let out_sender = output.clone();
+
     let out_read = std::thread::spawn(move || {
         let mut bytes = Vec::new();
         let _ = out_sender.send((true, stdout.read_to_end(&mut bytes).map(|_| bytes)));
@@ -56,7 +89,8 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         let mut bytes = Vec::new();
         let _ = output.send((false, stderr.read_to_end(&mut bytes).map(|_| bytes)));
     });
-    let deadline = Instant::now() + Duration::from_secs(seconds);
+
+    let deadline = deadline();
     let pid = child.id();
     let (finished, completion) = std::sync::mpsc::channel();
     let wait = std::thread::spawn(move || {
@@ -64,6 +98,7 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         let _ = finished.send(());
         (child, status)
     });
+
     let timed_out = completion
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
         .is_err();
@@ -71,15 +106,14 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
         stop_group(pid);
     }
     let (mut child, status) = wait.join().expect("command wait thread");
-    let status = if timed_out || status.is_err() {
+    if timed_out || status.is_err() {
         stop(&mut child);
-        Err("command timed out or could not be read".to_owned())
-    } else {
-        status.map_err(|e| e.to_string())
-    };
+    }
+
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let mut failure = None;
+
     for _ in 0..2 {
         match receive.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok((out, Ok(bytes))) => {
@@ -89,15 +123,23 @@ pub fn run_command(command: &mut Command, seconds: u64) -> Result<Output, String
                     stderr = bytes;
                 }
             }
+
             other => {
                 stop(&mut child);
-                failure = Some(format!("command output failed: {other:?}"));
+                failure = Some(match other {
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => timeout_error(),
+                    other => io::Error::other(format!("command output failed: {other:?}")),
+                });
                 break;
             }
         }
     }
+
     let _ = out_read.join();
     let _ = err_read.join();
+    if timed_out {
+        return Err(timeout_error());
+    }
     if let Some(error) = failure {
         return Err(error);
     }
@@ -226,9 +268,6 @@ pub struct Discovery {
     catalog: Vec<ProjectFact>,
     /// Per session: the log, its title, when it was read, and the log's mtime then.
     titles: BTreeMap<String, (String, Option<String>, i64, Option<u128>)>,
-    pub fields: BTreeMap<String, WorkspaceFields>,
-    dirty_at: BTreeMap<String, i64>,
-    github_at: BTreeMap<String, i64>,
 }
 impl Discovery {
     pub fn forget_catalog(&mut self) {
@@ -370,67 +409,22 @@ impl Discovery {
             }
         }
     }
-
-    /// Reserve before a read, including failures. The coordinator owns the cache.
-    pub fn refresh_fields(&mut self, tree: &tree::Tree, owner: &OwnerChoices, at: i64) -> bool {
-        self.refresh_fields_with(
-            tree,
-            owner,
-            at,
-            |path| {
-                run("git", &["-C", path, "status", "--porcelain=v1", "-z"], 5)
-                    .map(|b| dirty_count(&b))
-            },
-            super::github::lookup,
-        )
-    }
-
-    pub fn refresh_fields_with(
-        &mut self,
-        tree: &tree::Tree,
-        owner: &OwnerChoices,
-        at: i64,
-        mut inspect: impl FnMut(&str) -> Option<usize>,
-        mut lookup: impl FnMut(&str) -> Option<Value>,
-    ) -> bool {
-        let dirty: BTreeSet<_> = fields::requested_paths("dirty", tree, &owner.fields)
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-        let github: BTreeSet<_> = fields::requested_paths("pr", tree, &owner.fields)
-            .into_iter()
-            .chain(fields::requested_paths("ci", tree, &owner.fields))
-            .map(str::to_owned)
-            .collect();
-        let previous = self.fields.clone();
-        for path in dirty.union(&github) {
-            let read_dirty =
-                dirty.contains(path) && self.dirty_at.get(path).is_none_or(|last| at - last >= 10);
-            let read_github = github.contains(path)
-                && self.github_at.get(path).is_none_or(|last| at - last >= 120);
-            if read_dirty {
-                self.dirty_at.insert(path.clone(), at);
-            }
-            if read_github {
-                self.github_at.insert(path.clone(), at);
-            }
-            if read_dirty {
-                self.fields.entry(path.clone()).or_default().dirty_count = inspect(path);
-            }
-            if read_github {
-                let request = lookup(path);
-                let fields = request
-                    .as_ref()
-                    .map(fields::github_fields)
-                    .unwrap_or_default();
-                let current = self.fields.entry(path.clone()).or_default();
-                current.pr = fields.pr;
-                current.ci = fields.ci;
-            }
-        }
-        previous != self.fields
-    }
 }
+pub(super) fn command_seconds_left(deadline: Instant) -> Option<u64> {
+    let seconds = deadline.saturating_duration_since(Instant::now()).as_secs();
+    (seconds > 0).then_some(seconds)
+}
+
+pub(super) fn workspace_dirty(path: &str, deadline: Instant) -> Option<usize> {
+    let seconds = command_seconds_left(deadline)?;
+    run(
+        "git",
+        &["-C", path, "status", "--porcelain=v1", "-z"],
+        seconds.min(5),
+    )
+    .map(|b| dirty_count(&b))
+}
+
 pub fn dirty_count(bytes: &[u8]) -> usize {
     let mut paths = BTreeSet::new();
     let mut chunks = bytes.split(|b| *b == 0);

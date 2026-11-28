@@ -1,6 +1,6 @@
 ---
 name: tool-trial
-description: "Pick a tool, library, or service by trying at least three on this machine on the same real task, and record time and result. Use when a question or a design picks a tool for later use."
+description: "Compare at least three options on the same real task; record time and results. Use when research or design picks a tool, library, or service."
 license: MIT
 metadata:
   kind: step

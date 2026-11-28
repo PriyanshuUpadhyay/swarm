@@ -475,7 +475,7 @@ pub fn view(
                     if blocked.is_empty() {
                         String::new()
                     } else {
-                        format!(" · {} blocked", blocked.len())
+                        format!(" · {} waiting", blocked.len())
                     }
                 ),
             }),

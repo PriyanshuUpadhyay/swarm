@@ -73,6 +73,15 @@ fn user_content(value: &Value) -> Option<&Value> {
     }
 }
 
+/// A word that is only a chat id, such as `01a1ed5a-1fca-7e20-a46f-5f96b0d75217`.
+fn is_uuid(word: &str) -> bool {
+    word.len() == 36
+        && word.bytes().enumerate().all(|(i, b)| match i {
+            8 | 13 | 18 | 23 => b == b'-',
+            _ => b.is_ascii_hexdigit(),
+        })
+}
+
 fn first_message(path: &str) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let mut bytes = Vec::new();
@@ -92,19 +101,45 @@ fn first_message(path: &str) -> Option<String> {
         let Some(text) = text.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()) else {
             continue;
         };
-        if text.starts_with('<') || text.starts_with("# AGENTS.md") {
+        // Pi writes `/skill:<name> <words>` as the skill's text in a `<skill>` block, then the
+        // owner's words.
+        let skill_words = text
+            .starts_with("<skill ")
+            .then(|| text.split_once("</skill>"))
+            .flatten()
+            .map(|(_, words)| words.trim());
+        let text = match skill_words {
+            Some(words) => words,
+            None if text.starts_with('<') => continue,
+            None => text.as_str(),
+        };
+        // `swarm: new message` is the wake prompt of a swarm pane, not the owner's words.
+        if text.starts_with("# AGENTS.md") || text.starts_with("swarm: new message") {
             continue;
         }
         // A pasted image is a path to a file in uploads (images.ts), which says nothing as a title.
-        let title = text.lines().find_map(|line| {
-            let words: Vec<_> = line
-                .split_whitespace()
-                .filter(|w| !(w.starts_with('/') && w.contains("/uploads/")))
-                .collect();
-            (!words.is_empty()).then(|| words.join(" "))
+        let mut lines = text
+            .lines()
+            .map(|line| {
+                line.split_whitespace()
+                    .filter(|w| !(w.starts_with('/') && w.contains("/uploads/")))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|words| !words.is_empty());
+        // A line that is only a chat id or only one URL is the title only when no other line
+        // has words.
+        let mut bare = None;
+        let title = lines.find(|words| {
+            let is_bare = matches!(words[..], [w] if is_uuid(w)
+                || w.starts_with("http://")
+                || w.starts_with("https://"));
+            if is_bare && bare.is_none() {
+                bare = Some(words.clone());
+            }
+            !is_bare
         });
-        if let Some(title) = title {
-            return Some(title);
+        if let Some(words) = title.or(bare) {
+            return Some(words.join(" "));
         }
     }
     None
@@ -230,6 +265,65 @@ mod tests {
             &[r#"{"type":"custom-title","customTitle":"Build\u2028the\n  app"}"#],
         );
         assert_eq!(read_title(&broken).as_deref(), Some("Build the app"));
+    }
+
+    #[test]
+    fn a_first_message_title_is_the_owners_words() {
+        let title = |name: &str, messages: &[&str]| {
+            let lines: Vec<String> = messages
+                .iter()
+                .map(|text| {
+                    serde_json::json!({"type": "message", "message": {"role": "user",
+                        "content": [{"type": "text", "text": text}]}})
+                    .to_string()
+                })
+                .collect();
+            let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+            read_title(&log(name, &lines))
+        };
+        let skill = "<skill name=\"research\" location=\"/k/SKILL.md\">\n# Research\n</skill>";
+        assert_eq!(
+            title(
+                "pi-skill.jsonl",
+                &[&format!(
+                    "{skill}\n\n01a1ed5a-1fca-7e20-a46f-5f96b0d75217\n\nlook at this chat please"
+                )]
+            )
+            .as_deref(),
+            Some("look at this chat please")
+        );
+        assert_eq!(
+            title("pi-skill-only.jsonl", &[skill, "Fix the build"]).as_deref(),
+            Some("Fix the build")
+        );
+        assert_eq!(
+            title(
+                "pi-uuid.jsonl",
+                &["01a21701-0120-7223-889f-63bf8f42d61c\ncheck this chat out"]
+            )
+            .as_deref(),
+            Some("check this chat out")
+        );
+        assert_eq!(
+            title(
+                "pi-url.jsonl",
+                &["https://example.com/a\n\nandroid version available?"]
+            )
+            .as_deref(),
+            Some("android version available?")
+        );
+        assert_eq!(
+            title("pi-url-only.jsonl", &["https://example.com/a"]).as_deref(),
+            Some("https://example.com/a")
+        );
+        assert_eq!(
+            title(
+                "pi-wake.jsonl",
+                &["swarm: new message. Run swarm inbox", "Fix the build"]
+            )
+            .as_deref(),
+            Some("Fix the build")
+        );
     }
 
     /// ADR 0147: a done notice of a CLI whose turn end gives no reply quotes the last reply of

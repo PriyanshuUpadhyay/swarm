@@ -2,6 +2,8 @@
 
 The `code-review` skill owns the mode choice. This file owns the PR walk, its steps, and its GitHub writes.
 
+Contents: Preset, Contract, Run folder, Status line, Steps, Roles, Voice, Callers, Output.
+
 Example. A walk of PR 42 (`review_walk.py start 42`) makes `<repo>/tmp/review-walk/pr-42-01/` with five step files.
 The agent maps the files into groups, runs check mode on the PR range, and drafts 15
 short comments in your voice. You say yes, and they go into your pending review on GitHub. You walk
@@ -25,12 +27,11 @@ Offers: html-diagram, diagram-check, prove-it-works, headless-shot, drive-app
 
 ## Contract
 
-- The review is report-only. Never edit, commit, stash, switch, or reset the user's checkout.
+- The review is report-only, as `check.md` says; the user's checkout stays as it is.
   `git fetch` gets objects and `FETCH_HEAD` only.
-- Never submit or publish a review. The user does it on GitHub.
+- Leave submitting or publishing the review to the user on GitHub; do not submit it yourself, because a published review is an outside action.
 - Every GitHub write (`post`, `remark`) needs the user's yes in chat for that run.
-- Check mode owns the findings, the lens, the repo rules, and the verdict. This mode never
-  states a verdict that check mode did not print.
+- Check mode owns the findings, the lens, the repo rules, and the verdict. This mode states only a verdict that check mode printed.
 - No findings about secrets in plain text in a public comment. Tell the user in chat instead.
   `post` refuses a body with a known token or key shape, but that check is partial, so read each
   body for other secrets too.
@@ -90,7 +91,7 @@ status line.
    Cite new-side lines with the repo-relative path, and cite a removed line as `deleted`. Then run
    `python3 <kit root>/skills/code-review/scripts/validate_citations.py <run>/diff.patch <run>/02-map.md`. Fix or
    drop each citation that it rejects, because a wrong citation looks as sure as a right one. The
-   map explains and never judges. Findings belong to step 03.
+   map explains and leaves judging to step 03. Findings belong to step 03.
 3. **Check.** Run check mode on `<Base>..<Head>` from `01-scope.md`, or `local` for a local
    target, with `--parent-loop review-walk:<run>`, where `<run>` is this walk run's folder name.
    In a new round, add `--patch <run>/since-view.patch`, which holds what changed since

@@ -23,6 +23,32 @@ fn codex_rows(lines: Vec<Value>) -> Vec<Row> {
 }
 
 #[test]
+fn codex_user_message_copies_with_different_ids_show_once() {
+    let prompt = "Build it";
+    let rows = codex_rows(vec![
+        event(json!({"type":"task_started","turn_id":"turn-1"})),
+        response(
+            json!({"type":"message","id":"msg_input","role":"user","content":[{"type":"input_text","text":prompt}]}),
+        ),
+        completed(
+            json!({"type":"UserMessage","id":"input","content":[{"type":"text","text":prompt}]}),
+        ),
+        event(json!({"type":"task_complete","turn_id":"turn-1"})),
+        event(json!({"type":"task_started","turn_id":"turn-2"})),
+        completed(
+            json!({"type":"UserMessage","id":"repeat","content":[{"type":"text","text":prompt}]}),
+        ),
+    ]);
+
+    let messages: Vec<_> = rows
+        .iter()
+        .filter(|row| row.kind == RowKind::User && !row.collapsed)
+        .map(|row| (row.text.as_str(), row.source_ids.len()))
+        .collect();
+    assert_eq!(messages, [(prompt, 2), (prompt, 1)]);
+}
+
+#[test]
 fn codex_subagent_activity_updates_the_spawn_row() {
     for (source, kind, expected) in [
         ("sub_agent_activity", "started", ToolState::Waiting),

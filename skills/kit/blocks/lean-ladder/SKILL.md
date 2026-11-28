@@ -1,6 +1,6 @@
 ---
 name: lean-ladder
-description: "Before you write code, climb the ladder: need it at all, already in the repo, standard library, platform feature, installed dependency, one line, then the least code. Use when you write or review new code."
+description: "Check for the least code needed, starting with what already exists. Use when you write or review new code."
 license: MIT
 metadata:
   kind: rule
@@ -14,19 +14,19 @@ metadata:
 ---
 
 ## Rules
-- Read the task and the code that it touches first, and trace the real flow. The ladder makes the answer shorter, never the reading.
+- Read the task and the code that it touches first, and trace the real flow. Use the ladder to shorten the answer after tracing the flow.
 - Stop at the first rung that holds:
   1. Does it need to exist at all? A need that may come later is not a need now.
   2. Is it already in this repo? Reuse the helper, type, or pattern.
   3. Does the standard library do it?
   4. Does a platform feature do it, such as `<input type="date">`, CSS, or a database constraint?
-  5. Does an installed dependency do it? Do not add a dependency for a few lines.
+  5. Does an installed dependency do it? Prefer a few lines of local code to a new dependency.
   6. Can it be one line?
   7. Only then, write the least code that works.
 - A bug fix goes at the root cause. Search every caller of the function before you edit it, and fix it once where all callers pass.
 - When two standard options are the same size, take the one that is correct on edge cases.
 - Mark a shortcut that has a known limit with a comment `lean: <limit>, <when to upgrade>`, for example `# lean: one global lock, use per-account locks if throughput matters`. Older code may use `ponytail:` for the same marker.
-- Never cut input checks at a trust boundary, error handling that prevents data loss, security, or accessibility basics. Keep one small runnable check for logic that branches or loops.
+- Keep input checks at trust boundaries, error handling that prevents data loss, security, and accessibility basics. Keep one small runnable check for logic that branches or loops.
 - Abstractions and extraction follow `blocks/when-to-extract/SKILL.md`.
 
 ## Example

@@ -222,10 +222,17 @@ public func prunePopup(_ popup: Popup?, inbox: InboxSnapshot) -> Popup? {
     return popup.items.isEmpty ? nil : popup
 }
 
+/// The new items that get a popup. Swarm.app in front shows a done, asks, or stopped chat itself,
+/// so only a wait pops then: the blocked agent can be in a chat that the owner does not look at.
+public func popupItems(_ new: [PopupItem], swarmInFront: Bool) -> [PopupItem] {
+    swarmInFront ? new.filter { $0.kind == .waiting } : new
+}
+
 /// ADR 0156: a new done or asks row means a chat converged: its chair ended its turn while no child
-/// worked. `new` is empty on a HUD's first read, so a HUD that starts plays nothing.
-public func playsConvergedSound(_ inbox: InboxSnapshot, new: [PopupItem]) -> Bool {
-    inbox.sound && new.contains { $0.kind == .done || $0.kind == .asks }
+/// worked. A new wait plays the sound too, because the agent is blocked until the owner acts.
+/// `new` is empty on a HUD's first read, so a HUD that starts plays nothing.
+public func playsSound(_ inbox: InboxSnapshot, new: [PopupItem]) -> Bool {
+    inbox.sound && new.contains { $0.kind != .failed }
 }
 
 /// The closed wing's words for the inbox, or nil to leave the working count. A need wins, then a

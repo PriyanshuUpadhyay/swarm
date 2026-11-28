@@ -81,6 +81,7 @@ struct CommandsSlot {
 #[derive(Default)]
 struct TreeCache {
     discovery: discovery::Discovery,
+    fields: BTreeMap<String, (Option<String>, fields::WorkspaceFields)>,
     snapshot: Value,
     revision: String,
     saved: Option<choices_store::Saved>,

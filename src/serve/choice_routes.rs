@@ -153,16 +153,45 @@ pub(super) fn refresh_tree(app: &App) -> Result<Value, ApiError> {
     } else {
         saved
     };
-    let fields_changed = discovery.refresh_fields(&tree, &saved.owner, discovery::now());
     let mut cache = app.tree_cache.lock().unwrap();
     cache.discovery = discovery;
-    if cache.snapshot != snapshot || cache.revision != saved.revision || fields_changed {
+    if cache.snapshot != snapshot || cache.revision != saved.revision {
         app.hub.lock().unwrap().bump();
     }
     cache.snapshot = snapshot;
     cache.revision = saved.revision.clone();
     cache.saved = Some(saved);
     Ok(json!({"ok":true}))
+}
+
+pub(super) fn refresh_tree_fields(app: &App, reader: &mut fields::FieldReader) {
+    let (snapshot, owner, selected) = {
+        let cache = app.tree_cache.lock().unwrap();
+        let Some(saved) = &cache.saved else { return };
+        (
+            cache.snapshot.clone(),
+            saved.owner.clone(),
+            saved.state.selected_workspace.clone(),
+        )
+    };
+
+    let tree = tree::build(&snapshot, &owner);
+    reader.select(selected.as_deref());
+    reader.refresh_fields(&tree, &owner, discovery::now());
+    let fields = reader
+        .fields
+        .iter()
+        .filter_map(|(path, fields)| {
+            let (_, workspace) = tree.workspace(path)?;
+            Some((path.clone(), (workspace.branch.clone(), fields.clone())))
+        })
+        .collect();
+
+    let mut cache = app.tree_cache.lock().unwrap();
+    if fields != cache.fields {
+        cache.fields = fields;
+        app.hub.lock().unwrap().bump();
+    }
 }
 
 #[cfg(test)]

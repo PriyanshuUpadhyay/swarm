@@ -26,7 +26,7 @@ skill names its own script. `--help` lists the arguments, and each refusal print
 - `take` prints the step file with each block's Rules and Example. Do the step from that print.
 - `done` needs every todo checked, with its evidence after the last colon. In a plan run, write
   only the paths on the step's `Writes:` line.
-- Never set a step done by hand. Pass `<n>` as a bare number, because an unquoted `#1` is a shell
+- Use the `done` command so the script checks and records the step state. Pass `<n>` as a bare number, because an unquoted `#1` is a shell
   comment.
 - Use `take --force` only after you confirm that the other agent's run is gone.
 

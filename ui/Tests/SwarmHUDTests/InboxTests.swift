@@ -73,9 +73,20 @@ import Testing
     let inbox = try #require(InboxSnapshot.read(Data(contentsOf: url)))
     #expect(inbox.active.map(\.title) == ["Notice redesign", "Twilio integration review"])
 
-    #expect(!playsConvergedSound(inbox, new: newPopupItems(inbox, known: nil)))
-    #expect(playsConvergedSound(inbox, new: newPopupItems(inbox, known: [])))
+    #expect(!playsSound(inbox, new: newPopupItems(inbox, known: nil)))
+    #expect(playsSound(inbox, new: newPopupItems(inbox, known: [])))
     var muted = inbox
     muted.sound = false
-    #expect(!playsConvergedSound(muted, new: newPopupItems(inbox, known: [])))
+    #expect(!playsSound(muted, new: newPopupItems(inbox, known: [])))
+}
+
+/// A blocked agent waits for the owner, so its wait pops and plays the sound while Swarm.app is in
+/// front; a done or asks chat shows in the app and gets no popup there.
+@Test func aWaitPopsAndPlaysTheSoundWhileSwarmIsInFront() throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "fixtures/inbox.json")
+    let inbox = try #require(InboxSnapshot.read(Data(contentsOf: url)))
+    let new = newPopupItems(inbox, known: [])
+    #expect(popupItems(new, swarmInFront: false).map(\.word) == ["needs you", "asks", "done"])
+    #expect(popupItems(new, swarmInFront: true).map(\.word) == ["needs you"])
+    #expect(playsSound(inbox, new: popupItems(new, swarmInFront: true)))
 }

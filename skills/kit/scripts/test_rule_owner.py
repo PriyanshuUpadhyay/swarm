@@ -16,9 +16,7 @@ MIN_WORDS = 12
 SHOW = 100  # characters of a sentence that a message shows
 # Copies that existed when this check came in. Remove an entry once its copies point to the owner.
 ALLOWED = {
-    "none: the claims and their links live in the report, outside the commit range.",
     "pass an owner's saved line with review <folder <range continue <user file .",
-    "run from the repo root when you use this block's script checks.",
     "run swarm board for the flags; a refused post prints how to fix it.",
     "the kit root, with its blocks/ and references/ folders, is two folders up from this preset's folder.",
     "the kit root, with its blocks/ and references/ folders, is two folders up from this skill's folder.",

@@ -133,7 +133,7 @@ test("a chat with two children shows their panes; keys move focus and zoom; a pa
     // The child's question shows on the chat page too; "Show column" focuses its pane.
     writeFileSync(testerScreen, waiting);
     const asking = tab.getByTestId("asking").getByTestId("prompt-card");
-    await expect(asking).toContainText("tester is blocked on you");
+    await expect(asking).toContainText("tester is waiting for you");
     await expect(tester.getByTestId("prompt-card")).toContainText("Do you want to proceed?");
     await asking.getByRole("button", { name: "Show column" }).click();
     await expect(tester).toHaveAttribute("data-focused", "true");
@@ -235,7 +235,9 @@ test("⌘T starts a chat in a hub's main with no prompt and no new worktree", as
   await tab.waitForFunction(() => window.__swarmReady === true);
   const bodies = await holdChatStart(tab);
 
-  await tab.locator(`[data-testid="tree-row"][data-id="${process.env.SWARM_E2E_HUB_MAIN}"]`).click();
+  await tab.getByRole("button", { name: "Search", exact: true }).click();
+  await tab.getByRole("combobox").fill("proj-hub main");
+  await tab.locator(`[cmdk-item][data-value="workspace:${process.env.SWARM_E2E_HUB_MAIN}"]`).click();
   await expect(tab.getByTestId("workspace-landing")).toBeVisible();
   await tab.locator("body").press("Meta+t");
 

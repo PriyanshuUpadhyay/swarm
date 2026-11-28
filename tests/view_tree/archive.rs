@@ -46,7 +46,38 @@ fn a_chat_from_another_adapter_with_a_log_can_be_imported() {
     assert!(owner.imported.is_empty());
 }
 #[test]
-fn archived_chats_fold_in_the_last_row_of_their_project() {
+fn an_archived_workspace_lists_all_its_chats() {
+    let sessions = (1..=6)
+        .map(|n| session(&format!("chat-{n}"), "/repo", n))
+        .collect();
+    let snap = folder_snapshot(sessions, json!({}));
+    let mut owner = OwnerChoices::default();
+    owner.archived.insert("/repo".into());
+
+    let rows = sections(&snap, &owner, &ViewState::default(), true)
+        .remove(0)
+        .rows;
+    let chats: Vec<_> = rows
+        .iter()
+        .filter(|row| row.kind == "chat")
+        .map(|row| row.id.as_str())
+        .collect();
+
+    assert_eq!(
+        chats,
+        [
+            "chat:chat-6",
+            "chat:chat-5",
+            "chat:chat-4",
+            "chat:chat-3",
+            "chat:chat-2",
+            "chat:chat-1",
+        ]
+    );
+}
+
+#[test]
+fn archived_chats_fold_in_the_last_row_of_the_project() {
     let mut snap = folder_snapshot(vec![session("live", "/repo", 5)], json!({}));
     snap["archived"] = json!([
         {"id":"old-chat-1","cwd":"/repo","workspace":"/repo","chair_provider":"claude","archivedAt":40,"title":"Skills work"},
@@ -56,11 +87,11 @@ fn archived_chats_fold_in_the_last_row_of_their_project() {
     let mut owner = OwnerChoices::default();
     owner.project_paths.push("/repo".into());
     let mut state = ViewState::default();
-    let rows = sections(&snap, &owner, &state, false).remove(0).rows;
-    // Folded by default: one row that counts them, after the live chats.
+    let rows = sections(&snap, &owner, &state, true).remove(0).rows;
+    // Folded by default: one row counts them in the archive view.
     assert_eq!(
         rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-        ["/repo", "chat:live", "archived:project:/repo"]
+        ["archived:project:/repo"]
     );
     let fold = rows.last().unwrap();
     assert_eq!(
@@ -68,8 +99,7 @@ fn archived_chats_fold_in_the_last_row_of_their_project() {
         ("archived", "Archived · 2")
     );
     assert!(!fold.expanded && fold.has_children && fold.selection.is_none());
-    // A folder project's workspace row stands for the project, so the fold sits under it.
-    assert_eq!((fold.depth, fold.parent_id.as_deref()), (1, Some("/repo")));
+    assert_eq!((fold.depth, fold.parent_id.as_deref()), (0, None));
     let tree = tree::build(&snap, &owner);
     let expand = |id: &str| ChoiceOp::Expand { id: id.into() };
     assert!(
@@ -90,7 +120,7 @@ fn archived_chats_fold_in_the_last_row_of_their_project() {
         0,
     )
     .unwrap();
-    let rows = sections(&snap, &owner, &state, false).remove(0).rows;
+    let rows = sections(&snap, &owner, &state, true).remove(0).rows;
     let archived: Vec<_> = rows.iter().filter(|r| r.kind == "archived-chat").collect();
     // Newest first; a chat with no title gets its provider and short id.
     assert_eq!(
@@ -103,12 +133,12 @@ fn archived_chats_fold_in_the_last_row_of_their_project() {
             ("archived-chat:old-chat-1", "Skills work")
         ]
     );
-    assert!(archived.iter().all(|r| r.depth == 2
+    assert!(archived.iter().all(|r| r.depth == 1
         && r.dimmed
         && r.parent_id.as_deref() == Some("archived:project:/repo")));
 }
 #[test]
-fn the_archived_fold_comes_after_every_workspace_and_names_each_chat_workspace() {
+fn the_archived_fold_names_each_chat_workspace() {
     let mut snap = snapshot(
         vec![
             session("hub", "/repo", 5),
@@ -121,7 +151,7 @@ fn the_archived_fold_comes_after_every_workspace_and_names_each_chat_workspace()
         {"id":"newer","workspace":"/repo/wt/main","chair_provider":"pi","archivedAt":12,"title":"Newer"}
     ]);
     let owner = owner();
-    let rows = sections(&snap, &owner, &ViewState::default(), false)
+    let rows = sections(&snap, &owner, &ViewState::default(), true)
         .remove(0)
         .rows;
     let fold = rows.last().unwrap();
@@ -146,7 +176,7 @@ fn the_archived_fold_comes_after_every_workspace_and_names_each_chat_workspace()
         0,
     )
     .unwrap();
-    let rows = sections(&snap, &owner, &state, false).remove(0).rows;
+    let rows = sections(&snap, &owner, &state, true).remove(0).rows;
     let titles: Vec<_> = rows
         .iter()
         .filter(|r| r.kind == "archived-chat")
@@ -198,7 +228,7 @@ fn two_chats_from_the_same_minute_get_ids_long_enough_to_differ() {
 #[test]
 fn only_a_plain_folder_with_its_workspace_listed_is_a_folder_section() {
     let snap = folder_snapshot(
-        vec![session("notes", "/repo", 1)],
+        vec![session("notes", "/repo", 1), session("second", "/repo", 2)],
         json!({"notes":[agent("orchestrator","done")]}),
     );
     let state = ViewState::default();
@@ -206,7 +236,7 @@ fn only_a_plain_folder_with_its_workspace_listed_is_a_folder_section() {
     let section = sections(&snap, &owner, &state, false).remove(0);
     assert!(section.folder);
     let ids: Vec<_> = section.rows.iter().map(|r| r.id.as_str()).collect();
-    assert_eq!(ids, ["/repo", "chat:notes"]);
+    assert_eq!(ids, ["/repo", "chat:second", "chat:notes"]);
     // The archive view keeps the header, and so does a folder whose workspace is pinned.
     assert!(
         !sections(&snap, &owner, &state, true)

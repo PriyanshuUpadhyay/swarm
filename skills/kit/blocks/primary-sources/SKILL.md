@@ -1,6 +1,6 @@
 ---
 name: primary-sources
-description: "Read the origin of a claim (paper, RFC, spec, design doc, or the author's first commit) and ground the answer in it. Use when a question asks how or why a technique or protocol works."
+description: "Ground a claim in its paper, RFC, spec, design doc, or first commit. Use when a question asks how or why a technique or protocol works."
 license: MIT
 metadata:
   kind: step
@@ -31,9 +31,8 @@ When it does not apply
 - Skip it for a claim that the vendor's current docs own, such as a rate limit or a flag. The docs are the origin there, and `blocks/cite-sources/SKILL.md` covers them.
 
 ## Example
-Initial state: the question is "why does a B-tree index keep keys in sorted pages, and how do real databases differ from the textbook form". A blog says "databases use B+ trees".
-Action: the blog names Bayer and McCreight, so find the 1972 Acta Informatica paper (first given at a 1970 workshop) and read its section on page size and balance. Then take the PostgreSQL repo, run `git log -S '<symbol>' --reverse -- src/backend/access/nbtree` for a symbol the lead names, and read the first commit and the `README` in that folder, which is the lead to the concurrency paper it follows.
-Result: three rows. Row 1: Bayer and McCreight, "Organization and Maintenance of Large Ordered Indexes", Acta Informatica 1972, section 2, quote of the page-fill rule. Row 2: Lehman and Yao 1981, section 3, quote of the right-link rule. Row 3: `src/backend/access/nbtree/nbtinsert.c:<line>@<commit>`, quote of the code that follows the right-link rule. The report says where PostgreSQL differs from the paper, and the blog is listed as the lead.
+- Bad: cite a blog as proof of how B-tree insertion works.
+- Good: cite the original paper for the idea and `path:line@commit` in the database for what it runs. Name any difference.
 
 ## Check (script)
 - none: the origin rows live in the step file or the report, outside the commit range.

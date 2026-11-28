@@ -19,7 +19,7 @@ fn a_wrap_up_reply_needs_every_heading() {
     swarm::store::add_agent(&connection, &session, CODER, "coder").unwrap();
     let full = WRAP_UP.map(|(h, _)| format!("{h}\nnone\n")).concat();
     let check = |connection: &rusqlite::Connection, body: &str| {
-        check_wrap_up_reply(connection, &session, CODER, body).map_err(|e| e.to_string())
+        answers_wrap_up(connection, &session, CODER, body).map_err(|e| e.to_string())
     };
 
     assert!(check(&connection, "a plain reply").is_ok());
@@ -105,10 +105,27 @@ fn close(
     );
 }
 
-/// The child answers the wrap-up from its own process, as `swarm finish` does.
 #[test]
-fn close_saves_the_childs_wrap_up_then_closes_its_pane() {
+fn close_saves_the_childs_wrap_up_without_ringing_the_orchestrator() {
     let (root, mut connection, session) = closing("close-wrap-up");
+    let ring_log = root.join("rings");
+    let ring_path = swarm::adapter::shell_line(&[ring_log.to_string_lossy().into_owned()]);
+    std::fs::write(
+        root.join("adapters/fake.conf"),
+        format!(
+            "self = true\nspawn = true\nring = printf '%s\\n' \"$SWARM_PANE\" >> {ring_path}\n\
+             list = echo %1 %2\nclose = true\ncapture = true\n"
+        ),
+    )
+    .unwrap();
+
+    let seq = finish(&mut connection, &root, "fake", &session, CODER, "result").unwrap();
+    assert_eq!(
+        swarm::store::inbox(&connection, &session, ORCHESTRATOR).unwrap()[0].seq,
+        seq
+    );
+    swarm::store::ack(&connection, &session, seq, ORCHESTRATOR).unwrap();
+
     let body = WRAP_UP.map(|(h, _)| format!("{h}\nnone\n")).concat();
     let child = {
         let (root, session, body) = (root.clone(), session.clone(), body.clone());
@@ -119,17 +136,7 @@ fn close_saves_the_childs_wrap_up_then_closes_its_pane() {
                 assert!(std::time::Instant::now() < deadline, "no wrap-up was sent");
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
-            check_wrap_up_reply(&connection, &session, CODER, &body).unwrap();
-            swarm::store::send_message(
-                &mut connection,
-                &root,
-                &session,
-                CODER,
-                ORCHESTRATOR,
-                "summary",
-                &body,
-            )
-            .unwrap();
+            finish(&mut connection, &root, "fake", &session, CODER, &body).unwrap();
         })
     };
 
@@ -140,7 +147,12 @@ fn close_saves_the_childs_wrap_up_then_closes_its_pane() {
     assert_eq!(asks.iter().filter(|m| m.kind == "wrap-up").count(), 1);
     let saved = root.join(format!("runs/{session}/{CODER}.summary.md"));
     assert_eq!(std::fs::read_to_string(saved).unwrap(), body);
+    let rings = std::fs::read_to_string(ring_log).unwrap();
+    let pending = swarm::store::inbox(&connection, &session, ORCHESTRATOR).unwrap();
     std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(rings, "%1\n%2\n");
+    assert!(pending.is_empty(), "{pending:?}");
 }
 
 /// Wait until `close` has asked the coder for a wrap-up, then send each text as a summary.

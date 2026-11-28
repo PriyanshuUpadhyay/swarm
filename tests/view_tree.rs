@@ -212,7 +212,7 @@ fn chat_cut_and_order() {
             "chat:s5",
             "chat:s4",
             "chat:s3",
-            "more:/repo"
+            "more:project:/repo"
         ]
     );
     assert_eq!(rows.last().unwrap().title, "… 2 more");
@@ -225,7 +225,7 @@ fn chat_cut_and_order() {
             .iter()
             .all(|r| r.parent_id.as_deref() == Some("/repo"))
     );
-    state.expanded_lists.insert("/repo".into());
+    state.expanded_lists.insert("project:/repo".into());
     assert_eq!(sections(&snap, &owner, &state, false)[0].rows.len(), 8);
     state.expanded_lists = ["/other".into()].into();
     assert_eq!(sections(&snap, &owner, &state, false)[0].rows.len(), 7);
@@ -239,26 +239,19 @@ fn child_folds_and_hides_ended_children() {
     let owner = OwnerChoices::default();
     let mut state = ViewState::default();
     let folded = sections(&snap, &owner, &state, false).remove(0).rows;
-    assert_eq!(folded.len(), 2);
-    assert!(!folded[1].expanded);
-    assert_eq!(
-        folded[1].children_summary.as_deref(),
-        Some("1 agent · 1 blocked")
-    );
-    assert_eq!(folded[1].status, Some(Status::Blocked));
+    assert_eq!(folded.len(), 1);
+    assert!(!folded[0].expanded);
+    assert_eq!(folded[0].children_summary.as_deref(), Some("1 · 1 waiting"));
+    assert_eq!(folded[0].status, Some(Status::Blocked));
     state.fold("chat:chat", false);
     let opened = sections(&snap, &owner, &state, false).remove(0).rows;
     assert_eq!(
         opened.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-        ["/repo", "chat:chat", "child:chat/review"]
+        ["chat:chat", "child:chat/review"]
     );
-    assert_eq!(opened[1].status, Some(Status::Blocked));
-    assert!(!opened[2].dimmed);
-    assert_eq!(opened[2].detail, "· code");
-    state.fold("/repo", true);
-    let folded = sections(&snap, &owner, &state, false).remove(0).rows;
-    assert_eq!(folded.len(), 1);
-    assert_eq!(folded[0].status, Some(Status::Blocked));
+    assert_eq!(opened[0].status, Some(Status::Blocked));
+    assert!(!opened[1].dimmed);
+    assert_eq!(opened[1].detail, "· code");
 }
 #[test]
 fn an_open_chat_is_done_only_when_its_chair_and_every_child_are_done() {
@@ -271,9 +264,9 @@ fn an_open_chat_is_done_only_when_its_chair_and_every_child_are_done() {
             json!({"chat":[agent("orchestrator","done"),agent("review",child)]}),
         );
         let rows = sections(&snap, &owner, &state, false).remove(0).rows;
-        assert_eq!(rows[1].id, "chat:chat");
-        assert!(rows[1].expanded);
-        assert_eq!(rows[1].status, Some(expected));
+        assert_eq!(rows[0].id, "chat:chat");
+        assert!(rows[0].expanded);
+        assert_eq!(rows[0].status, Some(expected));
     }
 }
 #[test]
@@ -318,7 +311,7 @@ fn lists_only_chats_that_the_app_started() {
     .rows;
     assert_eq!(
         rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-        ["/repo", "chat:app"]
+        ["chat:app"]
     );
 }
 #[test]
@@ -336,7 +329,7 @@ fn hides_a_live_chat_whose_log_swarm_cannot_read() {
         .rows;
     assert_eq!(
         rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-        ["/repo", "chat:logged"]
+        ["chat:logged"]
     );
     // The workspace still holds it, so a workspace delete closes its live agents.
     let tree = tree::build(&snap, &owner);
@@ -367,14 +360,14 @@ fn stable_chain_child_ids_and_current_urgency() {
             .rows;
         assert_eq!(
             rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
-            ["/repo", "chat:root", "child:next/worker"]
+            ["chat:root", "child:next/worker"]
         );
         assert_eq!(rows[0].status, Some(Status::Working));
         assert_eq!(
-            rows[2].selection.as_ref().unwrap().agent_session.as_deref(),
+            rows[1].selection.as_ref().unwrap().agent_session.as_deref(),
             Some("next")
         );
-        assert!(rows[2].dimmed);
+        assert!(rows[1].dimmed);
     }
     let rows = sections(
         &folder_snapshot(
@@ -387,19 +380,16 @@ fn stable_chain_child_ids_and_current_urgency() {
     )
     .remove(0)
     .rows;
-    assert_eq!(rows.len(), 2);
-    assert!(!rows[1].has_children);
-    assert!(!rows[1].fields.iter().any(|f| f.field == "children"));
+    assert_eq!(rows.len(), 1);
+    assert!(!rows[0].has_children);
+    assert!(!rows[0].fields.iter().any(|f| f.field == "children"));
 }
 #[test]
 fn child_count_without_waiting() {
     for (agents, label) in [
-        (vec![agent("worker", "working")], "1 agent"),
-        (
-            vec![agent("one", "done"), agent("two", "working")],
-            "2 agents",
-        ),
-        (vec![agent("worker", "blocked")], "1 agent · 1 blocked"),
+        (vec![agent("worker", "working")], "1"),
+        (vec![agent("one", "done"), agent("two", "working")], "2"),
+        (vec![agent("worker", "blocked")], "1 · 1 waiting"),
     ] {
         let rows = sections(
             &folder_snapshot(vec![session("chat", "/repo", 1)], json!({"chat":agents})),
@@ -409,7 +399,7 @@ fn child_count_without_waiting() {
         )
         .remove(0)
         .rows;
-        assert_eq!(rows[1].children_summary.as_deref(), Some(label));
+        assert_eq!(rows[0].children_summary.as_deref(), Some(label));
     }
 }
 #[test]
@@ -421,12 +411,12 @@ fn pinned_archived_and_empty_section_visibility() {
     owner.pinned.insert("/repo".into());
     let pinned = sections(&snap, &owner, &state, false);
     assert_eq!(pinned[0].kind, "pinned");
-    assert_eq!(pinned[0].rows.len(), 2);
+    assert_eq!(pinned[0].rows[0].id, "chat:one");
+    assert_eq!(pinned[0].rows.len(), 1);
     assert!(pinned[1].rows.is_empty());
     owner.archived.insert("/repo".into());
     let active = sections(&snap, &owner, &state, false);
-    assert_eq!(active.len(), 1);
-    assert!(active[0].rows.is_empty());
+    assert!(active.is_empty());
     let archive = sections(&snap, &owner, &state, true);
     assert_eq!(archive.len(), 1);
     assert!(archive[0].rows.iter().all(|r| r.archived));
@@ -491,31 +481,33 @@ fn a_branch_is_its_own_chat_and_its_tooltip_names_the_parent() {
 }
 
 #[test]
-fn folding_workspace_resets_its_expanded_chat_list() {
+fn folding_project_resets_its_expanded_chat_list() {
     let tree = tree();
     let mut owner = owner();
     let mut state = ViewState::default();
-    let workspace = "/repo/wt/main".to_string();
+    let project = "project:/repo".to_string();
     choices::apply(
         &mut owner,
         &mut state,
         &tree,
         ChoiceOp::ExpandList {
-            workspace: workspace.clone(),
+            id: Some(project.clone()),
+            workspace: None,
+            expanded: None,
         },
         0,
     )
     .unwrap();
-    assert!(state.expanded_lists.contains(&workspace));
+    assert!(state.expanded_lists.contains(&project));
     choices::apply(
         &mut owner,
         &mut state,
         &tree,
         ChoiceOp::Collapse {
-            id: workspace.clone(),
+            id: project.clone(),
         },
         0,
     )
     .unwrap();
-    assert!(!state.expanded_lists.contains(&workspace));
+    assert!(!state.expanded_lists.contains(&project));
 }
