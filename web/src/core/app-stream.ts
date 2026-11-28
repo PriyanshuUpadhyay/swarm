@@ -1,4 +1,4 @@
-import { hasLinkedHistory, sleep, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
+import { hasLinkedHistory, sleep, snapshotReceivedAt, type Display, type Row, type RowFrame, type Snapshot, type SubscribeKey } from "./api";
 import type { Usage } from "./composer";
 import { readSse, type SseEvent } from "./sse";
 import { bodyModeOf, displayOf, imagesOf, mergeRows, noteBody, noteDisplay, noteFind, noteImages, notePatch, units } from "./transcript";
@@ -22,6 +22,9 @@ export class AppStream {
   applySnapshot(snap: Snapshot) {
     const previous = this.app.snapshot;
     this.app.snapshot = snap;
+    this.app.snapshotReceivedAt = snapshotReceivedAt(snap) ?? performance.now();
+
+
     if (hasLinkedHistory(snap)) {
       const known = new Set(previous?.sessions.filter((session) => session.continuation_of).map((session) => session.id));
       // A reconnect can discover several links at once. Move oldest first so notes and text
@@ -49,17 +52,27 @@ export class AppStream {
         detail: q.detail,
         order: [Number.MAX_SAFE_INTEGER, i],
       }));
-      if (JSON.stringify(queue) === JSON.stringify(chat.queue)
-        && queue.every((_, i) => JSON.stringify(items[i].images ?? []) === JSON.stringify(imagesOf(chat.queue[i]))
-          && JSON.stringify(items[i].display ?? null) === JSON.stringify(displayOf(chat.queue[i]) ?? null)
-          && (items[i].body ?? null) === bodyModeOf(chat.queue[i]))) continue;
-      chat.queue = queue;
+      const previous = chat.queue;
+      // A shorter queue can shift messages into the positions of ones that left.
+      const growsOrStays = queue.length >= previous.length;
       queue.forEach((row, i) => {
-        noteImages([row], { [row.id]: items[i].images ?? [] });
-        noteBody([row], { [row.id]: items[i].body ?? null });
-        const display = items[i].display;
-        if (display !== undefined) noteDisplay([row], display === null ? {} : { [row.id]: display });
+        const old = previous[i];
+        const item = items[i];
+        if (growsOrStays && old && old.id === row.id && old.text === row.text && old.detail === row.detail
+          && JSON.stringify(item.images ?? []) === JSON.stringify(imagesOf(old))
+          && JSON.stringify(item.display ?? null) === JSON.stringify(displayOf(old) ?? null)
+          && (item.body ?? null) === bodyModeOf(old)) {
+          queue[i] = old;
+          return;
+        }
+
+        noteImages([row], { [row.id]: item.images ?? [] });
+        noteBody([row], { [row.id]: item.body ?? null });
+        if (item.display !== undefined) noteDisplay([row], item.display === null ? {} : { [row.id]: item.display });
       });
+
+      if (queue.length === previous.length && queue.every((row, i) => row === previous[i])) continue;
+      chat.queue = queue;
       chat.version++;
     }
     // A chair's and a child's log can show up after the chat opens.
@@ -96,8 +109,11 @@ export class AppStream {
     } catch {
       return;
     }
+    if (!data || typeof data !== "object" || Array.isArray(data)) return;
     switch (e.event) {
       case "hello":
+        if (typeof data.stream !== "string" || typeof data.build !== "string") return;
+        this.app.lastStreamUpdate = Date.now();
         this.app.reconnecting = false;
         // A frame sent while the stream was down is lost, so live text could be stale.
         for (const chat of this.app.chats.values()) {
@@ -117,10 +133,12 @@ export class AppStream {
         void this.app.newChat.recheck();
         break;
       case "snapshot":
+        if (typeof data.version === "number") this.app.lastStreamUpdate = Date.now();
         if (data.version !== this.app.snapshot?.version) void this.app.navigation.refreshSnapshot();
         break;
       case "rows": {
         const frame = data as unknown as RowFrame;
+        if (typeof frame.key === "string" && Number.isSafeInteger(frame.end_offset)) this.app.lastStreamUpdate = Date.now();
         const slot = this.app.pending.get(frame.key);
         if (slot) slot.push(frame);
         else this.app.pending.set(frame.key, [frame]);
@@ -128,6 +146,7 @@ export class AppStream {
         break;
       }
       case "live": {
+        if (typeof data.key === "string") this.app.lastStreamUpdate = Date.now();
         // Each new watcher sends its first read, often a null that changes nothing. A redraw then
         // would follow the end before a reader's scroll up registers.
         const slot = this.app.pending.get(String(data.key));
@@ -136,6 +155,7 @@ export class AppStream {
         break;
       }
       case "reset":
+        if (typeof data.key === "string") this.app.lastStreamUpdate = Date.now();
         void this.reset(String(data.key));
         break;
       case "reload":

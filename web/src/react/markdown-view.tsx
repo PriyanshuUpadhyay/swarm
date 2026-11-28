@@ -1,19 +1,24 @@
-import { Fragment, createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
+import { Fragment, createContext, createElement, useContext, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type { Block, Display, Inline } from "../core/api";
+import { mapCutContainer } from "../core/transcript";
 import { HighlightedCode } from "./code-tokens";
+import { plural, sourceLines } from "./cut-line";
 import { ColoredRow, PatchBody, useSplit, useWrap } from "./patch-body";
 
-function Head({ label, what, diff = false }: { label: string; what: "code" | "table"; diff?: boolean }) {
+const SCROLL_WINDOW_LINES = 20;
+const scrollWindowStyle = { "--scroll-window-lines": SCROLL_WINDOW_LINES } as CSSProperties;
+
+function Head({ label, what, layout, count = 0 }: { label: string; what: "code" | "table"; layout?: { split: boolean; wrap: boolean }; count?: number }) {
   return (
     <div className="md-head">
-      <span>{label}</span>
-      {diff && (
+      <span>{label}{count > SCROLL_WINDOW_LINES ? ` · ${plural(count, "line")}` : ""}</span>
+      {layout && (
         <div className="seg" role="group" aria-label="Diff layout">
-          <button type="button" data-diff-layout="0">Unified</button>
-          <button type="button" data-diff-layout="1">Split</button>
+          <button type="button" data-diff-layout="0" aria-pressed={!layout.split}>Unified</button>
+          <button type="button" data-diff-layout="1" aria-pressed={layout.split}>Split</button>
         </div>
       )}
-      {diff && <div className="seg md-wrap"><button type="button" data-wrap-toggle>Wrap</button></div>}
+      {layout && <div className="seg md-wrap"><button type="button" data-wrap-toggle aria-pressed={layout.wrap}>Wrap</button></div>}
       <button type="button" data-copy={what} aria-label={`Copy ${what}`}>Copy</button>
     </div>
   );
@@ -72,22 +77,24 @@ function HunkCode({ label, text, diff }: { label: string; text: string; diff: Ex
   const wrap = useWrap();
   return (
     <div className="md-code" data-raw={text}>
-      <Head label={label} what="code" diff />
+      <Head label={label} what="code" layout={{ split, wrap }} count={sourceLines(text).length} />
       <PatchBody patch={text} info={diff} split={split} wrap={wrap} fileLabels />
     </div>
   );
 }
 
 function Code({ value: { label, text, diff } }: { value: Extract<Block, { type: "code" }>["value"] }) {
-  if (label === null) return <><pre><code>{text}</code></pre>{"\n"}</>;
-  if (diff && "lines" in diff) return <HunkCode label={label} text={text} diff={diff} />;
-  if (diff && "prefix" in diff) {
-    return <div className="md-code"><Head label={label} what="code" /><pre><code>{diff.prefix.map((row, i) => <ColoredRow key={i} kind={row.kind}>{row.text}</ColoredRow>)}</code></pre></div>;
-  }
+  const count = sourceLines(text).length;
+  const windowClass = count > SCROLL_WINDOW_LINES ? "scroll-window" : undefined;
+  if (label === null && !windowClass) return <><pre><code>{text}</code></pre>{"\n"}</>;
+  if (label !== null && diff && "lines" in diff) return <HunkCode label={label} text={text} diff={diff} />;
+  const content = diff && "prefix" in diff
+    ? <code>{diff.prefix.map((row, i) => <ColoredRow key={i} kind={row.kind}>{row.text}</ColoredRow>)}</code>
+    : label === null || label === "code" ? <code>{text}</code> : <HighlightedCode text={text} lang={label} />;
   return (
     <div className="md-code">
-      <Head label={label} what="code" />
-      <pre>{label === "code" ? <code>{text}</code> : <HighlightedCode text={text} lang={label} />}</pre>{label === "diff" || label === "patch" ? null : "\n"}
+      <Head label={label ?? "Code"} what="code" count={count} />
+      <pre className={windowClass} style={windowClass ? scrollWindowStyle : undefined} data-patch={windowClass && (diff || label === "patch" || label === "diff") ? "" : undefined}>{content}</pre>{diff || label === "patch" ? null : "\n"}
     </div>
   );
 }
@@ -140,6 +147,44 @@ function blocks(nodes: Block[], tight = false): ReactNode[] {
         return null;
     }
   });
+}
+
+/** Cut the rendered tree at its hard breaks and block boundaries, not at viewport wraps.
+ *  A code or table window is one block; its own scrolling and copy still work. */
+export function cutMarkdown(display: Display, limit: number): { display: Display; hidden: number } {
+  let lines = 0;
+  let hiddenBlockLines = 0;
+
+  const takeInlines = (nodes: Inline[]): Inline[] => nodes.flatMap((node): Inline[] => {
+    const visible = lines <= limit;
+    if (node.type === "break") return ++lines <= limit ? [node] : [];
+    const next = container(node, true);
+    return visible && next ? [next] : [];
+  });
+
+  const takeBlocks = (nodes: Block[]): Block[] => nodes.flatMap((node): Block[] => {
+    if (node.type === "blockquote" || node.type === "list") {
+      const next = container(node);
+      return next ? [next] : [];
+    }
+
+    const visible = ++lines <= limit;
+    if (node.type === "paragraph" || node.type === "heading") {
+      const next = container(node, true);
+      return visible && next ? [next] : [];
+    }
+    if (!visible) {
+      if (node.type === "code") hiddenBlockLines += Math.max(0, sourceLines(node.value.text).length - 1);
+      if (node.type === "table") hiddenBlockLines += node.value.rows.length;
+    }
+    return visible ? [node] : [];
+  });
+
+  const container = <T extends Block | Inline>(node: T, keepEmpty = false) => mapCutContainer(
+    node, takeBlocks, takeInlines, (items) => items.map(takeBlocks).filter((item) => item.length > 0), keepEmpty,
+  );
+  const preview = { blocks: takeBlocks(display.blocks) };
+  return { display: preview, hidden: Math.max(0, lines - limit) + hiddenBlockLines };
 }
 
 export function MarkdownView({ display }: { display: Display }) {

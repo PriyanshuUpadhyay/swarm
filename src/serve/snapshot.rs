@@ -13,10 +13,12 @@ pub(super) fn read_connection(root: &Path) -> rusqlite::Result<rusqlite::Connect
 
 pub(super) async fn snapshot(State(app): State<App>) -> Result<Json<Value>, ApiError> {
     tokio::task::spawn_blocking(move || {
-        snapshot_value(&app).map(Json).map_err(|err| {
+        let mut reply = snapshot_value(&app).map_err(|err| {
             eprintln!("swarm serve: {err}");
             error(StatusCode::INTERNAL_SERVER_ERROR, "snapshot failed")
-        })
+        })?;
+        stamp_turn_clocks(&mut reply["agents"], discovery::now());
+        Ok(Json(reply))
     })
     .await
     .map_err(|_| error(StatusCode::INTERNAL_SERVER_ERROR, "snapshot task failed"))?
@@ -76,10 +78,30 @@ pub(super) fn snapshot_value(app: &Server) -> Result<Value, Box<dyn std::error::
             sessions.push(session);
         }
     }
-    let hub = app.hub.lock().unwrap();
-    Ok(
-        json!({"version": hub.version, "sessions": sessions, "archived": archived, "agents": hub.agents}),
-    )
+
+    let (version, agents) = {
+        let hub = app.hub.lock().unwrap();
+        (hub.version, hub.agents.clone())
+    };
+    Ok(json!({"version": version, "sessions": sessions, "archived": archived, "agents": agents}))
+}
+
+// A changing clock belongs to the HTTP reply, not the tree cache or its revision.
+fn stamp_turn_clocks(agents: &mut Value, now: i64) {
+    for rows in agents
+        .as_object_mut()
+        .into_iter()
+        .flat_map(|map| map.values_mut())
+    {
+        for agent in rows.as_array_mut().into_iter().flatten() {
+            if agent["turn_start_time_s"]
+                .as_i64()
+                .is_some_and(|start| start > 0 && start <= now)
+            {
+                agent["turn_clock_time_s"] = json!(now);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

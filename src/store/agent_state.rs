@@ -60,11 +60,11 @@ pub fn set_state(
     Ok(Some(old))
 }
 
-/// ADR 0147: the new `turn_at` of an update that sets state `?3` at time `now`. A move to `working`
-/// from a state other than `working` or `blocked` starts a turn; an answered block goes on with it.
+/// The new `turn_at` of an update that sets state `?3` at time `now`. Working or blocked
+/// starts a turn from an idle state; asking or answering within an active turn keeps its start.
 fn turn_at_sql(now: &str) -> String {
     format!(
-        "CASE WHEN ?3 = 'working' AND state IS NOT 'working' AND state IS NOT 'blocked'
+        "CASE WHEN ?3 IN ('working', 'blocked') AND state IS NOT 'working' AND state IS NOT 'blocked'
               THEN {now} ELSE turn_at END"
     )
 }

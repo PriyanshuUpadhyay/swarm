@@ -19,6 +19,7 @@ pub(super) fn lifecycle_error(err: lifecycle::Error) -> ApiError {
         lifecycle::Error::Forbidden => StatusCode::FORBIDDEN,
         lifecycle::Error::Invalid(_) => StatusCode::BAD_REQUEST,
         lifecycle::Error::Failed(_) | lifecycle::Error::Exists { .. } => StatusCode::CONFLICT,
+        lifecycle::Error::Read(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     error(status, &err.to_string())
 }

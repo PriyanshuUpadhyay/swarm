@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useContext, useEffect, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { usePanelRef, useDefaultLayout } from "react-resizable-panels";
 import { toast } from "sonner";
@@ -32,6 +32,8 @@ import { TabStrip } from "./tabs";
 import { applyAppearance, chooseTheme, followAppearance, useTheme } from "./appearance";
 import { copyText } from "./copy";
 import { OPEN_BACKGROUND, pickedKey, type OpenBackgroundDetail } from "../core/background";
+import { BackgroundLists } from "./background-line";
+import { Offline } from "./status";
 import { writeStore } from "../core/app-types";
 import { watchUpdates } from "./update";
 
@@ -56,9 +58,10 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   useEffect(() => followAppearance(app), [app]);
   useEffect(() => watchUpdates(app), [app]);
   const theme = useTheme();
+  const offline = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
   const sidebar = usePanelRef();
   const narrow = useSyncExternalStore(subscribeRail, showRail);
-  const [side, setSide] = useState(store.getItem(SIDE_KEY) === "right" ? "right" : "left");
+  const [side, setSide] = useState(() => store.getItem(SIDE_KEY) === "right" ? "right" : "left");
   useEffect(() => {
     frame.toggle = () => {
       if (showRail()) return;
@@ -96,22 +99,24 @@ function Root({ app, changes }: { app: App; changes: Changes }) {
   );
   return (
     <TooltipProvider>
-      {/* Keep both panels registered so their pixel sizes survive the breakpoint. */}
-      <ResizablePanelGroup key={side} orientation="horizontal" data-side={side} data-rail={narrow || undefined}
-        defaultLayout={layout.defaultLayout} onLayoutChanged={narrow ? undefined : layout.onLayoutChanged}>
-        {side === "left" && side_}
-        {side === "right" && main}
-        <ResizableHandle disabled={narrow} hidden={narrow} />
-        {side === "left" && main}
-        {side === "right" && side_}
-      </ResizablePanelGroup>
-      <Palette app={app} />
-      <BranchPicker app={app} />
-      <AskDialog app={app} />
-      <LifecycleDialogs app={app} />
-      <SettingsDialog app={app} />
-      <SkillsDialog app={app} />
-      <Toaster theme={theme} position="bottom-right" />
+      <Offline.Provider value={offline}>
+        {/* Keep both panels registered so their pixel sizes survive the breakpoint. */}
+        <ResizablePanelGroup key={side} orientation="horizontal" data-side={side} data-rail={narrow || undefined}
+          defaultLayout={layout.defaultLayout} onLayoutChanged={narrow ? undefined : layout.onLayoutChanged}>
+          {side === "left" && side_}
+          {side === "right" && main}
+          <ResizableHandle disabled={narrow} hidden={narrow} />
+          {side === "left" && main}
+          {side === "right" && side_}
+        </ResizablePanelGroup>
+        <Palette app={app} />
+        <BranchPicker app={app} />
+        <AskDialog app={app} />
+        <LifecycleDialogs app={app} />
+        <SettingsDialog app={app} />
+        <SkillsDialog app={app} />
+        <Toaster theme={theme} position="bottom-right" />
+      </Offline.Provider>
     </TooltipProvider>
   );
 }
@@ -122,13 +127,14 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
   // A starting chat shows its steps until the owner moves away (ADR 0149).
   const start = useNewChat(app, () => app.newChat.shown());
   const workspace = useSyncExternalStore(app.subscribe, () => app.view.workspace);
-  const reconnecting = useSyncExternalStore(app.subscribe, () => app.view.reconnecting);
+  const reconnecting = useContext(Offline);
+  const lastUpdate = useSyncExternalStore(app.subscribe, () => app.view.reconnecting ? app.view.lastStreamUpdate : null);
   // Home and a workspace that takes new chats show the composer in the page; elsewhere ⌘N opens it over the view.
   const inPage = useSyncExternalStore(app.subscribe, () => composerInPage(app.view));
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      {reconnecting && <div role="status" data-testid="reconnecting" className="border-b border-waiting/40 bg-waiting/10 px-3 py-1 text-xs">Reconnecting… Live updates have stopped.</div>}
+      {reconnecting && <ReconnectBanner lastUpdate={lastUpdate} />}
       {(workspace || openId) && (
         <div className="flex min-w-0">
           <div className="min-w-0 flex-1">{workspace && <TabStrip app={app} />}</div>
@@ -145,6 +151,18 @@ function Main({ app, changes }: { app: App; changes: Changes }) {
         </div>
         <WorkspacePanel app={app} changes={changes} />
       </div>
+    </div>
+  );
+}
+
+const lastUpdateClock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+
+function ReconnectBanner({ lastUpdate }: { lastUpdate: number | null }) {
+  const at = lastUpdate === null ? null : new Date(lastUpdate);
+  return (
+    <div role="status" data-testid="reconnecting" className="flex h-7 shrink-0 items-center justify-between gap-2 border-b border-waiting/40 bg-waiting/10 px-3 text-sm">
+      <span className="min-w-0 truncate">Reconnecting… Live updates have stopped.</span>
+      {at && <span className="shrink-0 text-muted-foreground">last update <time className="font-mono" dateTime={at.toISOString()}>{lastUpdateClock.format(at)}</time></span>}
     </div>
   );
 }
@@ -182,23 +200,25 @@ function ChatColumn({ app, openId }: { app: App; openId: string }) {
   // The ids must be the panels that mount, so each set keeps its own saved layout.
   const layout = useDefaultLayout({ id: "swarm.background", storage: store, panelIds: open ? ["chat-panel", "background-panel"] : ["chat-panel"] });
   return (
-    <ResizablePanelGroup orientation="vertical" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
-      <ResizablePanel id="chat-panel" minSize="160px">
-        <div className="flex h-full min-h-0 flex-col">
-          <PaneStrip app={app} />
-        </div>
-      </ResizablePanel>
-      {open && <ResizableHandle className="h-px w-full after:inset-x-0 after:inset-y-auto after:top-1/2 after:left-0 after:h-[7px] after:w-full after:translate-x-0 after:-translate-y-1/2" />}
-      {open && (
-        <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
-          <LoadFailed key={openId} what="background panel">
-            <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
-              <BackgroundPanel key={pick} app={app} session={openId} focusRequest={focusRequest.session === openId ? focusRequest.seq : 0} />
-            </Suspense>
-          </LoadFailed>
+    <BackgroundLists app={app} session={openId}>
+      <ResizablePanelGroup orientation="vertical" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
+        <ResizablePanel id="chat-panel" minSize="160px">
+          <div className="flex h-full min-h-0 flex-col">
+            <PaneStrip app={app} />
+          </div>
         </ResizablePanel>
-      )}
-    </ResizablePanelGroup>
+        {open && <ResizableHandle className="h-px w-full after:inset-x-0 after:inset-y-auto after:top-1/2 after:left-0 after:h-[7px] after:w-full after:translate-x-0 after:-translate-y-1/2" />}
+        {open && (
+          <ResizablePanel id="background-panel" defaultSize="280px" minSize="120px">
+            <LoadFailed key={openId} what="background panel">
+              <Suspense fallback={<p role="status" className="p-3 text-sm text-muted-foreground">Loading…</p>}>
+                <BackgroundPanel key={pick} app={app} session={openId} focusRequest={focusRequest.session === openId ? focusRequest.seq : 0} />
+              </Suspense>
+            </LoadFailed>
+          </ResizablePanel>
+        )}
+      </ResizablePanelGroup>
+    </BackgroundLists>
   );
 }
 

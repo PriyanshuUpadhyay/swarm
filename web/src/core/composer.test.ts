@@ -221,10 +221,7 @@ describe("chat actions", () => {
     app.openChat("chat");
     await settle();
     await app.send("chat", "also check the docs");
-    expect(app.view.lines.map((l) => [l.row.kind, l.row.text])).toEqual([
-      ["user", "hello"],
-      ["notice", "Working…"],
-    ]);
+    expect(app.view.lines.map((l) => [l.row.kind, l.row.text])).toEqual([["user", "hello"]]);
   });
 
   it("shows pi's queue as its screen lists it, and nothing once the screen lists none", async () => {
@@ -243,29 +240,22 @@ describe("chat actions", () => {
     await app.send("chat", "/compact");
     await app.send("chat", "note typed during compaction");
     const lines = () => app.view.lines.map((l) => [l.row.kind, l.row.text, l.row.detail]);
-    expect(lines()).toEqual([
-      ["user", "hello", undefined],
-      ["notice", "Working…", undefined],
-    ]);
+    expect(lines()).toEqual([["user", "hello", undefined]]);
     pi({ state: "working", queue: [{ mode: "steering", text: "note typed during compaction", id: "queue-0", detail: "Steering", images: [] }] });
     app.openChat("chat");
     expect(lines()).toEqual([
       ["user", "hello", undefined],
       ["queued", "note typed during compaction", "Steering"],
-      ["notice", "Working…", undefined],
     ]);
     expect(app.view.composer!.queued).toBe(1);
     // pi took the note straight after the compaction, with no idle pane between.
     pi({ state: "working", queue: [] });
     app.openChat("chat");
-    expect(lines()).toEqual([
-      ["user", "hello", undefined],
-      ["notice", "Working…", undefined],
-    ]);
+    expect(lines()).toEqual([["user", "hello", undefined]]);
     expect(app.view.composer!.queued).toBe(0);
   });
 
-  it("shows Claude's /compact only as a Working line until Claude logs it", async () => {
+  it("keeps Claude's /compact out of the transcript until Claude logs it", async () => {
     const { app, snapshot } = harness();
     snapshot();
     (app as unknown as { applySnapshot(s: Snapshot): void }).applySnapshot({
@@ -276,10 +266,7 @@ describe("chat actions", () => {
     app.openChat("chat");
     await settle();
     await app.send("chat", "/compact");
-    expect(app.view.lines.map((l) => [l.row.kind, l.row.text])).toEqual([
-      ["user", "hello"],
-      ["notice", "Working…"],
-    ]);
+    expect(app.view.lines.map((l) => [l.row.kind, l.row.text])).toEqual([["user", "hello"]]);
   });
 });
 

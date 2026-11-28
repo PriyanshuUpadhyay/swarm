@@ -4,12 +4,68 @@ use super::claude_input::{self, Input};
 use super::claude_json::{self, Object};
 use super::pi_text;
 use super::{NormalizedEvent, SnapshotError, Work};
+use crate::view::transcript::{ChildState, PI_CHILD_SLOTS, SUBAGENT_TOOL};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 use serde_json::{Value, json, value::RawValue};
 
 /// Swarm's Pi question tool (src/bus/pi_live.ts), shown like Claude's AskUserQuestion.
 const QUESTION_TOOL: &str = "ask_user_question";
+
+fn child_results(
+    fact: &mut Fact,
+    item: &Object<'_>,
+    expected_call: Option<&str>,
+    work: &mut dyn Work,
+) -> Result<(), SnapshotError> {
+    let Some(details) = item.object("details") else {
+        return Ok(());
+    };
+    let call = details.text("callId");
+    if details.integer("v") != Some(1)
+        || call.is_empty()
+        || expected_call.is_some_and(|id| id != call)
+    {
+        return Ok(());
+    }
+    let Some(results) = details
+        .array("results")
+        .filter(|items| items.len() <= PI_CHILD_SLOTS)
+    else {
+        return Ok(());
+    };
+
+    let mut states = [None; PI_CHILD_SLOTS];
+    for raw in results {
+        work.check()?;
+        let Some(result) = Object::parse(raw) else {
+            return Ok(());
+        };
+        let Some(slot) = result
+            .integer("slot")
+            .filter(|n| (1..=PI_CHILD_SLOTS as i64).contains(n))
+        else {
+            return Ok(());
+        };
+
+        let state = result
+            .get("state")
+            .and_then(|raw| serde_json::from_str::<ChildState>(raw.get()).ok());
+        if let Some(state) = state
+            && states[slot as usize - 1].replace(state).is_some()
+        {
+            return Ok(());
+        }
+    }
+
+    if states.iter().any(Option::is_some) {
+        fact.push(
+            "pi_child_results",
+            json!({"tool_call_id":call,"states":states}),
+        );
+    }
+    Ok(())
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct Meta {
@@ -178,6 +234,9 @@ pub(crate) fn parse_fact(line: &[u8], work: &mut dyn Work) -> Result<Fact, Snaps
             json!({"kind": kind, "text": record.text("summary")}),
         ),
         "custom_message" => {
+            if record.text("customType") == "swarm-pi-subagents" {
+                child_results(&mut fact, &record, None, work)?;
+            }
             // pi-processes writes its notice for the model as XML, and a summary line for people.
             let summary = (record.text("customType") == "ad-process:notification")
                 .then(|| record.object("details")?.optional_text("summary"))
@@ -257,6 +316,9 @@ fn parse_message(
             );
         }
         "toolResult" => {
+            if message.text("toolName") == SUBAGENT_TOOL {
+                child_results(fact, message, Some(&message.text("toolCallId")), work)?;
+            }
             let text = pi_text::join_text(content, work)?;
             fact.push(
                 "tool_call_update",

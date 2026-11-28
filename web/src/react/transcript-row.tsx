@@ -1,22 +1,25 @@
 // Transcript rows, message bubbles, and disclosures.
-import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, MailIcon, PencilIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, FileCodeIcon, GitBranchIcon, MailIcon, PencilIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import type { Row, TextPreview } from "../core/api";
 import type { FullText, Reader } from "../core/app";
-import { duration, imagesOf, isCliJoin, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
+import { duration, imagesOf, isCliJoin, LIVE_THOUGHT, paintBodyOf, UNMAPPED, wordAt, type Line } from "../core/transcript";
 import { fold, type FoldLevel } from "../core/fold-display";
+import { Kbd } from "../components/ui/kbd";
 import { copyText } from "./copy";
-import { Glyph } from "./glyph";
+import { CutLine, plural, sourceLines } from "./cut-line";
 import { ImageThumbs } from "./images";
-import { ImageLoader, MarkdownView } from "./markdown-view";
+import { cutMarkdown, ImageLoader, MarkdownView } from "./markdown-view";
 import { DiffView, OutputBox } from "./transcript-output";
 import { PlanRow, TodoRow } from "./transcript-todo";
 import { SubagentRow } from "./subagent-chat";
 import { ShellRow, StatusGlyph, ToolCard } from "./transcript-tool";
 
-type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; composerId?: string; branches?: boolean };
+type CutState = { key: string | Row; shown: boolean; reveal: () => void };
+type Ctx = { app: Reader; line: Line; full: ReadonlyMap<string, FullText>; cutState?: CutState; composerId?: string; branches?: boolean; match?: string };
 
-function LineView({ app, line, index, full, match, composerId, branches }: Ctx & { index: number; match?: string }) {
+function LineView({ index, queueStart, showQueueHint, ...ctx }: Ctx & { index: number; queueStart?: boolean; showQueueHint?: boolean }) {
+  const { app, line, match } = ctx;
   const { row } = line;
 
   return (
@@ -29,7 +32,10 @@ function LineView({ app, line, index, full, match, composerId, branches }: Ctx &
       className={`line${line.fold ? " step" : ""}`}
     >
       <ImageLoader.Provider value={app.imageUrl}>
-        <RowBody app={app} line={line} full={full} composerId={composerId} branches={branches} />
+        {queueStart && <div className="flex h-5 items-center justify-end gap-1 text-xs text-muted-foreground">
+          {showQueueHint && <><Kbd>↑</Kbd> to edit queued messages</>}
+        </div>}
+        <RowBody {...ctx} />
       </ImageLoader.Provider>
     </div>
   );
@@ -40,7 +46,6 @@ const LABEL: Partial<Record<Row["kind"], string>> = {
   toolResult: "Result",
   diff: "Changes",
   question: "Question",
-  error: "Error",
   notice: "Notice",
   system: "System",
   result: "Result",
@@ -56,6 +61,39 @@ function MdBody({ row }: { row: Row }) {
     case "tree":
       return <div className="md"><MarkdownView display={body.display} /></div>;
   }
+}
+
+const CUT_AT = 12;
+
+function MessageCut({ line: { row }, cutState, match, thought }: Pick<Ctx, "line" | "cutState" | "match"> & { thought?: boolean }) {
+  const [opened, setOpened] = useState<string | Row | true | null>(null);
+  const key = cutState?.key ?? true;
+
+  const body = thought ? null : paintBodyOf(row);
+  const open = cutState?.shown || opened === key || !!match;
+  const show = () => {
+    cutState?.reveal();
+    setOpened(key);
+  };
+
+  if (body?.kind === "tree") {
+    const cut = open ? null : cutMarkdown(body.display, CUT_AT);
+    return <>
+      <div className="md"><MarkdownView display={cut?.hidden ? cut.display : body.display} /></div>
+      {!!cut?.hidden && <CutLine count={`+${plural(cut.hidden, "line")}`} show={show} />}
+    </>;
+  }
+
+  const lines = open ? [] : sourceLines(row.text);
+  const hidden = Math.max(0, lines.length - CUT_AT);
+  return <>
+    <div className={thought ? "thought" : "whitespace-pre-wrap"} data-testid={thought ? "thought-text" : undefined}>{hidden ? lines.slice(0, CUT_AT).join("\n") : row.text}</div>
+    {hidden > 0 && <CutLine count={`+${plural(hidden, "line")}`} show={show} />}
+  </>;
+}
+
+function isQueued(row: Row): boolean {
+  return row.kind === "queued" || row.system_kind === "queued_prompt";
 }
 
 // The level each reply is read at, by row id. Rows remount as the transcript scrolls, so a
@@ -109,12 +147,6 @@ function RowBody(ctx: Ctx) {
         {row.detail && <span className="text-muted-foreground">{row.detail}</span>}
       </div>
     );
-  if (row.system_kind === "working")
-    return (
-      <div className="quiet" role="status" data-testid="working">
-        <Glyph form="working" size={12} aria-hidden /> {row.text}
-      </div>
-    );
   if (row.system_kind === UNMAPPED)
     return (
       <div className="quiet" data-testid="unmapped">
@@ -153,11 +185,11 @@ function RowBody(ctx: Ctx) {
     return (
       <Bubble
         row={row}
-        queued={row.kind === "queued" || row.system_kind === "queued_prompt"}
+        queued={isQueued(row)}
         reuse={row.kind === "user" && composerId ? () => app.reuse(composerId, row.text) : undefined}
         branch={row.kind === "user" && app.branch && (row.source_session ? app.canBranchFrom?.(row.source_session) : ctx.branches) ? () => app.branch?.(row.id) : undefined}
       >
-        <MdBody row={row} />
+        <MessageCut {...ctx} />
         <ImageThumbs paths={imagesOf(row)} load={app.imageUrl} />
       </Bubble>
     );
@@ -184,11 +216,18 @@ function RowBody(ctx: Ctx) {
   const label = <div className="row-label">{LABEL[row.kind] ?? row.kind}</div>;
   switch (row.kind) {
     case "thought":
+      if (row.id === LIVE_THOUGHT) return (
+        <div className="thought live-thought" data-testid="thought-text">
+          <div>{sourceLines(row.text).slice(-4).join("\n")}</div>
+        </div>
+      );
       // The CLI wrote no summary, so the row only shows that the agent thought.
       if (!row.text.trim()) return <div className="quiet">{LABEL.thought}</div>;
       return (
         <Disclosure app={app} line={line} title={LABEL.thought ?? row.kind}>
-          <div className="thought" data-testid="thought-text">{row.text}</div>
+          <div className="pl-[18px]">
+            <MessageCut {...ctx} thought />
+          </div>
         </Disclosure>
       );
     case "diff":
@@ -207,9 +246,10 @@ function RowBody(ctx: Ctx) {
       );
     case "error":
       return (
-        <div className="grid gap-0.5">
-          {label}
-          <div className="text-failed whitespace-pre-wrap">{row.text}</div>
+        <div className="cli-error">
+          <XIcon className="size-3.5 text-failed" aria-hidden />
+          <span className="font-semibold">Error</span>
+          <span className="font-mono text-failed whitespace-pre-wrap">{row.text}</span>
         </div>
       );
     case "system":

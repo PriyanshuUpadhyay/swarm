@@ -1,8 +1,8 @@
 use super::tool;
 use super::transcript::checklist;
 use super::transcript::{
-    RECORD, Record, Row, RowKind, SubagentRun, TodoItem, UNMAPPED, chip, meta, row, shell_row,
-    string, subagent_labels,
+    RECORD, Record, Row, RowKind, TodoItem, UNMAPPED, chip, meta, pi_child_facts, row, shell_row,
+    string, subagent_run,
 };
 use super::{TextPreview, ToolActivity, ToolState};
 use std::collections::{HashMap, HashSet};
@@ -207,6 +207,7 @@ pub(super) fn rows_with_context(
             joined.insert(index);
         }
     }
+    let child_facts = pi_child_facts(records);
     let mut tasks: Vec<(String, TodoItem)> = Vec::new();
     let mut rows: Vec<Row> = Vec::new();
     let mut used = HashSet::new();
@@ -304,7 +305,6 @@ pub(super) fn rows_with_context(
                 state
             };
             if row.kind == RowKind::Subagent {
-                let (agent_type, description) = subagent_labels(&input, name);
                 let state = activity
                     .get(&index)
                     .and_then(|items| items.last())
@@ -312,23 +312,12 @@ pub(super) fn rows_with_context(
                         tool::subagent_state(string(&records[*index].event, "kind"), state)
                     });
 
-                let call_id = string(event, "tool_call_id");
-                let other_call_ids = if name == "subagent" {
-                    let count = input["tasks"].as_array().map_or(1, Vec::len).min(4);
-                    (2..=count)
-                        .map(|slot| format!("{call_id}.{slot}"))
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                row.subagent = Some(SubagentRun {
-                    call_id: call_id.into(),
-                    other_call_ids,
-                    agent_type,
-                    description,
+                row.subagent = Some(subagent_run(
+                    event,
                     state,
-                    result: last_update.and_then(|record| record.text_preview.clone()),
-                });
+                    last_update.and_then(|record| record.text_preview.clone()),
+                    child_facts.get(&index).copied().unwrap_or_default(),
+                ));
             } else {
                 row.tool = Some(ToolActivity {
                     name: name.into(),

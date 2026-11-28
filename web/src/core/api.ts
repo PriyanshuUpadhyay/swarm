@@ -15,7 +15,7 @@ export type Session = {
   [field: string]: unknown;
 };
 
-export type Agent = { id: string; role: string; state: string | null; alive: boolean | null; [field: string]: unknown };
+export type Agent = { id: string; role: string; state: string | null; alive: boolean | null; turn_start_time_s?: number; turn_clock_time_s?: number; [field: string]: unknown };
 
 export type Snapshot = { version: number; sessions: Session[]; agents: Record<string, Agent[]> };
 
@@ -100,7 +100,8 @@ export type FoldSummary = {
 
 /** One step of a `todoList` row; `activeText` shows while the step runs. */
 export type TodoItem = { text: string; status: "pending" | "in_progress" | "completed"; active_text?: string };
-export type SubagentRun = { call_id: string; other_call_ids?: string[]; agent_type: string; description: string; state: ToolState; result?: TextPreview };
+export type SubagentChild = { call_id: string; description: string; state?: string };
+export type SubagentRun = { call_id: string; other_call_ids?: string[]; children?: SubagentChild[]; agent_type: string; description: string; state: ToolState; result?: TextPreview };
 
 export type Row = {
   id: string;
@@ -226,6 +227,9 @@ export class ApiError extends Error {
   }
 }
 
+const snapshotReceipts = new WeakMap<Snapshot, number>();
+export const snapshotReceivedAt = (snapshot: Snapshot) => snapshotReceipts.get(snapshot);
+
 export class Api {
   constructor(
     private readonly token: string,
@@ -253,8 +257,10 @@ export class Api {
     });
   }
 
-  snapshot(): Promise<Snapshot> {
-    return this.json("/api/snapshot");
+  async snapshot(): Promise<Snapshot> {
+    const snapshot = await this.json<Snapshot>("/api/snapshot");
+    snapshotReceipts.set(snapshot, performance.now());
+    return snapshot;
   }
 
   rows(session: string, agent: string, tail: number, before?: number | string): Promise<RowPage> {

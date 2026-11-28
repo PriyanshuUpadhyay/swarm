@@ -159,8 +159,17 @@ fn agent_snapshot(
                     rows
                 })
             };
+
             if let Ok(mut rows) = rows {
                 for agent in rows.as_array_mut().into_iter().flatten() {
+                    if matches!(agent["state"].as_str(), Some("working" | "blocked"))
+                        && agent["alive"].as_bool() != Some(false)
+                        && let Some(id) = agent["id"].as_str()
+                        && let Ok(Some(at)) = swarm::store::turn_at(connection, &session.id, id)
+                    {
+                        agent["turn_start_time_s"] = json!(at);
+                    }
+
                     for (index, item) in agent
                         .get_mut("queue")
                         .and_then(Value::as_array_mut)

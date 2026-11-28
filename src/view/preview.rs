@@ -23,6 +23,15 @@ pub(crate) fn prefix_end(text: &str, limit: usize) -> usize {
 }
 
 impl TextPreview {
+    /// The last preview line is partial only if the source continues it.
+    pub(crate) fn ends_with_partial_line(&self, source: &str) -> bool {
+        !self.text.ends_with('\n')
+            && source
+                .as_bytes()
+                .get(self.text.len())
+                .is_some_and(|b| *b != b'\n')
+    }
+
     pub fn new(source: &str, line_limit: usize) -> Self {
         let prefix = &source[..prefix_end(source, 12_000)];
         let mut lines: Vec<_> = prefix.split('\n').collect();

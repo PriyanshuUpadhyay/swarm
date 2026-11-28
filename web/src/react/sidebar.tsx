@@ -1,7 +1,7 @@
 // The owner can open, pick and fold rows of one server-projected list.
 
 import { ArchiveRestoreIcon, TriangleAlertIcon } from "lucide-react";
-import { useRef, useSyncExternalStore, type MouseEvent } from "react";
+import { useContext, useRef, useSyncExternalStore, type MouseEvent } from "react";
 import type { App } from "../core/app";
 import { archivedSession, currentRow, workspaceRow } from "../core/nav";
 import { canStartIn } from "../core/new-chat";
@@ -10,7 +10,7 @@ import { ContextMenu, ContextMenuTrigger } from "../components/ui/context-menu";
 import { Kbd } from "../components/ui/kbd";
 import { RowHints, RowMenu } from "./row-overlays";
 import { RowBar, treeTarget } from "./row-actions";
-import { StatusGlyph } from "./status";
+import { Offline, StatusGlyph } from "./status";
 import { RowView } from "./sidebar-row";
 import { SidebarHeader } from "./sidebar-header";
 
@@ -30,6 +30,7 @@ function WorkspaceList({ app }: { app: App }) {
   const marked = useSyncExternalStore(app.subscribe, () => app.view.marked);
   const loaded = useSyncExternalStore(app.subscribe, () => app.view.loaded);
   const error = useSyncExternalStore(app.subscribe, () => app.view.error);
+  const offline = useContext(Offline) && !(error && rows.length > 0);
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   const treeName = useSyncExternalStore(app.subscribe, () => app.view.treeName);
   const openId = useSyncExternalStore(app.subscribe, () => app.view.openId);
@@ -98,6 +99,7 @@ function WorkspaceList({ app }: { app: App }) {
           Hold <Kbd>⌘</Kbd> for actions
         </span>
       </div>
+      {offline && <p className="shrink-0 px-4 py-2 text-xs text-muted-foreground">Offline. Showing the last list.</p>}
     </>
   );
 }
