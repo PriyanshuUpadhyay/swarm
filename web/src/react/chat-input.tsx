@@ -34,7 +34,7 @@ export function ChatInput({ app, composer }: { app: App; composer: Composer }) {
   return (
     <div ref={root} className="chat-input shrink-0 px-6 pt-1 pb-4">
       <div className="mx-auto grid max-w-[760px] gap-2">
-        <StatusLine key={id} app={app} composer={composer} />
+        <StatusLine key={`status:${id}`} app={app} composer={composer} />
         {!agent.who && <BackgroundLine key={`background:${id}`} session={id} />}
         {state.banner && <ChatBanner app={app} sessionId={id} banner={state.banner} />}
         {agent.prompt && <PromptCard app={app} sessionId={id} who={agent.who} prompt={agent.prompt} state={state} />}
