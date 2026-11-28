@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: "Wide web search by three visible seats on separate sites, which dig past the known answers and report to files. Use when a research step needs forums or community views, or this session's fetches are blocked."
+description: "Run a wide web search in three visible seats. Use when research needs forums or community views, or this session's fetches are blocked."
 license: MIT
 metadata:
   kind: step
@@ -14,11 +14,9 @@ metadata:
 ---
 
 ## Rules
-Three visible seats search three different parts of the web at the same time, each with its own
-tools, and each writes its findings to a file. The chair merges them into one report. One session's
-blocked fetch is another seat's open page, so the coverage is wider than any single session.
+Three visible seats search different parts of the web in parallel. The chair merges their reports.
 
-`blocks/run-workers/SKILL.md` selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute. When no user can answer that stop or another owner gate, apply `blocks/worker-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
+`blocks/run-workers/SKILL.md` selects the host and its reference; web search names no host. Without a visible host, stop and say so; a hidden or headless seat is not a substitute. When no user can answer that stop or another owner gate, apply `blocks/subagent-brief/SKILL.md`. The default is to search with this session's tools and report the missing seat coverage.
 - The kit root is two folders up from this file.
 - Run the wide search when any of these is true; otherwise write in the step which trigger did not hold:
   - the user says intensive, wide, forums, or community;
@@ -26,11 +24,11 @@ blocked fetch is another seat's open page, so the coverage is wider than any sin
   - this session's own fetches are blocked;
   - the local step or a first web pass returned only the answers the user already knew.
 
-**Start or continue.**
+### Start or continue
 
-A web search is a step run, so the kit's `references/step-run.md` owns the status line, pick-up,
+A web search is a step run, so the kit's [`references/step-run.md`](../../references/step-run.md) owns the status line, pick-up,
 close, and when a step waits for the user. Choose the web-search run and report paths by
-`references/run-folder.md`; the run folder also keeps the seat reports at the end.
+[`references/run-folder.md`](../../references/run-folder.md); the run folder also keeps the seat reports at the end.
 "web-search continue <folder>" picks it up. Make the folder with
 `python3 <kit root>/references/step_run.py start <folder> <kit root>/blocks/web-search/SKILL.md`, and close each step with `done`.
 
@@ -44,16 +42,13 @@ close, and when a step waits for the user. Choose the web-search run and report 
 
 For the default route, record `default taken` in `01-brief` and use `skip` on `02-seats` with that reason. Check this session's findings in `03-gate`, merge them in `04-merge`, and record that no seats or launch scratch were created in `05-close`.
 
-**Seat mechanics.**
+### Seat mechanics
 
 The chair runs the seats as the kit block `blocks/run-workers/SKILL.md` says, on the cheap
 `search.web` route, and every seat is a visible pane. Share one brief. Completion on swarm is the
 seat's ring and its report file.
 
-Record the actual routed models as `blocks/run-workers/SKILL.md` requires. The site-set seat
-names below describe search purposes, not provider identities.
-
-These four details differ from a council run.
+The site-set seat names below describe search purposes, not provider identities.
 
 - Agent names are `ws-<voice>-<run>`, so a search and a council can run at the same time.
 - Use the web-search launch scratch in `references/run-folder.md` as every seat's `--cwd`. The launcher
@@ -65,7 +60,7 @@ These four details differ from a council run.
   `swarm launch`, so its browser rows reach the local `playwriter` relay. No other Codex seat gets
   this flag.
 
-**Default site sets.**
+### Default site sets
 
 | Seat | Sites |
 |---|---|
@@ -77,7 +72,7 @@ The caller may replace any of these sets. Write the set each seat gets into that
 Every seat also gets one non-SEO index for the long tail: Marginalia Search, Kagi Small Web, or
 Exa "find similar" from a primary source, whichever its tools can reach.
 
-**Reach tools.**
+### Reach tools
 
 `scripts/reach.py` holds the known route for each site and its fallbacks, in a fixed order. It
 prints the first route that gives content, logs each route that failed, and ends with a `blocked:`
@@ -99,37 +94,37 @@ YouTube: yt-dlp --write-auto-sub --skip-download -o "/tmp/%(id)s" "<url>"
 Write `<kit root>` as the kit's real folder in the brief. The browser route (Reddit, X, Lobsters,
 and pages that block a reader) needs `playwriter` on the PATH, its extension on in the user's
 browser, and a seat that may reach local addresses. The Seat mechanics section names the launch
-flag for a Codex seat, whose sandbox blocks them. The routes only read, so a seat never signs in,
-posts, likes, follows, or types into a page there. The Reddit and X rows try the pinned last30days
-engine first (`~/.local/share/swarm-vendor/last30days-v3.31.0`, never edited) and use the browser
-when it gives nothing.
+flag for a Codex seat, whose sandbox blocks them. Use browser routes for reading only. Do not sign
+in, post, like, follow, or type into a page, because that could change the user's browser or account
+state. Reddit and X use the unmodified `~/.local/share/swarm-vendor/last30days-v3.31.0` first and
+use the browser when it gives nothing.
 
-**Depth, a hard rule.**
+### Depth gate
 
-The value of a seat is what sits below the famous answers. Every brief gives the kit block
+Every brief gives the kit block
 `blocks/deep-search/SKILL.md` with the known list and the seeds filled in, and adds the two seat
 rules below. A seat of another provider than the chair gets each named block's Rules quoted, as
-`blocks/worker-brief/SKILL.md` says; a seat of the chair's provider gets the block paths. The chair enforces all of them when each report arrives. The chair takes the seeds
+`blocks/subagent-brief/SKILL.md` says; a seat of the chair's provider gets the block paths. The chair enforces all of them when each report arrives. The chair takes the seeds
 from prior reports and its own knowledge at brief time. For later seeds from local sources, follow
 the `03-web` section of `skills/research/SKILL.md`.
 
 1. **Yield** — at least five findings that are not on the known list, each with evidence, one
    honest weakness, a source-agreement tag by `blocks/cite-sources/SKILL.md`, and one line on why
    it is under-discussed (new, niche, no marketing, non-English community). Attribute and count
-   sources by that same block. Fewer is a Coverage note that names the searches tried, never "nothing found".
+   sources by that same block. If there are fewer, name the searches tried in Coverage so the chair can assess the gap.
 2. **Floor** — say in Coverage how many threads or pages from the seat's own site set it read. A
    seat that read fewer than ten names why its site set ran dry.
 
-**The shared brief.**
+### Shared brief
 
-Apply `blocks/worker-brief/SKILL.md` for common fields and read/write limits. One brief has one
+Apply `blocks/subagent-brief/SKILL.md` for common fields and read/write limits. One brief has one
 section per seat, with these search-specific fields:
 
 1. the question, verbatim, and its sub-questions, split by the chair as `blocks/deep-search/SKILL.md`
    says;
 2. the site set for that seat;
-3. an "already cited, do not re-cite" list;
-4. **depth** — the deep-search block and the Yield and Floor rules above, given as the Depth rule
+3. a list of sources already cited, so the seat surfaces new evidence;
+4. **depth** — the deep-search block and the Yield and Floor rules above, given as the Depth gate section
    says, with the known list and the seeds filled in;
 5. **method** — use your own native search and fetch tools and the Reach tools block; when a
    site blocks you, run the `reach.py` row for it, then try the search snippet, a public mirror,
@@ -145,14 +140,14 @@ section per seat, with these search-specific fields:
    as `blocks/primary-sources/SKILL.md` says, `What is contested`, `Sources` newest first, under
    800 words, and a final `RESEARCH_DONE` line;
 8. **layout** — the seat's report follows the section order in
-   the kit's `references/plan-layout.md` where that file applies; quote the rule lines the seat
+   the kit's [`references/plan-layout.md`](../../references/plan-layout.md) where that file applies; quote the rule lines the seat
    needs, because Codex and AGY seats do not load it.
 
-Use a literal result path (`blocks/worker-brief/SKILL.md`) under the run directory.
+Use a literal result path (`blocks/subagent-brief/SKILL.md`) under the run directory.
 
-**Chair synthesis.**
+### Chair synthesis
 
-Gate each seat's report when it arrives; do not wait for the other seats. Merge after the gate
+Gate each seat's report as it arrives so a resend can start before the others finish. Merge after the gate
 has handled all three reports.
 
 1. Apply the depth gate. Reject a report whose findings are all on the known list, that stops at
@@ -160,7 +155,7 @@ has handled all three reports.
    without a blocked log, or whose matrix leaves a sub-question with no sources and no gap note.
    Send that seat back at once, once only, with the depth rules quoted. Accept what it returns,
    and say so in the coverage table. Record `sent back: <seat> 1`
-   in `03-gate.md` and read that line before any resend, so a seat is never sent back twice.
+   in `03-gate.md` and read that line before any resend, to enforce the one-resend cap.
    Apply `blocks/cite-sources/SKILL.md` to each claim's evidence. Drop a finding that repeats the
    brief's seed words without a page that says them.
 2. Check every link as `blocks/link-check/SKILL.md` says.
@@ -171,24 +166,19 @@ has handled all three reports.
 5. Close out the seats by `blocks/run-workers/SKILL.md`.
 6. Remove the scratch run directory last.
 
-**Second round.**
+### Second round
 
 Run a second round only when the seats contradict each other on the answer, not to polish a report
 they agree on. Give each seat the other two seats' findings and ask for its answer in under 350
 words.
 
-**Guards.**
+### Guards
 
-- Use the report-only seat contract in `blocks/worker-brief/SKILL.md`.
-- Every claim follows `blocks/cite-sources/SKILL.md` and its parent `blocks/sources/SKILL.md`.
+- Use the report-only seat contract in `blocks/subagent-brief/SKILL.md`.
 
 ## Example
-Initial state: a research question about practice, with three seats briefed.
-Action: the forums seat reads 19 Reddit threads, the code/long-form seat is blocked by Reddit
-with a 403 and reads 18 GitHub issues, and the independent communities seat reads 12 Hacker
-News and Lobsters threads. The chair applies
-`blocks/link-check/SKILL.md` to those links and puts the counts in the coverage table.
-Result: the merged report has three coverage rows, and the code/long-form row names Reddit as blocked with its blocked log.
+- Bad: write "blocked by Reddit" without showing the attempts.
+- Good: name the routes and their errors for Reddit, count the threads read, and put the gap in the coverage table.
 
 ## Check (script)
 - none: the seat reports and the merged report live in the run folder, which differs for each run.

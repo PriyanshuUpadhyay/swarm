@@ -1,6 +1,6 @@
 ---
 name: lean-review
-description: "List only code to cut in a diff or repo, one tagged line per finding, plus the ledger of marked shortcuts. Use when asked what to delete, for an over-engineering review, or a repo audit."
+description: "List code to cut and mark shortcuts. Use when asked what to delete, to review over-engineering, or to audit a repo for cleanup."
 license: MIT
 metadata:
   kind: step
@@ -24,7 +24,7 @@ metadata:
 - Write one line per finding: `<file>:L<line>: <tag> <what>. <replacement>.`
 - For a diff, keep the diff order. For a whole repo, rank the findings by the biggest cut first.
 - End with `net: -<N> lines possible` (and `-<M> deps` for a repo). With nothing to cut, write `Lean already.`
-- A single smoke test or a small `assert` self-check is the minimum, not extra code. Never list it.
+- Keep a single smoke test or a small `assert` self-check as the minimum, outside the cut list.
 - For the shortcut ledger, run `rg -n '(#|//) ?(lean|ponytail):'` and write one row per marker: `<file>:<line>, <what>. limit: <limit>. upgrade: <trigger>.` Tag a marker with no upgrade trigger `no-trigger`. End with `<N> markers, <M> with no trigger.`
 
 ## Example

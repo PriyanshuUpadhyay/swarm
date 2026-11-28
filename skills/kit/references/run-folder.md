@@ -27,11 +27,11 @@ ignored, and `swarm task drop` deletes ignored files with the worktree, so no on
 after the run. `~/.swarm/ws/` and other folders outside the worktree stay until someone deletes them.
 
 Outside a repository, make scratch with `mktemp -d`. It lands in `$TMPDIR`, which only your
-account can open. Do not use a bare `/tmp/<name>`, because `swarm launch` cannot pre-trust a seat
+account can open. Use that folder, not a bare `/tmp/<name>`, because `swarm launch` cannot pre-trust a seat
 there, so each seat stops at its folder-trust question.
 
 For build, `<piece>` is the folder the owner names. When none is named, ask the owner at intake,
-and do not default to a product repo's root. Keep its source and export there, with the `ink/` progress folder inside it.
+and use a product repo's root only when the task calls for it. Keep its source and export there, with the `ink/` progress folder inside it.
 
 For council, `<log>` is the chosen log file's parent folder. The caller keeps its artifact names
 and passes the run kind here. This table changes no saved history or piece assets.
@@ -41,7 +41,7 @@ Example. An `implement` task in `pair` mode in `~/work/app/wt/feat-login` writes
 because `/tmp/` is in the clone's `.git/info/exclude`.
 
 - Before the first write, make sure that `/tmp/` is a line in `.git/info/exclude`. That file is local
-  to the clone, so the team never sees it, and one line covers every worktree:
+  to the clone, so the exclusion stays local, and one line covers every worktree:
 
   ```sh
   x="$(git rev-parse --git-common-dir)/info/exclude"

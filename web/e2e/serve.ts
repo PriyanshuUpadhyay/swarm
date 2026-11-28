@@ -117,6 +117,19 @@ function gitWorkspace(cwd: string, env: NodeJS.ProcessEnv) {
   write("big.txt", Array.from({ length: GIANT_DIFF_LINES }, (_, i) => `generated line ${i + 1}`).join("\n") + "\n");
 }
 
+const sql = (text: string) => `'${text.replaceAll("'", "''")}'`;
+
+export function seedEndedChat(cwd: string, log: string, env: NodeJS.ProcessEnv) {
+  const chair = basename(log, ".jsonl");
+  const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chair}`], { cwd, env, stdio: "pipe" }).toString().trim().split("\n").pop()!;
+  execFileSync("sqlite3", [join(env.SWARM_HOME!, ".swarm/swarm.db"), `
+    UPDATE session SET adapter = 'tmux-swarm' WHERE id = ${sql(session)};
+    INSERT INTO agent (id, session_id, role, provider, created_at, log)
+    VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});
+  `]);
+  return session;
+}
+
 let server: ChildProcess | undefined;
 
 export default async function setup() {
@@ -147,13 +160,7 @@ export default async function setup() {
   };
   const logs = join(home, ".claude/projects/e2e");
   mkdirSync(logs, { recursive: true });
-  // Chats with no adapter. The tree lists only chats with agents, so each gets an ended chair below.
-  const plain: { session: string; log: string }[] = [];
-  const lane = (cwd: string, chair: string) => {
-    const session = execFileSync(swarm, ["session", "new", "lane", "--chair", `claude:${chair}`], { cwd, env, stdio: "pipe" }).toString().trim().split("\n").pop()!;
-    plain.push({ session, log: join(logs, `${chair}.jsonl`) });
-    return session;
-  };
+  // The tree lists only chats with agents, so give each fixture chat an ended chair.
   for (const [ws, fixture] of [
     ["ws-build", "claude-chair-run.jsonl"],
     ["ws-edit", "claude-edit.jsonl"],
@@ -164,7 +171,7 @@ export default async function setup() {
     const chair = randomUUID();
     if (fixture) copyFileSync(join(fixtures, fixture), join(logs, `${chair}.jsonl`));
     else writeFileSync(join(logs, `${chair}.jsonl`), giantLog(chair, GIANT_LINES));
-    const session = lane(cwd, chair);
+    const session = seedEndedChat(cwd, join(logs, `${chair}.jsonl`), env);
     if (!fixture) process.env.SWARM_E2E_GIANT = session;
   }
   // The live chat: its chair registers from the stand-in pane, as a chair CLI does at start.
@@ -212,11 +219,6 @@ export default async function setup() {
   // One chat per browser with a chair and two children, each on its own stand-in pane. `swarm
   // spawn` gives a child its pane and its hooks report its log; here the store gets both directly.
   const db = join(home, readdirSync(home, { recursive: true, encoding: "utf8" }).find((path) => basename(path) === "swarm.db")!);
-  const sql = (text: string) => `'${text.replaceAll("'", "''")}'`;
-  for (const { session, log } of plain) {
-    execFileSync("sqlite3", [db, `UPDATE session SET adapter = 'tmux-swarm' WHERE id = ${sql(session)};`]);
-    execFileSync("sqlite3", [db, `INSERT INTO agent (id, session_id, role, provider, created_at, log) VALUES ('orchestrator', ${sql(session)}, 'orchestrator', 'claude', ${Math.floor(Date.now() / 1000)}, ${sql(log)});`]);
-  }
   // One chat per browser that a CLI started on another adapter, for Import chats. Its adapter
   // lists no pane, so the chat is closed and shows its log.
   writeFileSync(join(home, ".swarm/adapters/other.conf"), ["self", "spawn", "ring", "list", "close", "capture"].map((verb) => `${verb} = true`).join("\n") + "\n");

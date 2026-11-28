@@ -2,7 +2,7 @@ import { type Display, type PatchInfo, type Row } from "./api";
 import { type AgentInput, type Usage } from "./composer";
 import { type PaneCell } from "./panes";
 import { FoldChoices, type Line, type Match } from "./transcript";
-import { type NavRow, type RecentChat, type Tabs, type TreeName, type TreeView } from "./nav";
+import { type NavRow, type Tabs, type TreeName, type TreeView } from "./nav";
 import { type Notes } from "./notes";
 
 export const TAIL = 200;
@@ -137,11 +137,6 @@ export type View = Pane & {
   workspace: string | null;
   /** The tab strip of `workspace`, once loaded. */
   tabs: Tabs | null;
-  /** 1 Workspaces, 2 Recent (⌥⌘1-2). */
-  sidebarView: number;
-  /** Every listed chat across projects, newest activity first; `recentSelected` is its keyboard row. */
-  recent: RecentChat[];
-  recentSelected: string | null;
   paletteOpen: boolean;
   branchPicking: boolean;
   asking: Ask | null;
@@ -171,16 +166,11 @@ export type Reader = {
 /** A name the owner types: a rename. */
 export type Ask = { title: string; value: string; save: (name: string) => void };
 
-/** The sidebar views in ⌥⌘ order. */
-export const SIDEBAR_VIEWS = ["Workspaces", "Recent"];
-
 export const EMPTY: Line[] = [];
 export const NO_FULL: ReadonlyMap<string, FullText> = new Map();
 /** The chat id of a child agent's column. It is also the agent's stream key. */
 export const paneId = (sessionId: string, agent: string) => `${sessionId}:${agent}`;
 export const DRAFT_PREFIX = "composer.draft.";
-/** The sidebar view the owner last picked, so a reload or restart keeps Workspaces or Recent. */
-export const SIDEBAR_VIEW_KEY = "swarm.sidebar.view";
 /** The window event that moves the chat's transcript to the owner's previous (-1) or next (1) prompt. */
 export const PROMPT_JUMP = "swarm:prompt-jump";
 /** The window event of a send from a composer; its detail is the chat id, whose transcript moves to the end. */

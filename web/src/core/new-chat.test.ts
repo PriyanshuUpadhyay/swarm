@@ -6,12 +6,12 @@ import type { App } from "./app";
 import { NewChat } from "./new-chat";
 import type { TreeView } from "./nav";
 
-const row = (id: string, startsChatWorktree: boolean) => ({ id, kind: "workspace", newChatEnabled: true, startsChatWorktree });
+import { folderFacts } from "./nav-fixtures";
+
 const tree = {
-  sections: [
-    { kind: "project", path: "/hub", folder: false, title: "hub", rows: [row("/hub/wt/main", true), row("/hub/wt/fix", false)] },
-    { kind: "project", path: "/notes", folder: true, title: "notes", rows: [row("/notes", false)] },
-  ],
+  sections: [],
+  projects: [{ path: "/hub", title: "hub", folder: false }, { path: "/notes", title: "notes", folder: true }],
+  workspaces: { "/hub/wt/main": folderFacts("/hub", "main", { startsChatWorktree: true }), "/hub/wt/fix": folderFacts("/hub", "fix"), "/notes": folderFacts("/notes", "notes") },
 } as unknown as TreeView;
 
 /** An App stand-in on the hub's fix worktree, with the fields that a test adds. */
@@ -370,9 +370,11 @@ describe("new chat composer", () => {
 
   it("does not open the composer on another project for a project with no folder to start in", () => {
     const notices: string[] = [];
-    const gone = { kind: "project", path: "/gone", folder: true, title: "gone", rows: [{ ...row("/gone/ws", false), newChatEnabled: false }] };
+    const gone = { path: "/gone", folder: true, title: "gone" };
     const app = stub({ notice: (text: string) => notices.push(text) });
-    app.view = { ...app.view, tree: { sections: [...tree.sections, gone] } as unknown as TreeView };
+    app.view = { ...app.view, tree: { ...tree, projects: [...tree.projects, gone], workspaces: {
+      ...tree.workspaces, "/gone": folderFacts("/gone", "gone", { newChatEnabled: false }),
+    } } };
     const chats = new NewChat(app as unknown as App);
 
     chats.open("/gone");

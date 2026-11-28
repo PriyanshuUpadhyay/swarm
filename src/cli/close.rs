@@ -189,19 +189,59 @@ fn wrap_up(
     Ok(failed)
 }
 
-/// Refuse a `finish` body sent while `agent` owes a wrap-up, when the body misses a heading.
-pub(crate) fn check_wrap_up_reply(
+pub(crate) fn finish(
+    connection: &mut rusqlite::Connection,
+    root: &std::path::Path,
+    adapter_name: &str,
+    session_id: &str,
+    agent: &str,
+    body: &str,
+) -> Result<i64, Box<dyn std::error::Error>> {
+    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let orchestrator = swarm::store::orchestrator_of(&tx, session_id)?;
+
+    if answers_wrap_up(&tx, session_id, agent, body)? {
+        let seq = swarm::store::insert_message(
+            &tx,
+            root,
+            session_id,
+            agent,
+            &orchestrator,
+            "summary",
+            body,
+        )?;
+        // Close polls message history for the reply. Mark it read before any delivery pass can ring it.
+        swarm::store::ack(&tx, session_id, seq, &orchestrator)?;
+        tx.commit()?;
+        return Ok(seq);
+    }
+
+    tx.commit()?;
+    deliver(
+        connection,
+        root,
+        adapter_name,
+        session_id,
+        agent,
+        &orchestrator,
+        "summary",
+        body,
+    )
+}
+
+/// Whether this is a wrap-up reply. Refuse a wrap-up body that misses a heading.
+fn answers_wrap_up(
     connection: &rusqlite::Connection,
     session_id: &str,
     agent: &str,
     body: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error>> {
     if !swarm::store::owes_wrap_up(connection, session_id, agent)? {
-        return Ok(());
+        return Ok(false);
     }
     let missing = missing_headings(body);
     if missing.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
     Err(format!(
         "swarm: a wrap-up reply needs the line{} {}; write \"none\" under a heading with nothing to say",

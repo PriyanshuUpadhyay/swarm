@@ -120,7 +120,7 @@ or a code claim). `blocks/diagram-check/SKILL.md` keeps "Labels use source words
 On 2026-10-17, the owner settled the voice-file part of #70 in `blocks/voice-review/SKILL.md`;
 `voice-pr` points to that owner.
 
-On 2026-10-17, the owner chose `blocks/worker-brief/SKILL.md` as the owner of gates with no user present.
+On 2026-10-17, the owner chose `blocks/subagent-brief/SKILL.md` as the owner of gates with no user present.
 
 On 2026-10-17, the owner approved domain selection by `implement_run.py start --domains`;
 `skills/kit/skills/implement/SKILL.md` names the command and its saved choice.
@@ -164,17 +164,17 @@ below. The proof, checked-unit, and extraction rules live directly in
 | engineering-standards | decision-with-default (trade-off form) | the rule tables and the procedure |
 | `pair-programming` skill, also implement `pair` mode | task-file, checked-units, when-to-extract | the chunk loop, its guards, commit per behavior |
 | implement `auto` mode (`references/auto.md`) | task-file, checked-units, prove-it-works | the predicate loop, the commit gate, the review stop |
-| research | sources (parent of deep-search, primary-sources, cite-sources, link-check), local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check, worker-brief (no-user gate) | the step table, the web seat triggers and timing |
-| web-search | sources (parent), deep-search, primary-sources, cite-sources, link-check, worker-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
-| council | worker-brief, run-workers | the protocol, the convergence check, the output, the decision log |
-| orchestrate-claude, -codex, -agy | run-workers, worker-brief | the lines that differ by runtime |
-| review check mode | when-to-extract, worker-brief (no-user gate) | the whole review gate |
+| research | sources (parent of deep-search, primary-sources, cite-sources, link-check), local-research, deep-search, primary-sources, cite-sources, tool-trial, report, link-check, subagent-brief (no-user gate) | the step table, the web seat triggers and timing |
+| web-search | sources (parent), deep-search, primary-sources, cite-sources, link-check, subagent-brief, run-workers | seats, site sets, reach tools, Yield and Floor, the depth gate, the merge |
+| council | subagent-brief, run-workers | the protocol, the convergence check, the output, the decision log |
+| orchestrate-claude, -codex, -agy | run-workers, subagent-brief | the lines that differ by runtime |
+| review check mode | when-to-extract, subagent-brief (no-user gate) | the whole review gate |
 | review walk mode | voice-review | the five steps and GitHub write gates (stays whole) |
 | review cleanup mode | when-to-extract (by its rules file) | the six-step pass (stays whole) |
 | decisions | none | the whole capture contract (stays whole) |
-| implement | prove-it-works, checked-units, worker-brief (no-user gate), and every block its catalog lines name | the step graph and the loader |
+| implement | prove-it-works, checked-units, subagent-brief (no-user gate), and every block its catalog lines name | the step graph and the loader |
 | build | reference-analysis, story, look-check, headless-shot, visual-qa, build-site (which points to web-ui and design-tokens), build-canvas, web-ui-basics | the contract, the routes, the seam law, the reel rules |
-| explain | voice (parent), voice-teach, worker-brief (no-user gate) | the pointer to the block and `references/explain-formats.md` |
+| explain | voice (parent), voice-teach, subagent-brief (no-user gate) | the pointer to the block and `references/explain-formats.md` |
 
 Plans that stay open: research writes the ledger for questions, with `web needs local` only when
 local findings set the query (the owner's local-then-web example); the emil pack owns UI motion and

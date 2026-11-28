@@ -40,15 +40,16 @@ function readNotes(): Map<string, Note[]> {
 }
 
 /** The one message the chair gets: each note numbered under its full quote; a note on a child's
- *  reply starts with the agent's name, as `1. [reviewer] > quote`. */
+ *  reply starts with the agent's name, as `1. [reviewer] > quote`. An empty line parts the quote
+ *  from the note text: without it, Markdown reads the text as more of the quote. */
 export function noteMessage(notes: readonly Note[]): string {
   const parts = notes.map((n, i) => {
     const head = `${i + 1}. `;
     const pad = " ".repeat(head.length);
     const quote = (n.kind === "reply" ? ["[whole reply]", ...n.quote.split("\n")] : n.quote.split("\n")).map((l) => (l ? `> ${l}` : ">"));
     if (n.agent) quote[0] = `[${n.agent}] ${quote[0]}`;
-    const text = n.text.trim() ? n.text.trim().split("\n") : [];
-    return [...quote, ...text].map((l, j) => (j === 0 ? head : pad) + l).join("\n");
+    const text = n.text.trim() ? ["", ...n.text.trim().split("\n")] : [];
+    return [...quote, ...text].map((l, j) => (j === 0 ? head + l : l && pad + l)).join("\n");
   });
   const head = notes.some((n) => n.agent)
     ? `Notes on replies (${notes.length}); [name] marks a child agent's reply, no name marks yours:`

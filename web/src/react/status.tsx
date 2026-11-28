@@ -2,15 +2,11 @@ import { CircleAlertIcon, CircleCheckIcon, CircleIcon, OctagonXIcon } from "luci
 import { createContext, useContext } from "react";
 import { Glyph } from "./glyph";
 
+import { shownStatus, type Status as WireStatus } from "../core/nav";
+
 export const Offline = createContext(false);
 
-export type Status = "working" | "blocked" | "error" | "done" | "ended" | "idle";
-
-function shownStatus(status: Status) {
-  if (status === "blocked") return "waiting";
-  if (status === "error") return "failed";
-  return status;
-}
+export type Status = WireStatus | "idle";
 
 const TITLE = {
   working: "Working",

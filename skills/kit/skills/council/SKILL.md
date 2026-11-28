@@ -1,6 +1,6 @@
 ---
 name: council
-description: Run a debate between three independent voices on one pinned question, for one recommendation. Use when the user asks for a council, or when you cannot say up front what good looks like: bugs, security holes, edge cases, open trade-offs.
+description: 'Debate one pinned question with three voices for one recommendation. Use when asked for a council, or when good is unclear: bugs, security, trade-offs.'
 ---
 
 # Council
@@ -9,9 +9,9 @@ Three independent voices in separate sessions debate one pinned question and pro
 top-level session is the chair: relay messages, correct grounding, judge convergence, and
 synthesize. Do not vote as a fourth voice.
 
-The council never makes the user's final design decision and never starts implementation. Seats
+The council leaves the final design decision to the user and does not start implementation, because it only advises. Seats
 inspect evidence and write only council scratch artifacts. Briefs and seats follow the kit block
-`blocks/worker-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
+`blocks/subagent-brief/SKILL.md`, and the chair runs seats as the kit block `blocks/run-workers/SKILL.md`
 says. The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder. End with the options, evidence, disagreement, and the decision
 that remains with the user.
 
@@ -41,7 +41,7 @@ Offers: local-research, deep-search, primary-sources, cite-sources
 
 | File | Needs | Holds | Block | Why |
 |---|---|---|---|---|
-| `01-brief.md` | none | the pinned brief path, the seat names, and their routed models | worker-brief | each seat judges one pinned brief |
+| `01-brief.md` | none | the pinned brief path, the seat names, and their routed models | subagent-brief | each seat judges one pinned brief |
 | `02-round1.md` | brief | the combined Round-0 and Round-1 ask, any questions and user answers, and each seat's Round-1 verdict and file | run-workers | three visible seats answer the question |
 | `03-cross.md` | round1 | Rounds 2-3 per seat, or `skipped converged at round 1` | run-workers | seats test each other's claims |
 | `04-verdict.md` | cross | the Output block | decision-with-default | the options keep the decision with the user |
@@ -61,10 +61,10 @@ Round-0 questions that survive the filter, and a split after Round 3, set the st
   runner keeps its card.
 - These role IDs are routing aliases, not provider identities. The voices need not use distinct
   providers or model families. Record each seat's actual provider and model, with its method,
-  in the brief, transcript, and output trail. Never call a Codex runner Gemini or Claude.
-- Every seat is report-only, as `blocks/worker-brief/SKILL.md` says; its result file is its council
+  in the brief, transcript, and output trail. Name each runner by its real provider.
+- Every seat is report-only, as `blocks/subagent-brief/SKILL.md` says; its result file is its council
   scratch result.
-- Reuse the same three seats for every round, and never start the next round while a seat is
+- Reuse the same three seats for every round, and start the next round only when no seat is
   working.
 
 ## Run state
@@ -76,9 +76,12 @@ COUNCIL_RUN_ID="${CODEX_THREAD_ID:-${CLAUDE_CODE_SESSION_ID:-council-$(date +%s)
 COUNCIL_DIR="${TMPDIR:-/tmp}/councils/${COUNCIL_RUN_ID}"
 COUNCIL_WORKSPACE="$(pwd -P)"
 mkdir -p -m 700 "$COUNCIL_DIR"
-~/.claude/scripts/ensure-council-access.py \
-  --council-dir "$COUNCIL_DIR" --workspace "$COUNCIL_WORKSPACE"
+access=~/.claude/scripts/ensure-council-access.py  # owner's machine only; not in the kit yet
+if [ -x "$access" ]; then "$access" --council-dir "$COUNCIL_DIR" --workspace "$COUNCIL_WORKSPACE"; fi
 ```
+
+Without that script, each seat's CLI must be able to read and write `$COUNCIL_DIR`; the first seat
+that cannot write there names it in its reply.
 
 Persist the selected backend, every captured pane/surface/thread identifier, voice outputs, and one
 append-only `transcript.md`. Relay prompt-file paths and concise answers; do not copy raw tool
@@ -86,7 +89,7 @@ streams into the chair context.
 
 ## Pinned brief
 
-Every voice receives the same brief, pinned for a judgment as `blocks/worker-brief/SKILL.md` says.
+Every voice receives the same brief, pinned for a judgment as `blocks/subagent-brief/SKILL.md` says.
 Each brief adds the shared rule and that seat's card from `references/roles.md`, word for word.
 The seats differ by method, so their positions do not repeat one another.
 
@@ -118,8 +121,7 @@ WHAT WOULD CHANGE YOUR MIND
 Round 1 is one parallel round. Apply `blocks/run-workers/SKILL.md` for result acceptance,
 then check the returned artifact against this council's protocol. Do not wait for a slow seat past the round
 deadline plus the backend's one bounded resume. When two artifacts are accepted and the third seat
-is still degraded, continue with two positions and say so in the output; never re-prompt a seat
-by hand.
+is still degraded, continue with two positions and say so in the output; re-prompt a seat only through the backend's resume.
 
 **Convergence check.** When all three verdicts share a bucket, the recommended setups or options
 agree, and no voice names an objection the others left unanswered, stop here and write the output
@@ -170,7 +172,7 @@ log for the topic and reuse still-valid resolved constraints.
 The caller may pin one exact decision-log path outside the inspected product repository. Use that
 path when it is present, include it in every seat's pinned brief, and do not also create a repository
 log. An internally triggered planning Council must receive such an external path. Otherwise, use
-the council log path in `references/run-folder.md`. Never write the log into the inspected repository, because a public repository would
+the council log path in `references/run-folder.md`. Write the log outside the inspected repository, because a public repository would
 publish its private paths. Include the artifact pointer,
 Round-0 Q&A, models actually used, final verdict, required changes, dissent, per-seat trail, the round
 at which the council converged, and each round's wall time.

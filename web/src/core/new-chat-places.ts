@@ -8,7 +8,7 @@ export type Place = { kind: "new" } | { kind: "here" } | { kind: "branch"; branc
 
 /** A project the composer can start in: the folder a new chat names, and whether it is a git
  *  project, which can make a new worktree; a plain folder starts the chat in itself. */
-export type Target = { cwd: string; project: string; title: string; git: boolean };
+export type Target = { cwd: string; project: string; title: string; git: boolean; worktreeOnly?: true };
 
 /** What a new worktree gets, for the composer's card. */
 export type Preview = { base: string | null; fetchedUnixS: number | null; setup: string | null };
@@ -22,14 +22,19 @@ export const composerInPage = (view: { openId: string | null; workspace: string 
  *  checkout, else the open workspace, else the project's own folder. A git project can make a new worktree; a plain
  *  folder starts the chat in itself. */
 export function targets(tree: TreeView | null, workspace: string | null): Target[] {
-  return (tree?.sections ?? [])
-    .filter((s) => s.kind === "project")
-    .flatMap((s) => {
-      const rows = s.rows.filter((r) => r.kind === "workspace" && r.newChatEnabled);
-      const main = rows.find((r) => r.startsChatWorktree);
-      const cwd = main?.id ?? rows.find((r) => r.id === workspace)?.id ?? (s.folder ? rows[0]?.id : s.path) ?? null;
-      return cwd ? [{ cwd, project: s.path ?? cwd, title: s.title, git: !s.folder }] : [];
-    });
+  if (!tree) return [];
+  const folders = Object.entries(tree.workspaces);
+  return tree.projects.flatMap((project) => {
+    const eligible = folders.filter(([, w]) => w.projectPath === project.path && w.newChatEnabled);
+    const main = eligible.find(([, w]) => w.startsChatWorktree)?.[0];
+    const current = eligible.find(([path]) => path === workspace)?.[0];
+    const own = workspaceRow(tree, project.path);
+    const archivedGit = !project.folder && own?.archived && !own.missing;
+    const fallback = own?.newChatEnabled || (!own && !project.folder) || archivedGit ? project.path : null;
+    const cwd = main ?? current ?? fallback;
+    return cwd ? [{ cwd, project: project.path, title: project.title, git: !project.folder,
+      ...(archivedGit && cwd === project.path ? { worktreeOnly: true as const } : {}) }] : [];
+  });
 }
 
 /** Whether the project at `path` has a folder a new chat can start in. */
@@ -37,8 +42,8 @@ export const canStartIn = (tree: TreeView | null, path: string | null) => target
 
 /** The project the composer opens on: the one of `workspace`, else the first. */
 export function defaultTarget(list: Target[], tree: TreeView | null, workspace: string | null): Target | null {
-  const section = tree?.sections.find((s) => s.kind === "project" && s.rows.some((r) => r.id === workspace));
-  return list.find((t) => section?.rows.some((r) => r.id === t.cwd)) ?? list[0] ?? null;
+  const project = workspaceRow(tree, workspace)?.projectPath ?? workspace;
+  return list.find((t) => t.project === project) ?? list[0] ?? null;
 }
 
 /** The place a target starts on unless the owner picks another. */

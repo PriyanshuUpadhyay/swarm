@@ -1,6 +1,6 @@
 ---
 name: diagnose
-description: "Find a hard bug's cause: one command that goes red on it, a smaller case, one cause tested at a time, then the fix. Use when a bug, failure, or slowdown has no known cause."
+description: "Find a hard bug's cause with a failing command, smaller case, and one cause tested at a time. Use when a failure or slowdown has no known cause."
 license: MIT
 metadata:
   kind: step
@@ -14,7 +14,7 @@ metadata:
 ---
 
 ## Rules
-- Build the loop first. The loop is one command that runs the real code path and goes red on the user's exact symptom. Run it once and keep its output. Until that command exists, do not guess at a cause.
+- Build the loop first. The loop is one command that runs the real code path and goes red on the user's exact symptom. Run it once and keep its output. Use the recorded failure to start testing causes.
 - Make the loop tight: fast, with the same result on each run. Pin the clock, the random seed, and the network. For a bug that comes only sometimes, run the trigger many times until the rate is high enough to work with.
 - If you cannot build a loop, stop. Say what you tried, and ask for access to the failing place, a captured artifact, or approval for temporary logs.
 - Shrink the case. Remove inputs, callers, config, and steps one at a time, and run the loop after each cut. Stop when each part that stays is needed for the red result.

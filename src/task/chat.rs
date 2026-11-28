@@ -316,7 +316,7 @@ pub fn remove_failed_chat(root: &Path, wt: &Path, path: &Path, branch: &str) -> 
 /// no name. None for any other folder. `drop` still refuses a worktree with changes or commits.
 pub fn drop_unnamed_chat(root: &Path, wt: &Path, cwd: &Path) -> Result<Option<Task>, String> {
     match task_here(root, cwd) {
-        Ok((_, task)) if unnamed_chat(&task.branch) => drop(root, wt, cwd, None).map(Some),
+        Ok((_, task)) if unnamed_chat(&task.branch) => drop(root, wt, cwd, None, false).map(Some),
         _ => Ok(None),
     }
 }

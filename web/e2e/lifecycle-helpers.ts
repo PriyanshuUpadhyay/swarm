@@ -1,9 +1,15 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { pierreUnloadNoise } from "./console-noise";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { TreeView } from "../src/core/nav";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
-const token = () => new URLSearchParams(server().hash.slice(1)).get("token")!;
+const token = () => {
+  const value = new URLSearchParams(server().hash.slice(1)).get("token");
+  if (!value) throw new Error("Missing fixture server token");
+  return value;
+};
 const SHOTS = resolve(import.meta.dirname, "../../tmp/web-port");
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
@@ -16,8 +22,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-type Tree = { revision: string; sections: { kind: string; path: string | null; title: string; rows: { id: string; kind: string; title: string; selection: { chat: string | null } }[] }[] };
-const readTree = (view = "workspaces") => api<Tree>(`/api/tree?view=${view}`);
+const readTree = (view = "workspaces") => api<TreeView>(`/api/tree?view=${view}`);
 
 async function open(tab: Page) {
   const errors: string[] = [];
@@ -64,4 +69,43 @@ async function holdChatStart(tab: Page) {
   return bodies;
 }
 
-export { server, api, readTree, open, header, workspace, shoot, holdChatStart, compose };
+export { server, token, api, readTree, open, header, workspace, shoot, holdChatStart, compose };
+
+export function saveSidebarState() {
+  const home = process.env.SWARM_E2E_HOME;
+  if (!home) throw new Error("Missing the shared test home");
+  const saved = ["choices.json", "view-state.json"].map((name) => {
+    const path = join(home, ".swarm", name);
+    return { path, before: existsSync(path) ? readFileSync(path) : null };
+  });
+
+  return () => {
+    for (const { path, before } of saved) {
+      if (before) writeFileSync(path, before);
+      else rmSync(path, { force: true });
+    }
+  };
+}
+
+export async function clickTarget(control: Locator) {
+  const { hit, ...size } = await control.evaluate((el) => {
+    el.scrollIntoView({ block: "center", inline: "nearest" });
+    const { x, y, width, height } = el.getBoundingClientRect();
+    const target = getComputedStyle(el, "::after");
+    const area = {
+      width: Math.max(width, Number.parseFloat(target.width) || 0),
+      height: Math.max(height, Number.parseFloat(target.height) || 0),
+    };
+
+    const extra = area.height - height;
+    const above = document.elementFromPoint(x + width / 2, y - extra / 4);
+    return { ...area, hit: extra > 0 && above === el };
+  });
+  expect(hit, "A point above the painted control must hit its expanded target").toBe(true);
+  return size;
+}
+
+export async function showOtherProjects(page: Page) {
+  const row = page.locator('[data-kind="more-projects"]');
+  if (await row.count() && (await row.getAttribute("aria-expanded")) === "false") await row.click();
+}

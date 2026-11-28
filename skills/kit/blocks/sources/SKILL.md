@@ -1,6 +1,6 @@
 ---
 name: sources
-description: "Keep the lead-versus-evidence rule that the source blocks share with each selected source part. Use when a step searches, reads an origin, cites a claim, or checks links."
+description: "Keep the shared lead-versus-evidence rule for source blocks. Use when a step searches, reads an origin, cites a claim, or checks links."
 license: MIT
 metadata:
   kind: parent
@@ -25,7 +25,7 @@ Action: open the vendor's rate-limit docs by `cite-sources`, and the 1972 Bayer 
 Result: the limit cites the docs page and the tree claim cites the paper. The forum answer and the blog are named as leads, not as evidence.
 
 ## Check (script)
-- none: the claims and their links live in the report, outside the commit range.
+- none: use the checks in the selected source parts.
 
 ## Check (judge)
 - none: the judge checks of `cite-sources` and `primary-sources` ask whether each claim rests on its owning source.

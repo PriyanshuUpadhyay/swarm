@@ -121,7 +121,7 @@ fn a_chat_worktree_lands_into_main_and_stays_until_dropped() {
     assert!(main.join("b.txt").is_file(), "main did not get the commit");
     assert!(path.is_dir());
     assert_eq!(records(&root), vec![task.clone()]);
-    drop(&root, &wt, &main, Some("fix-x")).unwrap();
+    drop(&root, &wt, &main, Some("fix-x"), false).unwrap();
     assert!(!path.exists());
     assert!(records(&root).is_empty());
 }
@@ -136,9 +136,34 @@ fn drop_refuses_a_task_with_commits_main_lacks() {
     let root = dir.join("home");
     let task = chat(&root, &dir.join("wt/main"), "keep", None);
     commit(Path::new(&task.path), "c.txt");
-    let refused = drop(&root, &wt, &dir.join("wt/main"), Some("keep")).unwrap_err();
+    let refused = drop(&root, &wt, &dir.join("wt/main"), Some("keep"), false).unwrap_err();
     assert!(refused.contains("1 commit(s)"), "{refused}");
+    assert!(
+        refused.contains("swarm task drop swarm/keep --force"),
+        "{refused}"
+    );
     assert!(Path::new(&task.path).is_dir());
+}
+
+/// A squash merge leaves the branch's commits out of main, so only the owner's force drops it.
+#[test]
+fn a_forced_drop_removes_a_task_with_commits_main_lacks() {
+    let Some(wt) = real_wt() else {
+        eprintln!("skipped: Worktrunk is not installed");
+        return;
+    };
+    let dir = hub_fixture("force");
+    let root = dir.join("home");
+    let main = dir.join("wt/main");
+    let task = chat(&root, &main, "squashed", None);
+    commit(Path::new(&task.path), "c.txt");
+    drop(&root, &wt, &main, Some("squashed"), true).unwrap();
+    assert!(!Path::new(&task.path).exists());
+    assert!(records(&root).is_empty());
+    assert_eq!(
+        git(&main, &["branch", "--list", "swarm/squashed"]).as_deref(),
+        Some("")
+    );
 }
 
 #[test]
@@ -210,7 +235,7 @@ fn a_chat_worktree_is_named_from_its_first_prompt_and_drops_from_its_folder() {
     assert_eq!(saved.len(), 1);
     assert_eq!(saved[0].branch, expected);
     assert_eq!(saved[0].session.as_deref(), Some("s1"));
-    let dropped = drop(&root, &wt, &path, None).unwrap();
+    let dropped = drop(&root, &wt, &path, None, false).unwrap();
     assert_eq!(dropped.branch, expected);
     assert!(!path.exists());
     assert!(records(&root).is_empty());

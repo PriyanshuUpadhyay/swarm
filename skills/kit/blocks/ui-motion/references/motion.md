@@ -26,7 +26,7 @@ a bridge for content that would jump, or an explanation. Data that the user read
 | Hover or color change | `ease` |
 | Constant motion (marquee, progress) | `linear` |
 
-Never use `ease-in` on UI. For drag with momentum or a gesture that the user can reverse, use a
+Use the easing table for UI. For drag with momentum or a gesture that the user can reverse, use a
 spring: `{ type: "spring", duration: 0.5, bounce: 0.2 }`, with bounce from 0.1 to 0.3.
 
 ## Duration
@@ -52,13 +52,13 @@ spring: `{ type: "spring", duration: 0.5, bounce: 0.2 }`, with bounce from 0.1 t
 - Animate `transform` and `opacity`. `clip-path` is also allowed, and `height` only for an accordion.
 - Put hover motion inside `@media (hover: hover) and (pointer: fine)`, because a tap on a touch
   screen fires a false hover.
-- Start an entrance from `scale(0.95)` and `opacity: 0`, never from `scale(0)`.
+- Start an entrance from `scale(0.95)` and `opacity: 0` so the element appears without growing from a point.
 - Set `transform-origin` at the trigger for a popover, dropdown, menu, or tooltip. A modal stays centered.
 - In Motion (`motion.dev`), use the full `transform` string, not the `x`, `y`, or `scale` props.
 
-## Never ship
+## Replacements
 
-| Never | Use |
+| Avoid | Use |
 |---|---|
 | `transition: all` | The exact properties |
 | `scale(0)` entrance | `scale(0.95)` and `opacity: 0` |

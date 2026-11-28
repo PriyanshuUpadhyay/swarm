@@ -1,6 +1,6 @@
 ---
 name: done-when-evidence
-description: "Map each done-when of the frame to its evidence, or mark it unverified, and in research give each source type a result. Use when you close a change or a research report."
+description: "Map each done-when to evidence or mark it unverified. Use when you close a change or research report."
 license: MIT
 metadata:
   kind: rule

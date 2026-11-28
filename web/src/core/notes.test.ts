@@ -28,6 +28,7 @@ describe("noteMessage", () => {
 
         "1. > first quote line",
         "   > second quote line",
+        "",
         "   Why 10 minutes?",
         "",
 
@@ -35,6 +36,7 @@ describe("noteMessage", () => {
         "   > reply line 1",
         "   >",
         "   > reply line 3",
+        "",
         "   Zażółć gęślą jaźń 👍",
         "   second line",
         "",
@@ -57,6 +59,7 @@ describe("noteMessage", () => {
         "",
         "1. [reviewer] > [whole reply]",
         "   > I will look at the build first.",
+        "",
         "   Why first?",
         "",
         "2. > Both are fixed now.",
@@ -75,7 +78,7 @@ describe("Notes.toBox", () => {
     app.notes.setText("chat", added.id, "Pick C");
 
     app.notes.toBox("chat", "append");
-    expect(app.draft("chat")).toBe("my own words\n\nNotes on your reply (1):\n\n1. > C · Margin notes\n   Pick C");
+    expect(app.draft("chat")).toBe("my own words\n\nNotes on your reply (1):\n\n1. > C · Margin notes\n\n   Pick C");
     expect(app.notes.list("chat")).toEqual([]);
     expect(app.notes.annotating()).toBe(false);
   });

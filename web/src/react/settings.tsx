@@ -228,7 +228,7 @@ function NotificationsPage({ app }: { app: App }) {
   const tree = useSyncExternalStore(app.subscribe, () => app.view.tree);
   const notices = prefs.notices ?? {};
   const muted = notices.mutedProjects ?? [];
-  const projects = (tree?.sections ?? []).filter((s) => s.kind === "project" && s.path);
+  const projects = tree?.projects ?? [];
   return (
     <div className="grid gap-4">
       <NoticesStatus app={app} />
@@ -240,8 +240,8 @@ function NotificationsPage({ app }: { app: App }) {
       <h3 className="mt-2 text-sm font-semibold">Mute projects</h3>
       {projects.length === 0 && <p className="text-sm text-muted-foreground">Import a project to set its mute choice.</p>}
       {projects.map((p) => (
-        <Row key={p.path} title={p.title} detail={p.path!}>
-          <Toggle label={`Mute ${p.title}`} testid="mute-project" checked={muted.includes(p.path!)} onChange={(on) => void app.settings.mute(p.path!, on)} />
+        <Row key={p.path} title={p.title} detail={p.path}>
+          <Toggle label={`Mute ${p.title}`} testid="mute-project" checked={muted.includes(p.path)} onChange={(on) => void app.settings.mute(p.path, on)} />
         </Row>
       ))}
     </div>

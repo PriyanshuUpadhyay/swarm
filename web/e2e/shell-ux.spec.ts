@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resolve } from "node:path";
-import { compose, header, open } from "./lifecycle-helpers";
+import { compose, header, open, showOtherProjects } from "./lifecycle-helpers";
 
 async function settings(page: Page, section = "profiles") {
   await page.getByTestId("settings-button").click();
@@ -40,6 +40,18 @@ test("Settings is visible, invalid usage has a range, runner drafts survive Esca
   await screenshot(page, "profile-draft");
 });
 
+test("Notifications lists a project even when it is folded out of the sidebar", async ({ page }) => {
+  await open(page);
+  const more = page.locator('[data-kind="more-projects"]');
+  await expect(more).toBeVisible();
+  if (await more.getAttribute("aria-expanded") === "true") await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(header(page, "proj-hub")).toHaveCount(0);
+
+  const dialog = await settings(page, "notifications");
+  await expect(dialog.getByLabel("Mute proj-hub", { exact: true })).toBeVisible();
+});
+
 test("a scrolled Settings confirmation stays visible and focuses Cancel", async ({ page }) => {
   await open(page);
   const dialog = await settings(page);
@@ -77,6 +89,7 @@ test("setup script keeps load errors separate, focuses after Retry, and keeps a 
   await page.route("**/api/choices", (route) => route.request().postDataJSON().op === "setup_script"
     ? route.fulfill({ status: 400, json: { error: "refused write" } }) : route.continue());
   await open(page);
+  await showOtherProjects(page);
   await header(page, "proj-gh").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Setup script…" }).click();
   const dialog = page.getByTestId("setup-script-dialog");
@@ -105,7 +118,9 @@ test("chat pickers filter, move with arrow keys, and refresh imports without clo
   ] } }));
   await open(page);
   await page.getByRole("button", { name: "Add project" }).click();
-  await page.getByRole("menuitem", { name: "Archived chats…" }).click();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("archive-toggle").click();
+  await page.getByRole("button", { name: "Archived chats…" }).click();
   const archive = page.getByTestId("recently-closed");
   const filter = archive.getByRole("searchbox");
   await expect(filter).toBeFocused();
@@ -127,6 +142,7 @@ test("chat pickers filter, move with arrow keys, and refresh imports without clo
 
 test("the composer's project change resets a picked issue to the new project's default place", async ({ page }) => {
   await open(page);
+  await showOtherProjects(page);
   const composer = await compose(page, "proj-gh");
   await composer.getByTestId("chip-place").click();
   await composer.getByTestId("place-kind-issue").click();
@@ -143,6 +159,7 @@ test("the composer's project change resets a picked issue to the new project's d
 
 test("↑ ↓ in the composer's empty prompt and ⌘↑ ⌘↓ with text change the project", async ({ page }) => {
   await open(page);
+  await showOtherProjects(page);
   const composer = await compose(page, "proj-gh");
   const prompt = composer.getByTestId("new-chat-prompt");
   const chip = composer.getByTestId("chip-project");
@@ -168,6 +185,7 @@ test("↑ ↓ in the composer's empty prompt and ⌘↑ ⌘↓ with text change 
 
 test("/ in the composer's prompt lists the CLI's skills with their descriptions, and Enter inserts one", async ({ page }) => {
   await open(page);
+  await showOtherProjects(page);
   const composer = await compose(page, "proj-gh");
   const prompt = composer.getByTestId("new-chat-prompt");
   await prompt.pressSequentially("/swarm");
@@ -179,10 +197,9 @@ test("/ in the composer's prompt lists the CLI's skills with their descriptions,
   await expect(composer.getByTestId("slash-menu")).toHaveCount(0);
 });
 
-test("New Chat… in the Add project menu leaves the focus in the composer's prompt", async ({ page }) => {
+test("New chat in the sidebar leaves the focus in the composer's prompt", async ({ page }) => {
   await open(page);
-  await page.getByRole("button", { name: "Add project" }).click();
-  await page.getByRole("menuitem", { name: "New Chat…" }).click();
+  await page.getByTestId("sidebar-head").getByRole("button", { name: "New chat", exact: true }).click();
   await expect(page.locator(":focus")).toHaveAttribute("data-testid", "new-chat-prompt");
 });
 

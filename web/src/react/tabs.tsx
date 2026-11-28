@@ -5,6 +5,7 @@
 import { ChevronDownIcon, CopyIcon, PencilIcon, PlusIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import type { App } from "../core/app";
+import { plural } from "../core/lifecycle-state";
 import type { Starting } from "../core/new-chat";
 import { workspaceRow, type Tab, type Tabs } from "../core/nav";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "../components/ui/context-menu";
@@ -168,7 +169,7 @@ export function TabStrip({ app }: { app: App }) {
             data-testid="tabs"
             data-previous-recent={tabs?.previousRecent ?? undefined}
             data-next-recent={tabs?.nextRecent ?? undefined}
-            className="flex h-full min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none]"
+            className="flex h-full min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none]"
             onClick={onClick}
             onKeyDown={onKeyDown}
             onAuxClick={(e) => {
@@ -206,7 +207,7 @@ export function TabStrip({ app }: { app: App }) {
         title="New chat (⌘N), or one here with no prompt (⌘T)"
         data-testid="tab-new-chat"
         disabled={ws ? !ws.newChatEnabled : true}
-        onClick={() => ws && app.newChat.open(ws.id)}
+        onClick={() => app.newChat.open(workspace)}
       >
         <PlusIcon />
       </button>
@@ -258,8 +259,8 @@ const TabView = memo(function TabView({ tab, active, focusable, dropTarget }: { 
           tabIndex={-1}
           data-action="children"
           className={`fld rounded-sm px-1 hover:bg-hover ${tab.children.blocked ? "text-waiting" : ""}`}
-          title={tab.children.blocked ? "Show first blocked child" : "Show chat"}
-          aria-label={`${tab.title}, ${tab.children.count} agents, ${tab.children.blocked} blocked`}
+          title={tab.children.blocked ? "Show first waiting child" : "Show chat"}
+          aria-label={`${tab.title}, ${plural(tab.children.count, "agent")}${tab.children.blocked ? `, ${tab.children.blocked} waiting` : ""}`}
         >
           {tab.children.text}
         </button>

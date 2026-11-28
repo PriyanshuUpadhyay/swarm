@@ -1,6 +1,6 @@
 ---
 name: plan-flow
-description: "Keep the kit-root rule that the plan and comment-round blocks share with each selected part. Use when a step writes, checks, or approves a plan, or runs owner comment rounds on a page."
+description: "Keep the shared kit-root rule for plan and comment blocks. Use when a step writes, checks, or approves a plan, or runs owner comment rounds."
 license: MIT
 metadata:
   kind: parent

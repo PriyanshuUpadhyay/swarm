@@ -1,6 +1,6 @@
 ---
 name: voice-teach
-description: "Explain a subject in learning order: start from a term the owner already used, then add one new idea at a time, each tied to the last. Use when the owner asks to understand something."
+description: "Explain from a term the owner knows, adding one idea at a time. Use when the owner asks to understand something."
 license: MIT
 metadata:
   kind: rule
@@ -17,7 +17,7 @@ metadata:
 - Find the terms that the owner already used about the subject, in this chat or task. Start from one of them.
 - Add one new idea per step. Tie each new idea to an idea already explained, and say how they connect.
 - Keep one running example from start to end. Each new idea changes or extends that example.
-- Stop when the question is answered. Name the next idea in one line, and do not explain it.
+- Stop when the question is answered. Name the next idea in one line, for a later question.
 - This block owns only the order of ideas.
 
 ## Example

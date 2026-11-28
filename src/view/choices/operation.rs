@@ -1,4 +1,7 @@
-use super::super::tree::Tree;
+use super::super::{
+    sidebar::{MORE_PROJECTS, NEEDS_YOU, PINNED},
+    tree::Tree,
+};
 use super::{OwnerChoices, ViewState, state::object, tabs::apply_tab};
 use serde::Deserialize;
 use serde_json::Value;
@@ -31,7 +34,9 @@ pub enum ChoiceOp {
         id: String,
     },
     ExpandList {
-        workspace: String,
+        id: Option<String>,
+        workspace: Option<String>,
+        expanded: Option<bool>,
     },
     RenameWorkspace {
         workspace: String,
@@ -195,10 +200,38 @@ pub fn apply(
             validate_fold(tree, &id)?;
             state.fold(&id, false);
         }
-        ChoiceOp::ExpandList { workspace } => {
-            tree.workspace(&workspace).ok_or("unknown workspace")?;
-            state.expanded_lists.insert(workspace);
+
+        ChoiceOp::ExpandList {
+            id,
+            workspace,
+            expanded,
+        } => {
+            let id = match (id, workspace) {
+                (Some(id), None)
+                    if matches!(id.as_str(), NEEDS_YOU | PINNED)
+                        || id
+                            .strip_prefix("project:")
+                            .is_some_and(|path| tree.projects.iter().any(|p| p.path == path)) =>
+                {
+                    id
+                }
+
+                (None, Some(workspace)) => {
+                    let Some((project, _)) = tree.workspace(&workspace) else {
+                        return Ok(());
+                    };
+                    format!("project:{}", project.path)
+                }
+                _ => return Err("unknown list id".into()),
+            };
+
+            if expanded.unwrap_or(true) {
+                state.expanded_lists.insert(id);
+            } else {
+                state.expanded_lists.remove(&id);
+            }
         }
+
         ChoiceOp::RenameWorkspace { workspace, name } => {
             tree.workspace(&workspace).ok_or("unknown workspace")?;
             rename(&mut owner.names, workspace, name);
@@ -382,7 +415,7 @@ fn rename(names: &mut BTreeMap<String, String>, key: String, name: String) {
 }
 
 fn validate_fold(tree: &Tree, id: &str) -> Result<(), String> {
-    if id == "pinned"
+    if matches!(id, PINNED | MORE_PROJECTS)
         || tree.workspace(id).is_some()
         || tree
             .projects

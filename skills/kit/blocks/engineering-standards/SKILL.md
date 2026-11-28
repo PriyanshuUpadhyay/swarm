@@ -1,6 +1,6 @@
 ---
 name: engineering-standards
-description: "Supply engineering rules marked protocol, project rule, or advice. Use when a change touches an API payload, data model or query, retry or deadline, quota or limit counter, authorization or entitlement read, or adds a dependency or tool."
+description: "Select engineering rules. Use when work touches API payloads, data models or queries, retries, deadlines, quotas, limits, or auth, or adds a dependency or tool."
 license: MIT
 metadata:
   kind: rule
@@ -16,7 +16,7 @@ metadata:
 ## Rules
 - The kit root is two folders up from this file.
 Select rules from the requested behavior and existing repository contracts, or say no rule covers
-it. Do not ask the user to repeat engineering standards or invent product requirements. The
+it. Use the kit for engineering standards and the task for product requirements. The
 calling workflow keeps its edit authority and approval steps; this block supplies rules.
 
 **How to read a row.**
@@ -26,7 +26,7 @@ calling workflow keeps its edit authority and approval steps; this block supplie
 not prove a rule applies; apply a row only inside its `Scope`.
 
 `Check` — a command that is available, or `judgment`. Use the row's expected output and the tool's
-exit status together. A missing command or execution error is **incomplete**, never a pass.
+exit status together. A missing command or execution error is **incomplete**.
 `PRAGMA foreign_key_check` can print violations and still exit 0; other tools can print data on a
 pass. Neither exit 0 nor nonempty output alone decides the result. Confirm a check against a
 known-bad case before trusting it; a green tool result does not prove a `judgment` row.
@@ -35,10 +35,10 @@ known-bad case before trusting it; a green tool result does not prove a `judgmen
 
 1. Derive the intended behavior, failure cases, and applicable row IDs from the request and
    repository. Keep them in the existing plan or task record, not a second document.
-2. Read the sections of `references/standards.md` in this block's folder that contain those rows, and check their scope.
+2. Read the sections of [`references/standards.md`](references/standards.md) in this block's folder that contain those rows, and check their scope.
 3. Run each `Check` that fits the actual engine. Report what you could not run.
 4. When a `Scope` forks, two rows conflict, or the question is contested, stop and explain the
-   trade-off as the kit block `blocks/decision-with-default/SKILL.md` says. Do not rule.
+   trade-off as the kit block `blocks/decision-with-default/SKILL.md` says. Leave that trade-off to the owner.
 5. End with `pass N / fail N / judgment M / not checked K`. A fail quotes the row
    and the output that failed it.
 

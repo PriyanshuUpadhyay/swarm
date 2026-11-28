@@ -1,6 +1,6 @@
 ---
 name: ui-motion
-description: "Pick one timing owner for an interface's durations and curves, and set its animated properties and reduced-motion form. Use when the states of a page or app animate."
+description: "Set one owner for timing, curves, and reduced-motion behavior. Use when the states of a page or app animate."
 license: MIT
 metadata:
   kind: rule
@@ -15,14 +15,14 @@ metadata:
 
 ## Rules
 - The kit root is two folders up from this file.
-- One timing owner per interface. When the code has a duration scale or easing tokens, they are the owner, and you extend them. Otherwise the owner is the tables of `references/motion.md` in this block's folder. Name the owner in the step's file.
-- Take every duration and curve from the owner. Never invent a value.
-- When `references/motion.md` is the timing owner, its duration table wins over its "under 300 ms" line. Modals and drawers may take 200-500 ms; other UI stays under 300 ms. Its interruption, hover, and never-ship rows apply too.
-- Animate `transform` and `opacity`. Animate another property only where the timing owner allows it for that case; `references/motion.md` allows `clip-path` and accordion height. Never `transition: all`. Static content needs no animation.
+- One timing owner per interface. When the code has a duration scale or easing tokens, they are the owner, and you extend them. Otherwise the owner is the tables of [`references/motion.md`](references/motion.md) in this block's folder. Name the owner in the step's file.
+- Take each duration and curve from the timing owner so the UI uses one motion system.
+- When `references/motion.md` is the timing owner, its duration table wins over its "under 300 ms" line. Modals and drawers may take 200-500 ms; other UI stays under 300 ms. Its interruption, hover, and replacement rules apply too.
+- Animate `transform` and `opacity`. Animate another property only where the timing owner allows it for that case; `references/motion.md` allows `clip-path` and accordion height. Name the properties in `transition` so unrelated changes stay instant. Static content needs no animation.
 - Honor `prefers-reduced-motion: reduce`. Keep opacity fades that help the reader, and remove movement. Loops and parallax become static.
 - Keep every key fact visible under reduced motion. The settled-state check belongs to `blocks/web-ui-basics/SKILL.md`.
 - If the selected owner's rows disagree for this state, use `blocks/decision-with-default/SKILL.md` to name the conflict before building it.
-- Story motion follows build's `presets/build/references/story-and-motion.md`.
+- Story motion follows build's [`presets/build/references/story-and-motion.md`](../../presets/build/references/story-and-motion.md).
 
 ## Example
 Initial state: a settings page opens a dropdown, and the code has no motion tokens.

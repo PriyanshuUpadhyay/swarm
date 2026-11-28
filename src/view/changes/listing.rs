@@ -1,5 +1,6 @@
 // List local and branch changes with line counts.
 use super::*;
+use crate::view::fields::{LineTotals, MAX_SAFE_JSON_INTEGER};
 pub fn list(root: &str, mode: &Mode, base: Option<&str>) -> Result<Value> {
     list_with(&ReadCommands::new(root), mode, base)
 }
@@ -96,4 +97,61 @@ fn list_with(read: &ReadCommands<'_>, mode: &Mode, base: Option<&str>) -> Result
     };
     stable(read, mode, base, None, &before, &pair)?;
     Ok(json!({"files":files,"refs":refs,"comparison":pair,"identity":before}))
+}
+
+pub(super) fn comparison_refs(read: &ReadCommands<'_>) -> Result<String> {
+    text(
+        read,
+        &[
+            "for-each-ref",
+            "--format=%(refname)%09%(objectname)%09%(objecttype)",
+            "refs/heads",
+            "refs/remotes",
+        ],
+    )
+}
+
+pub(in crate::view) fn branch_totals(root: &str, branch: &str, deadline: Instant) -> Option<LineTotals> {
+    let mut read = ReadCommands::new(root);
+    read.deadline = read.deadline.min(deadline);
+    let before = identity(&read, None).ok()?;
+    if before["branch"] != branch {
+        return None;
+    }
+
+    let refs = comparison_refs(&read).ok()?;
+    let own = format!("refs/heads/{branch}");
+    let names = || {
+        refs.lines()
+            .filter_map(|line| line.split_once('\t').map(|(name, _)| name))
+    };
+    // Match the Changes pane's defaultBase order, not its current user selection.
+    let base = [
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+        "refs/remotes/origin/master",
+        "refs/heads/main",
+        "refs/heads/master",
+    ]
+    .into_iter()
+    .find(|name| *name != own && names().any(|r| r == *name))
+    .or_else(|| names().find(|r| *r != own))?;
+
+    let pair = compare_to(&read, &refs, base, &before).ok()?.pair;
+    let counts = stats(&diff(&read, "branch", &pair, &["--numstat", "-z"], None).ok()?).ok()?;
+    stable(&read, &Mode::Branch, Some(base), None, &before, &pair).ok()?;
+
+    let total = |sum: u64, count: Option<usize>| {
+        let sum = sum.checked_add(count.unwrap_or(0) as u64)?;
+        (sum <= MAX_SAFE_JSON_INTEGER).then_some(sum)
+    };
+    let (added_lines, removed_lines) = counts
+        .into_values()
+        .try_fold((0, 0), |(added, removed), (a, r)| {
+            Some((total(added, a)?, total(removed, r)?))
+        })?;
+    Some(LineTotals {
+        added_lines,
+        removed_lines,
+    })
 }

@@ -17,11 +17,11 @@ metadata:
 - A claim decision sits on the claim it changes, after that claim's exhibit and before its child claims.
 - Ask only about forks that change what you build, at most 5 per plan. A plan with no such fork asks nothing.
 - Ask a question only when the questions it depends on have answers. Word it so that a yes accepts the marked default.
-- Mark the option you would pick. The marked option is your recommendation, so "I changed nothing" is a full answer. Never leave a choice with no default.
+- Mark the option you would pick. The marked option is your recommendation, so "I changed nothing" is a full answer.
 - When the task states the rule, the default is that rule as the frame's `Task rules:` line quotes it, by `blocks/requirements/SKILL.md`.
 - If an option removes a claim, say so: "claim 4 goes".
 - An answer of "not opened; default kept" is not agreement. If the decision is important, ask about it in chat.
-- An unanswered choice is never treated as accepted.
+- Keep an unanswered choice open so the owner retains consent.
 - When a scope forks, two rules conflict, or a direction-changing choice remains open, explain the
   trade-off and stop the work that depends on it. Recommend an option and leave the decision with
   the human owner. A fork that a known fact settles needs no question.

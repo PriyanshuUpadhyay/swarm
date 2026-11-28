@@ -1,5 +1,7 @@
 //! Read-only Git changes and file previews. Paths never follow workspace symlinks.
 mod listing;
+pub(super) use listing::branch_totals;
+use listing::comparison_refs;
 pub use listing::list;
 
 use super::{TextPreview, discovery, lifecycle::Error};
@@ -96,15 +98,14 @@ struct Comparison {
 }
 fn comparison(read: &ReadCommands<'_>, base: Option<&str>, identity: &Value) -> Result<Comparison> {
     let base = base.ok_or_else(|| Error::Invalid("Select a base ref".into()))?;
-    let refs = text(
-        read,
-        &[
-            "for-each-ref",
-            "--format=%(refname)%09%(objectname)%09%(objecttype)",
-            "refs/heads",
-            "refs/remotes",
-        ],
-    )?;
+    compare_to(read, &comparison_refs(read)?, base, identity)
+}
+fn compare_to(
+    read: &ReadCommands<'_>,
+    refs: &str,
+    base: &str,
+    identity: &Value,
+) -> Result<Comparison> {
     let entries: Vec<_> = refs
         .lines()
         .map(|line| line.splitn(3, '\t').collect::<Vec<_>>())

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Tab, TabsView, TreeView } from "../src/core/nav";
+import { clickTarget, saveSidebarState } from "./lifecycle-helpers";
 
 const server = () => new URL(process.env.SWARM_SERVE_URL!);
 
@@ -53,6 +54,48 @@ for (const pending of ["empty", null] as const) {
     }
   });
 }
+
+test("the tab child button names one agent in the singular", async ({ page }) => {
+  const restore = saveSidebarState();
+
+  try {
+    await page.route("**/api/tabs?*", async (route) => {
+      const response = await route.fetch();
+      const body = await response.json() as TabsView;
+      const tab = body.view.tabs[0];
+      if (tab) tab.children = { count: 1, blocked: 0, firstBlocked: null, text: "1" };
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto(`${server().origin}/${server().hash}`);
+    await page.waitForFunction(() => window.__swarmReady === true);
+
+    const workspace = page.locator('[data-testid="tree-row"][data-kind="workspace"]').filter({ hasText: "ws-tabs" });
+    const [selected] = await Promise.all([
+      page.waitForResponse((res) => res.url().endsWith("/api/choices") && res.request().postDataJSON().op === "selected_chat"),
+      workspace.click(),
+    ]);
+    expect(selected.status()).toBe(200);
+    const strip = page.getByTestId("tab-strip");
+    const child = strip.locator('[data-action="children"]').first();
+    await expect(child).toHaveAccessibleName(/, 1 agent$/);
+    await expect(strip).toHaveCSS("height", "40px");
+    await expect(child.locator("xpath=..")).toHaveCSS("height", "32px");
+    const target = await clickTarget(child);
+    expect(target).toEqual({ width: 24, height: 24 });
+
+    const close = child.locator('xpath=following-sibling::button[@data-action="close"]');
+    const [box, next, inset] = await Promise.all([
+      child.boundingBox(), close.boundingBox(),
+      child.evaluate((el) => Number.parseFloat(getComputedStyle(el, "::after").left)),
+    ]);
+    if (!box || !next) throw new Error("The tab is missing adjacent actions");
+    expect(box.x + inset + target.width / 2).toBeLessThanOrEqual(next.x);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.close();
+    restore();
+  }
+});
 
 test("archiving the last open sidebar chat shows the workspace landing", async ({ page: tab }, info) => {
   const fixtureHome = process.env.SWARM_E2E_HOME!;

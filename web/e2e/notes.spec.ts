@@ -58,7 +58,7 @@ test("a text note from the row menu goes under the box's text as one message wit
   // The box holds text, so the move asks first.
   await tab.getByRole("button", { name: "Add 1 note to message" }).click();
   await tab.getByTestId("notes-confirm").getByRole("button", { name: "Append" }).click();
-  await expect(tab.getByTestId("composer")).toHaveValue("My own words.\n\nNotes on your reply (1):\n\n1. > 10 minutes\n   Why 10 minutes?");
+  await expect(tab.getByTestId("composer")).toHaveValue("My own words.\n\nNotes on your reply (1):\n\n1. > 10 minutes\n\n   Why 10 minutes?");
   await expect(tab.getByTestId("composer")).toBeFocused();
   expect(sent).toHaveLength(0);
   await expect(card).toHaveCount(0);
@@ -121,6 +121,7 @@ test("annotate mode takes an item and a whole reply; ⇧⌘A, the palette and Es
     "Notes on your reply (2):",
     "",
     "1. > C · Margin notes",
+    "",
     "   Go with this one.",
     "",
     "2. > [whole reply]",
@@ -335,7 +336,7 @@ test("a note in a child agent's column goes to the main chat's box and names the
 
   await reviewer.getByTestId("notes-send").click();
   await expect(tab.locator('.strip-chat [data-testid="composer"]')).toHaveValue(
-    "Notes on replies (1); [name] marks a child agent's reply, no name marks yours:\n\n1. [reviewer] > [whole reply]\n   > I will look at the build first.\n   Why first?",
+    "Notes on replies (1); [name] marks a child agent's reply, no name marks yours:\n\n1. [reviewer] > [whole reply]\n   > I will look at the build first.\n\n   Why first?",
   );
   await expect(reviewer.getByTestId("note-card")).toHaveCount(0);
 });

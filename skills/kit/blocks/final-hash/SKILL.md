@@ -1,6 +1,6 @@
 ---
 name: final-hash
-description: "Record the hash of each handed-off file after its last edit, so the step closes only on the bytes that were checked. Use when a build step hands off a page, a film, or another file."
+description: "Record each output file's hash after its last edit. Use when a build step hands off a page, film, or other file."
 license: MIT
 metadata:
   kind: step

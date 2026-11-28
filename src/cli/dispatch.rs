@@ -125,16 +125,12 @@ pub(crate) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd] if cmd == "finish" => {
             let summary = std::io::read_to_string(std::io::stdin())?;
-            check_wrap_up_reply(&connection, &session_id, &agent_id, &summary)?;
-            let orchestrator = swarm::store::orchestrator_of(&connection, &session_id)?;
-            let seq = deliver(
+            let seq = finish(
                 &mut connection,
                 &root,
                 &adapter_name(),
                 &session_id,
                 &agent_id,
-                &orchestrator,
-                "summary",
                 &summary,
             )?;
             if let Some(hint) = finish_hint(&connection, &session_id, &agent_id) {

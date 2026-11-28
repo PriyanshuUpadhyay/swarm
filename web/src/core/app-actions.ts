@@ -3,7 +3,7 @@ import { type Command } from "./commands";
 import { whenPainted } from "./perf";
 import { isChair, paneStatus } from "./panes";
 import { chatRows, nextBlocked, paletteSources, recency, workspaceOf, workspaceRow, type PaletteItem } from "./nav";
-import { type Ask, SIDEBAR_VIEWS, PROMPT_JUMP, firstLine } from "./app-types";
+import { type Ask, PROMPT_JUMP, firstLine } from "./app-types";
 import type { App } from "./app";
 
 /** A new chat waits up to LIST_POLLS * LIST_POLL_MS (5 s) for the server's tree to list it. */
@@ -71,11 +71,12 @@ export class AppActions {
       const row = workspaceRow(this.app.tree, workspaceOf(this.app.tree, this.app.snapshot, s));
       return row ? row.archived : this.app.tree?.view === "workspaces" && !listed.includes(s);
     };
-    const order = [...new Set([...listed, ...this.app.chatIds()])].filter((s) => !archived(s));
+    const visible = this.app.rows.flatMap((row) => row.kind === "chat" && row.row?.selection?.chat ? [row.row.selection.chat] : []);
+    const order = [...new Set([...visible, ...listed, ...this.app.chatIds()])].filter((s) => !archived(s));
     const blocked = (s: string) => (this.app.snapshot?.agents[s] ?? []).some((a) => paneStatus(a) === "blocked");
     const next = nextBlocked(order, blocked, this.app.openId);
     if (next) this.app.navigation.openChat(next, e);
-    else this.app.notice("No chat is blocked.");
+    else this.app.notice("No chat is waiting.");
   }
 
   // ---- palette and names ----
@@ -135,8 +136,8 @@ export class AppActions {
     const chats: PaletteItem[] = [];
     const agents: PaletteItem[] = [];
     for (const w of sources) {
-      const title = w.project && !w.row.pinned ? `${w.project} / ${w.row.title}` : w.row.title;
-      items.push({ id: `workspace:${w.row.id}`, title, subtitle: w.row.detail || undefined, group: "workspace", status: w.row.status, recency: w.at, run: () => void this.app.navigation.selectWorkspace(w.row.id) });
+      const title = w.project && w.project !== w.facts.title ? `${w.project} / ${w.facts.title}` : w.facts.title;
+      items.push({ id: `workspace:${w.path}`, title, subtitle: w.facts.branch ?? undefined, group: "workspace", status: w.status, recency: w.at, run: () => void this.app.navigation.selectWorkspace(w.path) });
       for (const c of w.chats) {
         const session = c.selection?.chat!;
         chats.push({ id: `chat:${session}`, title: c.title, subtitle: title, group: "chat", status: c.status, recency: recency(this.app.snapshot, session), run: () => this.app.navigation.openChat(session) });
@@ -178,7 +179,7 @@ export class AppActions {
   commands(): Command[] {
     const inTree = () => {
       const a = document.activeElement;
-      return !!a && !a.closest("button, input, textarea, select, [contenteditable=true]") && a.closest('[data-testid="sidebar"], [data-testid="recent"]') !== null;
+      return !!a && !a.closest("a, button, input, textarea, select, [contenteditable=true]") && a.closest('[data-testid="sidebar"]') !== null;
     };
     const tree = (id: string, title: string, chord: string, run: (e?: KeyboardEvent) => void): Command => ({
       id,
@@ -215,15 +216,12 @@ export class AppActions {
         },
       },
     ];
-    // ⌘B and ⇧⌘B belong to the window frame, which registers them; they sit here in palette order.
-    for (let n = 1; n <= SIDEBAR_VIEWS.length; n++)
-      cmds.push({ id: `sidebar.view.${n}`, title: `Show ${SIDEBAR_VIEWS[n - 1]}`, chord: `Alt+Meta+${n}`, run: () => this.app.sidebar.setSidebarView(n) });
     cmds.push(
       { id: "find.open", title: "Find", chord: "Meta+F", when: chat, run: () => this.app.reading.openFind() },
       { id: "chat.annotate", title: "Annotate Chat", chord: "Shift+Meta+A", when: chat, run: () => this.app.notes.toggleMode() },
       { id: "prompt.prev", title: "Previous Prompt", chord: "Ctrl+Alt+ArrowUp", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: -1 })) },
       { id: "prompt.next", title: "Next Prompt", chord: "Ctrl+Alt+ArrowDown", when: chat, run: () => void window.dispatchEvent(new CustomEvent(PROMPT_JUMP, { detail: 1 })) },
-      { id: "chat.blocked", title: "Next Blocked Chat", chord: "Ctrl+Meta+W", run: (e) => this.openBlocked(e) },
+      { id: "chat.blocked", title: "Next waiting chat", chord: "Ctrl+Meta+W", run: (e) => this.openBlocked(e) },
       {
         id: "chat.stop",
         title: "Stop the Chair",

@@ -1,6 +1,6 @@
 ---
 name: root-cause-analysis
-description: "Find why a production issue happened from existing data: one real instance, each claim checked against logs or tables, and what broke named before any fix. Use when asked for an RCA or why something failed for users."
+description: Find why a production issue happened, from logs or tables. Use when asked for an RCA or why something failed for users.
 ---
 
 # Root cause analysis
@@ -16,6 +16,8 @@ tables and logs already held the answer, it called a claim verified from the cod
 fix set before it said what was broken, and its explanation had no example.
 
 ## Steps
+
+The kit root, with its `blocks/` and `references/` folders, is two folders up from this skill's folder.
 
 1. **Task file.** Keep one, as `<kit root>/blocks/task-file/SKILL.md` says, at
    `tmp/root-cause-analysis/<YYYY-MM-DD>-<slug>.md`. It holds the symptom, the sources, each claim

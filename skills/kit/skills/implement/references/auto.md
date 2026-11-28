@@ -42,8 +42,8 @@ only the user can give.
    or hygiene). Pass an owner's saved line with `review <folder> <range> --continue <user-file>`.
    Write each limit the user accepts as
    a `limit:` line in the run's `answers.md`, in the check mode's answer shape with the user's words,
-   so it reaches the next run's `answers-before.md`. A dead end is reported with its evidence. Never
-   relax the predicate to declare victory.
+   so it reaches the next run's `answers-before.md`. A dead end is reported with its evidence. Keep the predicate fixed; a relaxed predicate would
+   declare a false win.
 
 The active host contract decides who types, and the chair verifies each returned diff itself. The
 Parallel fix seats (opt-in) section below names the exception.
@@ -56,7 +56,7 @@ The worker's `unit N ready` message carries the changed paths, its check output,
 the reported paths, commit, and send `committed` in one call. The chair then runs the unit's check
 on that commit in the background, in a persistent detached git worktree under `tmp/deliver/verify`.
 Apply the pipeline exception in `blocks/checked-units/SKILL.md`. A red check stops landings; keep
-the work, diagnose, then fix or revert in a checked unit. Never revert automatically. A hash
+the work, diagnose, then fix or revert in a checked unit. Revert only after diagnosis, because an automatic revert can hide the cause. A hash
 that does not match keeps the current gate; the chair runs the check before commit.
 
 ## Parallel fix seats (opt-in)

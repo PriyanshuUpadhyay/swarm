@@ -59,7 +59,7 @@ async fn choices_handler_uses_shared_lane_rejects_stale_and_bumps_version() {
     assert_eq!(fixture.app.hub.lock().unwrap().version, version);
 }
 #[tokio::test]
-async fn an_archived_chat_folds_under_its_workspace_in_the_tree() {
+async fn an_archived_chat_folds_in_the_archive_view() {
     let fixture = Fixture::new();
     let mut connection = swarm::store::open(&fixture.app.root.join("swarm.db")).unwrap();
     swarm::store::set_sessions_archived(
@@ -75,9 +75,14 @@ async fn an_archived_chat_folds_under_its_workspace_in_the_tree() {
     })
     .unwrap();
     refresh_tree(&fixture.app).unwrap();
-    let Json(tree) = tree_view(State(fixture.app.clone()), Query(TreeQuery { view: None }))
-        .await
-        .unwrap();
+    let Json(tree) = tree_view(
+        State(fixture.app.clone()),
+        Query(TreeQuery {
+            view: Some("archived".into()),
+        }),
+    )
+    .await
+    .unwrap();
     let rows: Vec<_> = tree["sections"]
         .as_array()
         .unwrap()
@@ -137,6 +142,49 @@ async fn tree_handler_keeps_last_good_choices_on_busy_or_invalid_state() {
             .is_empty()
     );
     assert!(!fixture.app.root.join("choices.json").exists());
+}
+
+#[tokio::test]
+async fn old_expand_list_requests_open_the_workspaces_project() {
+    let fixture = action_fixture();
+    let workspace = env!("CARGO_MANIFEST_DIR");
+    refresh_tree(&fixture.app).unwrap();
+    let saved = choices_store::load(&fixture.app.root, true).unwrap();
+    let body = serde_json::from_value(json!({
+        "revision": saved.revision, "op": "expand_list", "workspace": workspace,
+    }))
+    .unwrap();
+    let reply = choice_write(State(fixture.app.clone()), Ok(Json(body)))
+        .await
+        .unwrap();
+
+    let saved = choices_store::load(&fixture.app.root, true).unwrap();
+    assert_eq!(reply.0["revision"], saved.revision);
+    let (tree, _, _) = loaded_tree(&fixture.app).unwrap();
+    let (project, _) = tree.workspace(workspace).unwrap();
+    assert_eq!(
+        saved.state.expanded_lists,
+        std::collections::BTreeSet::from([format!("project:{}", project.path)])
+    );
+}
+
+#[tokio::test]
+async fn expand_list_rejects_an_unknown_project_without_a_write() {
+    let fixture = action_fixture();
+    refresh_tree(&fixture.app).unwrap();
+    let saved = choices_store::load(&fixture.app.root, true).unwrap();
+    let body = serde_json::from_value(json!({
+        "revision": saved.revision, "op": "expand_list", "id": "project:/unknown",
+    }))
+    .unwrap();
+    assert!(
+        choice_write(State(fixture.app.clone()), Ok(Json(body)))
+            .await
+            .is_err()
+    );
+    let reread = choices_store::load(&fixture.app.root, true).unwrap();
+    assert_eq!(reread.revision, saved.revision);
+    assert_eq!(reread.state.expanded_lists, saved.state.expanded_lists);
 }
 
 /// ADR 0147: a chat that the owner opens in the app has no unseen notice rows left for the HUD.

@@ -5,6 +5,20 @@ use swarm::view::transcript::{markdown::display, queue_wire};
 
 pub(super) fn start_coordinator(app: &App, action_queue: mpsc::Receiver<ActionJob>) {
     start_action_queue(app, action_queue);
+
+    let weak = Arc::downgrade(app);
+    std::thread::spawn(move || {
+        let mut reader = fields::FieldReader::default();
+        while let Some(app) = weak.upgrade() {
+            if app.stopped.load(Ordering::Relaxed) {
+                break;
+            }
+            refresh_tree_fields(&app, &mut reader);
+            drop(app);
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
+
     let weak = Arc::downgrade(app);
     std::thread::spawn(move || {
         let Some(app) = weak.upgrade() else {
