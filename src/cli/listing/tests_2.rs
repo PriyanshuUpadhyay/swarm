@@ -343,7 +343,11 @@ mod cases {
             "code.complex",
             Some("codex"),
             &[],
-            Some((&runner, Some("work"))),
+            Some(swarm::store::LaunchMetadata {
+                runner: &runner,
+                account: Some("work"),
+                cli_default_model: false,
+            }),
             || Ok(None),
         )
         .unwrap();

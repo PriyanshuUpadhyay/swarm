@@ -244,24 +244,28 @@ pub fn previous_chair_run(
     provider: &str,
     resume: bool,
 ) -> rusqlite::Result<Option<ChairRun>> {
+    let sql = "SELECT run.model, run.effort FROM session AS s
+               LEFT JOIN agent AS own ON own.session_id = s.id AND own.id = 'orchestrator'
+               LEFT JOIN session AS parent ON parent.id = s.branch_of AND parent.chair_provider = ?2
+               JOIN agent AS run ON run.id = 'orchestrator' AND run.session_id = CASE
+                   WHEN ?3 AND own.id IS NOT NULL THEN s.id
+                   WHEN own.id IS NULL THEN parent.id END
+               WHERE s.id = ?1 AND (run.session_id = s.id OR run.model IS NULL)";
+
     connection
-        .query_row(
-            "SELECT run.model, run.effort FROM session AS s
-             LEFT JOIN agent AS own ON own.session_id = s.id AND own.id = 'orchestrator'
-             LEFT JOIN session AS parent ON parent.id = s.branch_of AND parent.chair_provider = ?2
-             JOIN agent AS run ON run.id = 'orchestrator' AND run.session_id = CASE
-                 WHEN ?3 AND own.id IS NOT NULL THEN s.id
-                 WHEN own.id IS NULL THEN parent.id END
-             WHERE s.id = ?1 AND (run.session_id = s.id OR run.model IS NULL)",
-            (session_id, provider, resume),
-            |row| {
-                Ok(ChairRun {
-                    model: row.get(0)?,
-                    effort: row.get(1)?,
-                })
-            },
-        )
+        .query_row(sql, (session_id, provider, resume), |row| {
+            Ok(ChairRun {
+                model: row.get(0)?,
+                effort: row.get(1)?,
+            })
+        })
         .optional()
+}
+
+pub struct LaunchMetadata<'a> {
+    pub runner: &'a crate::config::Runner,
+    pub account: Option<&'a str>,
+    pub cli_default_model: bool,
 }
 
 /// Store the runner selected by launch; absent account means the provider's own login.
@@ -273,27 +277,29 @@ pub fn set_launch(
     runner: &crate::config::Runner,
     account: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    set_launch_with_model(
+    set_launch_metadata(
         connection,
         session_id,
         agent_id,
         profile,
-        runner,
-        Some(&runner.model),
-        account,
+        LaunchMetadata {
+            runner,
+            account,
+            cli_default_model: false,
+        },
     )
 }
 
-/// An omitted model leaves the choice to the CLI; any model already reported by a hook still stands.
-pub fn set_launch_with_model(
+/// A CLI-default launch records no runner label and leaves any known model intact.
+pub fn set_launch_metadata(
     connection: &Connection,
     session_id: &str,
     agent_id: &str,
     profile: &str,
-    runner: &crate::config::Runner,
-    model: Option<&str>,
-    account: Option<&str>,
+    launch: LaunchMetadata<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let named = (!launch.cli_default_model).then_some(launch.runner);
+
     connection.execute(
         "UPDATE agent SET profile = ?3, runner = ?4, model = coalesce(?5, model), effort = ?6, account = ?7
          WHERE session_id = ?1 AND id = ?2",
@@ -301,10 +307,10 @@ pub fn set_launch_with_model(
             session_id,
             agent_id,
             profile,
-            model.map(|_| runner.label()),
-            model,
-            &runner.effort,
-            account,
+            named.map(crate::config::Runner::label),
+            named.map(|runner| runner.model.as_str()),
+            &launch.runner.effort,
+            launch.account,
         ),
     )?;
     Ok(())

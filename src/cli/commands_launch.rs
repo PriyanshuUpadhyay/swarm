@@ -99,6 +99,7 @@ pub(crate) fn commands_launch(
         if let Some((provider, _)) = &resume {
             requested_provider = Some(provider.id());
         }
+
         let no_runner = |provider: Provider| {
             swarm::config::load().is_ok_and(|(config, _)| {
                 config
@@ -106,6 +107,7 @@ pub(crate) fn commands_launch(
                     .is_ok_and(|profile| !profile.runners.iter().any(|r| r.provider == provider))
             })
         };
+
         let provider = requested_provider.and_then(Provider::parse);
         let can_repeat_default = matches!(provider, Some(Provider::Pi | Provider::Agy));
         let stored = match provider {
@@ -126,6 +128,7 @@ pub(crate) fn commands_launch(
             }
             _ => None,
         };
+
         let cli_default = cli_default
             || (can_repeat_default && stored.as_ref().is_some_and(|run| run.model.is_none()));
         if let Some(run) = &stored
@@ -139,7 +142,7 @@ pub(crate) fn commands_launch(
         let cwd = std::fs::canonicalize(&cwd)
             .map_err(|error| format!("swarm: bad --cwd {}: {error}", cwd.display()))?;
 
-        // A linked start with no recorded model keeps one-off provider settings, not a role's model.
+        // CLI-default mode keeps the one-off provider settings without using a role model.
         let model = requested_model.or(cli_default.then_some("default"));
         let (mut runner, probe): (swarm::config::Runner, Probe) = match model {
             // A one-off model runs exactly that runner, with no fallback (ADR 0033). It keeps the

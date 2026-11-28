@@ -246,7 +246,7 @@ async fn resume_switch(app: &App, body: &ContinueChat) -> Result<Value, ApiError
     };
     if let Err(refused) = launch(body.model.as_deref(), body.effort.as_deref(), account).await {
         // A chair closed by this switch starts again on its old run, so the chat keeps a pane.
-        // With no old model known, launch takes the role's runner, never the refused pick.
+        // With no old model known, launch uses the role runner or the CLI's own default.
         if closed
             && let Err(again) = launch(
                 chair["model"].as_str(),
